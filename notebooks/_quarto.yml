@@ -1,0 +1,22 @@
+project:
+  title: RNNs-learn-robust-policies
+  output-dir: _output
+  
+toc: true
+number-sections: true
+# bibliography: references.json
+
+jupyter: python3
+
+execute:
+  freeze: auto  # re-render only when source changes
+ 
+format:
+  html:
+    code-fold: true
+    code-tools: true
+    fig-align: center
+  pdf:
+    documentclass: report 
+    margin-left: 30mm
+    margin-right: 30m

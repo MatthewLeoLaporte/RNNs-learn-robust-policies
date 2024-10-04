@@ -1,0 +1,38 @@
+---
+jupyter: python3
+---
+
+# Training models for Part 1
+
+In this notebook we train several models separately from each other, to support later analyses of whether RNNs can be learn robust policies for a simple continuous control task. In particular, we train an RNN to drive a point mass from an initial position to a target position (i.e. simple reaching) in a 2D workspace. One model will be trained to do this undisturbed, while another will experience a disturbance which cannot be modeled (curl force fields of random direction and magnitude) on each trial/episode. In the latter case, two variants of the model will be trained, at two levels of average disturbance magnitude.
+
+Multiple replicates of the model are trained in each case, to examine the effect of network weight initialization. 
+
+Each model consists of a single-layer RNN with a linear readout layer, which controls a biomechanical model, forming a closed loop. On each time step of a trial, the RNN outputs a 2D force vector which accelerates a Newtonian point mass across a 2D workspace. The input to the RNN on each time step includes feedback observations of the point mass's position and velocity, as well as the target/reference position and velocity. In the case of simple reaching, the target state is constant across the trial -- the goal position and velocity of the reach.
+
+Symmetric (Gaussian) noise is added to the network's outputs and to the feedback observations on each time step, to model motor and sensory noise in the system.
+
+The training objective is to minimize a continuous cost function which penalizes a sum of the following squared terms:
+
+- the Euclidean distance between the point mass's position and the target position on each time step;
+- the **difference** between the point mass's velocity and the target velocity on each time step;
+- the force vector output by the neural network;
+- the activations of the network units.
+
+In addition to the two main classes of models, we also train:
+
+1. A model with increased system noise;
+2. A model that is disturbed by a random force field -- state independent, and constant across a trial -- rather than a curl force field. 
+
+## Environment setup
+
+```{python}
+%load_ext autoreload
+%autoreload 2
+```
+
+```{python}
+import os
+
+os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
+```
