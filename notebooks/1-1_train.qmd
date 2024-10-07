@@ -36,3 +36,321 @@ import os
 
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 ```
+
+```{python}
+from collections import OrderedDict
+import json
+from pathlib import Path
+
+import equinox as eqx
+import jax
+import jax.numpy as jnp
+import jax.random as jr
+import jax.tree as jt
+import matplotlib.pyplot as plt
+import matplotlib.colors as mplc
+import numpy as np
+import optax 
+from tqdm.auto import tqdm
+
+from feedbax import (
+    AbstractModel, 
+    get_ensemble,
+    is_module,
+    save,
+    tree_unzip,
+)
+from feedbax.misc import git_commit_id, where_func_to_labels
+import feedbax.plotly as fbp
+from feedbax.xabdeef.losses import simple_reach_loss
+from feedbax.xabdeef.models import point_mass_nn
+from feedbax.task import SimpleReaches
+from feedbax.train import TaskTrainer
+
+from feedbax.intervene import (
+    CurlField, 
+    FixedField,
+    schedule_intervenor,
+)
+from feedbax.plot import (
+    loss_history, 
+    loss_mean_history,
+    effector_trajectories,
+    speed_profiles,
+    activity_sample_units,
+)
+```
+
+Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
+
+```{python}
+for mod in (jax, eqx, optax): 
+    print(f"{mod.__name__} version: {mod.__version__}")
+    
+print(f"\nFeedbax commit hash: {git_commit_id()}")
+```
+
+### Directories setup
+
+```{python}
+FIGS_DIR = Path('../figures/1-1/')
+MODELS_DIR = Path('../models')
+PARAMS_DIR = Path('../parameters')
+
+for d in (FIGS_DIR, MODELS_DIR, PARAMS_DIR):
+    d.mkdir(parents=True, exist_ok=True)
+```
+
+```{python}
+models_filename = "1-1_trained_models.eqx"
+models_parameter_history_filename = "1-1_model_parameter_histories.eqx"
+```
+
+### Plotting setup
+
+```{python}
+trials_cmap = 'viridis'  # for trials
+trials_cmap_func = plt.get_cmap(trials_cmap)
+
+def savefig(fig, label, ext='.svg', transparent=True, **kwargs): 
+    fig.savefig(
+        FIGS_DIR / f"{label}{ext}",
+        transparent=transparent, 
+        **kwargs, 
+    )
+    
+def saveplotly(fig, label):
+    fig.write_html(FIGS_DIR / f'{label}.html')
+    fig.write_json(FIGS_DIR / f'{label}.json')
+    
+```
+
+### RNG setup
+
+```{python}
+SEED = 5566
+key = jr.PRNGKey(SEED)
+key_init, key_train, key_eval = jr.split(key, 3)
+```
+
+## Base training task setup
+
+```{python}
+n_steps = 100
+workspace = ((-1., -1.),
+             (1., 1.))
+
+task_train = SimpleReaches(
+    loss_func=simple_reach_loss(),
+    workspace=workspace, 
+    n_steps=n_steps,
+    eval_grid_n=2,
+    eval_n_directions=8,
+    eval_reach_length=0.5,    
+)
+```
+
+## Model setup
+
+```{python}
+n_replicates = 10
+
+hidden_size  = 50
+feedback_delay_steps = 5
+feedback_noise_std = 0.025
+motor_noise_std = 0.025
+
+dt = 0.05
+
+mass = 1.0
+```
+
+```{python}
+models = get_ensemble(
+    point_mass_nn,
+    task_train,
+    n_ensemble=n_replicates,
+    dt=dt,
+    mass=mass,
+    hidden_size=hidden_size, 
+    n_steps=n_steps,
+    feedback_delay_steps=feedback_delay_steps,
+    feedback_noise_std=feedback_noise_std,
+    motor_noise_std=motor_noise_std,
+    key=key_init,
+)
+```
+
+
+## Training setup
+
+### Create model-task pairings for different disturbance conditions
+
+Schedule random curl fields in the training trials.
+
+```{python}
+disturbance_levels = [0, 0.1, 0.25]
+
+def curl_field(curl_std):
+    return CurlField.with_params(
+        amplitude=lambda trial_spec, *, key: curl_std * jr.normal(key, (1,)),
+    )
+
+task_model_pairs = jt.map(
+    lambda curl_std: schedule_intervenor(
+        task_train, models,
+        lambda model: model.step.mechanics,
+        curl_field(curl_std),
+        default_active=False,
+    ),
+    disturbance_levels,
+)
+```
+
+### Training hyperparameters and optimizer
+
+```{python}
+learning_rate = 0.01
+n_batches = 10000
+batch_size = 250
+
+where_train = lambda model: (
+    model.step.net.hidden,
+    model.step.net.readout, 
+)
+
+# Define the training iterations on which to retain the model weights:
+# Every iteration until iteration 10, then every 10 until 100, every 100 until 1000, etc.
+save_model_parameters = jnp.concatenate([jnp.array([0])] + [
+    jnp.arange(10**i, 10**(i+1), 10**i)
+    for i in range(0, int(np.log10(n_batches)))
+])
+```
+
+```{python}
+trainer = TaskTrainer(
+    optimizer=optax.inject_hyperparams(optax.adam)(
+        learning_rate=learning_rate
+    ),
+    checkpointing=True,
+)
+```
+
+## Train the models
+
+```{python}
+trained_models = OrderedDict({})
+train_histories = OrderedDict({})
+
+for curl_std, (task_, models_) in tqdm(list(zip(disturbance_levels, task_model_pairs))):
+    trained_models[curl_std], train_histories[curl_std] = trainer(
+        task_, 
+        models_,
+        ensembled=True,
+        n_batches=n_batches, 
+        batch_size=batch_size, 
+        log_step=n_batches // 10,
+        where_train=where_train,
+        save_model_parameters=save_model_parameters,
+        disable_tqdm=True,
+        key=key_train,
+    )
+```
+
+## Save trained models 
+
+```{python}
+def write_to_json(data, file_path):
+    with open(file_path, 'w') as jsonf:
+        json.dump(data, jsonf, indent=4)
+```
+
+```{python}
+model_hyperparameters = dict(
+    n_replicates=n_replicates,
+    hidden_size=hidden_size,
+    feedback_delay_steps=feedback_delay_steps,
+    feedback_noise_std=feedback_noise_std,
+    motor_noise_std=motor_noise_std,
+    dt=dt,
+    n_steps=n_steps,
+    mass=mass,
+    disturbance_levels=disturbance_levels,
+)
+
+training_hyperparameters = dict(
+    learning_rate=learning_rate,
+    n_batches=n_batches,
+    batch_size=batch_size,
+    save_model_parameters=save_model_parameters.tolist(),
+)
+```
+
+```{python}
+save(
+    MODELS_DIR / models_filename,
+    list(trained_models.values()),
+    hyperparameters=model_hyperparameters,
+)
+```
+
+To reload our models in later notebooks, we will need a function that regenerates a skeleton PyTree with the same structure as `list(trained_models.values())`, given the stored `hyperparameters`. See the function `setup_models` in `src/rnns_learn_robust_motor_policies/part1_setup.py`.
+
+### Save training parameter histories
+
+Any analysis of the losses, learning rates, etc. over training will be performed in this notebook. 
+
+However, in later analyses we may be interested in the history of the model parameters across training. These should also be saved to disk. 
+
+```{python}
+model_parameter_histories = jt.map(
+    lambda tree: tree.model_parameters, 
+    list(train_histories.values()), 
+    is_leaf=is_module,
+)
+
+save(
+    MODELS_DIR / models_parameter_history_filename,
+    model_parameter_histories,
+    hyperparameters=dict(
+        where_train_strs=where_func_to_labels(where_train),
+        save_model_parameters=save_model_parameters.tolist(),
+    ),
+)
+```
+
+Note that we cannot save lambda functions to disk, so we save the string representation of the `where_train` PyTree.
+
+#### Reloading parameter histories
+
+Since we haven't done this in any later notebooks yet, I'm including it here for reference.
+
+Because we'll generally have already loaded the trained models by the time we also want to load the parameter histories, our `setup_model_parameter_histories` function can use it to determine the correct PyTree structure. Thus we can avoid reconstructing the PyTree of models from scratch -- and storing all the required hyperparameters -- a second time.  
+
+```{python}
+from functools import partial
+from rnns_learn_robust_motor_policies.part1_setup import setup_model_parameter_histories
+
+model_parameter_histories_ = load(
+    MODELS_DIR / models_parameter_history_filename,
+    partial(setup_model_parameter_histories, list(trained_models.values())),
+)
+```
+
+## Generate training plots
+
+### Loss histories
+
+```{python}
+for curl_std, history in train_histories.items():
+    label = f"1-1_loss-history_curl-std-{curl_std}"
+    
+    p1, _ = loss_history(history)
+    p2, _ = loss_mean_history(history)
+    p3 = fbp.loss_history(history)
+    
+    savefig(p1, label + '_replicates')
+    savefig(p2, label)
+    saveplotly(p3, label)
+```
+

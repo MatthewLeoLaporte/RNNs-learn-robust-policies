@@ -1,0 +1,80 @@
+---
+jupyter: python3
+---
+
+# Analysis of plant perturbations
+
+In this notebook we begin our analysis of the models trained in the presence of different levels of curl force fields:
+
+- examine differences in baseline performance and state profiles of the models; e.g. differences in velocity profiles
+- compare robustness to mechanical disturbances; e.g. differences in endpoint error when subject to large curl fields; 
+
+
+## Environment setup
+
+```{python}
+import equinox
+import jax
+import jax.numpy as jnp
+import jax.random as jr
+import jax.tree as jt
+
+from feedbax import load
+
+from rnns_learn_robust_motor_policies.part1_setup import setup_models
+```
+
+Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
+
+```{python}
+for mod in (jax, eqx, optax): 
+    print(f"{mod.__name__} version: {mod.__version__}")
+    
+print(f"\nFeedbax commit hash: {git_commit_id()}")
+```
+
+### Directories setup
+
+```{python}
+FIGS_DIR = Path('../figures/1-1/')
+MODELS_DIR = Path('../models')
+
+for d in (FIGS_DIR,):
+    d.mkdir(parents=True, exist_ok=True)
+    
+if not MODELS_DIR.exists():
+    raise FileNotFoundError(f"Models directory not found: {MODELS_DIR.absolute()}")
+```
+
+### Plotting setup 
+
+```{python}
+trials_cmap = 'viridis'  # for trials
+trials_cmap_func = plt.get_cmap(trials_cmap)
+
+def savefig(fig, label, ext='.svg', transparent=True, **kwargs): 
+    fig.savefig(
+        FIG_DIR / label / ext,
+        transparent=transparent, 
+        **kwargs, 
+    )
+```
+
+### RNG setup
+
+```{python}
+SEED = 5566
+key = jr.PRNGKey(SEED)
+key_init, key_train, key_eval = jr.split(key, 3)
+```
+
+## Load trained models
+
+```{python}
+models_save_path = MODELS_DIR / "1-1_trained_models.eqx"
+
+trained_models = load(models_save_path, setup_models)
+```
+
+## 
+
