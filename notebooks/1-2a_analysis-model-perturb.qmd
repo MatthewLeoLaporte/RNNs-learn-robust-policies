@@ -13,30 +13,68 @@ In this notebook we begin our analysis of the models trained in the presence of 
 ## Environment setup
 
 ```{python}
-import equinox
+%load_ext autoreload
+%autoreload 2
+```
+
+```{python}
+import os
+
+os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
+```
+
+```{python}
+from pathlib import Path
+
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
+import matplotlib.pyplot as plt
 
-from feedbax import load
+from feedbax import (
+    load_with_hyperparameters, 
+    is_module, 
+    tree_take, 
+    tree_take_multi,
+)
+from feedbax.misc import git_commit_id
+from feedbax.noise import replace_noise
+import feedbax.plotly as fbp
+from feedbax.task import SimpleReaches
+from feedbax.xabdeef.losses import simple_reach_loss
 
 from rnns_learn_robust_motor_policies.part1_setup import setup_models
+from rnns_learn_robust_motor_policies.plot_utils import get_savefig_func
+
 ```
 
 Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
 
 ```{python}
-for mod in (jax, eqx, optax): 
+for mod in (jax, eqx): 
     print(f"{mod.__name__} version: {mod.__version__}")
     
 print(f"\nFeedbax commit hash: {git_commit_id()}")
 ```
 
+
+### Global conditions
+
+```{python}
+NO_SYSTEM_NOISE = True
+
+if NO_SYSTEM_NOISE:
+    fig_suffix = "_no-noise"
+else:
+    fig_suffix = ""
+```
+
 ### Directories setup
 
 ```{python}
-FIGS_DIR = Path('../figures/1-1/')
+FIGS_DIR = Path('../figures/1-2a/')
 MODELS_DIR = Path('../models')
 
 for d in (FIGS_DIR,):
@@ -52,12 +90,7 @@ if not MODELS_DIR.exists():
 trials_cmap = 'viridis'  # for trials
 trials_cmap_func = plt.get_cmap(trials_cmap)
 
-def savefig(fig, label, ext='.svg', transparent=True, **kwargs): 
-    fig.savefig(
-        FIG_DIR / label / ext,
-        transparent=transparent, 
-        **kwargs, 
-    )
+savefig = get_savefig_func(FIGS_DIR)
 ```
 
 ### RNG setup
@@ -68,13 +101,206 @@ key = jr.PRNGKey(SEED)
 key_init, key_train, key_eval = jr.split(key, 3)
 ```
 
+
 ## Load trained models
 
 ```{python}
 models_save_path = MODELS_DIR / "1-1_trained_models.eqx"
 
-trained_models = load(models_save_path, setup_models)
+trained_models, hyperparameters = load_with_hyperparameters(models_save_path, setup_models)
+
+if NO_SYSTEM_NOISE:
+    trained_models = replace_noise(trained_models)
+
+trained_models = dict(zip(hyperparameters['disturbance_levels'], trained_models))
 ```
 
-## 
+## Compare behaviour on unperturbed reaches
+
+### Set up unperturbed reach task
+
+```{python}
+n_steps = 100
+workspace = ((-1., -1.),
+             (1., 1.))
+
+task = SimpleReaches(
+    loss_func=simple_reach_loss(),
+    workspace=workspace, 
+    n_steps=n_steps,
+    eval_grid_n=1,  # single center-out set (from center of workspace)
+    eval_n_directions=7,  # an odd number is helpful for visualization
+    eval_reach_length=0.5,    
+)
+``` 
+
+### Evaluate the trained models on the unperturbed reach task
+
+Evaluate each condition (reach direction) several times, to see how performance varies with noise.
+
+```{python}
+n_trials = 5
+
+keys_eval = jr.split(key_eval, n_trials)
+```
+
+Now for each trained ensemble of models, evaluate each model in the ensemble on `n_trials` repetitions of each of the `eval_n_directions` reach directions. 
+
+Note:
+
+1. Set `ensemble_random_trials=False` so that each model in the ensemble will be evaluated on the same set of trials. 
+2. Vmap over `keys_eval`, to obtain `n_trials` different evaluations of the center-out set. 
+3. Use `jt.map` to repeat for each training condition (entry in `trained_models`).
+
+```{python}
+def get_eval_ensemble(models):
+    def eval_ensemble(key):
+        return task.eval_ensemble(
+            models,
+            n_replicates=hyperparameters['n_replicates'],
+            ensemble_random_trials=False,
+            key=key,
+        )
+    return eval_ensemble
+
+states_control = jt.map(
+    lambda models: eqx.filter_vmap(get_eval_ensemble(models))(keys_eval),
+    trained_models,
+    is_leaf=is_module,
+)
+```
+
+Each state array in `states` has the following batch dimensions: `(n_trials, n_replicates, n_conditions, n_steps)`. 
+
+For a single center-out set, `n_conditions = eval_n_directions`. But if `eval_grid_n != 1`, then there will be `eval_grid_n ** 2` center-out sets and the third dimension will have size `eval_n_directions * eval_grid_n ** 2`.
+
+We can average over several different dimensions:
+
+1. Trials per reach direction.
+2. Reach directions; these should be similar because the task and biomechanics are isotropic.
+3. Replicates.
+
+### Plot all the trials for an example replicate, for each training condition
+
+Training condition = set of trained models/entry in `trained_models`.
+
+```{python}
+i_replicate = 0
+```
+
+A single trial:
+
+```{python}
+i_trial = 0
+
+figs = jt.map(
+    lambda states: fbp.effector_trajectories(
+        tree_take_multi(states, [i_trial, i_replicate], [0, 1]),
+        trial_specs=task.validation_trials,
+    ),
+    states_control,
+    is_leaf=is_module,
+)
+
+for curl_std, fig in figs.items():
+    savefig(fig, f"control_curl-std-{curl_std}_single-replicat-{i_replicate}_single-trial")
+```
+
+All trials:
+
+```{python}
+figs = jt.map(
+    lambda states: fbp.effector_trajectories(
+        tree_take_multi(states, [i_replicate], [1]),
+        trial_specs=task.validation_trials,
+        mode='lines',
+        trace_kwargs=dict(line_width=0.5),
+    ),
+    states_control,
+    is_leaf=is_module,
+)
+
+for curl_std, fig in figs.items():
+    savefig(fig, f"control_curl-std-{curl_std}_single-replicate-{i_replicate}_all-trials")
+```
+
+### Compare the mean velocity profiles
+
+Average over trials, directions, and replicates to get an average velocity profile + error bands for each training condition. 
+
+Note that it only makes sense to compare across reach directions if we consider the velocity profiles along the respective directions. For example, the y-profile in one direction should be comparable to the x-profile in an orthogonal direction.
+
+There are two ways we might get profiles for comparison.
+
+1. Calculate speed as the magnitude of the velocity vector. This is simpler.
+2. Project the velocity profiles onto the reach direction.
+
+These are not identical, and the second method is more flexible because we still retain the components and their signs. 
+
+First, the speed profiles:
+
+**TODO: matplotlib**
+
+```{python}
+speeds_control = jt.map(
+    lambda states: jnp.linalg.norm(states.mechanics.effector.vel, axis=-1),
+    states_control,
+    is_leaf=is_module,
+)
+
+fig = fbp.profiles_mean(speeds_control, label="Speed")
+fig.show()
+savefig(fig, "control_mean-speeds")
+```
+
+And the projected profiles:
+
+```{python}
+from feedbax import tree_unzip
+from rnns_learn_robust_motor_policies.state_utils import forward_lateral_vels
+
+forward_vels, lateral_vels = tree_unzip(jt.map(
+    lambda state: forward_lateral_vels(state.mechanics.effector.vel, task.validation_trials),
+    states_control,
+    is_leaf=is_module,
+))
+```
+
+```{python}
+fig = fbp.profiles_mean(forward_vels, varname="Forward velocity")
+fig.show()
+savefig(fig, "control_mean-forward-vels")
+
+fig = fbp.profiles_mean(lateral_vels, varname="Lateral velocity")
+fig.show()
+savefig(fig, "control_mean-lateral-vels")
+```
+
+## Compare behaviour on perturbed reaches
+
+### Set up perturbed reach tasks
+
+Over a range of strengths.
+
+### Evaluate the trained models on the perturbed reach tasks
+
+### Single-condition comparison of 2D trajectories
+
+Multiple trials or replicates, but for a single reach direction: show how training on different curl strengths affects response.
+
+## Summary comparison of performance measures 
+
+i.e. Box plots. 
+
+- Max speed
+- Max forward velocity
+- Max lateral velocity
+- Max lateral deviations
+- Summed deviations
+- Endpoint error (final deviation/mean over last N steps)
+
+
+
+
+
 

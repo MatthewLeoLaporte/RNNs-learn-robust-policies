@@ -4,6 +4,7 @@ import jax.numpy as jnp
 import jax.tree as jt
 
 from feedbax import get_ensemble, is_module, tree_unzip
+from feedbax.misc import attr_str_tree_to_where_func
 from feedbax.intervene import CurlField, schedule_intervenor
 from feedbax.train import filter_spec_leaves
 from feedbax.xabdeef.models import point_mass_nn
@@ -86,3 +87,5 @@ def setup_model_parameter_histories(
     )
     
     return model_parameter_histories
+
+

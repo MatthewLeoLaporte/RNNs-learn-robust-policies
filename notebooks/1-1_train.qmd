@@ -57,11 +57,13 @@ from feedbax import (
     AbstractModel, 
     get_ensemble,
     is_module,
+    load,
     save,
     tree_unzip,
 )
 from feedbax.misc import git_commit_id, where_func_to_labels
 import feedbax.plotly as fbp
+import feedbax.plot as fbplt
 from feedbax.xabdeef.losses import simple_reach_loss
 from feedbax.xabdeef.models import point_mass_nn
 from feedbax.task import SimpleReaches
@@ -72,13 +74,8 @@ from feedbax.intervene import (
     FixedField,
     schedule_intervenor,
 )
-from feedbax.plot import (
-    loss_history, 
-    loss_mean_history,
-    effector_trajectories,
-    speed_profiles,
-    activity_sample_units,
-)
+
+from rnns_learn_robust_motor_policies.plot_utils import get_savefig_func
 ```
 
 Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
@@ -108,22 +105,17 @@ models_parameter_history_filename = "1-1_model_parameter_histories.eqx"
 
 ### Plotting setup
 
+Define colormap to consistently assign colors to different trials/episodes in plots.
+
 ```{python}
 trials_cmap = 'viridis'  # for trials
 trials_cmap_func = plt.get_cmap(trials_cmap)
-
-def savefig(fig, label, ext='.svg', transparent=True, **kwargs): 
-    fig.savefig(
-        FIGS_DIR / f"{label}{ext}",
-        transparent=transparent, 
-        **kwargs, 
-    )
-    
-def saveplotly(fig, label):
-    fig.write_html(FIGS_DIR / f'{label}.html')
-    fig.write_json(FIGS_DIR / f'{label}.json')
-    
 ```
+
+```{python}
+savefig = get_savefig_func(FIGS_DIR)
+```
+
 
 ### RNG setup
 
@@ -339,18 +331,20 @@ model_parameter_histories_ = load(
 
 ## Generate training plots
 
-### Loss histories
+### Loss histories 
 
 ```{python}
+
 for curl_std, history in train_histories.items():
     label = f"1-1_loss-history_curl-std-{curl_std}"
     
-    p1, _ = loss_history(history)
-    p2, _ = loss_mean_history(history)
+    p1, _ = fbplt.loss_history(history)
+    p2, _ = fbplt.loss_mean_history(history)
     p3 = fbp.loss_history(history)
     
     savefig(p1, label + '_replicates')
     savefig(p2, label)
-    saveplotly(p3, label)
+    savefig(p3, label)
 ```
 
+TODO: these plots are large/sluggish for `n_steps` >> 1e3. Can probably downsample; start with every 1 to 1000, then every 10 to 10000.
