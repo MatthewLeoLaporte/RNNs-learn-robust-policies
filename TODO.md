@@ -1,6 +1,6 @@
 ---
 created: 2024-10-04T11:27
-updated: 2024-10-04T12:41
+updated: 2024-10-09T11:03
 ---
 - [x] Move this section into TODO within that repo
 
@@ -21,6 +21,15 @@ In the simplest case:
 
 - one ensemble with some level of model uncertainty (e.g. fine tuned on balanced curl fields with some std)
 - one ensemble without model uncertainty (only baseline system noise)
+
+#### Optimization of convergence
+
+It may be necessary to do one or more of the following to get optimal models:
+
+- Learning rate schedule
+- Batch size schedule (increase later in training)
+- Gradient clipping
+- Use `optax.adamw` for weight decay regularization
 
 ### Perturbation analysis
 

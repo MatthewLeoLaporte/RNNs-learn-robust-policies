@@ -24,7 +24,10 @@ os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 ```
 
 ```{python}
+from functools import partial
+from itertools import zip_longest
 from pathlib import Path
+from operator import itemgetter
 
 import equinox as eqx
 import jax
@@ -39,14 +42,16 @@ from feedbax import (
     tree_take, 
     tree_take_multi,
 )
-from feedbax.misc import git_commit_id
+from feedbax.intervene import CurlField, schedule_intervenor
+from feedbax.misc import git_commit_id, attr_str_tree_to_where_func
 from feedbax.noise import replace_noise
 import feedbax.plotly as fbp
 from feedbax.task import SimpleReaches
 from feedbax.xabdeef.losses import simple_reach_loss
 
-from rnns_learn_robust_motor_policies.part1_setup import setup_models
+from rnns_learn_robust_motor_policies.part1_setup import setup_models, setup_model_parameter_histories
 from rnns_learn_robust_motor_policies.plot_utils import get_savefig_func
+from rnns_learn_robust_motor_policies.tree_utils import swap_model_trainables
 
 ```
 
@@ -63,7 +68,7 @@ print(f"\nFeedbax commit hash: {git_commit_id()}")
 ### Global conditions
 
 ```{python}
-NO_SYSTEM_NOISE = True
+NO_SYSTEM_NOISE = False
 
 if NO_SYSTEM_NOISE:
     fig_suffix = "_no-noise"
@@ -105,19 +110,58 @@ key_init, key_train, key_eval = jr.split(key, 3)
 ## Load trained models
 
 ```{python}
-models_save_path = MODELS_DIR / "1-1_trained_models.eqx"
+models_save_filename = "1-1_trained_models.eqx"
+models_parameter_history_filename = "1-1_model_parameter_histories.eqx"
 
-trained_models, hyperparameters = load_with_hyperparameters(models_save_path, setup_models)
+trained_models, hyperparameters = load_with_hyperparameters(
+    MODELS_DIR / models_save_filename, setup_models,
+)
 
 if NO_SYSTEM_NOISE:
     trained_models = replace_noise(trained_models)
 
-trained_models = dict(zip(hyperparameters['disturbance_levels'], trained_models))
+curl_stds = hyperparameters['disturbance_levels']
+trained_models = dict(zip(curl_stds, trained_models))
+```
+
+Depending on how training goes, we might want to leave out some of the extreme curl strength training conditions.
+
+```{python}
+# curl_stds = curl_stds[:-2]
+
+trained_models = {key: trained_models[key] for key in curl_stds}
+```
+
+### Load parameters from earlier training iterations, where necessary
+
+Also depending on how training goes, we might want to keep the model parameters from an earlier training iteration.
+
+```{python}
+model_parameter_histories, train_hyperparameters = load_with_hyperparameters(
+    MODELS_DIR / models_parameter_history_filename,
+    partial(setup_model_parameter_histories, list(trained_models.values())),
+)
+
+model_parameter_histories = dict(zip(curl_stds, model_parameter_histories))
+where_train = attr_str_tree_to_where_func(train_hyperparameters['where_train_strs'])
+
+load_spec = {0.4: -1, 0.5: -1}
+
+for curl_std, i in load_spec.items():
+    trained_models[curl_std] = swap_model_trainables(
+        trained_models[curl_std], tree_take(model_parameter_histories[curl_std], i), where_train
+    )
 ```
 
 ## Compare behaviour on unperturbed reaches
 
 ### Set up unperturbed reach task
+
+We will generally evaluate on a 2*2 grid of center-out reach sets, with 32 reach directions per set. 
+
+This is to ensure good coverage and a larger set of conditions/trials on which to perform statistics. 
+
+In the case of visualization of center-out sets, we'll use a smaller version of the task with only a single set of 7 reaches -- an odd number helps with visualization sometimes.
 
 ```{python}
 n_steps = 100
@@ -128,9 +172,20 @@ task = SimpleReaches(
     loss_func=simple_reach_loss(),
     workspace=workspace, 
     n_steps=n_steps,
-    eval_grid_n=1,  # single center-out set (from center of workspace)
-    eval_n_directions=7,  # an odd number is helpful for visualization
-    eval_reach_length=0.5,    
+    eval_grid_n=2,  
+    eval_n_directions=32,  
+    eval_reach_length=0.3,    
+)
+
+# Make a smaller version of the task for visualization.
+task_small = eqx.tree_at(
+    lambda task: (
+        task.eval_grid_n,
+        task.eval_n_directions,
+        task.eval_reach_length,
+    ),
+    task, 
+    (1, 7, 0.5)
 )
 ``` 
 
@@ -139,7 +194,7 @@ task = SimpleReaches(
 Evaluate each condition (reach direction) several times, to see how performance varies with noise.
 
 ```{python}
-n_trials = 5
+n_trials = 2
 
 keys_eval = jr.split(key_eval, n_trials)
 ```
@@ -153,7 +208,7 @@ Note:
 3. Use `jt.map` to repeat for each training condition (entry in `trained_models`).
 
 ```{python}
-def get_eval_ensemble(models):
+def get_eval_ensemble(models, task):
     def eval_ensemble(key):
         return task.eval_ensemble(
             models,
@@ -164,7 +219,13 @@ def get_eval_ensemble(models):
     return eval_ensemble
 
 states_control = jt.map(
-    lambda models: eqx.filter_vmap(get_eval_ensemble(models))(keys_eval),
+    lambda models: eqx.filter_vmap(get_eval_ensemble(models, task))(keys_eval),
+    trained_models,
+    is_leaf=is_module,
+)
+
+states_control_small = jt.map(
+    lambda models: eqx.filter_vmap(get_eval_ensemble(models, task_small))(keys_eval),
     trained_models,
     is_leaf=is_module,
 )
@@ -184,6 +245,8 @@ We can average over several different dimensions:
 
 Training condition = set of trained models/entry in `trained_models`.
 
+Note that we use `states_control_small` here, and only plot a single center-out set of 7 reach directions.
+
 ```{python}
 i_replicate = 0
 ```
@@ -196,9 +259,9 @@ i_trial = 0
 figs = jt.map(
     lambda states: fbp.effector_trajectories(
         tree_take_multi(states, [i_trial, i_replicate], [0, 1]),
-        trial_specs=task.validation_trials,
+        trial_specs=task_small.validation_trials,
     ),
-    states_control,
+    states_control_small,
     is_leaf=is_module,
 )
 
@@ -212,13 +275,15 @@ All trials:
 figs = jt.map(
     lambda states: fbp.effector_trajectories(
         tree_take_multi(states, [i_replicate], [1]),
-        trial_specs=task.validation_trials,
+        trial_specs=task_small.validation_trials,
         mode='lines',
         trace_kwargs=dict(line_width=0.5),
     ),
-    states_control,
+    states_control_small,
     is_leaf=is_module,
 )
+
+figs[0].show()
 
 for curl_std, fig in figs.items():
     savefig(fig, f"control_curl-std-{curl_std}_single-replicate-{i_replicate}_all-trials")
@@ -248,7 +313,7 @@ speeds_control = jt.map(
     is_leaf=is_module,
 )
 
-fig = fbp.profiles_mean(speeds_control, label="Speed")
+fig = fbp.profiles_mean(speeds_control, varname="Speed")
 fig.show()
 savefig(fig, "control_mean-speeds")
 ```
@@ -282,11 +347,201 @@ savefig(fig, "control_mean-lateral-vels")
 
 Over a range of strengths.
 
+```{python}
+curl_amplitudes_test = [0.1, 0.5, 1.0]
+
+tasks_curl, _ = tree_unzip(jt.map(
+    lambda curl_amplitude: schedule_intervenor(
+        task, trained_models[0],
+        lambda model: model.step.mechanics,
+        CurlField.with_params(amplitude=curl_amplitude),
+        # The trained models already have a `CurlField` intervenor, so we can just 
+        # alter the task with an intervenor of the same label, and discard the modified 
+        # model returned by `schedule_intervenor`.
+        label="CurlField",
+        default_active=False,
+    ),
+    dict(zip(curl_amplitudes_test, curl_amplitudes_test)),
+))
+
+# Make a smaller version of the task for visualization.
+tasks_curl_small = jt.map(
+    lambda task: eqx.tree_at(
+        lambda task: (
+            task.eval_grid_n,
+            task.eval_n_directions,
+            task.eval_reach_length,
+        ),
+        task, 
+        (1, 7, 0.5),
+    ),
+    tasks_curl,
+    is_leaf=is_module,
+)
+```
+
 ### Evaluate the trained models on the perturbed reach tasks
+
+For a 2*2  grid of 32-direction center-out reach sets, 10 replicates, and 5 trials per reach, evaluating each task variant leads to approximately 1.5 GB of states. 
+
+Thus we either need to:
+
+- limit the number of task variants (i.e. `len(curl_stds_test)`);
+- reduce the number of validation reaches; 
+- do this on CPU (assuming we have more RAM available);
+
+```{python}
+all_states_pert = jt.map(
+    lambda task: jt.map(
+        lambda models: eqx.filter_vmap(get_eval_ensemble(models, task))(keys_eval),
+        trained_models,
+        is_leaf=is_module,
+    ),
+    tasks_curl,
+    is_leaf=is_module,
+)
+
+all_states_pert_small = jt.map(
+    lambda task: jt.map(
+        lambda models: eqx.filter_vmap(get_eval_ensemble(models, task))(keys_eval),
+        trained_models,
+        is_leaf=is_module,
+    ),
+    tasks_curl_small,
+    is_leaf=is_module,
+)
+```
+
+The result is a dict whose keys are the `curl_stds_test`, and whose values are dicts whose keys are the `curl_stds` used in training, and whose values are the state objects.
+
+```{python}
+eqx.tree_pprint(all_states_pert, truncate_leaf=is_module)
+```
+
+TODO: Instead of a two-layer `jt.map`, we could instead define a function (to schedule the intervenor given a `curl_std` and then `jt.map` the vmapped `eval_ensemble`) and then vmap it over `curl_stds_test` to get a single-level dict with a bit less overhead.
 
 ### Single-condition comparison of 2D trajectories
 
 Multiple trials or replicates, but for a single reach direction: show how training on different curl strengths affects response.
+
+```{python}
+i_direction = 0
+
+figs = jt.map(
+    lambda states: fbp.effector_trajectories(
+        tree_take_multi(states, [i_replicate], [1]),
+        where_data=lambda state: state.mechanics.effector.pos,
+        trial_specs=task_small.validation_trials,
+        mode='lines',
+        trace_kwargs=dict(line_width=0.5),
+    ),
+    all_states_pert_small,
+    is_leaf=is_module,
+)
+```
+
+```{python}
+var_labels = ('Position', 'Velocity')
+
+where_plot = lambda states: (
+    states.mechanics.effector.pos,
+    states.mechanics.effector.vel,
+    # states.efferent.output,
+)
+```
+
+Using the new plotting function for the full center-out set, for a single replicate:
+
+```{python}
+plot_states = tree_take_multi(all_states_pert_small, [i_replicate], [1])
+
+figs = jt.map(
+    lambda states: fbp.trajectories_2D(
+        where_plot(states),
+        var_labels=var_labels,
+        axes_labels=('x', 'y'),
+        mode='lines',
+        # colorscale_axis=0,
+        trace_kws=dict(line_width=1),
+    ),
+    plot_states,
+    is_leaf=is_module,
+)
+```
+
+And for a single reach direction:
+
+```{python}
+i_condition = 0
+
+plot_states = tree_take_multi(all_states_pert_small, [i_replicate, i_condition], [1, 2])
+```
+
+```{python}
+figs = jt.map(
+    lambda states: fbp.trajectories_2D(
+        where_plot(states),
+        var_labels=var_labels,
+        axes_labels=('x', 'y'),
+        mode='lines',
+        colorscale_axis=1,
+        trace_kws=dict(line_width=1),
+    ),
+    plot_states,
+    is_leaf=is_module,
+)
+```
+
+Now one plot for all the test curl magnitudes, for each training condition:
+
+```{python}
+from feedbax import tree_stack
+
+plot_states_ = tree_stack(plot_states.values())
+
+figs = jt.map(
+    lambda states: fbp.trajectories_2D(
+        where_plot(states),
+        var_labels=var_labels,
+        axes_labels=('x', 'y'),
+        mode='lines',
+        colorscale_axis=0,
+        trace_kws=dict(line_width=1),
+    ),
+    plot_states_,
+    is_leaf=is_module,
+)
+```
+
+And one plot for all the training conditions, for each single test curl magnitude:
+
+TODO: use curl std to label the legend entries
+
+```{python}
+plot_states_ = {
+    test_curl_mag: tree_stack(s.values())
+    for test_curl_mag, s in plot_states.items()
+}
+
+figs = jt.map(
+    lambda states: fbp.trajectories_2D(
+        where_plot(states),
+        var_labels=var_labels,
+        axes_labels=('x', 'y'),
+        mode='lines',
+        colorscale_axis=0,
+        scatter_kws=dict(line_width=1),
+    ),
+    plot_states_,
+    is_leaf=is_module,
+)
+
+figs[0.5].show()
+```
+
+### Compare mean forward and lateral velocity profiles
+
+
 
 ## Summary comparison of performance measures 
 
