@@ -1,6 +1,6 @@
 ---
 created: 2024-10-04T11:27
-updated: 2024-10-09T11:03
+updated: 2024-10-10T22:47
 ---
 - [x] Move this section into TODO within that repo
 
@@ -37,8 +37,15 @@ It may be necessary to do one or more of the following to get optimal models:
 
 Demonstrate that in general behavioural terms, the models trained on perturbations are actually more robust. 
 
-- Perturb the two ensembles with constant curl fields and examine performance measures: endpoint error, max/sum deviations
-- Maybe perturb with a distribution of curl fields and examine the relationship between field strength and performance measures (e.g. does endpoint error decrease more slowly for robust network, as curl field strength increases?)
+- Perturb the two ensembles with constant curl fields
+- Show single-condition differences
+- Examine performance measures: endpoint error, max/sum deviations
+	- Others: time to target, max/sum control forces
+	- Compare variance across trials vs. across replicates
+
+Also: 
+
+- Examine the relationship between field strength and performance measures (e.g. does endpoint error decrease more slowly for robust network, as curl field strength increases?)
 
 #### Feedback perturbation analysis
 
@@ -55,7 +62,7 @@ This will largely be left to part 2, since it is difficult to perform on network
 
 ### Additional analyses
 
-1. Comparison between state-dependent/”closed-loop” perturbations (e.g. curl fields) versus state-independent/”open-loop” perturbations (e.g. random constant fields)
+1. Comparison between state-dependent/”closed-loop” perturbations (e.g. curl fields) versus state-independent/”open-loop” perturbations (e.g. random constant fields). Or perhaps just repeat the entire analysis for fixed fields. 
 2. Also train/fine-tune a network on increased system noise and show whether it induces any robustness – presumably not, since symmetric noise will not cause local system deviations that the network would interpret as model uncertainty.
 
 ## Results: Part 2

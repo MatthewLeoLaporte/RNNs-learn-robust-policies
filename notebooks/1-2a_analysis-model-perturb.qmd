@@ -41,17 +41,20 @@ from feedbax import (
     is_module, 
     tree_take, 
     tree_take_multi,
+    tree_unzip,
 )
 from feedbax.intervene import CurlField, schedule_intervenor
 from feedbax.misc import git_commit_id, attr_str_tree_to_where_func
 from feedbax.noise import replace_noise
 import feedbax.plotly as fbp
 from feedbax.task import SimpleReaches
+from feedbax._tree import eitherf
 from feedbax.xabdeef.losses import simple_reach_loss
 
 from rnns_learn_robust_motor_policies.part1_setup import setup_models, setup_model_parameter_histories
 from rnns_learn_robust_motor_policies.plot_utils import get_savefig_func
-from rnns_learn_robust_motor_policies.tree_utils import swap_model_trainables
+from rnns_learn_robust_motor_policies.state_utils import forward_lateral_vels
+from rnns_learn_robust_motor_policies.tree_utils import swap_model_trainables, subdict
 
 ```
 
@@ -98,6 +101,12 @@ trials_cmap_func = plt.get_cmap(trials_cmap)
 savefig = get_savefig_func(FIGS_DIR)
 ```
 
+### Helper functions
+
+```{python}
+pp = lambda x: eqx.tree_pprint(x, truncate_leaf=eitherf(is_module, eqx.is_array))
+```
+
 ### RNG setup
 
 ```{python}
@@ -120,8 +129,8 @@ trained_models, hyperparameters = load_with_hyperparameters(
 if NO_SYSTEM_NOISE:
     trained_models = replace_noise(trained_models)
 
-curl_stds = hyperparameters['disturbance_levels']
-trained_models = dict(zip(curl_stds, trained_models))
+train_curl_stds = hyperparameters['disturbance_levels']
+trained_models = dict(zip(train_curl_stds, trained_models))
 ```
 
 Depending on how training goes, we might want to leave out some of the extreme curl strength training conditions.
@@ -129,7 +138,7 @@ Depending on how training goes, we might want to leave out some of the extreme c
 ```{python}
 # curl_stds = curl_stds[:-2]
 
-trained_models = {key: trained_models[key] for key in curl_stds}
+trained_models = {key: trained_models[key] for key in train_curl_stds}
 ```
 
 ### Load parameters from earlier training iterations, where necessary
@@ -142,7 +151,7 @@ model_parameter_histories, train_hyperparameters = load_with_hyperparameters(
     partial(setup_model_parameter_histories, list(trained_models.values())),
 )
 
-model_parameter_histories = dict(zip(curl_stds, model_parameter_histories))
+model_parameter_histories = dict(zip(train_curl_stds, model_parameter_histories))
 where_train = attr_str_tree_to_where_func(train_hyperparameters['where_train_strs'])
 
 load_spec = {0.4: -1, 0.5: -1}
@@ -194,7 +203,7 @@ task_small = eqx.tree_at(
 Evaluate each condition (reach direction) several times, to see how performance varies with noise.
 
 ```{python}
-n_trials = 2
+n_trials = 5
 
 keys_eval = jr.split(key_eval, n_trials)
 ```
@@ -304,8 +313,6 @@ These are not identical, and the second method is more flexible because we still
 
 First, the speed profiles:
 
-**TODO: matplotlib**
-
 ```{python}
 speeds_control = jt.map(
     lambda states: jnp.linalg.norm(states.mechanics.effector.vel, axis=-1),
@@ -321,9 +328,6 @@ savefig(fig, "control_mean-speeds")
 And the projected profiles:
 
 ```{python}
-from feedbax import tree_unzip
-from rnns_learn_robust_motor_policies.state_utils import forward_lateral_vels
-
 forward_vels, lateral_vels = tree_unzip(jt.map(
     lambda state: forward_lateral_vels(state.mechanics.effector.vel, task.validation_trials),
     states_control,
@@ -378,6 +382,12 @@ tasks_curl_small = jt.map(
     tasks_curl,
     is_leaf=is_module,
 )
+
+trial_specs = task_small.validation_trials
+pos_endpoints = jnp.stack([
+    trial_specs.inits['mechanics.effector'].pos, 
+    trial_specs.targets['mechanics.effector.pos'].value[:, -1],
+], axis=0)
 ```
 
 ### Evaluate the trained models on the perturbed reach tasks
@@ -388,6 +398,7 @@ Thus we either need to:
 
 - limit the number of task variants (i.e. `len(curl_stds_test)`);
 - reduce the number of validation reaches; 
+- wait to evaluate until we have decided on a subset of trials to plot;
 - do this on CPU (assuming we have more RAM available);
 
 ```{python}
@@ -415,18 +426,22 @@ all_states_pert_small = jt.map(
 The result is a dict whose keys are the `curl_stds_test`, and whose values are dicts whose keys are the `curl_stds` used in training, and whose values are the state objects.
 
 ```{python}
-eqx.tree_pprint(all_states_pert, truncate_leaf=is_module)
+eqx.tree_pprint(all_states_pert_small, truncate_leaf=is_module)
 ```
 
 TODO: Instead of a two-layer `jt.map`, we could instead define a function (to schedule the intervenor given a `curl_std` and then `jt.map` the vmapped `eval_ensemble`) and then vmap it over `curl_stds_test` to get a single-level dict with a bit less overhead.
 
-### Single-condition comparison of 2D trajectories
+### Single-condition comparison of 2D trajectories (single trials/replicates)
 
 Multiple trials or replicates, but for a single reach direction: show how training on different curl strengths affects response.
 
 ```{python}
 i_direction = 0
 
+pos_endpoints_i = pos_endpoints[:, i_direction]
+```
+
+```{python}
 figs = jt.map(
     lambda states: fbp.effector_trajectories(
         tree_take_multi(states, [i_replicate], [1]),
@@ -474,7 +489,8 @@ And for a single reach direction:
 ```{python}
 i_condition = 0
 
-plot_states = tree_take_multi(all_states_pert_small, [i_replicate, i_condition], [1, 2])
+# plot_states = tree_take_multi(all_states_pert_small, [i_replicate, i_condition], [1, 2])
+plot_states = tree_take_multi(all_states_pert_small, [i_condition], [2])
 ```
 
 ```{python}
@@ -484,12 +500,14 @@ figs = jt.map(
         var_labels=var_labels,
         axes_labels=('x', 'y'),
         mode='lines',
-        colorscale_axis=1,
-        trace_kws=dict(line_width=1),
+        colorscale_axis=0,
+        scatter_kws=dict(line_width=0.5),
     ),
     plot_states,
     is_leaf=is_module,
 )
+
+figs[0.5][0].show()
 ```
 
 Now one plot for all the test curl magnitudes, for each training condition:
@@ -506,31 +524,7 @@ figs = jt.map(
         axes_labels=('x', 'y'),
         mode='lines',
         colorscale_axis=0,
-        trace_kws=dict(line_width=1),
-    ),
-    plot_states_,
-    is_leaf=is_module,
-)
-```
-
-And one plot for all the training conditions, for each single test curl magnitude:
-
-TODO: use curl std to label the legend entries
-
-```{python}
-plot_states_ = {
-    test_curl_mag: tree_stack(s.values())
-    for test_curl_mag, s in plot_states.items()
-}
-
-figs = jt.map(
-    lambda states: fbp.trajectories_2D(
-        where_plot(states),
-        var_labels=var_labels,
-        axes_labels=('x', 'y'),
-        mode='lines',
-        colorscale_axis=0,
-        scatter_kws=dict(line_width=1),
+        scatter_kws=dict(line_width=0.5),
     ),
     plot_states_,
     is_leaf=is_module,
@@ -539,13 +533,129 @@ figs = jt.map(
 figs[0.5].show()
 ```
 
+And one plot for all the training conditions, for each single test curl magnitude:
+
+```{python}
+train_curl_stds_plot = [0, 0.5]
+
+plot_states_ = {
+    test_curl_mag: tree_stack(subdict(s, train_curl_stds_plot).values())
+    for test_curl_mag, s in plot_states.items()
+}
+
+figs = jt.map(
+    lambda states: fbp.trajectories_2D(
+        where_plot(states),
+        var_labels=var_labels,
+        # ref_endpoints=(pos_endpoints, None),
+        mean_trajectory_line_width=3,
+        darken_mean=0.7,
+        var_endpoint_ms=0,
+        axes_labels=('x', 'y'),
+        mode='lines',
+        colorscale_axis=0,
+        legend_title='Train curl std.',
+        legend_labels=train_curl_stds_plot,
+        scatter_kws=dict(line_width=1, opacity=0.3),
+    ),
+    plot_states_,
+    is_leaf=is_module,
+)
+
+ms_init = ms_goal = 10
+import plotly.graph_objects as go
+for k, fig in figs.items():
+    fig.update_layout(title=f"Responses to magnitude {k} curl field")
+    
+    # TODO: make this into a function that works with subplots
+    for j, (label, (ms, symbol)) in enumerate(
+        {
+            "Start": (ms_init, 'square'),
+            "Goal": (ms_goal, 'circle'),
+        }.items()
+    ):
+        fig.add_traces(
+            [
+                go.Scatter(
+                    name=f"{label}",
+                    meta=dict(label=label),
+                    legendgroup=label,
+                    hovertemplate=f"{label}<extra></extra>",
+                    x=pos_endpoints_i[j, 0][None],
+                    y=pos_endpoints_i[j, 1][None],
+                    mode="markers",
+                    marker=dict(
+                        size=ms/2,
+                        symbol=symbol,
+                        color='rgb(25, 25, 25)',
+                        # color='rgba(255, 255, 255, 0)',
+                        line=dict(
+                            color='rgb(25, 25, 25)',
+                            width=2,
+                        ),
+                    ),
+                    xaxis="x1",
+                    yaxis="y1",
+                    # TODO: Show once in legend, for all markers of type j
+                    showlegend=True,
+                )
+            ]
+        )
+        
+    fig.show()
+```
+
 ### Compare mean forward and lateral velocity profiles
 
+```{python}
+forward_vels_pert, lateral_vels_pert = tree_unzip(jt.map(
+    lambda state: forward_lateral_vels(state.mechanics.effector.vel, task.validation_trials),
+    all_states_pert,
+    is_leaf=is_module,
+))
+```
 
+```{python}
+for curl_level in curl_amplitudes_test:
+    fig = fbp.profiles_mean(
+        forward_vels_pert[curl_level], 
+        varname="Forward velocity",
+        legend_title="Train curl std.",
+    )
+    fig.update_layout(title=f"Response to magnitude {curl_level} curl field")
+    fig.show()
+    savefig(fig, f"constant-curl-{curl_level}_mean-forward-vels")
+
+    fig = fbp.profiles_mean(
+        lateral_vels_pert[curl_level], 
+        varname="Lateral velocity",
+        legend_title="Train curl std.",
+    )
+    fig.update_layout(title=f"Response to magnitude {curl_level} curl field")
+    fig.show()
+    savefig(fig, f"constant-curl-{curl_level}_mean-lateral-vels")
+```
 
 ## Summary comparison of performance measures 
 
-i.e. Box plots. 
+```{python}
+all_states = states_
+```
+
+### Max speed
+
+```{python}
+def max_speed(velocity):
+    return jnp.max(jnp.sqrt(jnp.sum(velocity ** 2, axis=-1)), axis=-1)
+```
+
+```{python}
+all_max_speeds = jax.tree_map(
+    lambda x: max_speed(x.mechanics.effector.vel),
+    states,
+    is_leaf=lambda x: isinstance(x, SimpleFeedbackState),
+)
+```
 
 - Max speed
 - Max forward velocity

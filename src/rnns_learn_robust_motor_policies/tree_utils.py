@@ -9,3 +9,7 @@ def swap_model_trainables(model: PyTree[..., "T"], trained: PyTree[..., "T"], wh
         model,
         where_train(trained),
     )
+    
+
+def subdict(dct, keys):
+    return {k: dct[k] for k in keys}
