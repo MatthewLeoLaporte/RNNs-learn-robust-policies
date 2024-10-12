@@ -106,7 +106,8 @@ savefig = get_savefig_func(FIGS_DIR)
 ### Helper functions
 
 ```{python}
-pp = lambda x: eqx.tree_pprint(x, truncate_leaf=eitherf(is_module, eqx.is_array, istype(go.Figure)))
+def pp(tree):
+    eqx.tree_pprint(tree, truncate_leaf=eitherf(is_module, istype(go.Figure)))
 ```
 
 ### RNG setup
@@ -601,7 +602,7 @@ all_speeds = jt.map(
 )
 
 figs = {
-    k: fbp.profiles(speeds, varname="Speed")
+    k: fbp.profiles(speeds, mode='std', varname="Speed")
     for k, speeds in all_speeds.items()
 }
 
@@ -609,6 +610,8 @@ figs[0.5].show()
 ```
 
 ### Forward and lateral velocity profiles
+
+TODO: Plot on shared time axis
 
 ```{python}
 forward_vels, lateral_vels = tree_unzip(jt.map(
@@ -628,8 +631,10 @@ for eval_curl_amplitude in curl_amplitudes_test:
             vels[eval_curl_amplitude], 
             varname=f"{vel_type} velocity",
             legend_title="Train curl std.",
-            stride_curves=500,
-            curves_kws=dict(opacity=0.7),
+            mode='std', # or 'curves'
+            n_std_plot=1,
+            # stride_curves=500,
+            # curves_kws=dict(opacity=0.7),
         )
         fig.update_layout(title=f"Response to magnitude {eval_curl_amplitude} curl field")
         filename = f"eval-curl-{eval_curl_amplitude}_{vel_type.lower()}-vels"
@@ -640,9 +645,6 @@ for eval_curl_amplitude in curl_amplitudes_test:
 
 ## Summary comparison of performance measures 
 
-```{python}
-all_states = states_
-```
 
 ### Max speed
 
@@ -654,18 +656,60 @@ def max_speed(velocity):
 ```{python}
 all_max_speeds = jax.tree_map(
     lambda x: max_speed(x.mechanics.effector.vel),
-    states,
-    is_leaf=lambda x: isinstance(x, SimpleFeedbackState),
+    all_states,
+    is_leaf=is_module,
 )
 ```
 
-- Max speed
-- Max forward velocity
-- Max lateral velocity
-- Max lateral deviations
-- Summed deviations
-- Endpoint error (final deviation/mean over last N steps)
+```{python}
+import pandas as pd
+import seaborn as sns
+import plotly.express as px
 
+for eval_curl_amplitude, max_speeds in all_max_speeds.items():
+    df = pd.DataFrame(
+        jt.map(lambda x: x.flatten(), max_speeds)
+    ).melt(value_name='max_speed')
+    fig1 = px.box(df, x='variable', y='max_speed', points='all')
+    fig2 = px.violin(df, x='variable', y='max_speed', color='variable')
+    fig3 = px.violin(df[df['variable'].isin([0, 0.5])], y='max_speed', color='variable', violinmode='overlay')
+    fig3.show()
+    # fig, ax = plt.subplots()
+    # sns.boxplot(ax=ax, data=df, x='variable', y='max_speed', color='grey')
+    # ax.set_xlabel('')
+    # ax.set_ylabel('Max speed')
+    # ax.set_xticks(list(range(len(max_speeds))), list(max_speeds.keys()))
+    # plt.show()
+```
+
+```{python}
+for eval_curl_amplitude, max_speeds in all_max_speeds.items():
+    fig = go.Figure()
+    for train_curl_std, max_speed in max_speeds.items():
+        fig.add_trace(
+            go.Violin(
+                y=max_speed.flatten(),
+                name=train_curl_std,
+                box_visible=False,
+                meanline_visible=True,
+            )
+        )
+    fig.show()
+```
+
+TODO: grouped/split violin plot (https://plotly.com/python/violin/#grouped-violin-plot) for comparing responses across models at the same time as comparing responses to different curl magnitudes; e.g. split shows with/without curl field 
+
+### Max forward velocity
+
+### Max positive and negative lateral velocities
+
+### Max and sum of lateral deviations
+
+### Endpoint error
+
+Final deviation/mean over last N steps
+
+### 
 
 
 
