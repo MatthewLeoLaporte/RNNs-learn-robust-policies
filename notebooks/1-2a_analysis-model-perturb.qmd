@@ -73,7 +73,7 @@ print(f"\nFeedbax commit hash: {git_commit_id()}")
 ### Global conditions
 
 ```{python}
-NO_SYSTEM_NOISE = False
+NO_SYSTEM_NOISE = True
 
 if NO_SYSTEM_NOISE:
     fig_suffix = "_no-noise"
@@ -181,7 +181,7 @@ For a 2*2  grid of 32-direction center-out reach sets, 10 replicates, and 5 tria
 - do this on CPU (assuming we have more RAM available)
 
 ```{python}
-curl_amplitudes_test = [0, 0.1, 0.5, 1.0]
+curl_amplitudes_test = [0, 0.1, 0.5, 1.0, 1.5, 2.0]
 n_steps = 100
 workspace = ((-1., -1.),
              (1., 1.))
@@ -645,7 +645,6 @@ for eval_curl_amplitude in curl_amplitudes_test:
 
 ## Summary comparison of performance measures 
 
-
 ### Max speed
 
 ```{python}
@@ -692,20 +691,108 @@ for eval_curl_amplitude, max_speeds in all_max_speeds.items():
                 name=train_curl_std,
                 box_visible=False,
                 meanline_visible=True,
+                line_color='blue',
+                showlegend=False,
             )
+        )
+        fig.update_layout(
+            xaxis_title="Training curl std.",
+            yaxis_title="Max speed",
+            legend_title=""
         )
     fig.show()
 ```
 
 TODO: grouped/split violin plot (https://plotly.com/python/violin/#grouped-violin-plot) for comparing responses across models at the same time as comparing responses to different curl magnitudes; e.g. split shows with/without curl field 
 
+### Endpoint error
+
+**TODO: average over last N steps** (since just looking at the final step may be very high variance, and it's already converged on the goal well before the end)
+
+```{python}
+def endpoint_error(states, trial_specs):
+    final_pos = states.mechanics.effector.pos[..., -1, :]
+    goal_pos = trial_specs.targets['mechanics.effector.pos'].value[..., -1, :]
+    return jnp.linalg.norm(final_pos - goal_pos, axis=-1)
+    
+all_endpoint_errors = jt.map(
+    lambda states: endpoint_error(states, trial_specs),
+    all_states,
+    is_leaf=is_module,
+)
+```
+
+```{python}
+for eval_curl_amplitude, endpoint_errors in all_endpoint_errors.items():
+    fig = go.Figure()
+    for i, (train_curl_std, ees) in enumerate(endpoint_errors.items()):
+        fig.add_trace(
+            go.Violin(
+                y=ees.flatten(),
+                name=train_curl_std,
+                box_visible=False,
+                meanline_visible=True,
+                line_color='blue',
+                showlegend=False,
+            )
+        )
+    fig.update_layout(
+        xaxis_title="Training curl std.",
+        yaxis_title="Endpoint error",
+        title=f"Response to magnitude {eval_curl_amplitude} curl field",
+    )
+    fig.show()
+```
+
+Compare the distribution of endpoint errors in the presence of a large curl field, of the smallest (zero) versus largest training curl std, for each model replicate.
+
+```{python}
+# (n_eval_curl_amplitudes, n_train_curl_stds, n_trials, n_replicates, n_conditions)
+all_data = jnp.stack([jnp.stack(list(endpoint_errors.values())) for endpoint_errors in all_endpoint_errors.values()])
+
+# only look at largest eval curl amplitude, and smallest vs. largest train curl stds
+plot_data = all_data[-1, jnp.array([0, -1])]
+
+fig = go.Figure()
+
+labels = ["No curl during training", "Largest training curl std."]
+colors = ['blue', 'orange']
+
+# x axis: replicates
+for i in range(plot_data.shape[-2]):
+    # split violin: smallest vs. largest train curl std
+    for j in range(plot_data.shape[0]):
+    
+        fig.add_trace(
+            go.Violin(
+                x=np.full_like(plot_data[j, :, i].flatten(), i),
+                y=plot_data[j, :, i].flatten(),
+                name=labels[j],
+                box_visible=False,
+                meanline_visible=True,
+                line_color=colors[j],
+                side='positive' if j == 1 else 'negative',
+                showlegend=(i == 0),
+            )
+        )
+        fig.update_layout(
+            xaxis_title="Model replicate",
+            yaxis_title="Endpoint error",
+            violingap=0,
+            title=f"Response to magnitude {curl_amplitudes_test[-1]} curl field",
+        )
+fig.show()
+```
+
+Notice that for some replicates, training on curl fields creates a stark improvement in performance under curl fields, while 
+for others the improvement is less obvious or may involve a large increase in variance.
+
+
 ### Max forward velocity
 
 ### Max positive and negative lateral velocities
 
 ### Max and sum of lateral deviations
-
-### Endpoint error
 
 Final deviation/mean over last N steps
 
