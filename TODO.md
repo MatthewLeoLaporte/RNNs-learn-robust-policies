@@ -1,6 +1,6 @@
 ---
 created: 2024-10-04T11:27
-updated: 2024-10-10T22:47
+updated: 2024-10-13T14:35
 ---
 - [x] Move this section into TODO within that repo
 
@@ -37,9 +37,9 @@ It may be necessary to do one or more of the following to get optimal models:
 
 Demonstrate that in general behavioural terms, the models trained on perturbations are actually more robust. 
 
-- Perturb the two ensembles with constant curl fields
-- Show single-condition differences
-- Examine performance measures: endpoint error, max/sum deviations
+- [x] Perturb the two ensembles with constant curl fields
+- [x] Show examples of single-condition differences 
+- [x] Examine performance measures: endpoint error, max/sum deviations
 	- Others: time to target, max/sum control forces
 	- Compare variance across trials vs. across replicates
 

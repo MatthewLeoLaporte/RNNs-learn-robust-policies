@@ -12,7 +12,7 @@ def angle_between_vectors(v2, v1):
     )   
 
 
-def get_forward_lateral_vels(
+def get_forward_lateral_vel(
     velocity: Float[Array, "*batch conditions time xy=2"], 
     pos_endpoints: Float[Array, "point=2 conditions xy=2"],
 ) -> Float[Array, "*batch conditions time 2"]:
@@ -44,7 +44,7 @@ def get_forward_lateral_vels(
     return jnp.stack([forward, lateral], axis=-1)
 
 
-def get_lateral_distances(
+def get_lateral_distance(
     pos: Float[Array, "*batch conditions time xy=2"], 
     pos_endpoints: Float[Array, "point=2 conditions xy=2"],
 ) -> Float[Array, "*batch conditions time"]:

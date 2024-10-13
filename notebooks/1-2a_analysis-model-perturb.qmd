@@ -56,7 +56,7 @@ from feedbax.xabdeef.losses import simple_reach_loss
 
 from rnns_learn_robust_motor_policies.part1_setup import setup_models, setup_model_parameter_histories
 from rnns_learn_robust_motor_policies.plot_utils import get_savefig_func
-from rnns_learn_robust_motor_policies.state_utils import get_forward_lateral_vels, get_lateral_distances
+from rnns_learn_robust_motor_policies.state_utils import get_forward_lateral_vel, get_lateral_distance
 from rnns_learn_robust_motor_policies.tree_utils import swap_model_trainables, subdict
 
 ```
@@ -134,6 +134,8 @@ if NO_SYSTEM_NOISE:
 
 train_curl_stds = hyperparameters['disturbance_levels']
 trained_models = dict(zip(train_curl_stds, trained_models))
+
+n_replicates = hyperparameters['n_replicates']
 ```
 
 Depending on how training goes, we might want to leave out some of the extreme curl strength training conditions.
@@ -264,8 +266,7 @@ Evaluate each condition (reach direction) several times, to see how performance 
 
 ```{python}
 n_trials = 5
-
-keys_eval = jr.split(key_eval, n_trials)
+n_trials_small = 10
 ```
 
 In particular, for each trained ensemble of models (i.e. each training condition), evaluate each model in the ensemble on `n_trials` repetitions of each of the reach conditions. 
@@ -283,7 +284,9 @@ def get_eval_ensemble(models, task):
 
 all_states = jt.map(
     lambda task: jt.map(
-        lambda models: eqx.filter_vmap(get_eval_ensemble(models, task))(keys_eval),
+        lambda models: eqx.filter_vmap(get_eval_ensemble(models, task))(
+            jr.split(key_eval, n_trials),
+        ),
         trained_models,
         is_leaf=is_module,
     ),
@@ -293,7 +296,9 @@ all_states = jt.map(
 
 all_states_small = jt.map(
     lambda task: jt.map(
-        lambda models: eqx.filter_vmap(get_eval_ensemble(models, task))(keys_eval),
+        lambda models: eqx.filter_vmap(get_eval_ensemble(models, task))(
+            jr.split(key_eval, n_trials_small),
+        ),
         trained_models,
         is_leaf=is_module,
     ),
@@ -328,8 +333,6 @@ Note that we use `states_small` here, and only plot a single center-out set of 7
 fig_subdir = "center_out_set_examples"
 ```
 
-### TODO: use `trajectories_2D` and plot all replicates + trials at once, with mean trajectories
-
 ```{python}
 var_labels = ('Position', 'Velocity', 'Control force')
 
@@ -340,68 +343,34 @@ where_plot = lambda states: (
 )
 ```
 
-```{python}
-# plot_states = tree_take_multi(all_states_small, [i_replicate], [1])
+### All trials for a replicate
 
-# figs = jt.map(
-#     lambda states: fbp.trajectories_2D(
-#         where_plot(states),
-#         var_labels=var_labels,
-#         axes_labels=('x', 'y'),
-#         mode='lines',
-#         # colorscale_axis=0,
-#         trace_kws=dict(line_width=1),
-#     ),
-#     plot_states,
-#     is_leaf=is_module,
-# )
-```
-
-### A single trial set, for a single replicate
+**TODO: Plot inits/goals and straight guides -- generalize the code used a bit later in this nb to generate traces**
 
 ```{python}
 i_replicate = 0
 ```
 
 ```{python}
-i_trial = 0
+plot_states = tree_take_multi(all_states_small, [i_replicate], [1])
 
 figs = jt.map(
-    lambda states: fbp.effector_trajectories(
-        tree_take_multi(states, [i_trial, i_replicate], [0, 1]),
-        trial_specs=trial_specs_small,
+    lambda states: fbp.trajectories_2D(
+        where_plot(states),
+        var_labels=var_labels,
+        axes_labels=('x', 'y'),
+        colorscale_axis=1,  # Color/group by reach condition
+        mode='lines',
+        scatter_kws=dict(line_width=0.5),
     ),
-    all_states_small,
+    plot_states,
     is_leaf=is_module,
 )
 
-for eval_curl_amplitude, figs_ in figs.items():
-    for train_curl_std, fig in figs_.items():
-        filename = '_'.join([
-                f"eval-curl-{eval_curl_amplitude}",
-                f"train-curl-std-{train_curl_std}",
-                f"single-replicate-{i_replicate}",
-                "single-trial",
-        ])
-        savefig(fig, filename, subdir=fig_subdir)
-        
 figs[0.5][0.5].show()
 ```
 
-### All trials for a replicate
-
 ```{python}
-figs = jt.map(
-    lambda states: fbp.effector_trajectories(
-        tree_take_multi(states, [i_replicate], [1]),
-        trial_specs=trial_specs_small,
-        mode='lines',
-        trace_kwargs=dict(line_width=0.5),
-    ),
-    all_states_small,
-    is_leaf=is_module,
-)
-
 for eval_curl_amplitude, figs_ in figs.items():
     for train_curl_std, fig in figs_.items():
         savefig(
@@ -413,8 +382,40 @@ for eval_curl_amplitude, figs_ in figs.items():
             ]),
             subdir=fig_subdir,
         )
+```
 
+### A single trial set, for a single replicate
+
+```{python}
+i_trial = 0
+
+plot_states = tree_take_multi(all_states_small, [i_trial, i_replicate], [0, 1])
+
+figs = jt.map(
+    lambda states: fbp.trajectories_2D(
+        where_plot(states),
+        var_labels=var_labels,
+        axes_labels=('x', 'y'),
+        mode='markers+lines',
+        # scatter_kws=dict(line_width=0.5),
+    ),
+    plot_states,
+    is_leaf=is_module,
+)
+        
 figs[0.5][0.5].show()
+```
+
+```{python}
+for eval_curl_amplitude, figs_ in figs.items():
+    for train_curl_std, fig in figs_.items():
+        filename = '_'.join([
+                f"eval-curl-{eval_curl_amplitude}",
+                f"train-curl-std-{train_curl_std}",
+                f"single-replicate-{i_replicate}",
+                "single-trial",
+        ])
+        savefig(fig, filename, subdir=fig_subdir)
 ```
 
 ### All trials for all replicates
@@ -596,11 +597,10 @@ These are not identical, and the second method is more flexible because we still
 ### Speed profiles
 
 ```{python}
-all_speeds = jt.map(
-    lambda states: jnp.linalg.norm(states.mechanics.effector.vel, axis=-1),
-    all_states,
-    is_leaf=is_module,
-)
+def get_speed(states):
+    return jnp.linalg.norm(states.mechanics.effector.vel, axis=-1)
+
+all_speeds = jt.map(get_speed, all_states, is_leaf=is_module)
 
 figs = {
     k: fbp.profiles(speeds, mode='std', varname="Speed")
@@ -615,8 +615,8 @@ figs[0.5].show()
 **TODO: Plot on shared time axis**
 
 ```{python}
-forward_lateral_vels = jt.map(
-    lambda state: get_forward_lateral_vels(state.mechanics.effector.vel, pos_endpoints),
+forward_lateral_vel = jt.map(
+    lambda state: get_forward_lateral_vel(state.mechanics.effector.vel, pos_endpoints),
     all_states,
     is_leaf=is_module,
 )
@@ -626,7 +626,7 @@ forward_lateral_vels = jt.map(
 for eval_curl_amplitude in curl_amplitudes_test:
     for i, label in enumerate(("Forward", "Lateral")):
         fig = fbp.profiles(
-            tree_take(forward_lateral_vels[eval_curl_amplitude], i, -1), 
+            tree_take(forward_lateral_vel[eval_curl_amplitude], i, -1), 
             varname=f"{label} velocity",
             legend_title="Train curl std.",
             mode='std', # or 'curves'
@@ -648,62 +648,53 @@ for eval_curl_amplitude in curl_amplitudes_test:
 Maximum speed
 
 ```{python}
-def max_speed(velocity):
-    return jnp.max(jnp.sqrt(jnp.sum(velocity ** 2, axis=-1)), axis=-1)
-```
-
-```{python}
-all_max_speeds = jax.tree_map(
-    lambda x: max_speed(x.mechanics.effector.vel),
-    all_states,
-    is_leaf=is_module,
-)
+def get_max_speed(states):
+    return jnp.max(get_speed(states), axis=-1)
 ```
 
 Maximum lateral (left and right relative to reach direction) and forward velocities
 
+**TODO: avoid repeat calculation of forward_lateral_vel; perhaps by inserting subtrees in `all_measure_funcs` and then flattening**
+**TODO: don't hard-code `pos_endpoints` otherwise we can't use the resulting functions on other task states (e.g. all_states_small)**
+
 ```{python}
-max_forward_vels = jt.map(
-    lambda vels: jnp.max(vels[..., 0], axis=-1),
-    forward_lateral_vels,
-)
+def get_max_forward_vel(states):
+    pos = states.mechanics.effector.pos
+    xx = get_forward_lateral_vel(pos, pos_endpoints)[..., 0]
+    return jnp.max(xx, axis=-1)
 ```
 
 ```{python}
-max_lateral_vels_l, max_lateral_vels_r = tree_unzip(jt.map(
-    lambda vels: jt.map(
-        lambda arr: jnp.max(arr, axis=-1),
-        (vels[..., 1], -vels[..., 1]),
-    ),
-    forward_lateral_vels,
-))
+def get_max_lateral_vel(states, mul=1.):
+    pos = states.mechanics.effector.pos
+    return jnp.max(mul * get_forward_lateral_vel(pos, pos_endpoints)[..., 1], axis=-1)
+```
+
+Time to peak forward velocity
+
+```{python}
+def get_argmax_forward_vel(states):
+    pos = states.mechanics.effector.pos
+    return jnp.argmax(get_forward_lateral_vels(pos, pos_endpoints)[..., 0], axis=-1)
 ```
 
 Maximum and summed lateral distance of the effector from a straight trajectory
 
 ```{python}
-lateral_distances = jt.map(
-    lambda states: get_lateral_distances(states.mechanics.effector.pos, pos_endpoints),
-    all_states,
-    is_leaf=is_module,
-)
+# lambda states: get_lateral_distance(states.mechanics.effector.pos, pos_endpoints)
 ```
 
 ```{python}
-max_lateral_distances = jt.map(
-    lambda distances: jnp.max(distances, axis=-1),
-    lateral_distances,
-)
-
-sum_lateral_distances = jt.map(
-    lambda distances: jnp.sum(distances, axis=-1),
-    lateral_distances,
-)
-
-max_lateral_distances, sum_lateral_distances = jt.map(
-    lambda arr: arr / eval_reach_length,
-    (max_lateral_distances, sum_lateral_distances),
-)
+def get_max_lateral_distance(states, eval_reach_length=None):
+    pos = states.mechanics.effector.pos
+    distances = jnp.max(get_lateral_distance(pos, pos_endpoints), axis=-1)
+    if eval_reach_length is not None:
+        distances = 100 * distances / eval_reach_length
+    return distances
+    
+def get_sum_lateral_distance(states):
+    pos = states.mechanics.effector.pos
+    return jnp.sum(get_lateral_distance(pos, pos_endpoints), axis=-1)
 ```
 
 Position and velocity errors relative to the goal, averaged over the last `last_n_steps` time steps
@@ -711,42 +702,81 @@ Position and velocity errors relative to the goal, averaged over the last `last_
 ```{python}
 last_n_steps = 10
 
-def end_position_error(states, trial_specs, last_n_steps=1):
+def end_position_error(states, last_n_steps=1):
     final_pos = states.mechanics.effector.pos[..., -last_n_steps:, :]
     goal_pos = trial_specs.targets['mechanics.effector.pos'].value[..., -last_n_steps:, :]
     return jnp.mean(jnp.linalg.norm(final_pos - goal_pos, axis=-1), axis=-1)
     
-def end_velocity_error(states, trial_specs, last_n_steps=1):
+def end_velocity_error(states, last_n_steps=1):
     final_vel = states.mechanics.effector.vel[..., -last_n_steps:, :]
     goal_vel = 0
     return jnp.mean(jnp.linalg.norm(final_vel - goal_vel, axis=-1), axis=-1)
-    
-all_end_pos_errors = jt.map(
-    lambda states: end_position_error(states, trial_specs, last_n_steps),
-    all_states,
-    is_leaf=is_module,
-)
+```
 
-all_end_vel_errors = jt.map(
-    lambda states: end_velocity_error(states, trial_specs, last_n_steps),
-    all_states,
-    is_leaf=is_module,
-)
+Max and sum of the net control forces
+
+```{python}
+def get_net_control_force(states):
+    return jnp.linalg.norm(states.efferent.output, axis=-1)
+
+def get_max_net_control_force(states):
+    return jnp.max(get_net_control_force(states), axis=-1)
+    
+def get_sum_net_control_force(states):
+    return jnp.sum(get_net_control_force(states), axis=-1)
 ```
 
 Collect measures into PyTree
 
 ```{python}
-all_measures, measure_handles = tree_unzip({
-    "Max. speed": (all_max_speeds, "speed-max"),
-    "Max. forward velocity": (max_forward_vels, "vel-forward-max"),
-    "Max. lateral velocity (left)": (max_lateral_vels_l, "vel-lateral-left-max"),
-    "Max. lateral velocity (right)": (max_lateral_vels_r, "vel-lateral-right-max"),
-    "Max. lateral distance": (max_lateral_distances, "dist-lateral-max"),
-    "Sum lateral distance": (sum_lateral_distances, "dist-lateral-sum"),
-    "End position error": (all_end_pos_errors, "error-end-pos"),
-    "End velocity error": (all_end_vel_errors, "error-end-vel"),
+all_measure_funcs, measure_handles = tree_unzip({
+    "Max speed": (get_max_speed, "speed-max"),
+    "Max forward velocity": (get_max_forward_vel, "vel-forward-max"),
+    # "Time to peak forward velocity": (get_argmax_forward_vel, "vel-forward-max-timestep"),
+    "Max lateral velocity (left)": (
+        partial(get_max_lateral_vel, mul=1.), 
+        "vel-lateral-left-max",
+    ),
+    "Max lateral velocity (right)": (
+        partial(get_max_lateral_vel, mul=-1.), 
+        "vel-lateral-right-max",
+    ),
+    "Max lateral distance": (
+        partial(get_max_lateral_distance, eval_reach_length=eval_reach_length), 
+        "dist-lateral-max",
+    ),
+    "Sum lateral distance": (get_sum_lateral_distance, "dist-lateral-sum"),
+    "End position error": (
+        partial(end_position_error, last_n_steps=last_n_steps), 
+        "error-end-pos",
+    ),
+    "End velocity error": (
+        partial(end_velocity_error, last_n_steps=last_n_steps), 
+        "error-end-vel",
+    ),
+    "Max net control force": (get_max_net_control_force, "force-net-max"),
+    # "Sum net control force": (get_sum_net_control_force, "force-net-sum"),
 })
+```
+
+```{python}
+from jaxtyping import PyTree
+from collections.abc import Callable
+from feedbax.bodies import SimpleFeedbackState
+
+def get_all_measures(measure_funcs: PyTree[Callable], states: PyTree[SimpleFeedbackState]):
+    return jt.map(
+        lambda func: jt.map(
+            lambda states: func(states),
+            states,
+            is_leaf=is_module,
+        ),
+        all_measure_funcs,
+    )
+    
+all_measures = get_all_measures(all_measure_funcs, all_states)
+
+all_measures_small = get_all_measures(all_measure_funcs, all_states_small)
 ```
 
 ### For each evaluation condition, plot measure distributions by training condition
@@ -757,6 +787,8 @@ Distributions are aggregated over all replicates and trials.
 
 ```{python}
 def get_violins_across_train_conditions(data, measure_name, eval_curl_amplitude):
+    n_dist = np.prod(jt.leaves(data)[0].shape)
+    
     return go.Figure(
         data=[
             go.Violin(
@@ -767,13 +799,19 @@ def get_violins_across_train_conditions(data, measure_name, eval_curl_amplitude)
                 line_color='blue',
                 showlegend=False,
                 spanmode='hard',
+                
             )
             for train_curl_std in data
         ],
         layout=dict(
-            title=f"Response to magnitude {eval_curl_amplitude} curl field",
+            title=(f"Response to magnitude {eval_curl_amplitude} curl field <br>N = {n_dist}"),
             xaxis_title="Training curl std.",
             yaxis_title=measure_name,
+            xaxis_range=[-0.5, len(data) - 0.5],
+            xaxis_tickvals=list(data.keys()),
+            yaxis_range=[0, None],
+            # violinmode='overlay',
+            violingap=0,
         )
     )
 
@@ -811,14 +849,54 @@ for measure_name in all_measures:
     figs[measure_name][1].show()
 ```
 
+### Repeat for just a single reach condition
+
+The distributions should be similar, since the model+task is isotropic.
+
+TODO: could use `all_states_small` and increase the number of trials...
+
+```{python}
+i_condition = 0
+all_measures_one_dirxn = tree_take(all_measures, i_condition, -1)
+
+figs0 = get_one_measure_plot_per_eval_condition(get_violins_across_train_conditions, all_measures_one_dirxn)
+```
+
+```{python}
+fig_subdir = "measure_distributions/compare_train_condns_onedirxn"
+
+for measure_name, measure_handle in measure_handles.items():
+    for eval_curl_amplitude, fig in figs0[measure_name].items():
+        savefig(
+            fig, 
+            '_'.join([
+                f"{measure_handle}",
+                f"eval-curl-{eval_curl_amplitude}",
+                f"condition-{i_condition}",
+            ]),
+            subdir=fig_subdir,
+        )
+```
+
+
 ### Plot comparison of distributions for zero vs. high train curl std, for different replicates
 
 Compare the smallest (zero) and largest training curl stds. For the plots above, this would mean keeping just the leftmost and the rightmost violins. However, those plots were aggregated over replicates and trials. Now we would like to examine the variance across model replicates. Thus, for each measure, we will generate one plot for each evaluation condition (curl amplitude) as before, but now each containing `n_replicates` *split* violins, where the left half corresponds to the zero training curl std, and the right half to the largest training curl std.
 
 ```{python}
-labels = ["No curl during training", "Largest training curl std."]
+upper_train_curl_std = train_curl_stds[-1]
+labels = [
+    "No curl during training", 
+    f"Training curl magnitude ~ \U0001d4dd(0,{upper_train_curl_std})",
+]
 colors = ['blue', 'orange']
-train_curl_stds_to_compare = [0, 0.5]
+train_curl_stds_to_compare = [0, upper_train_curl_std]
+n_dist = n_trials * task.n_validation_trials
+
+all_measures_subset_train_curl_stds = {
+    k1: {k2: subdict(v, train_curl_stds_to_compare) for k2, v in all_measures[k1].items()}
+    for k1 in all_measures
+}
 
 def get_measure_replicate_comparisons(data, measure_name, eval_curl_amplitude):
     data = jnp.stack(list(data.values()))
@@ -850,16 +928,13 @@ def get_measure_replicate_comparisons(data, measure_name, eval_curl_amplitude):
         yaxis_range=[0, None],
         violinmode='overlay',
         violingap=0,
-        title=f"Response to magnitude {eval_curl_amplitude} curl field",
+        title=(f"Response to magnitude {eval_curl_amplitude} curl field <br>N = {n_dist}"),
     )
     return fig
     
 figs = get_one_measure_plot_per_eval_condition(
     get_measure_replicate_comparisons, 
-    {
-        k1: {k2: subdict(v, train_curl_stds_to_compare) for k2, v in all_measures[k1].items()}
-        for k1 in all_measures
-    }
+    all_measures_subset_train_curl_stds,
 )
 ```
 
