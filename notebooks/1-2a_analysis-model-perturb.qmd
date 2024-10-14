@@ -24,6 +24,7 @@ os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 ```
 
 ```{python}
+from collections import OrderedDict
 from functools import partial
 from itertools import zip_longest
 from pathlib import Path
@@ -54,10 +55,20 @@ from feedbax.task import SimpleReaches
 from feedbax._tree import eitherf, istype
 from feedbax.xabdeef.losses import simple_reach_loss
 
-from rnns_learn_robust_motor_policies.part1_setup import setup_models, setup_model_parameter_histories
+from rnns_learn_robust_motor_policies.part1_setup import (
+    setup_models, 
+    setup_model_parameter_histories,
+)
 from rnns_learn_robust_motor_policies.plot_utils import get_savefig_func
-from rnns_learn_robust_motor_policies.state_utils import get_forward_lateral_vel, get_lateral_distance
-from rnns_learn_robust_motor_policies.tree_utils import swap_model_trainables, subdict
+from rnns_learn_robust_motor_policies.state_utils import (
+    get_forward_lateral_vel, 
+    get_lateral_distance,
+)
+from rnns_learn_robust_motor_policies.tree_utils import (
+    swap_model_trainables, 
+    subdict, 
+    pp,
+)
 
 ```
 
@@ -70,6 +81,11 @@ for mod in (jax, eqx):
 print(f"\nFeedbax commit hash: {git_commit_id()}")
 ```
 
+Unique ID for notebook, for naming outputs.
+
+```{python}
+NB_ID = "1-2a"
+```
 
 ### Global conditions
 
@@ -85,7 +101,7 @@ else:
 ### Directories setup
 
 ```{python}
-FIGS_DIR = Path('../figures/1-2a/')
+FIGS_DIR = Path(f'../figures/{NB_ID}/')
 MODELS_DIR = Path('../models')
 
 for d in (FIGS_DIR,):
@@ -101,14 +117,7 @@ if not MODELS_DIR.exists():
 trials_cmap = 'viridis'  # for trials
 trials_cmap_func = plt.get_cmap(trials_cmap)
 
-savefig = get_savefig_func(FIGS_DIR)
-```
-
-### Helper functions
-
-```{python}
-def pp(tree):
-    eqx.tree_pprint(tree, truncate_leaf=eitherf(is_module, istype(go.Figure)))
+savefig = get_savefig_func(FIGS_DIR, suffix=fig_suffix)
 ```
 
 ### RNG setup
@@ -122,11 +131,77 @@ key_init, key_train, key_eval = jr.split(key, 3)
 ## Load trained models
 
 ```{python}
-models_save_filename = "1-1_trained_models.eqx"
-models_parameter_history_filename = "1-1_model_parameter_histories.eqx"
+from typing import Optional
+import fnmatch
+import html
+import json 
+import os
+
+from ipyfilechooser import FileChooser
+from ipywidgets import HTML
+
+
+def get_latest_matching_file(directory: str, pattern: str) -> Optional[str]:
+    """
+    Returns the filename of the latest file in the given directory that matches the given pattern.
+
+    The 'latest' file is determined by sorting the filenames in descending order.
+
+    Arguments:
+        directory: The directory path to search in.
+        pattern: The pattern to match filenames against (e.g., 'A-*.json').
+
+    Returns:
+        The filename of the latest matching file, or None if no match is found.
+
+    Raises:
+        OSError: If there's an error reading the directory.
+    """
+    try:
+        all_files = os.listdir(directory)
+    except OSError as e:
+        print(f"Error reading directory {directory}: {e}")
+        return None
+
+    matching_files = fnmatch.filter(all_files, pattern)
+
+    if not matching_files:
+        return None
+
+    sorted_files = sorted(matching_files, reverse=True)
+
+    return sorted_files[0]
+
+def display_params(path, html_widget):
+    with open(path, 'r') as f:
+        params = json.load(f)
+    params_str = eqx.tree_pformat(params, truncate_leaf=lambda x: isinstance(x, list) and len(x) > 10)
+    html_widget.value = '<pre>' + params_str.replace(':\n', ':') + '</pre>'
+    return params_str
+
+
+fc = FileChooser(MODELS_DIR)
+fc.filter_pattern = '1-1_*trained_models.eqx'
+fc.title = 'Select trained models file'
+fc.default_filename = get_latest_matching_file(MODELS_DIR, fc.filter_pattern)
+params_widget = HTML("")
+    
+fc.register_callback(lambda fc: display_params(
+    fc.selected.replace('trained_models.eqx', 'hyperparameters.json'),
+    params_widget,
+))
+
+display(fc, params_widget)
+```
+
+```{python}
+if fc.selected is None:
+    models_filepath = f"{fc.default_path}/{fc.default_filename}"
+else:
+    models_filepath = fc.selected
 
 trained_models, hyperparameters = load_with_hyperparameters(
-    MODELS_DIR / models_save_filename, setup_models,
+    MODELS_DIR / models_filepath, setup_models,
 )
 
 if NO_SYSTEM_NOISE:
@@ -152,7 +227,7 @@ Also depending on how training goes, we might want to keep the model parameters 
 
 ```{python}
 model_parameter_histories, train_hyperparameters = load_with_hyperparameters(
-    MODELS_DIR / models_parameter_history_filename,
+    MODELS_DIR / models_filepath.replace('trained_models', 'model_parameter_histories'),
     partial(setup_model_parameter_histories, list(trained_models.values())),
 )
 
@@ -659,23 +734,23 @@ Maximum lateral (left and right relative to reach direction) and forward velocit
 
 ```{python}
 def get_max_forward_vel(states):
-    pos = states.mechanics.effector.pos
-    xx = get_forward_lateral_vel(pos, pos_endpoints)[..., 0]
-    return jnp.max(xx, axis=-1)
+    vel = states.mechanics.effector.vel
+    forward_lateral_vel = get_forward_lateral_vel(vel, pos_endpoints)
+    return jnp.max(forward_lateral_vel[..., 0], axis=-1)
 ```
 
 ```{python}
 def get_max_lateral_vel(states, mul=1.):
-    pos = states.mechanics.effector.pos
-    return jnp.max(mul * get_forward_lateral_vel(pos, pos_endpoints)[..., 1], axis=-1)
+    vel = states.mechanics.effector.vel
+    return jnp.max(mul * get_forward_lateral_vel(vel, pos_endpoints)[..., 1], axis=-1)
 ```
 
 Time to peak forward velocity
 
 ```{python}
 def get_argmax_forward_vel(states):
-    pos = states.mechanics.effector.pos
-    return jnp.argmax(get_forward_lateral_vels(pos, pos_endpoints)[..., 0], axis=-1)
+    vel = states.mechanics.effector.vel
+    return jnp.argmax(get_forward_lateral_vel(vel, pos_endpoints)[..., 0], axis=-1)
 ```
 
 Maximum and summed lateral distance of the effector from a straight trajectory
@@ -729,7 +804,7 @@ def get_sum_net_control_force(states):
 Collect measures into PyTree
 
 ```{python}
-all_measure_funcs, measure_handles = tree_unzip({
+all_measure_funcs, measure_handles = tree_unzip(OrderedDict({
     "Max speed": (get_max_speed, "speed-max"),
     "Max forward velocity": (get_max_forward_vel, "vel-forward-max"),
     # "Time to peak forward velocity": (get_argmax_forward_vel, "vel-forward-max-timestep"),
@@ -756,7 +831,7 @@ all_measure_funcs, measure_handles = tree_unzip({
     ),
     "Max net control force": (get_max_net_control_force, "force-net-max"),
     # "Sum net control force": (get_sum_net_control_force, "force-net-sum"),
-})
+}))
 ```
 
 ```{python}
@@ -776,7 +851,8 @@ def get_all_measures(measure_funcs: PyTree[Callable], states: PyTree[SimpleFeedb
     
 all_measures = get_all_measures(all_measure_funcs, all_states)
 
-all_measures_small = get_all_measures(all_measure_funcs, all_states_small)
+# TODO: fix the `pos_endpoints` hardcoding, above
+# all_measures_small = get_all_measures(all_measure_funcs, all_states_small)
 ```
 
 ### For each evaluation condition, plot measure distributions by training condition
@@ -826,7 +902,10 @@ def get_one_measure_plot_per_eval_condition(plot_func, all_measures):
         for measure_name, measure in all_measures.items()
     }
 
-figs = get_one_measure_plot_per_eval_condition(get_violins_across_train_conditions, all_measures)
+figs = get_one_measure_plot_per_eval_condition(
+    get_violins_across_train_conditions, 
+    all_measures,
+)
 ```
 
 ```{python}
@@ -846,7 +925,7 @@ for measure_name, measure_handle in measure_handles.items():
 
 ```{python}
 for measure_name in all_measures:
-    figs[measure_name][1].show()
+    figs[measure_name][2].show()
 ```
 
 ### Repeat for just a single reach condition
@@ -878,27 +957,72 @@ for measure_name, measure_handle in measure_handles.items():
         )
 ```
 
+```{python}
+for measure_name in all_measures:
+    figs0[measure_name][2].show()
+```
 
-### Plot comparison of distributions for zero vs. high train curl std, for different replicates
-
-Compare the smallest (zero) and largest training curl stds. For the plots above, this would mean keeping just the leftmost and the rightmost violins. However, those plots were aggregated over replicates and trials. Now we would like to examine the variance across model replicates. Thus, for each measure, we will generate one plot for each evaluation condition (curl amplitude) as before, but now each containing `n_replicates` *split* violins, where the left half corresponds to the zero training curl std, and the right half to the largest training curl std.
+### Repeat for just the zero vs. highest-std training condition
 
 ```{python}
 upper_train_curl_std = train_curl_stds[-1]
-labels = [
-    "No curl during training", 
-    f"Training curl magnitude ~ \U0001d4dd(0,{upper_train_curl_std})",
-]
-colors = ['blue', 'orange']
 train_curl_stds_to_compare = [0, upper_train_curl_std]
-n_dist = n_trials * task.n_validation_trials
 
 all_measures_subset_train_curl_stds = {
     k1: {k2: subdict(v, train_curl_stds_to_compare) for k2, v in all_measures[k1].items()}
     for k1 in all_measures
 }
 
+figs = get_one_measure_plot_per_eval_condition(
+    get_violins_across_train_conditions, 
+    all_measures_subset_train_curl_stds,
+)
+
+figs = jt.map(
+    lambda fig: fig.update_layout(
+        width=600,
+    ),
+    figs,
+    is_leaf=is_module,
+)
+```
+
+```{python}
+fig_subdir = "measure_distributions/compare_train_condns"
+
+for measure_name, measure_handle in measure_handles.items():
+    for eval_curl_amplitude, fig in figs[measure_name].items():
+        savefig(
+            fig, 
+            '_'.join([
+                f"{measure_handle}",
+                f"eval-curl-{eval_curl_amplitude}",
+                "lowest-vs-highest",
+            ]),
+            subdir=fig_subdir,
+        )
+```
+
+```{python}
+for measure_name in all_measures:
+    figs[measure_name][2].show()
+```
+
+### Plot comparison of distributions for zero vs. high train curl std, for different replicates
+
+Compare the smallest (zero) and largest training curl stds. For the plots above, this would mean keeping just the leftmost and the rightmost violins. However, those plots were aggregated over replicates and trials. Now we would like to examine the variance across model replicates. Thus, for each measure, we will generate one plot for each evaluation condition (curl amplitude) as before, but now each containing `n_replicates` *split* violins, where the left half corresponds to the zero training curl std, and the right half to the largest training curl std.
+
+```{python}
+labels = [
+    "No curl during training", 
+    f"Training curl magnitude ~ \U0001d4dd(0,{upper_train_curl_std})",
+]
+colors = ['blue', 'orange']
+
+
 def get_measure_replicate_comparisons(data, measure_name, eval_curl_amplitude):
+    n_dist = np.prod(jt.leaves(data)[0].shape)
+    
     data = jnp.stack(list(data.values()))
     
     fig = go.Figure()
@@ -955,8 +1079,20 @@ for measure_name, measure_handle in measure_handles.items():
 
 ```{python}
 for measure_name in all_measures:
-    figs[measure_name][1].show()
+    figs[measure_name][2].show()
 ```
 
+### Comparison of no-curl vs. high-curl evaluation, for no-curl vs. high-curl training
 
+**TODO**
+
+i.e. not one plot for each evaluation condition for each measure, but a single plot for each measure, comparing the distributions for zero vs. high training curl std, on zero vs. high evaluation curl amplitude.
+
+### Others
+
+#### Trend lines? 
+
+Not sure the relationship is linear...
+
+#### Difference
 

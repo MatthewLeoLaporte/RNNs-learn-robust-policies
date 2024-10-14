@@ -1,0 +1,215 @@
+# Analysis of feedback perturbations
+
+We continue our perturbation analysis by examining the response of the trained models to perturbations of their feedback inputs at steady state. 
+
+In particular, we will apply an impulse perturbation to each of the feedback input channels, and observe 
+
+1) the magnitude of the instantaneous network response (i.e. control force); 
+2) the trajectory of the point mass following the perturbation.
+
+
+## Environment setup
+
+```{python}
+%load_ext autoreload
+%autoreload 2
+```
+
+```{python}
+import os
+
+os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
+```
+
+```{python}
+from functools import partial
+from itertools import zip_longest
+from pathlib import Path
+from operator import itemgetter
+
+import equinox as eqx
+import jax
+import jax.numpy as jnp
+import jax.random as jr
+import jax.tree as jt
+import matplotlib.pyplot as plt
+import numpy as np
+import plotly.graph_objects as go
+
+from feedbax import (
+    load_with_hyperparameters, 
+    is_module, 
+    tree_stack,
+    tree_take, 
+    tree_take_multi,
+    tree_unzip,
+)
+from feedbax.intervene import ConstantInput, CurlField, schedule_intervenor
+from feedbax.misc import git_commit_id, attr_str_tree_to_where_func
+from feedbax.noise import replace_noise
+import feedbax.plotly as fbp
+from feedbax.task import SimpleReaches
+from feedbax.xabdeef.losses import simple_reach_loss
+
+from rnns_learn_robust_motor_policies.part1_setup import setup_models, setup_model_parameter_histories
+from rnns_learn_robust_motor_policies.plot_utils import get_savefig_func
+from rnns_learn_robust_motor_policies.state_utils import get_forward_lateral_vel, get_lateral_distance
+from rnns_learn_robust_motor_policies.tree_utils import pp, swap_model_trainables, subdict
+```
+
+Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
+
+```{python}
+for mod in (jax, eqx): 
+    print(f"{mod.__name__} version: {mod.__version__}")
+    
+print(f"\nFeedbax commit hash: {git_commit_id()}")
+```
+
+Unique ID for notebook, for naming outputs.
+
+```{python}
+NB_ID = "1-2b"
+```
+
+### Global conditions
+
+```{python}
+NO_SYSTEM_NOISE = False
+
+if NO_SYSTEM_NOISE:
+    fig_suffix = "_no-noise"
+else:
+    fig_suffix = ""
+```
+
+### Directories setup
+
+```{python}
+FIGS_DIR = Path(f'../figures/{NB_ID}/')
+MODELS_DIR = Path('../models')
+
+for d in (FIGS_DIR,):
+    d.mkdir(parents=True, exist_ok=True)
+    
+if not MODELS_DIR.exists():
+    raise FileNotFoundError(f"Models directory not found: {MODELS_DIR.absolute()}")
+```
+
+### Plotting setup 
+
+```{python}
+trials_cmap = 'viridis'  # for trials
+trials_cmap_func = plt.get_cmap(trials_cmap)
+
+savefig = get_savefig_func(FIGS_DIR, suffix=fig_suffix)
+```
+
+### RNG setup
+
+```{python}
+SEED = 5566
+key = jr.PRNGKey(SEED)
+key_init, key_train, key_eval = jr.split(key, 3)
+```
+
+## Load trained models
+
+**TODO: turn this into a utility function**
+
+```{python}
+from ipyfilechooser import FileChooser
+from ipywidgets import HTML
+import html
+import json 
+
+fc = FileChooser(MODELS_DIR)
+fc.filter_pattern = '1-1_*trained_models.eqx'
+fc.title = 'Select trained models file'
+params_widget = HTML("")
+
+def display_params(path, html_widget):
+    with open(path, 'r') as f:
+        params = json.load(f)
+    params_str = eqx.tree_pformat(params, truncate_leaf=lambda x: isinstance(x, list) and len(x) > 10)
+    html_widget.value = '<pre>' + params_str.replace(':\n', ':') + '</pre>'
+    return params_str
+    
+    
+fc.register_callback(lambda fc: display_params(
+    fc.selected.replace('trained_models.eqx', 'hyperparameters.json'),
+    params_widget,
+))
+
+display(fc, params_widget)
+```
+
+```{python}
+models_filepath = fc.selected
+
+trained_models, hyperparameters = load_with_hyperparameters(
+    MODELS_DIR / models_filepath, setup_models,
+)
+
+if NO_SYSTEM_NOISE:
+    trained_models = replace_noise(trained_models)
+
+train_curl_stds = hyperparameters['disturbance_levels']
+trained_models = dict(zip(train_curl_stds, trained_models))
+
+n_replicates = hyperparameters['n_replicates']
+```
+
+Depending on how training goes, we might want to leave out some of the extreme curl strength training conditions.
+
+```{python}
+# curl_stds = curl_stds[:-2]
+
+trained_models = {key: trained_models[key] for key in train_curl_stds}
+```
+
+### Load parameters from earlier training iterations, where necessary
+
+Also depending on how training goes, we might want to keep the model parameters from an earlier training iteration.
+
+```{python}
+model_parameter_histories, train_hyperparameters = load_with_hyperparameters(
+    MODELS_DIR / models_filepath.replace('trained_models', 'model_parameter_histories'),
+    partial(setup_model_parameter_histories, list(trained_models.values())),
+)
+
+model_parameter_histories = dict(zip(train_curl_stds, model_parameter_histories))
+where_train = attr_str_tree_to_where_func(train_hyperparameters['where_train_strs'])
+
+load_spec = {0.4: -1, 0.5: -1}
+
+for curl_std, i in load_spec.items():
+    trained_models[curl_std] = swap_model_trainables(
+        trained_models[curl_std], tree_take(model_parameter_histories[curl_std], i), where_train
+    )
+```
+
+## Evaluate models on a steady-state feedback impulse
+
+**TODO**
+
+```{python}
+task = SimpleReaches()
+```
+
+Make a mask corresponding to the indicated feedback channel:
+
+```{python}
+impulse_amp = 1.0
+impulse_dim = 0  # 0: x, 1: y
+impulse_var = 0  # 0: position, 1: velocity
+t_impulse = 30
+
+feedback_mask = np.zeros((2,)).at[impulse_dim].set(1)
+```
+
+Make a mask for the time step at which the impulse will be applied:
+
+```{python}
+trial_mask = jnp.zeros((n_steps - 1,), bool).at[t_impulse].set(True)
+```

@@ -1,6 +1,6 @@
 ---
 created: 2024-10-04T11:27
-updated: 2024-10-13T14:35
+updated: 2024-10-14T00:24
 ---
 - [x] Move this section into TODO within that repo
 
@@ -26,6 +26,8 @@ In the simplest case:
 
 It may be necessary to do one or more of the following to get optimal models:
 
+- Introduce perturbations after initial training period without them
+- Introduce delay (gradually) after initial training period without it
 - Learning rate schedule
 - Batch size schedule (increase later in training)
 - Gradient clipping

@@ -39,6 +39,7 @@ os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
 ```{python}
 from collections import OrderedDict
+from datetime import datetime
 import json
 from pathlib import Path
 
@@ -87,20 +88,26 @@ for mod in (jax, eqx, optax):
 print(f"\nFeedbax commit hash: {git_commit_id()}")
 ```
 
+Unique ID for notebook, for naming outputs.
+
+```{python}
+NB_ID = "1-1"
+```
+
+Datetime string generator, for timestamping saved files.
+
+```{python}
+get_datestr = lambda: datetime.now().strftime("%Y%m%d-%Hh%M")
+```
+
 ### Directories setup
 
 ```{python}
-FIGS_DIR = Path('../figures/1-1/')
-MODELS_DIR = Path('../models')
-PARAMS_DIR = Path('../parameters')
+FIGS_DIR = Path(f'../figures/{NB_ID}/')
+MODELS_DIR = Path('../models/')
 
-for d in (FIGS_DIR, MODELS_DIR, PARAMS_DIR):
+for d in (FIGS_DIR, MODELS_DIR):
     d.mkdir(parents=True, exist_ok=True)
-```
-
-```{python}
-models_filename = "1-1_trained_models.eqx"
-models_parameter_history_filename = "1-1_model_parameter_histories.eqx"
 ```
 
 ### Plotting setup
@@ -115,7 +122,6 @@ trials_cmap_func = plt.get_cmap(trials_cmap)
 ```{python}
 savefig = get_savefig_func(FIGS_DIR)
 ```
-
 
 ### RNG setup
 
@@ -148,7 +154,7 @@ task_train = SimpleReaches(
 n_replicates = 10
 
 hidden_size  = 50
-feedback_delay_steps = 5
+feedback_delay_steps = 0
 feedback_noise_std = 0.025
 motor_noise_std = 0.025
 
@@ -181,7 +187,7 @@ models = get_ensemble(
 Schedule random curl fields in the training trials.
 
 ```{python}
-disturbance_levels = [0, 0.1, 0.2, 0.3, 0.4, 0.5]
+disturbance_levels = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
 
 def curl_field(curl_std):
     return CurlField.with_params(
@@ -203,7 +209,7 @@ task_model_pairs = jt.map(
 
 ```{python}
 learning_rate = 0.01
-n_batches = 15000
+n_batches = 10000
 batch_size = 250
 
 where_train = lambda model: (
@@ -252,6 +258,11 @@ for curl_std, (task_, models_) in tqdm(list(zip(disturbance_levels, task_model_p
 ## Save trained models 
 
 ```{python}
+models_filename = "trained_models"
+models_parameter_history_filename = "model_parameter_histories"
+```
+
+```{python}
 def write_to_json(data, file_path):
     with open(file_path, 'w') as jsonf:
         json.dump(data, jsonf, indent=4)
@@ -275,14 +286,22 @@ training_hyperparameters = dict(
     n_batches=n_batches,
     batch_size=batch_size,
     save_model_parameters=save_model_parameters.tolist(),
+    where_train_strs=where_func_to_labels(where_train)
 )
 ```
 
 ```{python}
+datestr = get_datestr()
+
 save(
-    MODELS_DIR / models_filename,
+    MODELS_DIR / f"{NB_ID}__{datestr}__{models_filename}.eqx",
     list(trained_models.values()),
     hyperparameters=model_hyperparameters,
+)
+
+write_to_json(
+    model_hyperparameters | training_hyperparameters,
+    MODELS_DIR / f"{NB_ID}__{datestr}__hyperparameters.json",
 )
 ```
 
@@ -302,7 +321,7 @@ model_parameter_histories = jt.map(
 )
 
 save(
-    MODELS_DIR / models_parameter_history_filename,
+    MODELS_DIR / f"{NB_ID}__{datestr}__{models_parameter_history_filename}.eqx",
     model_parameter_histories,
     hyperparameters=dict(
         where_train_strs=where_func_to_labels(where_train),
@@ -336,11 +355,11 @@ model_parameter_histories_ = load(
 ```{python}
 
 for curl_std, history in train_histories.items():
-    label = f"1-1_loss-history_curl-std-{curl_std}"
+    label = f"{NB_ID}_loss-history_curl-std-{curl_std}"
     
-    p1, _ = fbplt.loss_history(history)
-    p2, _ = fbplt.loss_mean_history(history)
-    p3 = fbp.loss_history(history)
+    p1, _ = fbplt.loss_history(history.loss)
+    p2, _ = fbplt.loss_mean_history(history.loss)
+    p3 = fbp.loss_history(history.loss)
     
     savefig(p1, label + '_replicates')
     savefig(p2, label)
