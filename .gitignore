@@ -1,6 +1,10 @@
 .gitmessage
 COMMIT_MSG.txt
 
+# Quarto
+_output
+_freeze
+
 # Markdown copies of example notebooks
 # (They are meant to make search-replace easier)
 examples/markdown/
@@ -8,8 +12,10 @@ examples/markdown/
 # external libraries
 external/
 
-# saved models
+# saved models, figures, parameters
 models/
+figures/
+parameters/
 *.eqx
 
 # data and media

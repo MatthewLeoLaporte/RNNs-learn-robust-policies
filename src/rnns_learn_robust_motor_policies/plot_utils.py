@@ -1,6 +1,9 @@
 
 from pathlib import Path
 from typing import Optional
+
+from jaxtyping import Array, Float
+import jax.numpy as jnp
 import matplotlib.figure as mplfig
 import plotly.graph_objects as go
 
@@ -35,3 +38,130 @@ def get_savefig_func(fig_dir: Path, suffix=""):
             fig.write_json(save_dir / f'{label}.json')
     
     return savefig
+
+
+def add_context_annotation(
+    fig: go.Figure,
+    train_curl_std=None, 
+    curl_amplitude=None,
+    n=None,
+    i_trial=None,
+    i_replicate=None,
+    y=1.1,
+) -> None:
+    """Annotates a figure with details about sample size, trials, replicates."""
+    lines = []
+    if train_curl_std is not None:
+        lines.append(f"Trained on curl fields with amplitude ~ \U0001d4dd(0,{train_curl_std})")
+        
+    if curl_amplitude is not None:
+        lines.append(f"Response to amplitude {curl_amplitude} curl field")
+    
+    match (n, i_trial, i_replicate):
+        case (None, None, None):
+            pass
+        case (n, None, None):
+            lines.append(f"N = {n}")
+        case (n, i_trial, None):
+            lines.append(f"Single evaluation of N = {n_replicates} model replicates")
+        case (n, None, i_replicate):
+            lines.append(f"N = {n} evaluations of model replicate {i_replicate}")
+        case (None, i_trial, i_replicate):
+            lines.append(f"Single evaluation ({i_trial}) of model replicate {i_replicate}")
+        case _:
+            raise ValueError("Invalid combination of n, i_trial, and i_replicate for annotation")
+                
+    fig.update_layout(margin_t=100 + 5 * len(lines))
+    
+    fig.add_annotation(dict(
+        text='<br>'.join(lines),
+        showarrow=False,
+        xref="paper",
+        yref="paper",
+        x=0.5,
+        y=y,
+        xanchor="center",
+        yanchor="bottom",
+        font=dict(size=16),  # Adjust font size as needed
+    ))
+    
+
+# TODO: Make inits and goals individually optional
+# Perhaps by simplifying this function to just plot a single set of points (`points_2D` or something)
+# and then just mapping it over the endpoints later, and having a separate function for lines (straight guides)
+def add_endpoint_traces(
+    fig: go.Figure,
+    pos_endpoints: Float[Array, "ends=2 *trials xy=2"],
+    colorscale: Optional[str] = None,  # overrides `color` properties in `marker_kws` args
+    colorscale_axis: int = 0,  # of `trials` axes
+    init_marker_kws: Optional[dict] = None, 
+    goal_marker_kws: Optional[dict] = None,
+    straight_guides: bool = False,
+    straight_guide_kws: Optional[dict] = None,
+    **kwargs,
+):
+    marker_kws = {
+        "Start": dict(
+            size=10,
+            symbol='square-open',
+            color='rgb(25, 25, 25)',
+            line=dict(width=2, color='rgb(25, 25, 25)'),
+        ),
+        "Goal": dict(
+            size=10,
+            symbol='circle-open',
+            color='rgb(25, 25, 25)',
+            line=dict(width=2, color='rgb(25, 25, 25)'),
+        ),
+    }
+
+    if init_marker_kws is not None:
+        marker_kws["Start"].update(init_marker_kws)
+    if goal_marker_kws is not None:
+        marker_kws["Goal"].update(goal_marker_kws)
+     
+    if len(pos_endpoints.shape) == 2:
+        pos_endpoints = jnp.expand_dims(pos_endpoints, axis=1)
+    
+    if colorscale is not None:
+        constant_color_axes = (0,) + tuple(i for i in range(len(pos_endpoints.shape[1:-1])) if i != colorscale_axis)
+        color_values = jnp.reshape(
+            jnp.broadcast_to(
+                jnp.expand_dims(
+                    # jnp.ones(pos_endpoints.shape[colorscale_axis + 1]),
+                    jnp.linspace(0, 1, pos_endpoints.shape[colorscale_axis + 1], endpoint=False),
+                    constant_color_axes, 
+                ),
+                pos_endpoints.shape[:-1],
+            ),
+            (2, -1),
+        )
+        for i, key in enumerate(marker_kws):
+            marker_kws[key].update(
+                line_color=color_values[i], 
+                color=color_values[i],
+                cmin=0,
+                cmax=1,
+            )
+    
+    if len(pos_endpoints.shape) > 3:
+        pos_endpoints = jnp.reshape(pos_endpoints, (2, -1, 2))
+    
+    for j, (label, kws) in enumerate(marker_kws.items()):
+        fig.add_traces(
+            [
+                go.Scatter(
+                    name=f"{label}",
+                    meta=dict(label=label),
+                    legendgroup=label,
+                    hovertemplate=f"{label}<extra></extra>",
+                    x=pos_endpoints[j, ..., 0],
+                    y=pos_endpoints[j, ..., 1],
+                    mode="markers",
+                    marker=kws,
+                    marker_colorscale=colorscale,
+                    showlegend=True,
+                    **kwargs,
+                )
+            ]
+        )
