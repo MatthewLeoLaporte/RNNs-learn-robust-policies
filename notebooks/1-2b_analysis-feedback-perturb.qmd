@@ -51,10 +51,25 @@ import feedbax.plotly as fbp
 from feedbax.task import SimpleReaches
 from feedbax.xabdeef.losses import simple_reach_loss
 
-from rnns_learn_robust_motor_policies.part1_setup import setup_models, setup_model_parameter_histories
-from rnns_learn_robust_motor_policies.plot_utils import get_savefig_func
-from rnns_learn_robust_motor_policies.state_utils import get_forward_lateral_vel, get_lateral_distance
-from rnns_learn_robust_motor_policies.tree_utils import pp, swap_model_trainables, subdict
+from rnns_learn_robust_motor_policies.part1_setup import (
+    setup_models, 
+    setup_model_parameter_histories,
+)
+from rnns_learn_robust_motor_policies.plot_utils import (
+    add_context_annotation,
+    add_endpoint_traces,
+    get_savefig_func,
+)
+from rnns_learn_robust_motor_policies.state_utils import (
+    get_forward_lateral_vel, 
+    get_lateral_distance,
+)
+from rnns_learn_robust_motor_policies.tree_utils import (
+    pp, 
+    swap_model_trainables, 
+    subdict,
+)
+from rnns_learn_robust_motor_policies.setup_utils import display_model_filechooser
 ```
 
 Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
@@ -115,37 +130,18 @@ key_init, key_train, key_eval = jr.split(key, 3)
 
 ## Load trained models
 
-**TODO: turn this into a utility function**
-
 ```{python}
-from ipyfilechooser import FileChooser
-from ipywidgets import HTML
-import html
-import json 
-
-fc = FileChooser(MODELS_DIR)
-fc.filter_pattern = '1-1_*trained_models.eqx'
-fc.title = 'Select trained models file'
-params_widget = HTML("")
-
-def display_params(path, html_widget):
-    with open(path, 'r') as f:
-        params = json.load(f)
-    params_str = eqx.tree_pformat(params, truncate_leaf=lambda x: isinstance(x, list) and len(x) > 10)
-    html_widget.value = '<pre>' + params_str.replace(':\n', ':') + '</pre>'
-    return params_str
-    
-    
-fc.register_callback(lambda fc: display_params(
-    fc.selected.replace('trained_models.eqx', 'hyperparameters.json'),
-    params_widget,
-))
-
-display(fc, params_widget)
+fc = display_model_filechooser(
+    MODELS_DIR,
+    filter_pattern='1-1_*trained_models.eqx',
+)
 ```
 
 ```{python}
-models_filepath = fc.selected
+if fc.selected is None:
+    models_filepath = f"{fc.default_path}/{fc.default_filename}"
+else:
+    models_filepath = fc.selected
 
 trained_models, hyperparameters = load_with_hyperparameters(
     MODELS_DIR / models_filepath, setup_models,
@@ -189,27 +185,277 @@ for curl_std, i in load_spec.items():
     )
 ```
 
-## Evaluate models on a steady-state feedback impulse
+## Setup tasks with impulse perturbations to different feedback channels
 
-**TODO**
+### Setup the base task
 
 ```{python}
-task = SimpleReaches()
+n_steps = 100
+workspace = ((-1., -1.),
+             (1., 1.))
+
+# Steady state trials at different grid positions
+eval_grid_n = 5
+eval_n_directions = 1
+eval_reach_length = 0.0  
+
+# Define the base task
+task = SimpleReaches(
+    loss_func=simple_reach_loss(),
+    workspace=workspace, 
+    n_steps=n_steps,
+    eval_grid_n=eval_grid_n,
+    eval_n_directions=eval_n_directions,
+    eval_reach_length=eval_reach_length,  
+)
 ```
 
-Make a mask corresponding to the indicated feedback channel:
+### Schedule impulse perturbations
 
 ```{python}
-impulse_amp = 1.0
-impulse_dim = 0  # 0: x, 1: y
-impulse_var = 0  # 0: position, 1: velocity
-t_impulse = 30
-
-feedback_mask = np.zeros((2,)).at[impulse_dim].set(1)
+impulse_amplitude = 10.0
+impulse_start_step = 30
+impulse_duration = 1
 ```
 
-Make a mask for the time step at which the impulse will be applied:
+```{python}
+from collections.abc import Callable
+from typing import Optional
+from jaxtyping import Array, PRNGKeyArray
+
+from feedbax.intervene.schedule import TimeSeriesParam
+from feedbax._tree import istype
+
+def random_unit_vector(key, dim):
+    # Could do `jnp.zeros((dim,)).at[impulse_dim].set(1)` for vector toward one dimension
+    v = jr.normal(key, (dim,))
+    return v / jnp.linalg.norm(v)
+    
+
+def impulse_active(
+    n_steps: int,
+    impulse_duration: int,
+    start_bounds: Optional[tuple[int, int]] = None,
+    start_idx_func: Callable[[PRNGKeyArray, tuple[int, int]], Array] = (
+        lambda key, start_bounds: jr.randint(key, (1,), *start_bounds)[0]
+    ),
+):  
+    """Return a function that determines when a field is active on a given trial."""
+    if start_bounds is None:
+        start_bounds = (0, n_steps)
+    
+    def f(trial_spec, key):
+        start_idx = start_idx_func(key, start_bounds)
+        return TimeSeriesParam(unmask_1d_at_idx(
+            n_steps - 1, start_idx, impulse_duration
+        ))
+    
+    return f    
+
+
+def feedback_impulse(
+    amplitude, 
+    duration,  # in time steps
+    feedback_var,  # pos or vel
+    start_timestep, 
+    feedback_dim=None,  # x or y
+):
+    idxs_impulse = slice(start_timestep, start_timestep + duration)
+    trial_mask = jnp.zeros((n_steps - 1,), bool).at[idxs_impulse].set(True)
+    
+    if feedback_dim is None:
+        array = lambda trial_spec, key: random_unit_vector(key, 2)
+    else:
+        array = jnp.zeros((2,)).at[feedback_dim].set(1)
+    
+    return ConstantInput.with_params(
+        out_where=lambda channel_state: channel_state.output[feedback_var],
+        scale=amplitude,
+        arrays=array,
+        active=TimeSeriesParam(trial_mask),
+        # active=impulse_active(
+        #     n_steps, 
+        #     impulse_duration,
+        #     # Always apply the impulse 25% of the way through the trial
+        #     start_idx_func=lambda key, start_bounds: (
+        #         int(0.66 * (start_bounds[1] - start_bounds[0]))
+        #     ),
+        # ),
+    )
+```
+
+#### Perturbations along axes
 
 ```{python}
-trial_mask = jnp.zeros((n_steps - 1,), bool).at[t_impulse].set(True)
+impulse_conditions = {
+    'pos-x': (0, 0),
+    'pos-y': (0, 1),
+    'vel-x': (1, 0),
+    'vel-y': (1, 1),
+}
+
+tasks_imp_xy, models_imp_xy = tree_unzip(jt.map(
+    lambda feedback_vardim: schedule_intervenor(
+        task, trained_models,
+        lambda model: model.step.feedback_channels[0],
+        feedback_impulse(
+            impulse_amplitude,
+            impulse_duration,
+            feedback_vardim[0],  
+            impulse_start_step,
+            feedback_dim=feedback_vardim[1],  
+        ),
+        default_active=False,
+        stage_name="update_queue",
+    ),
+    impulse_conditions,
+    is_leaf=istype(tuple),
+))
+```
+
+#### Perturbations in random directions
+
+```{python}
+tasks_imp_rand, models_imp_rand = tree_unzip(jt.map(
+    lambda feedback_var: schedule_intervenor(
+        task, trained_models,
+        lambda model: model.step.feedback_channels[0],
+        feedback_impulse(
+            impulse_amplitude,
+            impulse_duration,
+            feedback_var,   
+            impulse_start_step,
+        ),
+        default_active=False,
+        stage_name="update_queue",
+    ),
+    dict(pos=0, vel=1),
+    is_leaf=istype(tuple),
+))
+```
+
+Get the directions, for later:
+
+```{python}
+trial_specs = tasks_imp_rand['pos'].validation_trials
+vector_idxs = slice(impulse_start_step, impulse_start_step + 1)
+
+# I think this is equivalent to `line_vec` in the functions in `state_utils`
+vectors = jnp.squeeze(trial_specs.intervene['ConstantInput'].arrays[:, vector_idxs])
+```
+
+## Evaluate the trained models on the perturbed task
+
+```{python}
+n_trials = 5
+```
+
+```{python}
+tasks_imp = tasks_imp_xy
+models_imp = models_imp_xy
+
+def get_eval_ensemble(models, task):
+    def eval_ensemble(key):
+        return task.eval_ensemble(
+            models,
+            n_replicates=n_replicates,
+            ensemble_random_trials=False,
+            key=key,
+        )
+    return eval_ensemble
+
+all_states_imp = {
+    key: jt.map(
+        lambda models: eqx.filter_vmap(get_eval_ensemble(models, tasks_imp[key]))(
+            jr.split(key_eval, n_trials)
+        ),
+        models_imp[key],
+        is_leaf=is_module,
+    )
+    for key in models_imp
+}
+```
+
+## Plot some examples sets
+
+```{python}
+var_labels = ('Position', 'Velocity', 'Control force')
+
+where_plot = lambda states: (
+    states.mechanics.effector.pos,
+    states.mechanics.effector.vel,
+    states.efferent.output,
+)
+```
+
+### A single trial set, for a single replicate
+
+```{python}
+i_trial = 0
+i_replicate = 0
+
+plot_states = tree_take_multi(all_states_imp, [i_trial, i_replicate], [0, 1])
+
+figs = jt.map(
+    lambda states: fbp.trajectories_2D(
+        where_plot(states),
+        var_labels=var_labels,
+        axes_labels=('x', 'y'),
+        mode='markers+lines',
+        ms=3,
+        scatter_kws=dict(line_width=0.75),
+    ),
+    plot_states,
+    is_leaf=is_module,
+)
+```
+
+```{python}
+for impulse_condition in figs:
+    for train_curl_std, fig in figs[impulse_condition].items():
+        add_context_annotation(
+            fig,
+            train_curl_std=train_curl_std,
+            # curl_amplitude=curl_amplitude,
+            i_trial=i_trial,
+            i_replicate=i_replicate,
+        )
+        # add_endpoint_traces(
+        #     fig, pos_endpoints_small, xaxis='x1', yaxis='y1', colorscale='phase'
+        # )
+        # filename = '_'.join([
+        #         f"eval-curl-{curl_amplitude}",
+        #         f"train-curl-std-{train_curl_std}",
+        #         f"single-replicate-{i_replicate}",
+        #         f"single-trial-{i_trial}",
+        # ])
+        # savefig(fig, filename, subdir=fig_subdir)
+```
+
+```{python}
+# for curl_amplitude in curl_amplitudes_lohi:
+#     for train_curl_std in train_curl_stds_lohi:
+#         figs[curl_amplitude][train_curl_std].show()
+```
+
+## Plot response trajectories
+
+```{python}
+all_controls_imp = jt.map(
+    lambda states: states.net.output[..., impulse_start_step:, :],
+    all_states_imp,
+    is_leaf=is_module,
+)
+
+figs = {
+    imp_condn: {
+        label: fbp.profiles(
+            tree_take(controls, i, -1),
+            mode='std', 
+            varname="Control force",
+        )
+        for label, i in dict(fx=0, fy=1).items()
+    }
+    for imp_condn, controls in all_controls_imp.items()
+}
 ```
