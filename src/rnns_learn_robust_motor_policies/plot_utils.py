@@ -7,6 +7,8 @@ import jax.numpy as jnp
 import matplotlib.figure as mplfig
 import plotly.graph_objects as go
 
+from rnns_learn_robust_motor_policies.setup_utils import filename_join
+
 
 def get_savefig_func(fig_dir: Path, suffix=""):
     """Returns a function that saves Matplotlib and Plotly figures to file in a given directory.
@@ -23,7 +25,7 @@ def get_savefig_func(fig_dir: Path, suffix=""):
         else:
             save_dir = fig_dir           
 
-        label += suffix
+        label = filename_join([label, suffix])
         
         if isinstance(fig, mplfig.Figure):
             fig.savefig(
@@ -36,6 +38,10 @@ def get_savefig_func(fig_dir: Path, suffix=""):
             # Save HTML for easy viewing, and JSON for embedding.
             fig.write_html(save_dir / f'{label}.html')
             fig.write_json(save_dir / f'{label}.json')
+            
+            # Also save PNG for easy browsing and sharing
+            fig.write_image(save_dir / f'{label}.png', scale=2)
+            # fig.write_image(save_dir / f'{label}.webp', scale=2)
     
     return savefig
 
@@ -47,6 +53,7 @@ def add_context_annotation(
     n=None,
     i_trial=None,
     i_replicate=None,
+    i_condition=None,
     y=1.1,
 ) -> None:
     """Annotates a figure with details about sample size, trials, replicates."""
@@ -63,13 +70,16 @@ def add_context_annotation(
         case (n, None, None):
             lines.append(f"N = {n}")
         case (n, i_trial, None):
-            lines.append(f"Single evaluation of N = {n_replicates} model replicates")
+            lines.append(f"Single evaluation (#{i_trial}) of N = {n} model replicates")
         case (n, None, i_replicate):
             lines.append(f"N = {n} evaluations of model replicate {i_replicate}")
         case (None, i_trial, i_replicate):
-            lines.append(f"Single evaluation ({i_trial}) of model replicate {i_replicate}")
+            lines.append(f"Single evaluation (#{i_trial}) of model replicate {i_replicate}")
         case _:
             raise ValueError("Invalid combination of n, i_trial, and i_replicate for annotation")
+    
+    if i_condition is not None:
+        lines.append(f"For single task condition ({i_condition})")
                 
     fig.update_layout(margin_t=100 + 5 * len(lines))
     

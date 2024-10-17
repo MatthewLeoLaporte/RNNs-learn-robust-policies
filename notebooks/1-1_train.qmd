@@ -62,6 +62,7 @@ from feedbax import (
     save,
     tree_unzip,
 )
+from feedbax.channel import toggle_channel_noise
 from feedbax.misc import git_commit_id, where_func_to_labels
 import feedbax.plotly as fbp
 import feedbax.plot as fbplt
@@ -77,6 +78,7 @@ from feedbax.intervene import (
 )
 
 from rnns_learn_robust_motor_policies.plot_utils import get_savefig_func
+from rnns_learn_robust_motor_policies.setup_utils import filename_join as join
 ```
 
 Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
@@ -100,6 +102,23 @@ Datetime string generator, for timestamping saved files.
 get_datestr = lambda: datetime.now().strftime("%Y%m%d-%Hh%M")
 ```
 
+### Hyperparameters
+
+These are parameters that can be [varied](https://quarto.org/docs/computations/parameters.html) through the command line interface to Quarto. 
+
+```{python}
+#| tags: [parameters]
+
+hidden_size  = 50
+feedback_delay_steps = 0
+feedback_noise_std = 0.025
+motor_noise_std = 0.025
+```
+
+```{python}
+suffix = f"noise-{feedback_noise_std}-{motor_noise_std}_delay-{feedback_delay_steps}_hidden-{hidden_size}"
+```
+
 ### Directories setup
 
 ```{python}
@@ -120,7 +139,7 @@ trials_cmap_func = plt.get_cmap(trials_cmap)
 ```
 
 ```{python}
-savefig = get_savefig_func(FIGS_DIR)
+savefig = get_savefig_func(FIGS_DIR, suffix=filename_suffix)
 ```
 
 ### RNG setup
@@ -153,11 +172,6 @@ task_train = SimpleReaches(
 ```{python}
 n_replicates = 10
 
-hidden_size  = 50
-feedback_delay_steps = 0
-feedback_noise_std = 0.025
-motor_noise_std = 0.025
-
 dt = 0.05
 
 mass = 1.0
@@ -177,6 +191,9 @@ models = get_ensemble(
     motor_noise_std=motor_noise_std,
     key=key_init,
 )
+
+if NO_SYSTEM_NOISE:
+    models = toggle_channel_noise(models, False)
 ```
 
 
@@ -187,7 +204,8 @@ models = get_ensemble(
 Schedule random curl fields in the training trials.
 
 ```{python}
-disturbance_levels = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+disturbance_type = 'gaussian-curl-fields'
+disturbance_levels = [0, 0.2, 0.4, 0.6, 0.8, 1.0]
 
 def curl_field(curl_std):
     return CurlField.with_params(
@@ -258,8 +276,8 @@ for curl_std, (task_, models_) in tqdm(list(zip(disturbance_levels, task_model_p
 ## Save trained models 
 
 ```{python}
-models_filename = "trained_models"
-models_parameter_history_filename = "model_parameter_histories"
+model_file_label = "trained_models"
+model_param_histories_file_label = "model_parameter_histories"
 ```
 
 ```{python}
@@ -286,15 +304,24 @@ training_hyperparameters = dict(
     n_batches=n_batches,
     batch_size=batch_size,
     save_model_parameters=save_model_parameters.tolist(),
-    where_train_strs=where_func_to_labels(where_train)
+    where_train_strs=where_func_to_labels(where_train),
+    disturbance_levels=disturbance_levels,
+    disturbance_type=disturbance_type,
 )
 ```
 
 ```{python}
 datestr = get_datestr()
 
+model_filename = join([
+    f"{NB_ID}",
+    f"{datestr}",
+    f"{model_file_label}",
+    filename_suffix,
+]) + '.eqx'
+
 save(
-    MODELS_DIR / f"{NB_ID}__{datestr}__{models_filename}.eqx",
+    MODELS_DIR / model_filename,
     list(trained_models.values()),
     hyperparameters=model_hyperparameters,
 )
@@ -314,15 +341,20 @@ Any analysis of the losses, learning rates, etc. over training will be performed
 However, in later analyses we may be interested in the history of the model parameters across training. These should also be saved to disk. 
 
 ```{python}
-model_parameter_histories = jt.map(
+model_param_histories = jt.map(
     lambda tree: tree.model_parameters, 
     list(train_histories.values()), 
     is_leaf=is_module,
 )
 
+model_param_histories_filename = model_filename.replace(
+    model_file_label, 
+    model_param_histories_file_label,
+)
+
 save(
-    MODELS_DIR / f"{NB_ID}__{datestr}__{models_parameter_history_filename}.eqx",
-    model_parameter_histories,
+    MODELS_DIR / model_param_histories_filename,
+    model_param_histories,
     hyperparameters=dict(
         where_train_strs=where_func_to_labels(where_train),
         save_model_parameters=save_model_parameters.tolist(),
@@ -334,7 +366,7 @@ Note that we cannot save lambda functions to disk, so we save the string represe
 
 #### Reloading parameter histories
 
-Since we haven't done this in any later notebooks yet, I'm including it here for reference.
+I'm including this here for reference.
 
 Because we'll generally have already loaded the trained models by the time we also want to load the parameter histories, our `setup_model_parameter_histories` function can use it to determine the correct PyTree structure. Thus we can avoid reconstructing the PyTree of models from scratch -- and storing all the required hyperparameters -- a second time.  
 
@@ -343,7 +375,7 @@ from functools import partial
 from rnns_learn_robust_motor_policies.part1_setup import setup_model_parameter_histories
 
 model_parameter_histories_ = load(
-    MODELS_DIR / models_parameter_history_filename,
+    MODELS_DIR / model_param_histories_filename,
     partial(setup_model_parameter_histories, list(trained_models.values())),
 )
 ```
@@ -355,14 +387,18 @@ model_parameter_histories_ = load(
 ```{python}
 
 for curl_std, history in train_histories.items():
-    label = f"{NB_ID}_loss-history_curl-std-{curl_std}"
+    label = join([
+        f"{NB_ID}",
+        "loss-history",
+        f"curl-std-{curl_std}",
+    ])
     
-    p1, _ = fbplt.loss_history(history.loss)
-    p2, _ = fbplt.loss_mean_history(history.loss)
+    # p1, _ = fbplt.loss_history(history.loss)
+    # p2, _ = fbplt.loss_mean_history(history.loss)
     p3 = fbp.loss_history(history.loss)
     
-    savefig(p1, label + '_replicates')
-    savefig(p2, label)
+    # savefig(p1, join([label, 'replicates']))
+    # savefig(p2, label)
     savefig(p3, label)
 ```
 

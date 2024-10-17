@@ -44,9 +44,9 @@ from feedbax import (
     tree_take_multi,
     tree_unzip,
 )
+from feedbax.channel import toggle_channel_noise
 from feedbax.intervene import ConstantInput, CurlField, schedule_intervenor
 from feedbax.misc import git_commit_id, attr_str_tree_to_where_func
-from feedbax.noise import replace_noise
 import feedbax.plotly as fbp
 from feedbax.task import SimpleReaches
 from feedbax.xabdeef.losses import simple_reach_loss
@@ -69,7 +69,10 @@ from rnns_learn_robust_motor_policies.tree_utils import (
     swap_model_trainables, 
     subdict,
 )
-from rnns_learn_robust_motor_policies.setup_utils import display_model_filechooser
+from rnns_learn_robust_motor_policies.setup_utils import (
+    display_model_filechooser,
+    filename_join as join,
+)
 ```
 
 Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
@@ -89,13 +92,15 @@ NB_ID = "1-2b"
 
 ### Global conditions
 
+`NO_SYSTEM_NOISE` will be used to toggle system noise regardless of how strong the system noise is. 
+
 ```{python}
-NO_SYSTEM_NOISE = False
+NO_SYSTEM_NOISE = True
 
 if NO_SYSTEM_NOISE:
-    fig_suffix = "_no-noise"
+    filename_suffix = "no-noise"
 else:
-    fig_suffix = ""
+    filename_suffix = ""
 ```
 
 ### Directories setup
@@ -117,7 +122,7 @@ if not MODELS_DIR.exists():
 trials_cmap = 'viridis'  # for trials
 trials_cmap_func = plt.get_cmap(trials_cmap)
 
-savefig = get_savefig_func(FIGS_DIR, suffix=fig_suffix)
+savefig = get_savefig_func(FIGS_DIR, suffix=filename_suffix)
 ```
 
 ### RNG setup
@@ -133,7 +138,7 @@ key_init, key_train, key_eval = jr.split(key, 3)
 ```{python}
 fc = display_model_filechooser(
     MODELS_DIR,
-    filter_pattern='1-1_*trained_models.eqx',
+    filter_pattern='1-1_*trained_models*.eqx',
 )
 ```
 
@@ -148,7 +153,7 @@ trained_models, hyperparameters = load_with_hyperparameters(
 )
 
 if NO_SYSTEM_NOISE:
-    trained_models = replace_noise(trained_models)
+    trained_models = toggle_channel_noise(trained_models, False)
 
 train_curl_stds = hyperparameters['disturbance_levels']
 trained_models = dict(zip(train_curl_stds, trained_models))
@@ -177,12 +182,12 @@ model_parameter_histories, train_hyperparameters = load_with_hyperparameters(
 model_parameter_histories = dict(zip(train_curl_stds, model_parameter_histories))
 where_train = attr_str_tree_to_where_func(train_hyperparameters['where_train_strs'])
 
-load_spec = {0.4: -1, 0.5: -1}
+# load_spec = {0.4: -1, 0.5: -1}
 
-for curl_std, i in load_spec.items():
-    trained_models[curl_std] = swap_model_trainables(
-        trained_models[curl_std], tree_take(model_parameter_histories[curl_std], i), where_train
-    )
+# for curl_std, i in load_spec.items():
+#     trained_models[curl_std] = swap_model_trainables(
+#         trained_models[curl_std], tree_take(model_parameter_histories[curl_std], i), where_train
+#     )
 ```
 
 ## Setup tasks with impulse perturbations to different feedback channels
@@ -213,9 +218,9 @@ task = SimpleReaches(
 ### Schedule impulse perturbations
 
 ```{python}
-impulse_amplitude = 10.0
+impulse_amplitude = 1.0
 impulse_start_step = 30
-impulse_duration = 1
+impulse_duration = 5
 ```
 
 ```{python}
@@ -224,7 +229,7 @@ from typing import Optional
 from jaxtyping import Array, PRNGKeyArray
 
 from feedbax.intervene.schedule import TimeSeriesParam
-from feedbax._tree import istype
+from feedbax._tree import is_type
 
 def random_unit_vector(key, dim):
     # Could do `jnp.zeros((dim,)).at[impulse_dim].set(1)` for vector toward one dimension
@@ -309,7 +314,7 @@ tasks_imp_xy, models_imp_xy = tree_unzip(jt.map(
         stage_name="update_queue",
     ),
     impulse_conditions,
-    is_leaf=istype(tuple),
+    is_leaf=is_type(tuple),
 ))
 ```
 
@@ -330,7 +335,7 @@ tasks_imp_rand, models_imp_rand = tree_unzip(jt.map(
         stage_name="update_queue",
     ),
     dict(pos=0, vel=1),
-    is_leaf=istype(tuple),
+    is_leaf=is_type(tuple),
 ))
 ```
 
@@ -348,6 +353,9 @@ vectors = jnp.squeeze(trial_specs.intervene['ConstantInput'].arrays[:, vector_id
 
 ```{python}
 n_trials = 5
+
+if NO_SYSTEM_NOISE:
+    n_trials = 1
 ```
 
 ```{python}
@@ -441,8 +449,12 @@ for impulse_condition in figs:
 ## Plot response trajectories
 
 ```{python}
+i_replicate = 1
+
+n_preceding_steps = 5
+
 all_controls_imp = jt.map(
-    lambda states: states.net.output[..., impulse_start_step:, :],
+    lambda states: states.net.output[..., impulse_start_step - n_preceding_steps:, :],
     all_states_imp,
     is_leaf=is_module,
 )
@@ -450,7 +462,12 @@ all_controls_imp = jt.map(
 figs = {
     imp_condn: {
         label: fbp.profiles(
-            tree_take(controls, i, -1),
+            tree_take_multi(
+                controls, 
+                [i_replicate, i], 
+                [1, -1],
+            ),
+            timesteps=jnp.arange(-n_preceding_steps, n_steps),
             mode='std', 
             varname="Control force",
         )
@@ -458,4 +475,8 @@ figs = {
     }
     for imp_condn, controls in all_controls_imp.items()
 }
+
+# jt.map(
+#     lambda fig: fig.add_vline(x=)
+# )
 ```

@@ -73,3 +73,8 @@ def display_model_filechooser(path, filter_pattern='*trained_models.eqx',):
     display(fc, params_widget)
     
     return fc
+
+
+def filename_join(strs, joinwith="__"):
+    """Helper for formatting filenames from lists of strings."""
+    return joinwith.join(s for s in strs if s)

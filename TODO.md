@@ -1,6 +1,6 @@
 ---
 created: 2024-10-04T11:27
-updated: 2024-10-14T00:24
+updated: 2024-10-16T11:05
 ---
 - [x] Move this section into TODO within that repo
 
@@ -14,6 +14,10 @@ That is, what is the effect of model uncertainty during training, on the learned
 > **No Hebbian reinforcement** in this project!
 
 ## Results: Part 1
+
+### Preliminary stuff
+
+- Maybe show adaptation (i.e. if we train only on CW curl fields, networks adapt)
 
 ### Training on different levels of model uncertainty
 
@@ -64,8 +68,13 @@ This will largely be left to part 2, since it is difficult to perform on network
 
 ### Additional analyses
 
-1. Comparison between state-dependent/”closed-loop” perturbations (e.g. curl fields) versus state-independent/”open-loop” perturbations (e.g. random constant fields). Or perhaps just repeat the entire analysis for fixed fields. 
-2. Also train/fine-tune a network on increased system noise and show whether it induces any robustness – presumably not, since symmetric noise will not cause local system deviations that the network would interpret as model uncertainty.
+#### Different kinds of perturbations
+
+It is important to demonstrate that the results
+
+For example, comparison between state-dependent/”closed-loop” perturbations (e.g. curl fields) versus state-independent/”open-loop” perturbations (e.g. random constant fields). Or perhaps just repeat the entire analysis for fixed fields. 
+
+Also train/fine-tune a network on increased system noise and show whether it induces any robustness – presumably not, since symmetric noise will not cause local system deviations that the network would interpret as model uncertainty.
 
 ## Results: Part 2
 
@@ -111,3 +120,16 @@ Supplementary analyses showing that network size, activation function, etc. are 
 We have not made direct comparisons in this study. Future studies would separate the feedback weights etc, or possibly have a separate state estimation network. 
 
 ### Network analysis
+
+### Limitations etc.
+#### Separation principle
+
+We use undifferentiated networks. 
+
+However, certain things are harder to investigate in this context.
+
+- What does the network’s forward model look like? For example, in the case of adaptation (CW curl) vs. robustening (mixed direction curl) what is the difference in the effect on the forward model?
+
+Note that in the future we can approach this problem without needing entirely distinct networks. For example, weight partitioning.
+
+

@@ -4,7 +4,7 @@ from jaxtyping import PyTree
 import plotly.graph_objects as go
 
 from feedbax import is_module
-from feedbax._tree import eitherf, istype
+from feedbax._tree import eitherf, is_type
 
 
 def swap_model_trainables(model: PyTree[..., "T"], trained: PyTree[..., "T"], where_train: Callable):
@@ -21,4 +21,4 @@ def subdict(dct, keys):
 
 def pp(tree):
     """Helper to pretty-print PyTrees, truncating objects commonly treated as leaves during data analysis."""
-    eqx.tree_pprint(tree, truncate_leaf=eitherf(is_module, istype(go.Figure)))
+    eqx.tree_pprint(tree, truncate_leaf=eitherf(is_module, is_type(go.Figure)))
