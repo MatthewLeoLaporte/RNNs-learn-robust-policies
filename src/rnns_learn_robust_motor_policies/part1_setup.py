@@ -22,7 +22,8 @@ def setup_models(
     feedback_delay_steps,
     feedback_noise_std,
     motor_noise_std,
-    disturbance_levels,
+    disturbance_type,
+    disturbance_stds,
     key,
 ):
     """Returns a skeleton PyTree for reloading trained models."""
@@ -53,7 +54,7 @@ def setup_models(
             CurlField.with_params(amplitude=jnp.array(1).item()),
             default_active=False,
         ),
-        disturbance_levels,    
+        disturbance_stds,    
     ))
     
     return models

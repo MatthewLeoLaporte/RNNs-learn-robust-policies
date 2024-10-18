@@ -1,9 +1,38 @@
 ---
 created: 2024-10-04T11:27
-updated: 2024-10-16T11:05
+updated: 2024-10-18T15:32
 ---
-- [x] Move this section into TODO within that repo
+- [ ] Modify nb 1-2a to work with both disturbance types – mostly just renaming `curl_*` to `disturbance_*`, but also need to decide on file naming convention (in particular when train disturbance is not the same as test disturbance)
+- [ ] Quantify response to feedback perturbation – max leftward and rightward control force 
+- [ ] Plot velocity profiles for feedback perturbations
+- [ ] Add notebook to load models for multiple noise conditions, and plot distribution comparisons 
+- [ ] Add endpoints to 1-2a 1.7.2 plots (single-condition trajectories across curl amplitude)
+## Review
 
+Ensure `n=1` for no-noise case.
+
+Doesn’t make sense to change delay between train and test.
+
+Max forward velocity – comparing different peaks…
+
+Don’t need to show single-condition distributions – it’s enough to see that the error bars are reasonably small on the example trajectories
+
+Ask Steve about sensory perturbations in human tasks – do they see oscillations (i.e. going from straight to “loopy”, like we see in the control vs. robust networks)
+
+Use different colors for 2x2 low-high summary plots, and replicate comparison plots (curl amplitude in one, train curl std. in the other)
+
+Use “Train curl std.” with a float for the replicate comparison plots, not “No curl during training” etc.
+
+### Exclude model replicates whose training diverged
+
+Or else save/load earlier checkpoint. 
+
+This only appears to be necessary in the case of training with delay, but we can implement it more generally. 
+
+It might be easier to do this at save time. 
+
+Aside from the loss, it looks like max net control force or end position error might be good indicators. 
+![[file-20241018152818864.png]]
 ## Motivation and questions
 
 What are the emergent properties of a system that learns to be robust? 

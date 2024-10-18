@@ -10,7 +10,6 @@ execute:
 # Analysis of plant perturbations
 
 In this notebook we begin our analysis of the models trained in the presence of different levels of curl force fields:
-
 - examine differences in baseline performance and state profiles of the models; e.g. differences in velocity profiles
 - compare robustness to mechanical disturbances; e.g. differences in endpoint error when subject to large curl fields; 
 
@@ -81,6 +80,8 @@ from rnns_learn_robust_motor_policies.tree_utils import (
 from rnns_learn_robust_motor_policies.setup_utils import (
     display_model_filechooser,
     filename_join as join,
+    set_model_noise,
+    find_unique_filepath,
 )
 
 ```
@@ -100,28 +101,21 @@ Unique ID for notebook, for naming outputs.
 NB_ID = "1-2a"
 ```
 
-### Global conditions
+### Hyperparameters
+
+We may want to adjust the noise level of a model trained at a different level. 
+
+Set these to `None` to keep the value used during training.
 
 ```{python}
-NO_SYSTEM_NOISE = False
+disturbance_type = None
 
-if NO_SYSTEM_NOISE:
-    filename_suffix = "no-noise"
-else:
-    filename_suffix = ""
-```
+noise_stds = dict(
+    feedback=None,
+    motor=None,
+)
 
-### Directories setup
-
-```{python}
-FIGS_DIR = Path(f'../figures/{NB_ID}/')
-MODELS_DIR = Path('../models')
-
-for d in (FIGS_DIR,):
-    d.mkdir(parents=True, exist_ok=True)
-    
-if not MODELS_DIR.exists():
-    raise FileNotFoundError(f"Models directory not found: {MODELS_DIR.absolute()}")
+feedback_delay_steps = None
 ```
 
 ### Plotting setup 
@@ -129,8 +123,15 @@ if not MODELS_DIR.exists():
 ```{python}
 trials_cmap = 'viridis'  # for trials
 trials_cmap_func = plt.get_cmap(trials_cmap)
+```
 
-savefig = get_savefig_func(FIGS_DIR, suffix=filename_suffix)
+### Directories
+
+```{python}
+MODELS_DIR = Path('../models')
+
+if not MODELS_DIR.exists():
+    raise FileNotFoundError(f"Models directory not found: {MODELS_DIR.absolute()}")
 ```
 
 ### RNG setup
@@ -141,48 +142,91 @@ key = jr.PRNGKey(SEED)
 key_init, key_train, key_eval = jr.split(key, 3)
 ```
 
-## Load trained models
+## Load and adjust trained models
+
+We'll provide a couple of options, here. 
+
+First, we can specify all the hyperparameters to load the corresponding model, assuming it has been trained.
 
 ```{python}
-fc = display_model_filechooser(MODELS_DIR, filter_pattern='1-1_*trained_models.eqx')
+load_from_parameters = True
+
+train_disturbance_type = 'curl'
 ```
 
 ```{python}
-if fc.selected is None:
-    models_filepath = f"{fc.default_path}/{fc.default_filename}"
-else:
-    models_filepath = fc.selected
+#| tags: [parameters]
+train_fb_noise_std = 0.2
+train_motor_noise_std = 0.2
+train_fb_delay_steps = 0  # TODO: it doesn't make sense to change the delay between train and test! get rid of this
+```
+
+```{python}
+train_fb_noise_std = float(train_fb_noise_std)
+train_motor_noise_std = float(train_motor_noise_std)
+```
+
+```{python}
+train_suffix = '_'.join([
+    f"{train_disturbance_type}",
+    f"noise-{train_fb_noise_std}-{train_motor_noise_std}",
+    f"delay-{train_fb_delay_steps}",
+])
+
+# raise RuntimeError(type(train_fb_noise_std))
+
+if load_from_parameters and 'None' in train_suffix:
+    raise ValueError("If loading from parameters, all parameters must be specified.")
+```
+
+On the other hand, maybe the user wants to browse and select a trained model file. In that case we can display a file chooser.
+
+```{python}
+if not load_from_parameters:
+    fc = display_model_filechooser(MODELS_DIR, filter_pattern='1-1_*trained_models.eqx')
+```
+
+The default filename is the one that sorts last. If the user does not select a file or if the following cell is run before they do, then the default file will be loaded.
+
+```{python}
+if not load_from_parameters:
+    if fc.selected is None:
+        models_filepath = f"{fc.default_path}/{fc.default_filename}"
+    else:
+        models_filepath = fc.selected
+else: 
+    models_filepath = str(find_unique_filepath(MODELS_DIR, f"1-1__{train_suffix}__trained_models"))
+    if models_filepath is None:
+        raise FileNotFoundError(f"No models found with suffix: {train_suffix}")
 
 trained_models, hyperparameters = load_with_hyperparameters(
+    # MODELS_DIR / models_filepath, setup_models,
     MODELS_DIR / models_filepath, setup_models,
 )
+```
 
-if NO_SYSTEM_NOISE:
-    trained_models = toggle_channel_noise(trained_models, False)
 
-train_curl_stds = hyperparameters['disturbance_levels']
+### Modify the system noise and delay if needed
+
+```{python}
+trained_models = jt.map(
+    partial(
+        set_model_noise, 
+        noise_stds=noise_stds,
+        enable_noise=True,
+    ),
+    trained_models,
+    is_leaf=is_module,
+)
+
+train_curl_stds = hyperparameters['disturbance_stds']
+
 trained_models = dict(zip(train_curl_stds, trained_models))
-
-n_replicates = hyperparameters['n_replicates']
-```
-
-Make some subsets of training conditions for reduced plots:
-
-```{python}
-train_curl_stds_lohi = [0, train_curl_stds[-1]]
-```
-
-Depending on how training goes, we might want to leave out some of the extreme curl strength training conditions.
-
-```{python}
-# curl_stds = curl_stds[:-2]
-
-trained_models = {key: trained_models[key] for key in train_curl_stds}
 ```
 
 ### Load parameters from earlier training iterations, where necessary
 
-Also depending on how training goes, we might want to keep the model parameters from an earlier training iteration.
+Also depending on how training goes, we might want to use model parameters from an earlier training iteration. 
 
 ```{python}
 model_parameter_histories, train_hyperparameters = load_with_hyperparameters(
@@ -191,7 +235,6 @@ model_parameter_histories, train_hyperparameters = load_with_hyperparameters(
 )
 
 model_parameter_histories = dict(zip(train_curl_stds, model_parameter_histories))
-where_train = attr_str_tree_to_where_func(train_hyperparameters['where_train_strs'])
 
 # load_spec = {0.4: -1, 0.5: -1}
 
@@ -199,6 +242,70 @@ where_train = attr_str_tree_to_where_func(train_hyperparameters['where_train_str
 #     trained_models[curl_std] = swap_model_trainables(
 #         trained_models[curl_std], tree_take(model_parameter_histories[curl_std], i), where_train
 #     )
+```
+
+### Assign some variables to indicate which hyperparameters we ended up using
+
+When `load_from_parameters == True` then some of the following is redundant because we'll have specified it already. However we still need to do it in the other case. 
+
+```{python}
+train_suffix = models_filepath.split('__')[1]
+train_disturbance_type = hyperparameters['disturbance_type']
+train_noise_stds = dict(
+    feedback=hyperparameters['feedback_noise_std'],
+    motor=hyperparameters['motor_noise_std'],
+)
+n_replicates = hyperparameters['n_replicates']
+where_train = attr_str_tree_to_where_func(train_hyperparameters['where_train_strs'])
+```
+
+If we didn't load from parameters, then can infer that the evaluation conditions will be the same as the training conditions.
+
+```{python}
+if disturbance_type is None:
+    disturbance_type = train_disturbance_type
+
+noise_stds = {
+    k: v if v is not None else train_noise_stds[k]
+    for k, v in noise_stds.items()
+}
+
+if feedback_delay_steps is None:
+    feedback_delay_steps = train_fb_delay_steps
+```
+
+### Define subsets of models/training conditions
+
+Depending on how training goes, we might want to leave out some of the extreme curl strength training conditions.
+
+```{python}
+include_curl_stds = train_curl_stds
+
+trained_models = {key: trained_models[key] for key in include_curl_stds}
+```
+
+Some summary plots will only include the lowest and highest training curl conditions.
+
+```{python}
+train_curl_stds_lohi = [0, train_curl_stds[-1]]
+```
+
+
+## Additional setup that depends on loaded models
+
+The figure hierarchy will depend on the hyperparameters of the trained model, so we needed to load the trained model before setting up the figure subdirectory.
+
+```{python}
+suffix = f"{disturbance_type}_noise-{noise_stds['feedback']}-{noise_stds['motor']}_delay-{feedback_delay_steps}"
+
+FIGS_DIR = Path(f'../figures/{NB_ID}/train__{train_suffix}/{suffix}')
+
+for d in (FIGS_DIR,):
+    d.mkdir(parents=True, exist_ok=True)
+```
+
+```{python}
+savefig = get_savefig_func(FIGS_DIR)
 ```
 
 ## Set up evaluation tasks
@@ -218,8 +325,27 @@ For a 2*2  grid of 32-direction center-out reach sets, 10 replicates, and 5 tria
 - do this on CPU (assuming we have more RAM available)
 
 ```{python}
-curl_amplitudes = [0.0, 0.5, 1.0, 2.0, 4.0]
-curl_amplitudes_lohi = [0.0, curl_amplitudes[-1]]
+if disturbance_type == 'curl':
+    disturbance_amplitudes = [0.0, 0.5, 1.0, 2.0, 4.0]
+    
+    def disturbance(amplitude):
+        return CurlField.with_params(amplitude=amplitude)    
+
+elif disturbance_type == 'random':
+    disturbance_amplitudes = [0.0, 0.05, 0.1, 0.2, 0.4]
+    
+    # TODO: sample Gaussian magnitude and uniform direction
+    def disturbance(amplitude):
+        return FixedField.with_params(
+            scale=field_std,
+            field=lambda trial_spec, *, key: jr.normal(key, (2,)),
+            # active=True,
+        )
+        
+else:
+    raise ValueError(f"Unknown disturbance type: {disturbance_type}")
+
+disturbance_amplitudes_lohi = [0.0, disturbance_amplitudes[-1]]
 ```
 
 ```{python}
@@ -244,21 +370,23 @@ task = SimpleReaches(
     eval_n_directions=eval_n_directions,
     eval_reach_length=eval_reach_length,  
 )
+```
 
-# Make task variants with different levels of curl field.
+```{python}
+# Make task variants with different levels of disturbance.
 # The trained models already have a `CurlField` intervenor, so we can just 
 # schedule an intervenor (of the same label) with the task, and discard the modified 
 # model returned by `schedule_intervenor`. 
 tasks, _ = tree_unzip(jt.map(
-    lambda curl_amplitude: schedule_intervenor(
+    lambda disturbance_amplitude: schedule_intervenor(
         task, trained_models[0],
         lambda model: model.step.mechanics,
-        CurlField.with_params(amplitude=curl_amplitude),
+        CurlField.with_params(amplitude=disturbance_amplitude),
         # Ensures the schedule will be applied to the labelled intervenors already present in the trained models
         label="CurlField",  
         default_active=False,
     ),
-    dict(zip(curl_amplitudes, curl_amplitudes)),
+    dict(zip(disturbance_amplitudes, disturbance_amplitudes)),
 ))
 
 # Make smaller versions of the tasks for visualization.
@@ -304,10 +432,10 @@ Evaluate each condition (reach direction) several times, to see how performance 
 
 ```{python}
 n_trials = 5
-n_trials_small = 10
+n_trials_small = 5
 
-if NO_SYSTEM_NOISE:
-    n_trials = n_trials_small = 1
+# if NO_SYSTEM_NOISE:
+#     n_trials = n_trials_small = 1
 ```
 
 In particular, for each trained ensemble of models (i.e. each training condition), evaluate each model in the ensemble on `n_trials` repetitions of each of the reach conditions. 
@@ -354,7 +482,7 @@ Note that we:
 2. Vmap over `keys_eval`, to obtain `n_trials` different evaluations of the center-out set. 
 3. Use `jt.map` to repeat for each training condition (entry in `trained_models`).
 
-The objects `all_states` and `all_states_small` are dicts whose keys are the `curl_amplitudes`, and whose values are dicts whose keys are the `curl_stds` used in training, and whose values are the PyTrees of state arrays.
+The objects `all_states` and `all_states_small` are dicts whose keys are the `disturbance_amplitudes`, and whose values are dicts whose keys are the `curl_stds` used in training, and whose values are the PyTrees of state arrays.
 
 Each state array has the following batch dimensions: `(n_trials, n_replicates, n_conditions, n_steps)`. For a single center-out set in `all_states_small`, `n_conditions = eval_n_directions`. But since `eval_grid_n != 1` for the full tasks evaluated in `all_states`, then there will be `eval_grid_n ** 2` center-out sets and the third dimension will have size `eval_n_directions * eval_grid_n ** 2`.
 
@@ -415,12 +543,12 @@ figs = jt.map(
 Add an annotation to provide context, and save figures.
 
 ```{python}
-for curl_amplitude in figs:
-    for train_curl_std, fig in figs[curl_amplitude].items():
+for disturbance_amplitude in figs:
+    for train_curl_std, fig in figs[disturbance_amplitude].items():
         add_context_annotation(
             fig,
             train_curl_std=train_curl_std,
-            curl_amplitude=curl_amplitude,
+            disturbance_amplitude=disturbance_amplitude,
             n=n_trials_small,
             i_replicate=i_replicate,
         )
@@ -430,7 +558,7 @@ for curl_amplitude in figs:
         savefig(
             fig, 
             join([
-                f"eval-curl-{curl_amplitude}",
+                f"eval-curl-{disturbance_amplitude}",
                 f"train-curl-std-{train_curl_std}",
                 f"replicate-{i_replicate}",
             ]),
@@ -441,9 +569,9 @@ for curl_amplitude in figs:
 Display just the (2x2) zero versus high curl, training versus evaluation conditions.
 
 ```{python}
-for curl_amplitude in curl_amplitudes_lohi:
+for disturbance_amplitude in disturbance_amplitudes_lohi:
     for train_curl_std in train_curl_stds_lohi:
-        figs[curl_amplitude][train_curl_std].show()
+        figs[disturbance_amplitude][train_curl_std].show()
 ```
 
 ### A single trial set, for a single replicate
@@ -473,12 +601,12 @@ figs = jt.map(
 ```
 
 ```{python}
-for curl_amplitude in figs:
-    for train_curl_std, fig in figs[curl_amplitude].items():
+for disturbance_amplitude in figs:
+    for train_curl_std, fig in figs[disturbance_amplitude].items():
         add_context_annotation(
             fig,
             train_curl_std=train_curl_std,
-            curl_amplitude=curl_amplitude,
+            disturbance_amplitude=disturbance_amplitude,
             i_trial=i_trial,
             i_replicate=i_replicate,
         )
@@ -486,18 +614,18 @@ for curl_amplitude in figs:
             fig, pos_endpoints_small, xaxis='x1', yaxis='y1', colorscale='phase'
         )
         filename = join([
-                f"eval-curl-{curl_amplitude}",
+                f"eval-curl-{disturbance_amplitude}",
                 f"train-curl-std-{train_curl_std}",
-                f"single-replicate-{i_replicate}",
-                f"single-trial-{i_trial}",
+                f"rep-{i_replicate}",
+                f"eval-{i_trial}",
         ])
         savefig(fig, filename, subdir=fig_subdir)
 ```
 
 ```{python}
-for curl_amplitude in curl_amplitudes_lohi:
+for disturbance_amplitude in disturbance_amplitudes_lohi:
     for train_curl_std in train_curl_stds_lohi:
-        figs[curl_amplitude][train_curl_std].show()
+        figs[disturbance_amplitude][train_curl_std].show()
 ```
 
 ### A single trial, for all replicates
@@ -525,12 +653,12 @@ figs = jt.map(
 ```
 
 ```{python}
-for curl_amplitude in figs:
-    for train_curl_std, fig in figs[curl_amplitude].items():
+for disturbance_amplitude in figs:
+    for train_curl_std, fig in figs[disturbance_amplitude].items():
         add_context_annotation(
             fig,
             train_curl_std=train_curl_std,
-            curl_amplitude=curl_amplitude,
+            disturbance_amplitude=disturbance_amplitude,
             i_trial=i_trial,
             n=n_replicates,
         )
@@ -541,18 +669,18 @@ for curl_amplitude in figs:
         savefig(
             fig, 
             join([
-                f"eval-curl-{curl_amplitude}",
+                f"eval-curl-{disturbance_amplitude}",
                 f"train-curl-std-{train_curl_std}",
-                f"single-trial-{i_trial}",
+                f"eval-{i_trial}",
             ]),
             subdir=fig_subdir,
         )
 ```
 
 ```{python}
-for curl_amplitude in curl_amplitudes_lohi:
+for disturbance_amplitude in disturbance_amplitudes_lohi:
     for train_curl_std in train_curl_stds_lohi:
-        figs[curl_amplitude][train_curl_std].show()
+        figs[disturbance_amplitude][train_curl_std].show()
 ```
 
 ### Side-by-side comparison of position trajectories across training conditions
@@ -614,12 +742,12 @@ figs = jt.map(
 ```
 
 ```{python}
-for curl_amplitude in figs:
-    for train_curl_std, fig in figs[curl_amplitude].items():
+for disturbance_amplitude in figs:
+    for train_curl_std, fig in figs[disturbance_amplitude].items():
         add_context_annotation(
             fig,
             train_curl_std=train_curl_std,
-            curl_amplitude=curl_amplitude,
+            disturbance_amplitude=disturbance_amplitude,
             n=n_replicates,  # color/legend is by trial, so this is N per trial
             # i_condition=i_condition,
         )
@@ -627,7 +755,7 @@ for curl_amplitude in figs:
             fig, 
             join([
                 f"single-condition-{i_condition}",
-                f"eval-curl-{curl_amplitude}",
+                f"eval-curl-{disturbance_amplitude}",
                 f"train-curl-std-{train_curl_std}",
             ]),
             subdir=fig_subdir,
@@ -635,9 +763,9 @@ for curl_amplitude in figs:
 ```
 
 ```{python}
-for curl_amplitude in curl_amplitudes_lohi:
+for disturbance_amplitude in disturbance_amplitudes_lohi:
     for train_curl_std in train_curl_stds_lohi:
-        figs[curl_amplitude][train_curl_std].show()
+        figs[disturbance_amplitude][train_curl_std].show()
 ```
 
 ### Compare the test curl amplitude, for each training curl std
@@ -660,7 +788,7 @@ figs = jt.map(
         colorscale='Viridis',
         colorscale_axis=0,
         legend_title="Curl amplitude",
-        legend_labels=curl_amplitudes,
+        legend_labels=disturbance_amplitudes,
         scatter_kws=dict(line_width=0.5, opacity=0.3),
     ),
     plot_states_stacked,
@@ -708,8 +836,8 @@ train_curl_stds_plot = train_curl_stds_lohi
 # Stack the states for different training curl stds into single arrays
 # (also taking a subset of the training conditions with `subdict`)
 plot_states_stacked = {
-    curl_amplitude: tree_stack(subdict(states, train_curl_stds_plot).values())
-    for curl_amplitude, states in plot_states.items()
+    disturbance_amplitude: tree_stack(subdict(states, train_curl_stds_plot).values())
+    for disturbance_amplitude, states in plot_states.items()
 }
 
 figs = jt.map(
@@ -733,10 +861,10 @@ figs = jt.map(
 
 n_trials_plot = n_trials_small * n_replicates
 
-for curl_amplitude, fig in figs.items():
+for disturbance_amplitude, fig in figs.items():
     add_context_annotation(
         fig,
-        curl_amplitude=curl_amplitude,
+        disturbance_amplitude=disturbance_amplitude,
         n=n_trials_plot,
     )
     
@@ -746,15 +874,15 @@ for curl_amplitude, fig in figs.items():
         fig, 
         join([
             f"single-condition-{i_condition}",
-            f"curl_amplitude-{curl_amplitude}",
+            f"disturbance_amplitude-{disturbance_amplitude}",
         ]),
         subdir=fig_subdir,
     )   
 ```
 
 ```{python}
-for curl_amplitude in curl_amplitudes_lohi:
-    figs[curl_amplitude].show()
+for disturbance_amplitude in disturbance_amplitudes_lohi:
+    figs[disturbance_amplitude].show()
 ```
 
 ## Compare velocity profiles
@@ -789,24 +917,24 @@ all_speeds = jt.map(get_speed, all_states, is_leaf=is_module)
 n_dist = np.prod(jt.leaves(all_speeds)[0].shape[:-1])
 
 figs = {
-    curl_amplitude: fbp.profiles(
+    disturbance_amplitude: fbp.profiles(
         speeds,
         mode='std', 
         varname="Speed",
     )
-    for curl_amplitude, speeds in all_speeds.items()
+    for disturbance_amplitude, speeds in all_speeds.items()
 }
 
-for curl_amplitude in figs:
+for disturbance_amplitude in figs:
     add_context_annotation(
-        figs[curl_amplitude],
-        curl_amplitude=curl_amplitude,
+        figs[disturbance_amplitude],
+        disturbance_amplitude=disturbance_amplitude,
         n=n_dist,
         y=1.1,
     )
 
-for curl_amplitude in curl_amplitudes_lohi:
-    figs[curl_amplitude].show()
+for disturbance_amplitude in disturbance_amplitudes_lohi:
+    figs[disturbance_amplitude].show()
 ```
 
 ### Forward and lateral velocity profiles
@@ -827,9 +955,9 @@ forward_lateral_vel = jt.map(
 
 ```{python}
 figs = {
-    curl_amplitude: {
+    disturbance_amplitude: {
         label: fbp.profiles(
-            tree_take(forward_lateral_vel, i, -1)[curl_amplitude],
+            tree_take(forward_lateral_vel, i, -1)[disturbance_amplitude],
             varname=f"{label} velocity",
             legend_title="Train curl std.",
             mode='std', # or 'curves'
@@ -839,24 +967,24 @@ figs = {
         )
         for i, label in enumerate(("Forward", "Lateral"))
     }
-    for curl_amplitude in curl_amplitudes
+    for disturbance_amplitude in disturbance_amplitudes
 }
 
-for curl_amplitude in curl_amplitudes:
+for disturbance_amplitude in disturbance_amplitudes:
     for i, label in enumerate(("Forward", "Lateral")):
-        fig = figs[curl_amplitude][label]
+        fig = figs[disturbance_amplitude][label]
         fig.add_hline(y=0, line_color="grey", layer="below")
         add_context_annotation(
             fig,
-            curl_amplitude=curl_amplitude,
+            disturbance_amplitude=disturbance_amplitude,
             n=n_dist,
         )
-        filename = f"eval-curl-{curl_amplitude}_{label.lower()}-vels"
+        filename = f"eval-curl-{disturbance_amplitude}_{label.lower()}-vels"
         savefig(fig, filename, subdir=fig_subdir)
         
-for curl_amplitude in curl_amplitudes_lohi:
-    figs[curl_amplitude]["Forward"].show()
-    figs[curl_amplitude]["Lateral"].show()
+for disturbance_amplitude in disturbance_amplitudes_lohi:
+    figs[disturbance_amplitude]["Forward"].show()
+    figs[disturbance_amplitude]["Lateral"].show()
 
 ```
 
@@ -1018,7 +1146,7 @@ One plot per evaluation condition (curl amplitude); one violin per training cond
 Distributions are aggregated over all replicates and trials. 
 
 ```{python}
-def get_violins_across_train_conditions(data, measure_name, curl_amplitude, annotation_kws=None):
+def get_violins_across_train_conditions(data, measure_name, disturbance_amplitude, annotation_kws=None):
     n_dist = np.prod(jt.leaves(data)[0].shape)
     
     fig = go.Figure(
@@ -1036,7 +1164,7 @@ def get_violins_across_train_conditions(data, measure_name, curl_amplitude, anno
             for train_curl_std in data
         ],
         layout=dict(
-            # title=(f"Response to amplitude {curl_amplitude} curl field <br>N = {n_dist}"),
+            # title=(f"Response to amplitude {disturbance_amplitude} curl field <br>N = {n_dist}"),
             xaxis_title="Training curl std.",
             yaxis_title=measure_name,
             xaxis_range=[-0.5, len(data) - 0.5],
@@ -1050,7 +1178,7 @@ def get_violins_across_train_conditions(data, measure_name, curl_amplitude, anno
     if annotation_kws is None:
         annotation_kws = dict()
     
-    add_context_annotation(fig, curl_amplitude=curl_amplitude, n=n_dist, **annotation_kws)
+    add_context_annotation(fig, disturbance_amplitude=disturbance_amplitude, n=n_dist, **annotation_kws)
     
     return fig
 
@@ -1058,10 +1186,10 @@ def get_violins_across_train_conditions(data, measure_name, curl_amplitude, anno
 def get_one_measure_plot_per_eval_condition(plot_func, all_measures, **kwargs):
     return {
         measure_name: {
-            curl_amplitude: plot_func(
-                measure[curl_amplitude], measure_name, curl_amplitude, **kwargs
+            disturbance_amplitude: plot_func(
+                measure[disturbance_amplitude], measure_name, disturbance_amplitude, **kwargs
             )
-            for curl_amplitude in measure
+            for disturbance_amplitude in measure
         }
         for measure_name, measure in all_measures.items()
     }
@@ -1075,12 +1203,12 @@ figs = get_one_measure_plot_per_eval_condition(
 
 ```{python}
 for measure_name, measure_handle in measure_handles.items():
-    for curl_amplitude, fig in figs[measure_name].items():
+    for disturbance_amplitude, fig in figs[measure_name].items():
         savefig(
             fig, 
             join([
                 f"{measure_handle}",
-                f"eval-curl-{curl_amplitude}",
+                f"eval-curl-{disturbance_amplitude}",
             ]),
             subdir=fig_subdir,
         )
@@ -1114,12 +1242,12 @@ figs0 = get_one_measure_plot_per_eval_condition(
 
 ```{python}
 for measure_name, measure_handle in measure_handles.items():
-    for curl_amplitude, fig in figs0[measure_name].items():
+    for disturbance_amplitude, fig in figs0[measure_name].items():
         savefig(
             fig, 
             join([
                 f"{measure_handle}",
-                f"eval-curl-{curl_amplitude}",
+                f"eval-curl-{disturbance_amplitude}",
                 f"condition-{i_condition}",
             ]),
             subdir=fig_subdir,
@@ -1163,12 +1291,12 @@ figs = jt.map(
 
 ```{python}
 for measure_name, measure_handle in measure_handles.items():
-    for curl_amplitude, fig in figs[measure_name].items():
+    for disturbance_amplitude, fig in figs[measure_name].items():
         savefig(
             fig, 
             join([
                 f"{measure_handle}",
-                f"eval-curl-{curl_amplitude}",
+                f"eval-curl-{disturbance_amplitude}",
                 "lowest-vs-highest",
             ]),
             subdir=fig_subdir,
@@ -1196,7 +1324,7 @@ labels = [
 colors = ['blue', 'orange']
 
 
-def get_measure_replicate_comparisons(data, measure_name, curl_amplitude, annotation_kws=None):
+def get_measure_replicate_comparisons(data, measure_name, disturbance_amplitude, annotation_kws=None):
     n_dist = np.prod(jt.leaves(data)[0].shape)
     
     data = jnp.stack(list(data.values()))
@@ -1228,7 +1356,7 @@ def get_measure_replicate_comparisons(data, measure_name, curl_amplitude, annota
         yaxis_range=[0, None],
         violinmode='overlay',
         violingap=0,
-        # title=(f"Response to amplitude {curl_amplitude} curl field <br>N = {n_dist}"),
+        # title=(f"Response to amplitude {disturbance_amplitude} curl field <br>N = {n_dist}"),
     )
     
     if annotation_kws is None:
@@ -1236,7 +1364,7 @@ def get_measure_replicate_comparisons(data, measure_name, curl_amplitude, annota
     
     add_context_annotation(
         fig, 
-        curl_amplitude=curl_amplitude, 
+        disturbance_amplitude=disturbance_amplitude, 
         n=n_dist, 
         **annotation_kws,
     )
@@ -1251,12 +1379,12 @@ figs = get_one_measure_plot_per_eval_condition(
 
 ```{python}
 for measure_name, measure_handle in measure_handles.items():
-    for curl_amplitude, fig in figs[measure_name].items():
+    for disturbance_amplitude, fig in figs[measure_name].items():
         savefig(
             fig, 
             join([
                 f"{measure_handle}",
-                f"eval-curl-{curl_amplitude}",
+                f"eval-curl-{disturbance_amplitude}",
             ]),
             subdir=fig_subdir,
         )
@@ -1275,7 +1403,7 @@ fig_subdir = "performance_measures/lowhigh_summaries"
 
 ```{python}
 all_measures_lohi = {
-    measure_name: subdict(measure, curl_amplitudes_lohi)
+    measure_name: subdict(measure, disturbance_amplitudes_lohi)
     for measure_name, measure in all_measures_subset_train_curl_stds.items()
 }
 ```
@@ -1292,16 +1420,16 @@ def get_lohi_summary_violins(measure_data, measure_name, annotation_kws=None):
                 go.Violin(
                     x=jnp.full((n_dist,), train_curl_std),
                     y=data.flatten(),
-                    name=curl_amplitude,
+                    name=disturbance_amplitude,
                     box_visible=False,
                     meanline_visible=True,
                     line_color=color[i],
                     showlegend=(j == 0),
                     spanmode='hard',
                 )
-                for j, (train_curl_std, data) in enumerate(measure_data[curl_amplitude].items())
+                for j, (train_curl_std, data) in enumerate(measure_data[disturbance_amplitude].items())
             ]
-            for i, curl_amplitude in enumerate(measure_data)
+            for i, disturbance_amplitude in enumerate(measure_data)
         ]),
         layout=dict(
             width=500,
@@ -1332,6 +1460,18 @@ figs = {
 ```
 
 ```{python}
+for measure_name, measure_handle in measure_handles.items():
+    savefig(
+        figs[measure_name], 
+        join([
+            f"{measure_handle}",
+            "lohi-summary",
+        ]),
+        subdir=fig_subdir,
+    )
+```
+
+```{python}
 for measure_name in all_measures:
     figs[measure_name].show()
 ```
@@ -1345,3 +1485,10 @@ i.e. not one plot for each evaluation condition for each measure, but a single p
 Not sure the relationship is linear...
 
 
+## Cleanup
+
+Not sure this is necessary 
+
+```{python}
+del all_states, all_states_small, all_measures, figs
+```

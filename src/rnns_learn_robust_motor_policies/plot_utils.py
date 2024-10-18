@@ -49,7 +49,7 @@ def get_savefig_func(fig_dir: Path, suffix=""):
 def add_context_annotation(
     fig: go.Figure,
     train_curl_std=None, 
-    curl_amplitude=None,
+    disturbance_amplitude=None,
     n=None,
     i_trial=None,
     i_replicate=None,
@@ -61,8 +61,8 @@ def add_context_annotation(
     if train_curl_std is not None:
         lines.append(f"Trained on curl fields with amplitude ~ \U0001d4dd(0,{train_curl_std})")
         
-    if curl_amplitude is not None:
-        lines.append(f"Response to amplitude {curl_amplitude} curl field")
+    if disturbance_amplitude is not None:
+        lines.append(f"Response to amplitude {disturbance_amplitude} curl field")
     
     match (n, i_trial, i_replicate):
         case (None, None, None):

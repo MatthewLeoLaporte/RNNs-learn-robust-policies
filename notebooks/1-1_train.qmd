@@ -103,27 +103,28 @@ get_datestr = lambda: datetime.now().strftime("%Y%m%d-%Hh%M")
 ```
 
 ### Hyperparameters
-
+ 
 These are parameters that can be [varied](https://quarto.org/docs/computations/parameters.html) through the command line interface to Quarto. 
 
 ```{python}
 #| tags: [parameters]
 
+disturbance_type = 'curl'  # or 'random'
 hidden_size  = 50
-feedback_delay_steps = 0
-feedback_noise_std = 0.025
-motor_noise_std = 0.025
+feedback_delay_steps = 5
+feedback_noise_std = 0.0
+motor_noise_std = 0.0
 ```
 
 ```{python}
-suffix = f"noise-{feedback_noise_std}-{motor_noise_std}_delay-{feedback_delay_steps}_hidden-{hidden_size}"
+suffix = f"{disturbance_type}_noise-{feedback_noise_std}-{motor_noise_std}_delay-{feedback_delay_steps}"
 ```
 
 ### Directories setup
 
 ```{python}
-FIGS_DIR = Path(f'../figures/{NB_ID}/')
-MODELS_DIR = Path('../models/')
+FIGS_DIR = Path(f'../figures/{NB_ID}/{suffix}')
+MODELS_DIR = Path('../models')
 
 for d in (FIGS_DIR, MODELS_DIR):
     d.mkdir(parents=True, exist_ok=True)
@@ -139,7 +140,7 @@ trials_cmap_func = plt.get_cmap(trials_cmap)
 ```
 
 ```{python}
-savefig = get_savefig_func(FIGS_DIR, suffix=filename_suffix)
+savefig = get_savefig_func(FIGS_DIR)
 ```
 
 ### RNG setup
@@ -192,8 +193,8 @@ models = get_ensemble(
     key=key_init,
 )
 
-if NO_SYSTEM_NOISE:
-    models = toggle_channel_noise(models, False)
+# if NO_SYSTEM_NOISE:
+#     models = toggle_channel_noise(models, False)
 ```
 
 
@@ -204,22 +205,36 @@ if NO_SYSTEM_NOISE:
 Schedule random curl fields in the training trials.
 
 ```{python}
-disturbance_type = 'gaussian-curl-fields'
-disturbance_levels = [0, 0.2, 0.4, 0.6, 0.8, 1.0]
-
-def curl_field(curl_std):
-    return CurlField.with_params(
-        amplitude=lambda trial_spec, *, key: curl_std * jr.normal(key, (1,)),
-    )
+if disturbance_type == 'curl':
+    disturbance_stds = jnp.linspace(0, 1, 5).tolist()
+    
+    def disturbance(curl_std):
+        return CurlField.with_params(
+            scale=curl_std,
+            amplitude=lambda trial_spec, *, key: jr.normal(key, (1,)),
+        )
+        
+elif disturbance_type == 'random':
+    disturbance_stds = jnp.linspace(0, 0.1, 2).tolist()
+    
+    # TODO: sample Gaussian magnitude and uniform direction
+    def disturbance(field_std):
+        return FixedField.with_params(
+            scale=field_std,
+            field=lambda trial_spec, *, key: jr.normal(key, (2,)),
+            # active=True,
+        )
+else:
+    raise ValueError(f"Unknown disturbance type: {disturbance_type}")
 
 task_model_pairs = jt.map(
-    lambda curl_std: schedule_intervenor(
+    lambda disturbance_std: schedule_intervenor(
         task_train, models,
         lambda model: model.step.mechanics,
-        curl_field(curl_std),
+        disturbance(disturbance_std),
         default_active=False,
     ),
-    disturbance_levels,
+    disturbance_stds,
 )
 ```
 
@@ -258,7 +273,7 @@ trainer = TaskTrainer(
 trained_models = OrderedDict({})
 train_histories = OrderedDict({})
 
-for curl_std, (task_, models_) in tqdm(list(zip(disturbance_levels, task_model_pairs))):
+for curl_std, (task_, models_) in tqdm(list(zip(disturbance_stds, task_model_pairs))):
     trained_models[curl_std], train_histories[curl_std] = trainer(
         task_, 
         models_,
@@ -296,7 +311,8 @@ model_hyperparameters = dict(
     dt=dt,
     n_steps=n_steps,
     mass=mass,
-    disturbance_levels=disturbance_levels,
+    disturbance_type=disturbance_type,
+    disturbance_stds=disturbance_stds,
 )
 
 training_hyperparameters = dict(
@@ -305,7 +321,7 @@ training_hyperparameters = dict(
     batch_size=batch_size,
     save_model_parameters=save_model_parameters.tolist(),
     where_train_strs=where_func_to_labels(where_train),
-    disturbance_levels=disturbance_levels,
+    disturbance_stds=disturbance_stds,
     disturbance_type=disturbance_type,
 )
 ```
@@ -313,22 +329,21 @@ training_hyperparameters = dict(
 ```{python}
 datestr = get_datestr()
 
-model_filename = join([
-    f"{NB_ID}",
-    f"{datestr}",
-    f"{model_file_label}",
-    filename_suffix,
-]) + '.eqx'
+model_basename = join([
+    NB_ID,
+    suffix,
+    model_file_label,
+])
 
 save(
-    MODELS_DIR / model_filename,
+    str(MODELS_DIR / model_basename) + '.eqx',
     list(trained_models.values()),
     hyperparameters=model_hyperparameters,
 )
 
 write_to_json(
     model_hyperparameters | training_hyperparameters,
-    MODELS_DIR / f"{NB_ID}__{datestr}__hyperparameters.json",
+    str(MODELS_DIR / model_basename.replace(model_file_label, 'hyperparameters')) + '.json',
 )
 ```
 
@@ -347,13 +362,13 @@ model_param_histories = jt.map(
     is_leaf=is_module,
 )
 
-model_param_histories_filename = model_filename.replace(
+model_param_histories_basename = model_basename.replace(
     model_file_label, 
     model_param_histories_file_label,
 )
 
 save(
-    MODELS_DIR / model_param_histories_filename,
+    str(MODELS_DIR / model_param_histories_basename) + ".eqx",
     model_param_histories,
     hyperparameters=dict(
         where_train_strs=where_func_to_labels(where_train),
@@ -375,7 +390,7 @@ from functools import partial
 from rnns_learn_robust_motor_policies.part1_setup import setup_model_parameter_histories
 
 model_parameter_histories_ = load(
-    MODELS_DIR / model_param_histories_filename,
+    str(MODELS_DIR / model_param_histories_basename) + ".eqx",
     partial(setup_model_parameter_histories, list(trained_models.values())),
 )
 ```
@@ -388,16 +403,16 @@ model_parameter_histories_ = load(
 
 for curl_std, history in train_histories.items():
     label = join([
-        f"{NB_ID}",
+        NB_ID,
         "loss-history",
         f"curl-std-{curl_std}",
     ])
     
-    # p1, _ = fbplt.loss_history(history.loss)
+    p1, _ = fbplt.loss_history(history.loss)
     # p2, _ = fbplt.loss_mean_history(history.loss)
     p3 = fbp.loss_history(history.loss)
     
-    # savefig(p1, join([label, 'replicates']))
+    savefig(p1, join([label, 'replicates']))
     # savefig(p2, label)
     savefig(p3, label)
 ```

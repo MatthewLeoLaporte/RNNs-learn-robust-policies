@@ -72,6 +72,7 @@ from rnns_learn_robust_motor_policies.tree_utils import (
 from rnns_learn_robust_motor_policies.setup_utils import (
     display_model_filechooser,
     filename_join as join,
+    set_model_noise,
 )
 ```
 
@@ -90,17 +91,15 @@ Unique ID for notebook, for naming outputs.
 NB_ID = "1-2b"
 ```
 
-### Global conditions
+### Hyperparameters
 
-`NO_SYSTEM_NOISE` will be used to toggle system noise regardless of how strong the system noise is. 
+We may want to adjust the noise level of a model trained at a different level. 
+
+**TODO: use the same approach as nb 1-2a**
 
 ```{python}
-NO_SYSTEM_NOISE = True
-
-if NO_SYSTEM_NOISE:
-    filename_suffix = "no-noise"
-else:
-    filename_suffix = ""
+feedback_noise_std = 0.025
+motor_noise_std = 0.025
 ```
 
 ### Directories setup
@@ -122,7 +121,20 @@ if not MODELS_DIR.exists():
 trials_cmap = 'viridis'  # for trials
 trials_cmap_func = plt.get_cmap(trials_cmap)
 
-savefig = get_savefig_func(FIGS_DIR, suffix=filename_suffix)
+savefig = get_savefig_func(FIGS_DIR)
+```
+
+The following is a workaround to get LaTeX to display in Plotly figures in VSCode.
+
+```{python}
+if os.environ.get('VSCODE_PID') is not None:
+    import plotly
+    from IPython.display import HTML
+    
+    plotly.offline.init_notebook_mode()
+    display(HTML(
+        '<script type="text/javascript" async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-MML-AM_SVG"></script>'
+    ))
 ```
 
 ### RNG setup
@@ -152,8 +164,18 @@ trained_models, hyperparameters = load_with_hyperparameters(
     MODELS_DIR / models_filepath, setup_models,
 )
 
-if NO_SYSTEM_NOISE:
-    trained_models = toggle_channel_noise(trained_models, False)
+trained_models = jt.map(
+    partial(
+        set_model_noise, 
+        noise_stds=dict(
+            feedback=feedback_noise_std, 
+            motor=motor_noise_std,
+        ),
+        enable_noise=True,
+    ),
+    trained_models,
+    is_leaf=is_module,
+)
 
 train_curl_stds = hyperparameters['disturbance_levels']
 trained_models = dict(zip(train_curl_stds, trained_models))
@@ -221,6 +243,7 @@ task = SimpleReaches(
 impulse_amplitude = 1.0
 impulse_start_step = 30
 impulse_duration = 5
+impulse_end_step = impulse_start_step + impulse_duration
 ```
 
 ```{python}
@@ -354,14 +377,16 @@ vectors = jnp.squeeze(trial_specs.intervene['ConstantInput'].arrays[:, vector_id
 ```{python}
 n_trials = 5
 
-if NO_SYSTEM_NOISE:
-    n_trials = 1
+# if NO_SYSTEM_NOISE:
+#     n_trials = 1
 ```
 
 ```{python}
 tasks_imp = tasks_imp_xy
 models_imp = models_imp_xy
+```
 
+```{python}
 def get_eval_ensemble(models, task):
     def eval_ensemble(key):
         return task.eval_ensemble(
@@ -382,6 +407,14 @@ all_states_imp = {
     )
     for key in models_imp
 }
+```
+
+Make sure the subdirectories exist for the figures we'll generate:
+
+```{python}
+# for label in models_imp:
+#     fig_subdir = FIGS_DIR / f"fb_impulse_{label}",
+#     os.makedirs(fig_subdir, exist_ok=True)
 ```
 
 ## Plot some examples sets
@@ -419,8 +452,8 @@ figs = jt.map(
 ```
 
 ```{python}
-for impulse_condition in figs:
-    for train_curl_std, fig in figs[impulse_condition].items():
+for pert_condition in figs:
+    for train_curl_std, fig in figs[pert_condition].items():
         add_context_annotation(
             fig,
             train_curl_std=train_curl_std,
@@ -431,13 +464,17 @@ for impulse_condition in figs:
         # add_endpoint_traces(
         #     fig, pos_endpoints_small, xaxis='x1', yaxis='y1', colorscale='phase'
         # )
-        # filename = '_'.join([
-        #         f"eval-curl-{curl_amplitude}",
-        #         f"train-curl-std-{train_curl_std}",
-        #         f"single-replicate-{i_replicate}",
-        #         f"single-trial-{i_trial}",
-        # ])
-        # savefig(fig, filename, subdir=fig_subdir)
+        savefig(
+            fig, 
+            join([
+                f"train-curl-std-{train_curl_std}",
+                f"imp-amp-{impulse_amplitude}",
+                f"imp-steps-{impulse_duration}",
+                f"rep-{i_replicate}",
+                f"eval-{i_trial}",
+            ]),
+            subdir=f"fb_impulse_{pert_condition}/example_sets",
+        )
 ```
 
 ```{python}
@@ -450,15 +487,19 @@ for impulse_condition in figs:
 
 ```{python}
 i_replicate = 1
+n_preceding_steps = 0
 
-n_preceding_steps = 5
+# plot_ts = slice(impulse_start_step - n_preceding_steps, None)
+plot_ts = slice(None)
 
 all_controls_imp = jt.map(
-    lambda states: states.net.output[..., impulse_start_step - n_preceding_steps:, :],
+    lambda states: states.net.output[..., plot_ts, :],
     all_states_imp,
     is_leaf=is_module,
 )
+```
 
+```{python}
 figs = {
     imp_condn: {
         label: fbp.profiles(
@@ -469,14 +510,53 @@ figs = {
             ),
             timesteps=jnp.arange(-n_preceding_steps, n_steps),
             mode='std', 
-            varname="Control force",
+            varname=fr"${label}$",
+            layout_kws=dict(
+                title=f"Impulse in {imp_condn} of amplitude {impulse_amplitude} for {impulse_duration} time steps",
+                legend=dict(
+                    title="Train curl std.",
+                    # xref="container",
+                    # yref="container",
+                    # y=0.60, 
+                ),
+                # legend2=dict(
+                #     title="",
+                #     xref="container",
+                #     yref="container",
+                #     y=0.85, 
+                # ),
+            ),
+            scatter_kws=dict(legend="legend"),
         )
-        for label, i in dict(fx=0, fy=1).items()
+        for label, i in dict(F_x=0, F_y=1).items()
     }
     for imp_condn, controls in all_controls_imp.items()
 }
+```
 
-# jt.map(
-#     lambda fig: fig.add_vline(x=)
-# )
+```{python}
+for pert_condition in figs:
+    for label, fig in figs[pert_condition].items():
+        fig.add_vrect(
+            x0=impulse_start_step, 
+            x1=impulse_end_step,
+            fillcolor='grey', 
+            opacity=0.1, 
+            line_width=0,
+            name='Perturbation',
+            # showlegend=True,
+            # legend="legend2",
+        )
+        
+        savefig(
+            fig, 
+            join([
+                f"{label}",
+                f"imp-amp-{impulse_amplitude}",
+                f"imp-steps-{impulse_duration}",
+            ]),
+            subdir=f"fb_impulse_{pert_condition}/force_response",
+        )
+        
+        fig.show()
 ```
