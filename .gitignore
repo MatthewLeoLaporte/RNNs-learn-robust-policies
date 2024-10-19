@@ -2,7 +2,7 @@
 COMMIT_MSG.txt
 
 # Quarto
-_output
+_output*
 _freeze
 
 # Markdown copies of example notebooks
@@ -127,6 +127,7 @@ target/
 
 # Jupyter Notebook
 *.ipynb
+*.quarto_ipynb
 .ipynb_checkpoints
 
 # Quarto

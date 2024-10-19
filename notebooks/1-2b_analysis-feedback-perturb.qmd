@@ -93,14 +93,36 @@ NB_ID = "1-2b"
 
 ### Hyperparameters
 
-We may want to adjust the noise level of a model trained at a different level. 
-
-**TODO: use the same approach as nb 1-2a**
+We may want to specify 1) which trained models to load, by their parameters, and 2) how to modify the model parameters for analysis.
 
 ```{python}
-feedback_noise_std = 0.025
-motor_noise_std = 0.025
+#| tags: [parameters]
+
+# Specify which trained models to load 
+disturbance_type_load: Literal['curl', 'random'] = 'curl'
+feedback_noise_std_load = 0.2
+motor_noise_std_load = 0.2
+feedback_delay_steps_load = 0  
+
+# Specify model parameters to use for analysis (None -> use training value)
+disturbance_type: Optional[Literal['curl', 'random']] = None
+feedback_noise_std: Optional[float] = None
+motor_noise_std: Optional[float] = None
 ```
+
+These parameters may be passed as strings from the command line in some cases, so we need to cast them to be sure.
+
+```{python}
+feedback_noise_std_load = float(feedback_noise_std_load)
+motor_noise_std_load = float(motor_noise_std_load)
+feedback_delay_steps_load = int(feedback_delay_steps_load)
+if feedback_noise_std is not None:
+    feedback_noise_std = float(feedback_noise_std)
+if motor_noise_std is not None:
+    motor_noise_std = float(motor_noise_std)
+```
+
+See further below for parameter-based loading of models, as well as the code that modifies the models prior to analysis.
 
 ### Directories setup
 
@@ -145,55 +167,92 @@ key = jr.PRNGKey(SEED)
 key_init, key_train, key_eval = jr.split(key, 3)
 ```
 
-## Load trained models
+### Specify file by noise and delay hyperparameters
+
+First, we can specify all the hyperparameters to load the corresponding model, assuming it has been trained.
 
 ```{python}
-fc = display_model_filechooser(
-    MODELS_DIR,
-    filter_pattern='1-1_*trained_models*.eqx',
-)
+load_from_parameters = True
 ```
 
 ```{python}
-if fc.selected is None:
-    models_filepath = f"{fc.default_path}/{fc.default_filename}"
-else:
-    models_filepath = fc.selected
+#| tags: [parameters]
+disturbance_type_load: Literal['curl', 'random'] = 'curl'
+feedback_noise_std_load = 0.2
+motor_noise_std_load = 0.2
+feedback_delay_steps_load = 0  
+```
+
+```{python}
+feedback_noise_std_load = float(feedback_noise_std_load)
+motor_noise_std_load = float(motor_noise_std_load)
+```
+
+```{python}
+suffix_load = '_'.join([
+    f"{disturbance_type_load}",
+    f"noise-{feedback_noise_std_load}-{motor_noise_std_load}",
+    f"delay-{feedback_delay_steps_load}",
+])
+
+if load_from_parameters and 'None' in suffix_load:
+    raise ValueError("If loading from parameters, all parameters must be specified.")
+```
+
+### Specify file by user selection
+
+On the other hand, maybe the user wants to browse and select a trained model file. In that case we can display a file chooser.
+
+```{python}
+if not load_from_parameters:
+    fc = display_model_filechooser(MODELS_DIR, filter_pattern='1-1_*trained_models.eqx')
+```
+
+The default filename is the one that sorts last. If the user does not select a file or if the following cell is run before they do, then the default file will be loaded.
+
+### Load the specified model
+
+```{python}
+if not load_from_parameters:
+    if fc.selected is None:
+        models_filepath = f"{fc.default_path}/{fc.default_filename}"
+    else:
+        models_filepath = fc.selected
+else: 
+    models_filepath = str(find_unique_filepath(MODELS_DIR, f"1-1__{suffix_load}__trained_models"))
+    if models_filepath is None:
+        raise FileNotFoundError(f"No models found with file label: {suffix_load}")
 
 trained_models, hyperparameters = load_with_hyperparameters(
+    # MODELS_DIR / models_filepath, setup_models,
     MODELS_DIR / models_filepath, setup_models,
 )
 
+# We'll use this for creating figure subdirectories according to the training conditions
+suffix_train = models_filepath.split('__')[1]
+```
+
+### Modify the system noise if needed
+
+```{python}
 trained_models = jt.map(
     partial(
         set_model_noise, 
-        noise_stds=dict(
-            feedback=feedback_noise_std, 
-            motor=motor_noise_std,
-        ),
+        noise_stds=noise_stds,
         enable_noise=True,
     ),
     trained_models,
     is_leaf=is_module,
 )
 
-train_curl_stds = hyperparameters['disturbance_levels']
-trained_models = dict(zip(train_curl_stds, trained_models))
+curl_stds_train = hyperparameters['disturbance_stds']
 
-n_replicates = hyperparameters['n_replicates']
-```
-
-Depending on how training goes, we might want to leave out some of the extreme curl strength training conditions.
-
-```{python}
-# curl_stds = curl_stds[:-2]
-
-trained_models = {key: trained_models[key] for key in train_curl_stds}
+trained_models = dict(zip(curl_stds_train, trained_models))
 ```
 
 ### Load parameters from earlier training iterations, where necessary
 
-Also depending on how training goes, we might want to keep the model parameters from an earlier training iteration.
+Also depending on how training goes, we might want to use model parameters from an earlier training iteration. 
 
 ```{python}
 model_parameter_histories, train_hyperparameters = load_with_hyperparameters(
@@ -201,8 +260,9 @@ model_parameter_histories, train_hyperparameters = load_with_hyperparameters(
     partial(setup_model_parameter_histories, list(trained_models.values())),
 )
 
-model_parameter_histories = dict(zip(train_curl_stds, model_parameter_histories))
 where_train = attr_str_tree_to_where_func(train_hyperparameters['where_train_strs'])
+
+model_parameter_histories = dict(zip(curl_stds_train, model_parameter_histories))
 
 # load_spec = {0.4: -1, 0.5: -1}
 
@@ -210,6 +270,35 @@ where_train = attr_str_tree_to_where_func(train_hyperparameters['where_train_str
 #     trained_models[curl_std] = swap_model_trainables(
 #         trained_models[curl_std], tree_take(model_parameter_histories[curl_std], i), where_train
 #     )
+```
+
+### Assign some variables to indicate which parameters we used/will be using
+
+The following will not vary between training and analysis.
+
+```{python}
+feedback_delay_steps = hyperparameters['feedback_delay_steps']
+n_replicates = hyperparameters['n_replicates']
+```
+
+The following may vary in analysis but we may want to refer to the training values.
+
+```{python}
+noise_stds_train = dict(
+    feedback=hyperparameters['feedback_noise_std'],
+    motor=hyperparameters['motor_noise_std'],
+)
+```
+
+If we didn't alter the disturbance type or noise levels for the analysis, we can infer they'll be the same as the ones used during training.
+
+```{python}
+noise_stds = {
+    k: v if v is not None else noise_stds_train[k]
+    for k, v in noise_stds.items()
+} 
+
+any_system_noise = any(jt.leaves(noise_stds))
 ```
 
 ## Setup tasks with impulse perturbations to different feedback channels
@@ -377,8 +466,8 @@ vectors = jnp.squeeze(trial_specs.intervene['ConstantInput'].arrays[:, vector_id
 ```{python}
 n_trials = 5
 
-# if NO_SYSTEM_NOISE:
-#     n_trials = 1
+if not any_system_noise:
+    n_trials = 1
 ```
 
 ```{python}

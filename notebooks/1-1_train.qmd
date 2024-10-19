@@ -103,21 +103,25 @@ get_datestr = lambda: datetime.now().strftime("%Y%m%d-%Hh%M")
 ```
 
 ### Hyperparameters
- 
+
 These are parameters that can be [varied](https://quarto.org/docs/computations/parameters.html) through the command line interface to Quarto. 
 
 ```{python}
 #| tags: [parameters]
 
 disturbance_type = 'curl'  # or 'random'
-hidden_size  = 50
-feedback_delay_steps = 5
+hidden_size = 50
+feedback_delay_steps = 0
 feedback_noise_std = 0.0
 motor_noise_std = 0.0
 ```
 
 ```{python}
-suffix = f"{disturbance_type}_noise-{feedback_noise_std}-{motor_noise_std}_delay-{feedback_delay_steps}"
+suffix = '_'.join([
+    f"{disturbance_type}",
+    f"noise-{feedback_noise_std}-{motor_noise_std}",
+    f"delay-{feedback_delay_steps}",
+])
 ```
 
 ### Directories setup
