@@ -1,4 +1,5 @@
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Optional
 
@@ -48,8 +49,8 @@ def get_savefig_func(fig_dir: Path, suffix=""):
 
 def add_context_annotation(
     fig: go.Figure,
-    train_curl_std=None, 
-    disturbance_amplitude=None,
+    train_condition_strs: Optional[Sequence[str]] = None, 
+    perturbations: Optional[dict[str, tuple[float, Optional[int], Optional[int]]]] = None,
     n=None,
     i_trial=None,
     i_replicate=None,
@@ -58,11 +59,24 @@ def add_context_annotation(
 ) -> None:
     """Annotates a figure with details about sample size, trials, replicates."""
     lines = []
-    if train_curl_std is not None:
-        lines.append(f"Trained on curl fields with amplitude ~ \U0001d4dd(0,{train_curl_std})")
+    if train_condition_strs is not None:
+        for condition_str in train_condition_strs:
+            lines.append(f"Trained on {condition_str}")
         
-    if disturbance_amplitude is not None:
-        lines.append(f"Response to amplitude {disturbance_amplitude} curl field")
+    if perturbations is not None:
+        for label, (amplitude, start, end) in perturbations.items():
+            line = f"Response to amplitude {amplitude} {label} "
+            match (start, end):
+                case (None, None):
+                    line += 'constant over trial'
+                case (None, _):
+                    line += f'from trial start to step {end}'
+                case (_, None):
+                    line += f'from step {start} to trial end'
+                case (_, _):
+                    line += f'from step {start} to {end}'
+                
+            lines.append(line)
     
     match (n, i_trial, i_replicate):
         case (None, None, None):

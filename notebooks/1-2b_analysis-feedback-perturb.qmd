@@ -26,6 +26,7 @@ from functools import partial
 from itertools import zip_longest
 from pathlib import Path
 from operator import itemgetter
+from typing import Literal, Optional
 
 import equinox as eqx
 import jax
@@ -73,6 +74,7 @@ from rnns_learn_robust_motor_policies.setup_utils import (
     display_model_filechooser,
     filename_join as join,
     set_model_noise,
+    find_unique_filepath,
 )
 ```
 
@@ -120,6 +122,13 @@ if feedback_noise_std is not None:
     feedback_noise_std = float(feedback_noise_std)
 if motor_noise_std is not None:
     motor_noise_std = float(motor_noise_std)
+```
+
+```{python}
+noise_stds = dict(
+    feedback=feedback_noise_std,
+    motor=motor_noise_std,
+)
 ```
 
 See further below for parameter-based loading of models, as well as the code that modifies the models prior to analysis.
@@ -546,7 +555,9 @@ for pert_condition in figs:
         add_context_annotation(
             fig,
             train_curl_std=train_curl_std,
-            # curl_amplitude=curl_amplitude,
+            perturbations={
+                f"{pert_condition} impulse": (impulse_amplitude, impulse_start_step, impulse_end_step)
+            },
             i_trial=i_trial,
             i_replicate=i_replicate,
         )
@@ -564,12 +575,8 @@ for pert_condition in figs:
             ]),
             subdir=f"fb_impulse_{pert_condition}/example_sets",
         )
-```
-
-```{python}
-# for curl_amplitude in curl_amplitudes_lohi:
-#     for train_curl_std in train_curl_stds_lohi:
-#         figs[curl_amplitude][train_curl_std].show()
+        
+    fig.show()
 ```
 
 ## Plot response trajectories

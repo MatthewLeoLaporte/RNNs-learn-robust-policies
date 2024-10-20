@@ -1,14 +1,14 @@
 ---
 created: 2024-10-04T11:27
-updated: 2024-10-19T16:22
+updated: 2024-10-20T14:41
 ---
 - [ ] Modify nb 1-2a to work with both disturbance types – mostly just renaming `curl_*` to `disturbance_*`, but also need to decide on file naming convention (in particular when train disturbance is not the same as test disturbance)
-- [ ] Quantify response to feedback perturbation – max leftward and rightward control force 
-- [ ] Plot velocity profiles for feedback perturbations
+- [ ] **Quantify response to feedback perturbation – max leftward and rightward control force** 
+- [ ] **Plot velocity profiles for feedback perturbations**
 - [ ] Add notebook to load models for multiple noise conditions, and plot distribution comparisons 
-- [ ] Add endpoints to 1-2a 1.7.2 plots (single-condition trajectories across curl amplitude)
+- [x] Add endpoints to 1-2a 1.7.2 plots (single-condition trajectories across curl amplitude)
 - [ ] Try using a format string with a slash in `render_params.yaml` to store HTML output in sub-subdirectories according to  evaluation params (similarly to how the figures are stored)
-- [ ] Choose better colorscales for train and test curl amplitude comparisons
+- [x] **Choose better colorscales for train and test curl amplitude comparisons**
 - [ ] Max forward velocity – comparing different peaks…
 - [ ] Ask Steve about sensory perturbations in human tasks – do they see oscillations (i.e. going from straight to “loopy”, like we see in the control vs. robust networks)
 ## Review
