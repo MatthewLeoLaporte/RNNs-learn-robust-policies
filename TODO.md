@@ -1,6 +1,6 @@
 ---
 created: 2024-10-04T11:27
-updated: 2024-10-21T14:12
+updated: 2024-10-21T15:57
 ---
 - [ ] Modify nb 1-2a to work with both disturbance types – mostly just renaming `curl_*` to `disturbance_*`, but also need to decide on file naming convention (in particular when train disturbance is not the same as test disturbance)
 - [ ] **Quantify response to feedback perturbation – max leftward and rightward control force** 
@@ -19,6 +19,16 @@ It might be easier to do this at save time.
 
 Aside from the loss, it looks like max net control force or end position error might be good indicators. 
 ![[file-20241018152818864.png]]
+## Enforce rotational invariance of the learned strategy
+
+This is motivated by the slightly different responses of the network when a feedback perturbation is in different directions. Is it possible to train the network so that its response in the x direction is just like a rotated version of its response in the y direction?
+
+Some ideas:
+
+- Provide the RNN inputs in a polar representation
+- Make the RNN output the force vector in a polar representation, by forcing their trigonometric conversion to x/y 
+- Add an explicit term to loss function; e.g. on each batch, evaluate on a big center-out set, and penalize for the difference between the control vectors when they are all rotated to lie in the same reach direction
+- Modify the network architecture to enforce symmetry. I’m not sure exactly how to do this.
 ## Motivation and questions
 
 What are the emergent properties of a system that learns to be robust? 

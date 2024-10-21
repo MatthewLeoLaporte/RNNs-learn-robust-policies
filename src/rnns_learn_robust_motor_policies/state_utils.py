@@ -1,7 +1,13 @@
 
 
+import equinox as eqx
 import jax.numpy as jnp 
+import jax.random as jr
 from jaxtyping import Array, Float
+
+from feedbax import is_type
+from feedbax.intervene import AbstractIntervenor
+from feedbax._tree import tree_infer_batch_size
 
 
 def angle_between_vectors(v2, v1):
@@ -27,21 +33,37 @@ def get_forward_lateral_vel(
         lateral: Lateral velocity components (perpendicular to the reference lines).
     """
     init_pos, goal_pos = pos_endpoints
-    line_vec = goal_pos - init_pos
+    direction_vec = goal_pos - init_pos
     
+    return project_onto_direction(velocity, direction_vec)
+    
+
+def project_onto_direction(
+    var: Float[Array, "*batch conditions time xy=2"],
+    direction_vec: Float[Array, "conditions xy=2"],
+):
+    """Projects components of arbitrary variables into components parallel and orthogonal to a given direction.
+    
+    Arguments:
+        var: Data with x-y components to be projected. 
+        direction_vector: Direction vectors. 
+    
+    Returns:
+        projected: Projected components (parallel and orthogonal).
+    """
     # Normalize the line vector
-    line_vec_norm = line_vec / jnp.linalg.norm(line_vec, axis=-1, keepdims=True)
+    direction_vec_norm = direction_vec / jnp.linalg.norm(direction_vec, axis=-1, keepdims=True)
     
     # Broadcast line_vec_norm to match velocity's shape
-    line_vec_norm = line_vec_norm[:, None]  # Shape: (conditions, 1, xy)
+    direction_vec_norm = direction_vec_norm[:, None]  # Shape: (conditions, 1, xy)
     
     # Calculate forward velocity (dot product)
-    forward = jnp.sum(velocity * line_vec_norm, axis=-1)
+    parallel = jnp.sum(var * direction_vec_norm, axis=-1)
     
     # Calculate lateral velocity (cross product)
-    lateral = jnp.cross(line_vec_norm, velocity)
+    orthogonal = jnp.cross(direction_vec_norm, var)
     
-    return jnp.stack([forward, lateral], axis=-1)
+    return jnp.stack([parallel, orthogonal], axis=-1)
 
 
 def get_lateral_distance(
@@ -60,19 +82,40 @@ def get_lateral_distance(
     init_pos, goal_pos = pos_endpoints
     
     # Rearrange input axes to ensure proper broadcasting over conditions
-    pos = jnp.swapaxes(pos, -3, -2)
+    # pos = jnp.swapaxes(pos, -3, -2)
     
     # Calculate the vectors from 1) inits to goals, and 2) inits to trajectory positions
-    line_vec = goal_pos - init_pos
-    point_vec = pos - init_pos
+    direction_vec = goal_pos - init_pos
+    point_vec = pos - init_pos[..., None, :]
 
     # Calculate the cross product between the line vector and the point vector
     # This is the area of the parallelogram they form.
-    cross_product = jnp.cross(line_vec, point_vec)
+    cross_product = jnp.cross(direction_vec, point_vec)
     
     # Obtain the parallelogram heights (i.e. the lateral distances) by dividing 
     # by the length of the line vectors.
-    line_length = jnp.linalg.norm(line_vec, axis=-1)
-    lateral_dist = jnp.abs(cross_product) / line_length
+    line_length = jnp.linalg.norm(direction_vec, axis=-1)
+    # lateral_dist = jnp.abs(cross_product) / line_length
+    lateral_dist = jnp.abs(cross_product) / line_length[..., None]
 
-    return jnp.swapaxes(lateral_dist, -2, -1)
+    return lateral_dist
+    # return jnp.swapaxes(lateral_dist, -2, -1)
+
+
+def _get_eval_ensemble(models, task):
+    def eval_ensemble(key):
+        return task.eval_ensemble(
+            models,
+            n_replicates=tree_infer_batch_size(models, exclude=is_type(AbstractIntervenor)),
+            ensemble_random_trials=False,
+            key=key,
+        )
+    return eval_ensemble
+
+    
+@eqx.filter_jit
+def vmap_eval_ensemble(models, task, n_trials: int, key):
+    """Evaluate an ensemble of models on `n` random trials of a task."""
+    return eqx.filter_vmap(_get_eval_ensemble(models, task))(
+        jr.split(key, n_trials)
+    )
