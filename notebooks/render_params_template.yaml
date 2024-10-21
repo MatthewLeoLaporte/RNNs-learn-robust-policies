@@ -1,0 +1,31 @@
+parameter_names:
+  - disturbance_type_load
+  - feedback_noise_std_load
+  - motor_noise_std_load
+  - feedback_delay_steps_load
+  - disturbance_type
+  - feedback_noise_std
+  - motor_noise_std
+
+parameter_combinations:
+  - ['curl', 0.0, 0.0, 0, null, null, null]
+
+output_format: 
+  - - "train"
+    - "{disturbance_type_load}"
+    - "noise-{feedback_noise_std_load}-{motor_noise_std_load}"
+    - "delay-{feedback_delay_steps_load}"
+  - - "{disturbance_type}"
+    - "noise-{feedback_noise_std}-{motor_noise_std}"
+  
+rules:
+  - condition:
+      feedback_noise_std_load: 0.0
+    action:
+      feedback_noise_std: 0.1
+      motor_noise_std: 0.1
+      
+default_assignments:
+  - disturbance_type: disturbance_type_load
+  - feedback_noise_std: feedback_noise_std_load 
+  - motor_noise_std: motor_noise_std_load

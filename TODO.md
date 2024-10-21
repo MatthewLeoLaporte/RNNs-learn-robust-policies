@@ -1,25 +1,15 @@
 ---
 created: 2024-10-04T11:27
-updated: 2024-10-20T14:41
+updated: 2024-10-21T14:12
 ---
 - [ ] Modify nb 1-2a to work with both disturbance types – mostly just renaming `curl_*` to `disturbance_*`, but also need to decide on file naming convention (in particular when train disturbance is not the same as test disturbance)
 - [ ] **Quantify response to feedback perturbation – max leftward and rightward control force** 
 - [ ] **Plot velocity profiles for feedback perturbations**
 - [ ] Add notebook to load models for multiple noise conditions, and plot distribution comparisons 
-- [x] Add endpoints to 1-2a 1.7.2 plots (single-condition trajectories across curl amplitude)
-- [ ] Try using a format string with a slash in `render_params.yaml` to store HTML output in sub-subdirectories according to  evaluation params (similarly to how the figures are stored)
-- [x] **Choose better colorscales for train and test curl amplitude comparisons**
+- [x] Try using a format string with a slash in `render_params.yaml` to store HTML output in sub-subdirectories according to  evaluation params (similarly to how the figures are stored)
 - [ ] Max forward velocity – comparing different peaks…
 - [ ] Ask Steve about sensory perturbations in human tasks – do they see oscillations (i.e. going from straight to “loopy”, like we see in the control vs. robust networks)
-## Review
-
-- [x] Ensure `n=1` for no-noise case.
-- [x] Doesn’t make sense to change delay between train and test.
-- [x] Don’t need to show single-condition distributions – it’s enough to see that the error bars are reasonably small on the example trajectories
-- [x] Use different colors for 2x2 low-high summary plots, and replicate comparison plots (curl amplitude in one, train curl std. in the other)
-- [x] Use “Train curl std.” with a float for the replicate comparison plots, not “No curl during training” etc.
-
-### Exclude model replicates whose training diverged
+## Exclude model replicates whose training diverged
 
 Or else save/load earlier checkpoint. 
 

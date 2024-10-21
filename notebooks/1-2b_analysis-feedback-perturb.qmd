@@ -102,8 +102,8 @@ We may want to specify 1) which trained models to load, by their parameters, and
 
 # Specify which trained models to load 
 disturbance_type_load: Literal['curl', 'random'] = 'curl'
-feedback_noise_std_load = 0.2
-motor_noise_std_load = 0.2
+feedback_noise_std_load = 0.04
+motor_noise_std_load = 0.04
 feedback_delay_steps_load = 0  
 
 # Specify model parameters to use for analysis (None -> use training value)
@@ -185,19 +185,6 @@ load_from_parameters = True
 ```
 
 ```{python}
-#| tags: [parameters]
-disturbance_type_load: Literal['curl', 'random'] = 'curl'
-feedback_noise_std_load = 0.2
-motor_noise_std_load = 0.2
-feedback_delay_steps_load = 0  
-```
-
-```{python}
-feedback_noise_std_load = float(feedback_noise_std_load)
-motor_noise_std_load = float(motor_noise_std_load)
-```
-
-```{python}
 suffix_load = '_'.join([
     f"{disturbance_type_load}",
     f"noise-{feedback_noise_std_load}-{motor_noise_std_load}",
@@ -254,9 +241,10 @@ trained_models = jt.map(
     is_leaf=is_module,
 )
 
-curl_stds_train = hyperparameters['disturbance_stds']
+disturbance_type_train = hyperparameters['disturbance_type']
+disturbance_stds_train = hyperparameters['disturbance_stds']
 
-trained_models = dict(zip(curl_stds_train, trained_models))
+trained_models = dict(zip(disturbance_stds_train, trained_models))
 ```
 
 ### Load parameters from earlier training iterations, where necessary
@@ -271,7 +259,7 @@ model_parameter_histories, train_hyperparameters = load_with_hyperparameters(
 
 where_train = attr_str_tree_to_where_func(train_hyperparameters['where_train_strs'])
 
-model_parameter_histories = dict(zip(curl_stds_train, model_parameter_histories))
+model_parameter_histories = dict(zip(disturbance_stds_train, model_parameter_histories))
 
 # load_spec = {0.4: -1, 0.5: -1}
 
@@ -515,7 +503,7 @@ Make sure the subdirectories exist for the figures we'll generate:
 #     os.makedirs(fig_subdir, exist_ok=True)
 ```
 
-## Plot some examples sets
+## Plot some example sets
 
 ```{python}
 var_labels = ('Position', 'Velocity', 'Control force')
@@ -551,10 +539,12 @@ figs = jt.map(
 
 ```{python}
 for pert_condition in figs:
-    for train_curl_std, fig in figs[pert_condition].items():
+    for disturbance_std_train, fig in figs[pert_condition].items():
         add_context_annotation(
             fig,
-            train_curl_std=train_curl_std,
+            train_condition_strs=[
+                f"{disturbance_type_train} with amplitude ~ \U0001d4dd(0,{disturbance_std_train})"
+            ],
             perturbations={
                 f"{pert_condition} impulse": (impulse_amplitude, impulse_start_step, impulse_end_step)
             },
@@ -567,7 +557,7 @@ for pert_condition in figs:
         savefig(
             fig, 
             join([
-                f"train-curl-std-{train_curl_std}",
+                f"disturbance-std-train-{disturbance_std_train}",
                 f"imp-amp-{impulse_amplitude}",
                 f"imp-steps-{impulse_duration}",
                 f"rep-{i_replicate}",
@@ -579,7 +569,9 @@ for pert_condition in figs:
     fig.show()
 ```
 
-## Plot response trajectories
+## Compare response trajectories
+
+### Compare control forces
 
 ```{python}
 i_replicate = 1
@@ -601,14 +593,13 @@ figs = {
         label: fbp.profiles(
             tree_take_multi(
                 controls, 
-                [i_replicate, i], 
-                [1, -1],
+                [i], 
+                [-1],
             ),
             timesteps=jnp.arange(-n_preceding_steps, n_steps),
             mode='std', 
             varname=fr"${label}$",
             layout_kws=dict(
-                title=f"Impulse in {imp_condn} of amplitude {impulse_amplitude} for {impulse_duration} time steps",
                 legend=dict(
                     title="Train curl std.",
                     # xref="container",
@@ -631,8 +622,17 @@ figs = {
 ```
 
 ```{python}
+n = np.prod(jt.leaves(all_controls_imp)[0].shape[:-2])
+
 for pert_condition in figs:
     for label, fig in figs[pert_condition].items():
+        add_context_annotation(
+            fig,
+            perturbations={
+                f"{pert_condition} impulse": (impulse_amplitude, impulse_start_step, impulse_end_step)
+            },
+            n=n,
+        )
         fig.add_vrect(
             x0=impulse_start_step, 
             x1=impulse_end_step,
@@ -656,3 +656,97 @@ for pert_condition in figs:
         
         fig.show()
 ```
+
+### Compare velocity profiles
+
+```{python}
+fig_subdir = "velocity_profiles"
+```
+
+```{python}
+all_vels_imp = jt.map(
+    lambda states: states.mechanics.effector.vel,
+    all_states_imp,
+    is_leaf=is_module,
+)
+
+figs = {
+    imp_condn: {
+        label: fbp.profiles(
+            tree_take_multi(vels, [i], [-1]),
+            timesteps=jnp.arange(-n_preceding_steps, n_steps),
+            mode='std', 
+            varname=fr"${label}$",
+            layout_kws=dict(
+                legend=dict(
+                    title="Train curl std.",
+                ),
+            ),
+            scatter_kws=dict(legend="legend"),
+        )
+        for label, i in dict(v_x=0, v_y=1).items()
+    }
+    for imp_condn, vels in all_vels_imp.items()
+}
+```
+
+```{python}
+n = np.prod(jt.leaves(all_controls_imp)[0].shape[:-2])
+
+for pert_condition in figs:
+    for label, fig in figs[pert_condition].items():
+        fig.add_vrect(
+            x0=impulse_start_step, 
+            x1=impulse_end_step,
+            fillcolor='grey', 
+            opacity=0.1, 
+            line_width=0,
+            name='Perturbation',
+        )
+        
+        add_context_annotation(
+            fig,
+            perturbations={
+                f"{pert_condition} impulse": (impulse_amplitude, impulse_start_step, impulse_end_step)
+            },
+            n=n,
+        )
+        
+        savefig(
+            fig, 
+            join([
+                f"{label}",
+                f"imp-amp-{impulse_amplitude}",
+                f"imp-steps-{impulse_duration}",
+            ]),
+            subdir=f"fb_impulse_{pert_condition}/vel_response",
+        )
+        
+        fig.show()
+```
+
+## Summary comparison of performance measures
+
+```{python}
+fig_subdir = "performance_measures"
+```
+
+### Calculate all measures
+
+Max forward force
+
+Max backward force
+
+Max forward velocity
+
+Max backward velocity
+
+Max lateral velocity
+
+Max deviation
+
+Sum deviations
+
+### Comparison of all training conditions
+
+### Comparison of low-high training conditions
