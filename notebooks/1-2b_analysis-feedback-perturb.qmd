@@ -107,8 +107,8 @@ We may want to specify 1) which trained models to load, by their parameters, and
 
 # Specify which trained models to load 
 disturbance_type_load: Literal['curl', 'random'] = 'curl'
-feedback_noise_std_load = 0.04
-motor_noise_std_load = 0.04
+feedback_noise_std_load = 0.02
+motor_noise_std_load = 0.02
 feedback_delay_steps_load = 0  
 
 # Specify model parameters to use for analysis (None -> use training value)
@@ -518,12 +518,12 @@ Make sure the subdirectories exist for the figures we'll generate:
 #     os.makedirs(fig_subdir, exist_ok=True)
 ```
 
-## Choose a task variant for plotting
+## Choose a task variant for analysis
 
 ```{python}
 from feedbax import tree_labels
 
-analysis_variant: Literal['xy', 'rand'] = 'xy'
+analysis_variant: Literal['xy', 'rand'] = 'rand'
 
 all_states = all_states_imp[analysis_variant]
 directions = impulse_directions[analysis_variant]
@@ -531,7 +531,7 @@ tasks = tasks_imp[analysis_variant]
 models = models_imp[analysis_variant]
 ```
 
-## Plot some example sets
+## Plot some example trial sets
 
 ```{python}
 var_labels = ('Position', 'Velocity', 'Control force')
@@ -570,43 +570,55 @@ figs = jt.map(
 # TODO: fix this for new nested dict structure of `figs`
 # TODO
 
-for pert_condition in figs:
-    # TODO: now there's an extra layer here, but only for variant xy!
-    for disturbance_std_train, fig in figs[pert_condition].items():
-        add_context_annotation(
-            fig,
-            train_condition_strs=[
-                f"{disturbance_type_train} with amplitude ~ \U0001d4dd(0,{disturbance_std_train})"
-            ],
-            perturbations={
-                f"{pert_condition} ({analysis_variant} direction) impulse": (
-                    impulse_amplitude, impulse_start_step, impulse_end_step
-                )
-            },
-            i_trial=i_trial,
-            i_replicate=i_replicate,
-        )
-        # add_endpoint_traces(
-        #     fig, pos_endpoints_small, xaxis='x1', yaxis='y1', colorscale='phase'
-        # )
-        savefig(
-            fig, 
-            join([
-                f"disturbance-std-train-{disturbance_std_train}",
-                f"imp-amp-{impulse_amplitude}",
-                f"imp-steps-{impulse_duration}",
-                f"rep-{i_replicate}",
-                f"eval-{i_trial}",
-            ]),
-            subdir=f"fb_impulse_{pert_condition}/example_sets",
-        )
+# for pert_condition in figs:
+#     # TODO: now there's an extra layer here, but only for variant xy!
+#     for disturbance_std_train, fig in figs[pert_condition].items():
+#         add_context_annotation(
+#             fig,
+#             train_condition_strs=[
+#                 f"{disturbance_type_train} with amplitude ~ \U0001d4dd(0,{disturbance_std_train})"
+#             ],
+#             perturbations={
+#                 f"{pert_condition} ({analysis_variant} direction) impulse": (
+#                     impulse_amplitude, impulse_start_step, impulse_end_step
+#                 )
+#             },
+#             i_trial=i_trial,
+#             i_replicate=i_replicate,
+#         )
+#         # add_endpoint_traces(
+#         #     fig, pos_endpoints_small, xaxis='x1', yaxis='y1', colorscale='phase'
+#         # )
+#         savefig(
+#             fig, 
+#             join([
+#                 f"disturbance-std-train-{disturbance_std_train}",
+#                 f"imp-amp-{impulse_amplitude}",
+#                 f"imp-steps-{impulse_duration}",
+#                 f"rep-{i_replicate}",
+#                 f"eval-{i_trial}",
+#             ]),
+#             subdir=f"fb_impulse_{pert_condition}/example_sets",
+#         )
         
-    fig.show()
+#     fig.show()
 ```
 
 ## Compare response trajectories
 
-### Control forces in x/y directions
+Toggle whether to plot x/y components or aligned components.
+
+```{python}
+components_plot: Literal['xy', 'aligned'] = 'aligned'
+components_labels = dict(
+    xy=('x', 'y'),
+    aligned=(r'\parallel', r'\bot')
+)
+```
+
+```{python}
+impulse_responses = dict(xy=dict(), aligned=dict())
+```
 
 ```{python}
 # i_replicate = 1
@@ -614,114 +626,66 @@ n_preceding_steps = 0
 
 # plot_ts = slice(impulse_start_step - n_preceding_steps, None)
 plot_ts = slice(None)
+```
 
-all_controls = jt.map(
+### Control forces 
+
+```{python}
+fig_subdir = "control_profiles"
+```
+
+It is easy to obtain the x/y force components:
+
+```{python}
+impulse_responses['xy']['force'] = jt.map(
     lambda states: states.net.output[..., plot_ts, :],
     all_states,
     is_leaf=is_module,
 )
 ```
 
-```{python}
-figs = {
-    imp_condn: {
-        label: fbp.profiles(
-            tree_take_multi(
-                controls, 
-                [i], 
-                [-1],
-            ),
-            timesteps=jnp.arange(-n_preceding_steps, n_steps),
-            mode='std', 
-            varname=fr"${label}$",
-            layout_kws=dict(
-                legend=dict(
-                    title="Train curl std.",
-                    # xref="container",
-                    # yref="container",
-                    # y=0.60, 
-                ),
-                # legend2=dict(
-                #     title="",
-                #     xref="container",
-                #     yref="container",
-                #     y=0.85, 
-                # ),
-            ),
-            scatter_kws=dict(legend="legend"),
-        )
-        for label, i in dict(F_x=0, F_y=1).items()
-    }
-    for imp_condn, controls in all_controls.items()
-}
-```
+The force components aligned to the perturbation direction are a little harder:
 
 ```{python}
-n = np.prod(jt.leaves(all_controls_imp)[0].shape[:-2])
+from jaxtyping import Array, Float, PyTree
+from feedbax.bodies import SimpleFeedbackState
 
-for pert_condition in figs:
-    for label, fig in figs[pert_condition].items():
-        add_context_annotation(
-            fig,
-            perturbations={
-                f"{pert_condition} ({analysis_variant} direction) impulse": (
-                    impulse_amplitude, impulse_start_step, impulse_end_step
-                )
-            },
-            n=n,
-        )
-        fig.add_vrect(
-            x0=impulse_start_step, 
-            x1=impulse_end_step,
-            fillcolor='grey', 
-            opacity=0.1, 
-            line_width=0,
-            name='Perturbation',
-            # showlegend=True,
-            # legend="legend2",
-        )
-        
-        savefig(
-            fig, 
-            join([
-                f"{label}",
-                f"imp-amp-{impulse_amplitude}",
-                f"imp-steps-{impulse_duration}",
-            ]),
-            subdir=f"fb_impulse_{pert_condition}/force_response",
-        )
-        
-        fig.show()
-```
-
-### Control forces aligned to perturbation direction
-
-```{python}
-def project_and_lump(all_states, where, directions):
-    # The tree structure of `directions` matches `all_states`. 
-    # So we can re-orient the variable located at `where`,
-    # and then lump together all the arrays below the first level of `all_states`, 
-    # which we assume to be the "impulse variable" level (i.e. pos or vel).
-    all_var = jt.map(where, all_states, is_leaf=is_module)
+def project_and_lump(
+    all_states: PyTree[SimpleFeedbackState], 
+    where_var: Callable[[SimpleFeedbackState], PyTree[Float[Array, "... conditions time xy=2"]]], 
+    directions: PyTree[Float[Array, "... conditions xy=2"]],
+):
+    """For each state PyTree `states` in `all_states`, get `where_var(states)`
+    and then project it onto `directions`.
+    """
+    all_var = jt.map(where_var, all_states, is_leaf=is_module)
 
     all_var_align = jt.map(
         lambda var, directions: project_onto_direction(var, directions),
         all_var, tree_prefix_expand(directions, all_var),
     )
+    
     return {
         key: tree_stack(jt.leaves(var_tree, is_leaf=is_type(OrderedDict)))
         for key, var_tree in all_var_align.items()
     }
+```
 
-all_controls = project_and_lump(
+```{python}
+impulse_responses['aligned']['force'] = project_and_lump(
     all_states, 
     lambda states: states.efferent.output,
     directions,
 )
-    
 ```
 
+#### Generate figures
+
 ```{python}
+all_controls_plot = impulse_responses[components_plot]['force']
+
+axes_labels = [fr'$F_{sub}$' for sub in components_labels[components_plot]]
+
 figs = {
     imp_condn: {
         label: fbp.profiles(
@@ -732,6 +696,7 @@ figs = {
             ),
             timesteps=jnp.arange(-n_preceding_steps, n_steps),
             mode='std', 
+            n_std_plot=1,
             varname=fr"${label}$",
             layout_kws=dict(
                 legend=dict(
@@ -740,7 +705,7 @@ figs = {
                     # yref="container",
                     # y=0.60, 
                 ),
-                # legend2=dict(
+                # legend2=dict( 
                 #     title="",
                 #     xref="container",
                 #     yref="container",
@@ -749,14 +714,14 @@ figs = {
             ),
             scatter_kws=dict(legend="legend"),
         )
-        for label, i in dict(F_x=0, F_y=1).items()
+        for i, label in enumerate(axes_labels)
     }
-    for imp_condn, controls in all_controls.items()
+    for imp_condn, controls in all_controls_plot.items()
 }
 ```
 
 ```{python}
-n = np.prod(jt.leaves(all_controls)[0].shape[:-2])
+n = np.prod(jt.leaves(all_controls_plot)[0].shape[:-2])
 
 for pert_condition in figs:
     for label, fig in figs[pert_condition].items():
@@ -793,87 +758,39 @@ for pert_condition in figs:
         fig.show()
 ```
 
-### Velocity profiles in x/y directions
+### Velocity profiles 
 
 ```{python}
-fig_subdir = "velocity_profiles"
+fig_subdir = "vel_profiles"
 ```
 
+The x/y components:
+
 ```{python}
-all_vels = jt.map(
+impulse_responses['xy']['vel'] = jt.map(
     lambda states: states.mechanics.effector.vel,
     all_states,
     is_leaf=is_module,
 )
-
-figs = {
-    imp_condn: {
-        label: fbp.profiles(
-            tree_take_multi(vels, [i], [-1]),
-            timesteps=jnp.arange(-n_preceding_steps, n_steps),
-            mode='std', 
-            varname=fr"${label}$",
-            layout_kws=dict(
-                legend=dict(
-                    title="Train curl std.",
-                ),
-            ),
-            scatter_kws=dict(legend="legend"),
-        )
-        for label, i in dict(v_x=0, v_y=1).items()
-    }
-    for imp_condn, vels in all_vels.items()
-}
 ```
 
-```{python}
-n = np.prod(jt.leaves(all_vels)[0].shape[:-2])
-
-for pert_condition in figs:
-    for label, fig in figs[pert_condition].items():
-        fig.add_vrect(
-            x0=impulse_start_step, 
-            x1=impulse_end_step,
-            fillcolor='grey', 
-            opacity=0.1, 
-            line_width=0,
-            name='Perturbation',
-        )
-        
-        add_context_annotation(
-            fig,
-            perturbations={
-                f"{pert_condition} ({analysis_variant} direction) impulse": (
-                    impulse_amplitude, impulse_start_step, impulse_end_step
-                )
-            },
-            n=n,
-        )
-        
-        savefig(
-            fig, 
-            join([
-                f"{label}",
-                f"imp-amp-{impulse_amplitude}",
-                f"imp-steps-{impulse_duration}",
-            ]),
-            subdir=f"fb_impulse_{pert_condition}/vel_response",
-        )
-        
-        fig.show()
-```
-
-### Velocity profiles aligned to perturbation direction
+And the velocity components parallel and orthogonal to the perturbation directions:
 
 ```{python}
-all_vels = project_and_lump(
+impulse_responses['aligned']['vel'] = project_and_lump(
     all_states, 
     lambda states: states.mechanics.effector.vel,
     directions,
 )
 ```
 
+#### Generate figures
+
 ```{python}
+all_vels_plot = impulse_responses[components_plot]['vel']
+
+axes_labels = [fr'$v_{sub}$' for sub in components_labels[components_plot]]
+
 figs = {
     imp_condn: {
         label: fbp.profiles(
@@ -888,14 +805,14 @@ figs = {
             ),
             scatter_kws=dict(legend="legend"),
         )
-        for label, i in dict(v_x=0, v_y=1).items()
+        for i, label in enumerate(axes_labels)
     }
-    for imp_condn, vels in all_vels.items()
+    for imp_condn, vels in all_vels_plot.items()
 }
 ```
 
 ```{python}
-n = np.prod(jt.leaves(all_vels)[0].shape[:-2])
+n = np.prod(jt.leaves(all_vels_plot)[0].shape[:-2])
 
 for pert_condition in figs:
     for label, fig in figs[pert_condition].items():
@@ -937,21 +854,147 @@ for pert_condition in figs:
 fig_subdir = "performance_measures"
 ```
 
-### Calculate all measures
+We'll base these measures on the impulse response states which have already been aligned with the impulse directions.
+
+```{python}
+# We'll copy the top level so we can add stuff without affecting what happened earlier
+all_responses = dict(impulse_responses['aligned'])  
+```
+
+Thus note that in what follows, "forward", "backward", "lateral" are all relative to the perturbation direction.
+
+### Add some other state variables to the impulse response tree
+
+We didn't manipulate the position, but we will want to compute deviations with respect to the steady state (i.e. target) position.
+
+```{python}
+all_states = all_states_imp[analysis_variant]
+
+target_pos = jt.map(
+    lambda task: task.validation_trials.targets['mechanics.effector.pos'].value,
+    tasks,
+    is_leaf=is_module,
+)
+
+all_responses['pos'] = jt.map(
+    lambda states, target_pos: (
+        states.mechanics.effector.pos
+        - target_pos[:, 0:1, :]  # only the first timestep, though the goal should be constant
+    ),
+    all_states, tree_prefix_expand(target_pos, all_states, is_leaf=is_module),
+    is_leaf=is_module,
+)
+```
+
+### Define all performance measures
+
+**TODO: I don't think this will work as-is, since `responses[key]` is a dict of OrderedDicts. It may be necessary to transpose the PyTree so the outer keys are on the inside, so we can tree map over the perturbation/training conditions**
 
 Max forward force
 
+```{python}
+def get_max_forward_force(responses):
+    return jnp.max(responses['force'][..., 0], axis=-1)
+```
+
 Max backward force
 
-Max forward velocity
+```{python}
+def get_max_backward_force(responses):
+    return jnp.max(-responses['force'][..., 0], axis=-1)
+```
 
-Max backward velocity
+Max net control force 
 
-Max lateral velocity
+```{python}
+def get_net_force(responses):
+    return jnp.linalg.norm(responses['force'], axis=-1)
+    
+def get_max_net_force(responses):
+    return jnp.max(get_net_force(responses), axis=-1)
+```
 
-Max deviation
+Sum control forces
 
-Sum deviations
+```{python}
+def get_sum_net_forces(responses):
+    return jnp.sum(get_net_force(responses), axis=-1)
+```
+
+Max forward velocity 
+
+```{python}
+def get_max_forward_vel(responses):
+    return jnp.max(responses['vel'][..., 0], axis=-1)
+```
+
+Max backward velocity 
+
+```{python}
+def get_max_backward_vel(responses):
+    return jnp.max(-responses['vel'][..., 0], axis=-1)
+```
+
+Max lateral (left) velocity
+
+```{python}
+def get_max_lateral_vel(responses, mul=1.):
+    return jnp.max(mul * responses['vel'][..., 1], axis=-1)
+```
+
+Max deviation from steady state position (projection doesn't matter)
+
+```{python}
+def get_deviation(responses):
+    return jnp.norm(responses['pos'], axis=-1)
+
+def get_max_deviation(responses):
+    return jnp.max(get_deviation(responses), axis=-1)
+```
+
+Sum deviations from steady state position
+
+```{python}
+def get_sum_deviations(responses):
+    return jnp.sum(get_deviation(responses), axis=-1)
+```
+
+### Calculate all performance measures 
+
+```{python}
+all_measure_funcs, measure_handles = tree_unzip(OrderedDict({
+    "Max forward force": (get_max_forward_force, "force-forward-max"),
+    "Max backward force": (get_max_backward_force, "force-backward-max"),
+    "Max net force": (get_max_net_force, "force-net-max"),
+    "Sum net forces": (get_sum_net_forces, "force-net-sum"),
+    "Max forward velocity": (get_max_forward_vel, "vel-forward-max"),
+    "Max backward velocity": (get_max_backward_vel, "vel-backward-max"),
+    "Max lateral velocity (left)": (
+        partial(get_max_lateral_vel, mul=1.), 
+        "vel-lateral-left-max",
+    ),
+    "Max lateral velocity (right)": (
+        partial(get_max_lateral_vel, mul=-1.), 
+        "vel-lateral-right-max",
+    ),
+    "Max deviation": (get_max_deviation, "deviation-max"),
+    "Sum deviations": (get_sum_deviations, "deviation-sum")
+}))
+```
+
+```{python}
+# def get_all_measures(measure_funcs: PyTree[Callable], responses: PyTree[Array]):
+#     return jt.map(
+#         lambda func: jt.map(
+#             lambda states: func(states),
+#             states,
+#             is_leaf=is_module,
+#         ),
+#         measure_funcs,
+#     )
+    
+# all_measures = get_all_measures(all_measure_funcs, all_states)
+```
 
 ### Comparison of all training conditions
 

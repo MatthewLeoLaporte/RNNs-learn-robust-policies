@@ -1,10 +1,11 @@
 ---
 created: 2024-10-04T11:27
-updated: 2024-10-21T15:57
+updated: 2024-10-21T22:40
 ---
-- [ ] Modify nb 1-2a to work with both disturbance types – mostly just renaming `curl_*` to `disturbance_*`, but also need to decide on file naming convention (in particular when train disturbance is not the same as test disturbance)
+- [ ] **Modify nb 1-2a to work with both disturbance types – mostly just renaming `curl_*` to `disturbance_*`, but also need to decide on file naming convention (in particular when train disturbance is not the same as test disturbance)**
 - [ ] **Quantify response to feedback perturbation – max leftward and rightward control force** 
-- [ ] **Plot velocity profiles for feedback perturbations**
+- [ ] **Fix fig subdirs/saving in 1-2b**
+- [x] Plot velocity profiles for feedback perturbations
 - [ ] Add notebook to load models for multiple noise conditions, and plot distribution comparisons 
 - [x] Try using a format string with a slash in `render_params.yaml` to store HTML output in sub-subdirectories according to  evaluation params (similarly to how the figures are stored)
 - [ ] Max forward velocity – comparing different peaks…

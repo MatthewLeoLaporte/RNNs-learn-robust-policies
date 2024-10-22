@@ -1109,7 +1109,8 @@ def get_max_speed(states):
 
 Maximum lateral (left and right relative to reach direction) and forward velocities
 
-**TODO: avoid repeat calculation of forward_lateral_vel; perhaps by inserting subtrees in `all_measure_funcs` and then flattening**
+**TODO: avoid repeat calculation of forward_lateral_vel; perhaps by inserting subtrees in `all_measure_funcs` and then flattening?**
+(alternatively, pre-calculate a PyTree of the relevant variables, as in 1-2b)
 **TODO: don't hard-code `pos_endpoints` otherwise we can't use the resulting functions on other task states (e.g. all_states_small)**
 
 ```{python}
@@ -1149,8 +1150,10 @@ def get_max_lateral_distance(states, eval_reach_length=None):
     
 def get_sum_lateral_distance(states):
     pos = states.mechanics.effector.pos
-    return jnp.sum(get_lateral_distance(pos, pos_endpoints), axis=-1)
+    return jnp.sum(jnp.abs(get_lateral_distance(pos, pos_endpoints)), axis=-1)
 ```
+
+(Note that we use `jnp.abs`, so perturbations that cause oscillation about the straight reach line will lead to accumulation of summed deviation, not cancellation.)
 
 Position and velocity errors relative to the goal, averaged over the last `last_n_steps` time steps
 
