@@ -2,10 +2,7 @@
 
 We continue our perturbation analysis by examining the response of the trained models to perturbations of their feedback inputs at steady state. 
 
-In particular, we will apply an impulse perturbation to each of the feedback input channels, and observe 
-
-1) the magnitude of the instantaneous network response (i.e. control force); 
-2) the trajectory of the point mass following the perturbation.
+We will apply an impulse perturbation to each of the feedback input channels (velocity and position), and examine and measure the response profiles, in particular the velocities and the control forces.
 
 
 ## Environment setup
@@ -53,6 +50,7 @@ from feedbax.intervene import ConstantInput, CurlField, schedule_intervenor
 from feedbax.misc import git_commit_id, attr_str_tree_to_where_func
 import feedbax.plotly as fbp
 from feedbax.task import SimpleReaches
+from feedbax._tree import tree_key_tuples
 from feedbax.xabdeef.losses import simple_reach_loss
 
 from rnns_learn_robust_motor_policies.part1_setup import (
@@ -81,6 +79,13 @@ from rnns_learn_robust_motor_policies.setup_utils import (
     set_model_noise,
     find_unique_filepath,
 )
+```
+
+```{python}
+jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
+jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
+jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
+# jax.config.update("jax_explain_cache_misses", True)
 ```
 
 Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
@@ -224,7 +229,7 @@ else:
     if models_filepath is None:
         raise FileNotFoundError(f"No models found with file label: {suffix_load}")
 
-trained_models, hyperparameters = load_with_hyperparameters(
+trained_models_load, hyperparameters = load_with_hyperparameters(
     # MODELS_DIR / models_filepath, setup_models,
     MODELS_DIR / models_filepath, setup_models,
 )
@@ -236,20 +241,21 @@ suffix_train = models_filepath.split('__')[1]
 ### Modify the system noise if needed
 
 ```{python}
-trained_models = jt.map(
+trained_models_load = jt.map(
     partial(
         set_model_noise, 
         noise_stds=noise_stds,
         enable_noise=True,
     ),
-    trained_models,
+    trained_models_load,
     is_leaf=is_module,
 )
 
 disturbance_type_train = hyperparameters['disturbance_type']
 disturbance_stds_train = hyperparameters['disturbance_stds']
+disturbance_stds_train_lohi = [disturbance_stds_train[0], disturbance_stds_train[-1]]
 
-trained_models = OrderedDict(zip(disturbance_stds_train, trained_models))
+trained_models = OrderedDict(zip(disturbance_stds_train, trained_models_load))
 ```
 
 ### Load parameters from earlier training iterations, where necessary
@@ -334,11 +340,21 @@ task = SimpleReaches(
 ### Schedule impulse perturbations
 
 ```{python}
-impulse_amplitude = 1.0
+impulse_amplitude = dict(
+    pos=2.0,
+    vel=1.25,
+)
 impulse_start_step = 30
 impulse_duration = 5
 impulse_end_step = impulse_start_step + impulse_duration
-impulse_time_idxs = slice(impulse_start_step, impulse_start_step + 1)
+impulse_time_idxs = slice(impulse_start_step, impulse_end_step)
+```
+
+```{python}
+feedback_var_names = ['pos', 'vel']
+coord_names = ['x', 'y']
+feedback_var_idxs = dict(zip(feedback_var_names, range(len(feedback_var_names))))
+coord_idxs = dict(zip(coord_names, range(len(coord_names))))
 ```
 
 ```{python}
@@ -379,7 +395,7 @@ def impulse_active(
 def feedback_impulse(
     amplitude, 
     duration,  # in time steps
-    feedback_var,  # pos or vel
+    feedback_var,  # 0 (pos) or 1 (vel)
     start_timestep, 
     feedback_dim=None,  # x or y
 ):
@@ -407,7 +423,7 @@ def feedback_impulse(
     )
 ```
 
-#### Perturbations along axes
+#### Perturbations along x/y axes
 
 ```{python}
 from math import copysign
@@ -416,41 +432,35 @@ tasks_imp = dict()
 models_imp = dict()
 impulse_directions = dict()
 
-impulse_conditions = {
-    'pos': dict(
-        x=(0, 0),
-        y=(0, 1),
-    ),
-    'vel': dict(
-        x=(1, 0),
-        y=(1, 1),
-    )
-}
+impulse_xy_conditions = dict.fromkeys(feedback_var_names, dict.fromkeys(coord_names))
+impulse_xy_condition_keys = tree_key_tuples(
+    impulse_conditions, keys_to_strs=True, is_leaf=lambda x: x is None,
+)
 
 tasks_imp['xy'], models_imp['xy'] = tree_unzip(jt.map(
-    lambda feedback_vardim: schedule_intervenor(
+    lambda ks: schedule_intervenor(
         task, trained_models,
         lambda model: model.step.feedback_channels[0],
         feedback_impulse(
-            impulse_amplitude,
+            impulse_amplitude[ks[0]],
             impulse_duration,
-            feedback_vardim[0],  
+            feedback_var_idxs[ks[0]],  
             impulse_start_step,
-            feedback_dim=feedback_vardim[1],  
+            feedback_dim=coord_idxs[ks[1]],  
         ),
         default_active=False,
         stage_name="update_queue",
     ),
-    impulse_conditions,
+    impulse_xy_condition_keys,
     is_leaf=is_type(tuple),
 ))
 
 #? I think these values are equivalent to `line_vec` in the functions in `state_utils`
 impulse_directions['xy'] = jt.map(
-    lambda task, idxs: jnp.zeros(
+    lambda task, ks: jnp.zeros(
         (task.n_validation_trials, 2)
-    ).at[:, idxs[1]].set(copysign(1, impulse_amplitude)),
-    tasks_imp['xy'], impulse_conditions, 
+    ).at[:, coord_idxs[ks[1]]].set(copysign(1, impulse_amplitude[ks[0]])),
+    tasks_imp['xy'], impulse_xy_condition_keys,
     is_leaf=is_module,
 )
 ```
@@ -459,13 +469,13 @@ impulse_directions['xy'] = jt.map(
 
 ```{python}
 tasks_imp['rand'], models_imp['rand'] = tree_unzip(jt.map(
-    lambda feedback_var: schedule_intervenor(
+    lambda feedback_var_idx: schedule_intervenor(
         task, trained_models,
         lambda model: model.step.feedback_channels[0],
         feedback_impulse(  
-            impulse_amplitude,
+            impulse_amplitude[feedback_var_names[feedback_var_idx]],
             impulse_duration,
-            feedback_var,   
+            feedback_var_idx,   
             impulse_start_step,
         ),
         default_active=False,
@@ -481,9 +491,7 @@ Get the perturbation directions, for later:
 ```{python}
 #? I think these values are equivalent to `line_vec` in the functions in `state_utils`
 impulse_directions['rand'] = jt.map(
-    lambda task: jnp.squeeze(
-        task.validation_trials.intervene['ConstantInput'].arrays[:, impulse_time_idxs]
-    ),
+    lambda task: task.validation_trials.intervene['ConstantInput'].arrays[:, impulse_start_step],
     tasks_imp['rand'],
     is_leaf=is_module,
 )
@@ -521,14 +529,42 @@ Make sure the subdirectories exist for the figures we'll generate:
 ## Choose a task variant for analysis
 
 ```{python}
-from feedbax import tree_labels
-
 analysis_variant: Literal['xy', 'rand'] = 'rand'
 
 all_states = all_states_imp[analysis_variant]
 directions = impulse_directions[analysis_variant]
 tasks = tasks_imp[analysis_variant]
 models = models_imp[analysis_variant]
+```
+
+## Define colorscales for plots
+
+**TODO** these should probably be defined in a central location along with the ones from 1-2a
+
+```{python}
+darken_factor = 0.7
+```
+
+```{python}
+# when coloring by training condition
+disturbance_stds_train_colorscale = 'viridis'
+disturbance_stds_train_colors = fbp.sample_colorscale_unique(disturbance_stds_train_colorscale, len(disturbance_stds_train))
+disturbance_stds_train_colors_lohi = [disturbance_stds_train_colors[0], disturbance_stds_train_colors[-1]]
+disturbance_stds_train_colors_dark = fbp.adjust_color_brightness(disturbance_stds_train_colors, darken_factor)
+disturbance_stds_train_colors_dark_lohi = [disturbance_stds_train_colors_dark[0], disturbance_stds_train_colors_dark[-1]]
+```
+
+```{python}
+# when coloring by perturbed feedback variable
+
+# note this colorscale is discrete, unlike the ones used in 1-2a
+# therefore, we don't need to sample it 
+pert_vars_colorscale = plc.qualitative.D3 
+# pert_vars_colors = fbp.sample_colorscale_unique(pert_vars_colorscale, n_pert_vars)
+pert_vars_colors = plc.convert_colors_to_same_type(pert_vars_colorscale, colortype='rgb')[0]
+pert_vars_colors_lohi = [pert_vars_colors[0], pert_vars_colors[1]]
+pert_vars_colors_dark = fbp.adjust_color_brightness(pert_vars_colors, darken_factor)
+pert_vars_colors_dark_lohi = [pert_vars_colors_dark[0], pert_vars_colors_dark[1]]
 ```
 
 ## Plot some example trial sets
@@ -679,12 +715,12 @@ impulse_responses['aligned']['force'] = project_and_lump(
 )
 ```
 
-#### Generate figures
+#### Generate figures for each perturbation variables, comparing all training conditions
 
 ```{python}
 all_controls_plot = impulse_responses[components_plot]['force']
 
-axes_labels = [fr'$F_{sub}$' for sub in components_labels[components_plot]]
+controls_axes_labels = [fr'$F_{sub}$' for sub in components_labels[components_plot]]
 
 figs = {
     imp_condn: {
@@ -696,8 +732,8 @@ figs = {
             ),
             timesteps=jnp.arange(-n_preceding_steps, n_steps),
             mode='std', 
-            n_std_plot=1,
             varname=fr"${label}$",
+            colors=disturbance_stds_train_colors_dark,
             layout_kws=dict(
                 legend=dict(
                     title="Train curl std.",
@@ -714,7 +750,7 @@ figs = {
             ),
             scatter_kws=dict(legend="legend"),
         )
-        for i, label in enumerate(axes_labels)
+        for i, label in enumerate(controls_axes_labels)
     }
     for imp_condn, controls in all_controls_plot.items()
 }
@@ -724,14 +760,16 @@ figs = {
 n = np.prod(jt.leaves(all_controls_plot)[0].shape[:-2])
 
 for pert_condition in figs:
+    print(pert_condition)
     for label, fig in figs[pert_condition].items():
         add_context_annotation(
             fig,
             perturbations={
                 f"{pert_condition} ({analysis_variant} direction) impulse": (
-                    impulse_amplitude, impulse_start_step, impulse_end_step
+                    impulse_amplitude[pert_condition], impulse_start_step, impulse_end_step
                 )
             },
+            train_condition_strs=[f"{disturbance_type_train} force fields"],
             n=n,
         )
         fig.add_vrect(
@@ -757,6 +795,104 @@ for pert_condition in figs:
         
         fig.show()
 ```
+
+#### Generate figures comparing the perturbation variables, and the low vs. high training conditions
+
+There are only two figures here, for the forward/parallel and lateral/orthogonal directions respectively.
+
+```{python}
+all_controls_plot_lohi = jt.map(
+    lambda controls_dict: subdict(controls_dict, disturbance_stds_train_lohi),
+    all_controls_plot,
+    is_leaf=is_type(OrderedDict),
+)
+
+figs = {
+    label: {
+        imp_condn: fbp.profiles(
+            tree_take_multi(vels, [i], [-1]),
+            timesteps=jnp.arange(-n_preceding_steps, n_steps),
+            mode='std', 
+            colors=disturbance_stds_train_colors_dark_lohi,
+            varname=fr"${label}$",
+            layout_kws=dict(
+                legend=dict(
+                    title="Train disturbance std.",
+                ),
+            ),
+            scatter_kws=dict(legend="legend"),
+        )
+        for imp_condn, vels in all_controls_plot_lohi.items()
+    }
+    for i, label in enumerate(controls_axes_labels)
+}
+
+def toggle_bounds_visibility(fig):
+    def toggle_visibility_if_bound(trace):
+        if 'bound' in trace.name:
+            if trace.visible is None:
+                trace.visible = False
+            else:
+                trace.visible = not trace.visible
+    
+    fig.for_each_trace(toggle_visibility_if_bound)
+
+# now merge the two figures in each inner dict
+def merge_profile_figs(figs):
+    fig = figs['vel']
+    figs['pos'].update_traces(
+        line_dash='dot',
+        showlegend=False,
+    )
+    fig.add_traces(figs['pos'].data)
+    toggle_bounds_visibility(fig)
+    return fig
+
+figs = {
+    label: merge_profile_figs(fs)
+    for label, fs in figs.items()
+}
+```
+
+```{python}
+n = np.prod(jt.leaves(all_vels_plot)[0].shape[:-2])
+
+for label, fig in figs.items():
+    fig.add_vrect(
+        x0=impulse_start_step, 
+        x1=impulse_end_step,
+        fillcolor='grey', 
+        opacity=0.1, 
+        line_width=0,
+        name='Perturbation',
+    )
+    
+    add_context_annotation(
+        fig,
+        perturbations={
+            f"{pert_condition} ({analysis_variant} direction) impulse": (
+                impulse_amplitude[pert_condition], impulse_start_step, impulse_end_step
+            )
+            for pert_condition in impulse_amplitude
+        },
+        train_condition_strs=[f"{disturbance_type_train} force fields"],
+        n=n,
+    )
+    
+    savefig(
+        fig, 
+        join([
+            f"{label}",
+            f"imp-amp-{impulse_amplitude}",
+            f"imp-steps-{impulse_duration}",
+        ]),
+        subdir=f"fb_impulse_{pert_condition}/vel_response",
+    )
+    
+    fig.show()
+```
+
+**TODO** plot detail of during-perturbation region, *with* error bars (i.e. use `toggle_bounds_visibility` again), to show how the difference in response from low to high training disturbance is much larger for a velocity perturbation than a position perturbation
 
 ### Velocity profiles 
 
@@ -784,7 +920,7 @@ impulse_responses['aligned']['vel'] = project_and_lump(
 )
 ```
 
-#### Generate figures
+#### Generate figures for each perturbation variable, comparing all train disturbance stds
 
 ```{python}
 all_vels_plot = impulse_responses[components_plot]['vel']
@@ -797,10 +933,11 @@ figs = {
             tree_take_multi(vels, [i], [-1]),
             timesteps=jnp.arange(-n_preceding_steps, n_steps),
             mode='std', 
+            colors=disturbance_stds_train_colors_dark,
             varname=fr"${label}$",
             layout_kws=dict(
                 legend=dict(
-                    title="Train curl std.",
+                    title="Train disturbance std.",
                 ),
             ),
             scatter_kws=dict(legend="legend"),
@@ -829,9 +966,10 @@ for pert_condition in figs:
             fig,
             perturbations={
                 f"{pert_condition} ({analysis_variant} direction) impulse": (
-                    impulse_amplitude, impulse_start_step, impulse_end_step
+                    impulse_amplitude[pert_condition], impulse_start_step, impulse_end_step
                 )
             },
+            train_condition_strs=[f"{disturbance_type_train} force fields"],
             n=n,
         )
         
@@ -846,6 +984,83 @@ for pert_condition in figs:
         )
         
         fig.show()
+```
+
+#### Generate figures comparing the perturbation variables, and the low vs. high training conditions
+
+There are only two figures here, for the forward/parallel and lateral/orthogonal directions respectively.
+
+```{python}
+all_vels_plot_lohi = jt.map(
+    lambda vels_dict: subdict(vels_dict, disturbance_stds_train_lohi),
+    all_vels_plot,
+    is_leaf=is_type(OrderedDict),
+)
+
+axes_labels = [fr'$v_{sub}$' for sub in components_labels[components_plot]]
+
+figs = {
+    label: {
+        imp_condn: fbp.profiles(
+            tree_take_multi(vels, [i], [-1]),
+            timesteps=jnp.arange(-n_preceding_steps, n_steps),
+            mode='std', 
+            colors=disturbance_stds_train_colors_dark_lohi,
+            varname=fr"${label}$",
+            layout_kws=dict(
+                legend=dict(
+                    title="Train disturbance std.",
+                ),
+            ),
+            scatter_kws=dict(legend="legend"),
+        )
+        for imp_condn, vels in all_vels_plot_lohi.items()
+    }
+    for i, label in enumerate(axes_labels)
+}
+
+figs = {
+    label: merge_profile_figs(fs)
+    for label, fs in figs.items()
+}
+```
+
+```{python}
+n = np.prod(jt.leaves(all_vels_plot)[0].shape[:-2])
+
+for label, fig in figs.items():
+    fig.add_vrect(
+        x0=impulse_start_step, 
+        x1=impulse_end_step,
+        fillcolor='grey', 
+        opacity=0.1, 
+        line_width=0,
+        name='Perturbation',
+    )
+    
+    add_context_annotation(
+        fig,
+        perturbations={
+            f"{pert_condition} ({analysis_variant} direction) impulse": (
+                impulse_amplitude[pert_condition], impulse_start_step, impulse_end_step
+            )
+            for pert_condition in impulse_amplitude
+        },
+        train_condition_strs=[f"{disturbance_type_train} force fields"],
+        n=n,
+    )
+    
+    savefig(
+        fig, 
+        join([
+            f"{label}",
+            f"imp-amp-{impulse_amplitude}",
+            f"imp-steps-{impulse_duration}",
+        ]),
+        subdir=f"fb_impulse_{pert_condition}/vel_response",
+    )
+    
+    fig.show()
 ```
 
 ## Summary comparison of performance measures
@@ -863,13 +1078,17 @@ all_responses = dict(impulse_responses['aligned'])
 
 Thus note that in what follows, "forward", "backward", "lateral" are all relative to the perturbation direction.
 
+Also note that the outer keys (including `'vel'` etc.) of `all_responses` refer to response variables, whereas the second-level keys (also including `'vel'` etc.) refer to the perturbed feedback variables.
+
 ### Add some other state variables to the impulse response tree
 
 We didn't manipulate the position, but we will want to compute deviations with respect to the steady state (i.e. target) position.
 
 ```{python}
 all_states = all_states_imp[analysis_variant]
+```
 
+```{python}
 target_pos = jt.map(
     lambda task: task.validation_trials.targets['mechanics.effector.pos'].value,
     tasks,
@@ -886,32 +1105,61 @@ all_responses['pos'] = jt.map(
 )
 ```
 
-### Define all performance measures
-
-**TODO: I don't think this will work as-is, since `responses[key]` is a dict of OrderedDicts. It may be necessary to transpose the PyTree so the outer keys are on the inside, so we can tree map over the perturbation/training conditions**
-
-Max forward force
+**TODO** We may also be interested in the sensitivity to noise.
 
 ```{python}
-def get_max_forward_force(responses):
-    return jnp.max(responses['force'][..., 0], axis=-1)
+# all_responses['feedback-noise'] = ...
 ```
 
-Max backward force
+```{python}
+# all_responses['motor-noise'] = ...
+```
+
+### Transpose tree of measures 
+
+We'll want to map over each combination of perturbation condition (feedback variable) and training condition (disturbance std), in each case passing the responses to the functions which calculate the measures. However, the response variables are currently in the outermost level of the `all_responses` tree, and the conditions we want to map over are inside. Thus we'll transpose the response variables to the inside of the array.
 
 ```{python}
-def get_max_backward_force(responses):
-    return jnp.max(-responses['force'][..., 0], axis=-1)
+Responses = namedtuple('Responses', all_responses.keys())
+
+all_responses_tuple = Responses(**all_responses) 
+```
+
+```{python}
+all_responses_tuples = jt.transpose(
+    jt.structure(all_responses_tuple, is_leaf=is_type(dict)), 
+    None, 
+    all_responses_tuple,
+)
+```
+
+```{python}
+pp(all_responses_tuples)
+```
+
+:::{note}
+There's certainly some alternative way to have approached this. In particular, we could have defined all the transformations we needed to plot the profiles, and apply them all at once to get the `Responses` leaves (or equivalent) of the pytree. 
+
+However, the current approach works just fine as well.
+:::
+
+### Define all performance measures
+
+Max parallel (forward/backward, depending on mul=1 or mul=-1) force
+
+```{python}
+def get_max_parallel_force(responses, mul=1., timesteps=slice(None)):
+    return jnp.max(mul * responses.force[..., timesteps, 0], axis=-1)
 ```
 
 Max net control force 
 
 ```{python}
-def get_net_force(responses):
-    return jnp.linalg.norm(responses['force'], axis=-1)
+def get_net_force(responses, timesteps=slice(None)):
+    return jnp.linalg.norm(responses.force[..., timesteps, :], axis=-1)
     
-def get_max_net_force(responses):
-    return jnp.max(get_net_force(responses), axis=-1)
+def get_max_net_force(responses, **kwargs):
+    return jnp.max(get_net_force(responses, **kwargs), axis=-1)
 ```
 
 Sum control forces
@@ -921,32 +1169,25 @@ def get_sum_net_forces(responses):
     return jnp.sum(get_net_force(responses), axis=-1)
 ```
 
-Max forward velocity 
+Max parallel (forward/backward) velocity 
 
 ```{python}
-def get_max_forward_vel(responses):
-    return jnp.max(responses['vel'][..., 0], axis=-1)
+def get_max_parallel_vel(responses, mul=1.):
+    return jnp.max(mul * responses.vel[..., 0], axis=-1)
 ```
 
-Max backward velocity 
-
-```{python}
-def get_max_backward_vel(responses):
-    return jnp.max(-responses['vel'][..., 0], axis=-1)
-```
-
-Max lateral (left) velocity
+Max lateral (left/right) velocity
 
 ```{python}
 def get_max_lateral_vel(responses, mul=1.):
-    return jnp.max(mul * responses['vel'][..., 1], axis=-1)
+    return jnp.max(mul * responses.vel[..., 1], axis=-1)
 ```
 
 Max deviation from steady state position (projection doesn't matter)
 
 ```{python}
 def get_deviation(responses):
-    return jnp.norm(responses['pos'], axis=-1)
+    return jnp.linalg.norm(responses.pos, axis=-1)
 
 def get_max_deviation(responses):
     return jnp.max(get_deviation(responses), axis=-1)
@@ -959,16 +1200,49 @@ def get_sum_deviations(responses):
     return jnp.sum(get_deviation(responses), axis=-1)
 ```
 
+**TODO** covariance between force output and system noise variables.
+
 ### Calculate all performance measures 
 
 ```{python}
 all_measure_funcs, measure_handles = tree_unzip(OrderedDict({
-    "Max forward force": (get_max_forward_force, "force-forward-max"),
-    "Max backward force": (get_max_backward_force, "force-backward-max"),
+    "Max net force during pert.": (
+        partial(get_max_net_force, timesteps=impulse_time_idxs),
+        "force-net-max-during-pert",
+    ),
+    "Max backward force": (
+        partial(get_max_parallel_force, mul=-1.), 
+        "force-backward-max",
+    ),
+    "Max net force after pert.": (
+        partial(
+            get_max_net_force, 
+            timesteps=slice(impulse_end_step, None),
+        ),
+        "force-net-max-after-pert",
+    ),
+    f"Max forward force within {impulse_duration} steps of pert. end": (
+        partial(
+            get_max_parallel_force, 
+            mul=1.,
+            timesteps=slice(impulse_end_step, impulse_end_step + impulse_duration),
+        ),
+        "force-net-max-after-pert",
+    ),
+    "Max forward force": (
+        partial(get_max_parallel_force, mul=1.), 
+        "force-forward-max",
+    ),
     "Max net force": (get_max_net_force, "force-net-max"),
     "Sum net forces": (get_sum_net_forces, "force-net-sum"),
-    "Max forward velocity": (get_max_forward_vel, "vel-forward-max"),
-    "Max backward velocity": (get_max_backward_vel, "vel-backward-max"),
+    "Max forward velocity": (
+        partial(get_max_parallel_vel, mul=1.), 
+        "vel-forward-max",
+    ),
+    "Max backward velocity": (
+        partial(get_max_parallel_vel, mul=-1.), 
+        "vel-backward-max",
+    ),
     "Max lateral velocity (left)": (
         partial(get_max_lateral_vel, mul=1.), 
         "vel-lateral-left-max",
@@ -983,19 +1257,137 @@ all_measure_funcs, measure_handles = tree_unzip(OrderedDict({
 ```
 
 ```{python}
-# def get_all_measures(measure_funcs: PyTree[Callable], responses: PyTree[Array]):
-#     return jt.map(
-#         lambda func: jt.map(
-#             lambda states: func(states),
-#             states,
-#             is_leaf=is_module,
-#         ),
-#         measure_funcs,
-#     )
+def get_all_measures(measure_funcs: PyTree[Callable], all_responses: PyTree[Responses]):
+    return jt.map(
+        lambda func: jt.map(
+            lambda responses: func(responses),
+            all_responses,
+            is_leaf=is_type(Responses),
+        ),
+        measure_funcs,
+    )
     
-# all_measures = get_all_measures(all_measure_funcs, all_states)
+all_measures = get_all_measures(all_measure_funcs, all_responses_tuples)
+
+all_measures_lohi = {
+    measure_name: {
+        pert_var: subdict(train_condn_measures, disturbance_stds_train_lohi)
+        for pert_var, train_condn_measures in all_measures[measure_name].items()
+    }
+    for measure_name in all_measures
+}
 ```
 
 ### Comparison of all training conditions
 
+```{python}
+def get_violins(measure_data, measure_name, annotation_kws=None, layout_kws=None):
+    n_dist = np.prod(jt.leaves(measure_data)[0].shape)
+    
+    if layout_kws is None:
+        layout_kws = dict()
+        
+    if annotation_kws is None:
+        annotation_kws = dict()    
+        
+    fig = go.Figure(
+        data=jt.leaves([
+            [
+                go.Violin(
+                    x=np.full((n_dist,), train_curl_std),
+                    y=data.flatten(),
+                    name=pert_var,
+                    box_visible=False,
+                    meanline_visible=True,
+                    line_color=pert_vars_colors_lohi[i],
+                    showlegend=(j == 0),
+                    spanmode='hard',
+                )
+                for j, (train_curl_std, data) in enumerate(measure_data[pert_var].items())
+            ]
+            for i, pert_var in enumerate(measure_data)
+        ]),
+        layout=dict(
+            xaxis_title="Training curl std.",
+            yaxis_title=measure_name,
+            # xaxis_range=[-0.5, len(measure_data) - 0.5],
+            # xaxis_tickvals=list(measure_data.keys()),
+            yaxis_range=[0, None],
+            legend_title="Perturbed feedback var.",
+            # violinmode='overlay',
+            violingap=0,
+            **layout_kws,
+        )
+    )
+
+    add_context_annotation(fig, n=n_dist, **annotation_kws)
+    
+    return fig
+```
+
+```{python}
+figs = {
+    measure_name: get_violins(
+        measure, 
+        measure_name,
+        layout_kws=dict(
+            width=800,
+            height=600,
+        )
+    )
+    for measure_name, measure in all_measures.items()
+}
+```
+
+```{python}
+# for measure_name, measure_handle in measure_handles.items():
+#     savefig(
+#         figs[measure_name], 
+#         join([
+#             f"{measure_handle}",
+#         ]),
+#         subdir=fig_subdir,
+#     )
+```
+
+```{python}
+for measure_name in all_measures:
+    figs[measure_name].show()
+```
+
 ### Comparison of low-high training conditions
+
+```{python}
+fig_subdir = ""
+```
+
+```{python}
+figs = {
+    measure_name: get_violins(
+        measure, 
+        measure_name,
+        layout_kws=dict(
+            width=500,
+            height=400,
+        )
+    )
+    for measure_name, measure in all_measures_lohi.items()
+}
+```
+
+```{python}
+# for measure_name, measure_handle in measure_handles.items():
+#     savefig(
+#         figs[measure_name], 
+#         join([
+#             f"{measure_handle}",
+#             "lohi-summary",
+#         ]),
+#         subdir=fig_subdir,
+#     )
+```
+
+```{python}
+for measure_name in all_measures:
+    figs[measure_name].show()
+```

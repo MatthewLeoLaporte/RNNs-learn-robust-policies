@@ -16,7 +16,7 @@ def swap_model_trainables(model: PyTree[..., "T"], trained: PyTree[..., "T"], wh
     
 
 def subdict(dct, keys):
-    return {k: dct[k] for k in keys}
+    return type(dct)({k: dct[k] for k in keys})
 
 
 def pp(tree):
