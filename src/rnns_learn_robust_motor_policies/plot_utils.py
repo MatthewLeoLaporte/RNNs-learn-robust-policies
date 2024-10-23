@@ -30,7 +30,7 @@ def get_savefig_func(fig_dir: Path, suffix=""):
         
         if isinstance(fig, mplfig.Figure):
             fig.savefig(
-                save_dir / f"{label}{ext}",
+                str(save_dir / f"{label}{ext}"),
                 transparent=transparent, 
                 **kwargs, 
             )
@@ -56,6 +56,7 @@ def add_context_annotation(
     i_replicate=None,
     i_condition=None,
     y=1.1,
+    **kwargs,
 ) -> None:
     """Annotates a figure with details about sample size, trials, replicates."""
     lines = []
@@ -107,6 +108,8 @@ def add_context_annotation(
         xanchor="center",
         yanchor="bottom",
         font=dict(size=16),  # Adjust font size as needed
+        name='context_annotation',
+        **kwargs,
     ))
     
 
