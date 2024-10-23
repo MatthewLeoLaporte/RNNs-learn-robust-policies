@@ -1,12 +1,13 @@
 ---
 created: 2024-10-04T11:27
-updated: 2024-10-22T15:26
+updated: 2024-10-23T14:03
 ---
 - [ ] **Modify nb 1-2a to work with both disturbance types – mostly just renaming `curl_*` to `disturbance_*`, but also need to decide on file naming convention (in particular when train disturbance is not the same as test disturbance)**
 - [x] Quantify response to feedback perturbation – max leftward and rightward control force 
 - [ ] **Compare measures across impulse amplitudes, for low versus high training condition**
 - [ ] **Plot comparing parallel force during the impulse perturbation, for pos versus vel fb perturbation.** (i.e. detail of the grey region on the plots in 1-2b that have dotted traces)
-- [ ] **Fix fig subdirs/saving in 1-2b**
+- [x] Fix fig subdirs/saving in 1-2b
+- [ ] After finishing up analyses in 1-2b, re-run batch quarto render for both 1-2a and 1-2b
 - [x] Maybe make the feedback perturbation amplitudes variable-dependent: we see that velocity perturbations produce a much stronger response, perhaps because velocity has an integral effect on deviations; and as an approximation of this integral response, perhaps a 1.0 pos perturbation for 5 steps should correspond to a 0.2 vel perturbation for 5 steps
 - [x] Plot velocity profiles for feedback perturbations
 - [ ] Add notebook to load models for multiple noise conditions, and plot distribution comparisons 
