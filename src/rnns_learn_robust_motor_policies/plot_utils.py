@@ -6,7 +6,10 @@ from typing import Optional
 from jaxtyping import Array, Float
 import jax.numpy as jnp
 import matplotlib.figure as mplfig
+import plotly.colors as plc
 import plotly.graph_objects as go
+
+import feedbax.plot as fbp
 
 from rnns_learn_robust_motor_policies.setup_utils import filename_join
 
@@ -111,7 +114,22 @@ def add_context_annotation(
         name='context_annotation',
         **kwargs,
     ))
+
+
+def get_merged_context_annotation(*figs):
+    """Given figures with annotations added by `add_context_annotation`, return the text of a merged annotation.
     
+    Note that this does not add the text as an annotation to any figure.
+    """
+    annotations_text = [
+        next(iter(fig.select_annotations(selector=dict(name="context_annotation")))).text 
+        for fig in figs
+    ]
+    annotation_unique_lines = set(sum([text.split('<br>') for text in annotations_text], []))
+    merged_annotation = '<br>'.join(reversed(sorted(annotation_unique_lines)))
+    return merged_annotation  
+
+
 
 # TODO: Make inits and goals individually optional
 # Perhaps by simplifying this function to just plot a single set of points (`points_2D` or something)
@@ -192,3 +210,17 @@ def add_endpoint_traces(
                 )
             ]
         )
+
+
+def toggle_bounds_visibility(fig):
+    """Toggle the visibility of traces with 'bound' in their names."""
+    def toggle_visibility_if_bound(trace):
+        if 'bound' in trace.name:
+            if trace.visible is None:
+                trace.visible = False
+            else:
+                trace.visible = not trace.visible
+    
+    fig.for_each_trace(toggle_visibility_if_bound)
+
+

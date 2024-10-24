@@ -85,6 +85,10 @@ from rnns_learn_robust_motor_policies.setup_utils import (
     set_model_noise,
     find_unique_filepath,
 )
+from rnns_learn_robust_motor_policies.constants import (
+    COLORSCALES, 
+    get_colors_dicts,
+)
 
 ```
 
@@ -377,10 +381,12 @@ workspace = ((-1., -1.),
 eval_grid_n = 2
 eval_n_directions = 24
 eval_reach_length = 0.5
+n_conditions = eval_grid_n ** 2 * eval_n_directions
 
 eval_grid_n_small = 1
 eval_n_directions_small = 7
 eval_reach_length_small = 0.5
+n_conditions_small = eval_grid_n_small ** 2 * eval_n_directions_small
 
 # Define the base task
 task = SimpleReaches(
@@ -459,36 +465,24 @@ if not any_system_noise:
     n_trials = n_trials_small = 1
 ```
 
-## Setup colorscales for plots
+## Setup colors for plots
 
 Now that we know how many training and evaluation conditions we'll be working with, we can define the color scales for plots once and for all.
 
 ```{python}
-# some colors will be darkened by a factor (e.g. mean curves)
-darken_factor = 0.7
+trials_colors, trials_colors_dark = get_colors_dicts(
+    range(n_trials), COLORSCALES['trials'],
+)
 
-# when coloring by reach condition
-reach_condition_colorscale = 'phase'
+# by training condition
+disturbance_train_stds_colors, disturbance_train_stds_colors_dark = get_colors_dict(
+    disturbance_train_stds, COLORSCALES['disturbance_train_stds'],
+)
 
-# when coloring by evaluations ("trials")
-# NOTE: for now we are not coloring by trials, so make these constant
-trials_colorscale = 'Tealgrn'  # for trials
-trials_colors = plc.sample_colorscale(trials_colorscale, n_trials + 1)[:-1]
-trials_colors_small = plc.sample_colorscale(trials_colorscale, n_trials_small + 1)[:-1]
-
-# when coloring by training condition
-curl_stds_train_colorscale = 'viridis'
-curl_stds_train_colors = fbp.sample_colorscale_unique(curl_stds_train_colorscale, len(curl_stds_train))
-curl_stds_train_colors_lohi = [curl_stds_train_colors[0], curl_stds_train_colors[-1]]
-curl_stds_train_colors_dark = fbp.adjust_color_brightness(curl_stds_train_colors, darken_factor)
-curl_stds_train_colors_dark_lohi = [curl_stds_train_colors_dark[0], curl_stds_train_colors_dark[-1]]
-
-# when coloring by evaluation condition
-disturbance_amplitudes_colorscale = 'plotly3'
-disturbance_amplitudes_colors = fbp.sample_colorscale_unique(disturbance_amplitudes_colorscale, len(disturbance_amplitudes))
-disturbance_amplitudes_colors_lohi = [disturbance_amplitudes_colors[0], disturbance_amplitudes_colors[-1]]
-disturbance_amplitudes_colors_dark = fbp.adjust_color_brightness(disturbance_amplitudes_colors, darken_factor)
-disturbance_amplitudes_colors_dark_lohi = [disturbance_amplitudes_colors_dark[0], disturbance_amplitudes_colors_dark[-1]]
+# by evaluation condition
+disturbance_amplitudes_colors, disturbance_amplitudes_colors_dark = get_colors_dict(
+    disturbance_amplitudes, COLORSCALES['disturbance_amplitudes'], 
+)
 ```
 
 ## Evaluate the trained models on each evaluation task
@@ -588,7 +582,7 @@ figs = jt.map(
         where_plot(states),
         var_labels=var_labels,
         axes_labels=('x', 'y'),
-        colorscale=reach_condition_colorscale,
+        colorscale=COLORSCALES['reach_condition'],
         colorscale_axis=1,  # Color/group by reach condition
         mode='lines',
         legend_title='Reach direction',
@@ -654,7 +648,7 @@ figs = jt.map(
         var_labels=var_labels,
         axes_labels=('x', 'y'),
         mode='markers+lines',
-        colorscale=reach_condition_colorscale,
+        colorscale=COLORSCALES['reach_condition'],
         legend_title='Reach direction',
         ms=3,
         scatter_kws=dict(line_width=0.75),
@@ -710,7 +704,7 @@ figs = jt.map(
         where_plot(states),
         var_labels=var_labels,
         axes_labels=('x', 'y'),
-        colorscale=reach_condition_colorscale,
+        colorscale=COLORSCALES['reach_condition'],
         colorscale_axis=1,  # Color/group by reach condition
         mode='lines',
         legend_title='Reach direction',
@@ -806,7 +800,7 @@ figs = jt.map(
         axes_labels=('x', 'y'),
         mode='lines',
         legend_title="Trial",
-        colorscale=trials_colorscale,
+        colorscale=COLORSCALES['trials'],
         colorscale_axis=0,
         scatter_kws=dict(line_width=0.5),
     ),
@@ -868,9 +862,9 @@ figs = jt.map(
         mean_trajectory_line_width=3,
         axes_labels=('x', 'y'),
         mode='lines',
-        colorscale=disturbance_amplitudes_colorscale,
+        colorscale=COLORSCALES['disturbance_amplitudes'],
         colorscale_axis=0,
-        legend_title="Curl amplitude",
+        legend_title="Disturbance amplitude",
         legend_labels=disturbance_amplitudes,
         scatter_kws=dict(line_width=1, opacity=0.75),
     ),
@@ -935,14 +929,14 @@ figs = jt.map(
         var_labels=var_labels,
         # ref_endpoints=(pos_endpoints, None),
         mean_trajectory_line_width=3,
-        darken_mean=darken_factor,
+        darken_mean=lighten_factor,
         var_endpoint_ms=0,
         axes_labels=('x', 'y'),
         mode='lines',
         stride=stride,
-        colorscale=curl_stds_train_colorscale,
+        colorscale=COLORSCALES['disturbance_train_stds'],
         colorscale_axis=0,
-        legend_title='Train curl std.',
+        legend_title='Train disturbance std.',
         legend_labels=curl_stds_train,
         scatter_kws=dict(line_width=1, opacity=0.3),
     ),

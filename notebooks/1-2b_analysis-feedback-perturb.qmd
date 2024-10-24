@@ -63,6 +63,8 @@ from rnns_learn_robust_motor_policies.plot_utils import (
     add_context_annotation,
     add_endpoint_traces,
     get_savefig_func,
+    toggle_bounds_visibility,
+    get_merged_context_annotation,
 )
 from rnns_learn_robust_motor_policies.state_utils import (
     get_forward_lateral_vel, 
@@ -80,6 +82,11 @@ from rnns_learn_robust_motor_policies.setup_utils import (
     filename_join as join,
     set_model_noise,
     find_unique_filepath,
+)
+from rnns_learn_robust_motor_policies.colors import(
+    COLORSCALES,
+    get_colors_dicts,
+    get_colors_dicts_from_discrete,
 )
 ```
 
@@ -243,10 +250,10 @@ trained_models_load = jt.map(
 )
 
 disturbance_type_train = hyperparameters['disturbance_type']
-disturbance_stds_train = hyperparameters['disturbance_stds']
-disturbance_stds_train_lohi = [disturbance_stds_train[0], disturbance_stds_train[-1]]
+disturbance_train_stds = hyperparameters['disturbance_stds']
+disturbance_train_stds_lohi = [disturbance_train_stds[0], disturbance_train_stds[-1]]
 
-trained_models = OrderedDict(zip(disturbance_stds_train, trained_models_load))
+trained_models = OrderedDict(zip(disturbance_train_stds, trained_models_load))
 ```
 
 ### Load parameters from earlier training iterations, where necessary
@@ -261,7 +268,7 @@ model_parameter_histories, train_hyperparameters = load_with_hyperparameters(
 
 where_train = attr_str_tree_to_where_func(train_hyperparameters['where_train_strs'])
 
-model_parameter_histories = dict(zip(disturbance_stds_train, model_parameter_histories))
+model_parameter_histories = dict(zip(disturbance_train_stds, model_parameter_histories))
 
 # load_spec = {0.4: -1, 0.5: -1}
 
@@ -563,43 +570,18 @@ savefig = get_savefig_func(FIGS_DIR)
 
 ### Define colorscales
 
-**TODO** these should probably be defined in a central location along with the ones from 1-2a
-
 ```{python}
-lighten_factor = 0.7
-```
-
-```{python}
-def get_colors_dict_from_discrete(keys, colors, lighten_factor: Optional[float] = None, colortype='rgb'):
-    if lighten_factor is not None:
-        colors = fbp.adjust_color_brightness(colors, lighten_factor)
-    colors = plc.convert_colors_to_same_type(colors, colortype=colortype)[0]
-    return dict(zip(keys, colors))
-    
-def get_colors_dict(keys, colorscale, lighten_factor: Optional[float] = None, colortype='rgb'):
-    colors = fbp.sample_colorscale_unique(colorscale, len(keys))
-    return get_colors_dict_from_discrete(keys, colors, lighten_factor, colortype)
-
 # when coloring by training condition
-disturbance_stds_train_colorscale = 'viridis'
-disturbance_stds_train_colors = get_colors_dict(
-    disturbance_stds_train, disturbance_stds_train_colorscale
-)
-disturbance_stds_train_colors_dark = get_colors_dict(
-    disturbance_stds_train, 
-    disturbance_stds_train_colorscale, 
-    lighten_factor=lighten_factor,
+disturbance_train_stds_colors, disturbance_train_stds_colors_dark = get_colors_dicts(
+    disturbance_train_stds, COLORSCALES['disturbance_train_stds'],
 )
 ```
 
 ```{python}
 # when coloring by perturbed feedback variable
 
-# note this colorscale is discrete, unlike the ones used in 1-2a
-pert_vars_colorscale = plc.qualitative.D3 
-pert_vars_colors = get_colors_dict_from_discrete(feedback_var_names, pert_vars_colorscale)
-pert_vars_colors_dark = get_colors_dict_from_discrete(
-    feedback_var_names, pert_vars_colorscale, lighten_factor=lighten_factor,
+pert_vars_colors, pert_vars_colors_dark = get_colors_dicts_from_discrete(
+    feedback_var_names, COLORSCALES['fb_pert_vars']
 )
 ```
 
@@ -649,7 +631,8 @@ def merge_xy_trial_set_figs(figs):
     figs['y'].update_traces(showlegend=False)
     fig.add_traces(figs['y'].data)
     return fig
- 
+
+# TODO: Alter something (e.g. color) so it is easier to tell the directions apart
 if analysis_variant == 'xy':
     figs = {
         label: {
@@ -659,7 +642,7 @@ if analysis_variant == 'xy':
         for label, fs in {
             label: jt.transpose(
                 jt.structure(dict.fromkeys(coord_names, '*')),
-                jt.structure(OrderedDict.fromkeys(disturbance_stds_train, '*')),
+                jt.structure(OrderedDict.fromkeys(disturbance_train_stds, '*')),
                 fs,
             )
             for label, fs in figs.items()
@@ -720,10 +703,6 @@ components_names = dict(
 ```
 
 ```{python}
-impulse_responses = dict(xy=dict(), aligned=dict())
-```
-
-```{python}
 # i_replicate = 1
 n_preceding_steps = 0
 
@@ -731,65 +710,54 @@ n_preceding_steps = 0
 plot_ts = slice(None)
 ```
 
-### Control forces 
+### Obtain the profiles
 
 ```{python}
-fig_subdir = "force_profiles"
-```
+# Short label for the axes/filenames
+profile_vars_labels = dict(
+    force='F',
+    vel='v',
+)
 
-It is easy to obtain the x/y force components:
+# What part of the state to obtain the profiles from
+profile_vars_where = dict(
+    force=lambda states: states.efferent.output,
+    vel=lambda states: states.mechanics.effector.vel,
+)
 
-```{python}
-impulse_responses['xy']['force'] = jt.map(
-    lambda states: states.net.output[..., plot_ts, :],
-    all_states,
-    is_leaf=is_module,
+# Different ways to align the profiles with the reach directions
+alignment_funcs = dict(
+    xy=lambda var, _: var, 
+    aligned=lambda var, directions: project_onto_direction(var, directions),
 )
 ```
 
-The force components aligned to the perturbation direction are a little harder:
-
 ```{python}
-from jaxtyping import Array, Float, PyTree
-from feedbax.bodies import SimpleFeedbackState
-
-def project_and_lump(
-    all_states: PyTree[SimpleFeedbackState], 
-    where_var: Callable[[SimpleFeedbackState], PyTree[Float[Array, "... conditions time xy=2"]]], 
-    directions: PyTree[Float[Array, "... conditions xy=2"]],
-):
-    """For each state PyTree `states` in `all_states`, get `where_var(states)`
-    and then project it onto `directions`.
-    """
-    all_var = jt.map(where_var, all_states, is_leaf=is_module)
-
-    all_var_align = jt.map(
-        lambda var, directions: project_onto_direction(var, directions),
-        all_var, tree_prefix_expand(directions, all_var),
-    )
-    
-    return {
-        key: tree_stack(jt.leaves(var_tree, is_leaf=is_type(OrderedDict)))
-        for key, var_tree in all_var_align.items()
-    }
-```
-
-```{python}
-impulse_responses['aligned']['force'] = project_and_lump(
-    all_states, 
-    lambda states: states.efferent.output,
-    directions,
+impulse_responses = jt.map(
+    lambda alignment_func: jt.map(
+        lambda where: jt.map(
+            lambda states, directions: alignment_func(where(states)[..., plot_ts, :], directions),
+            all_states, tree_prefix_expand(directions, all_states, is_leaf=is_module),
+            is_leaf=is_module,
+        ),
+        profile_vars_where,
+    ),
+    alignment_funcs,
 )
 ```
 
-#### Generate figures for each perturbation variable, comparing all training conditions
+```{python}
+pp(impulse_responses)
+```
+
+### Define some plotting functions
 
 ```{python}
 def get_all_profiles(all_plot, var_label, disturbance_stds=None, colors=None):    
     y_axes_labels = [fr'${var_label}_{sub}$' for sub in components_labels[components_plot]]
     
     if colors is None:
-        colors = disturbance_stds_train_colors_dark
+        colors = disturbance_train_stds_colors_dark
     
     if disturbance_stds is not None:
         all_plot = jt.map(
@@ -846,68 +814,6 @@ def get_all_profiles(all_plot, var_label, disturbance_stds=None, colors=None):
 ```
 
 ```{python}
-var_label = 'F'
-
-figs = get_all_profiles(impulse_responses[components_plot]['force'], var_label)
-```
-
-```{python}
-for path, fig in jax.tree_util.tree_flatten_with_path(figs, is_leaf=is_type(go.Figure))[0]:
-    pert_var = path[0].key
-    pert_condition = '-'.join(dict_key.key for dict_key in path[:-1])
-    component_name = path[-1].key  
-    
-    savefig(
-        fig, 
-        join([
-            f"{var_label}-{component_name}",
-            f"pert-amp-{impulse_amplitude[pert_var]}",
-        ]),
-        subdir=f"{var_label}_response/pert-{pert_condition}",
-    )
-    fig.show()
-```
-
-#### Generate figures comparing the perturbation variables, and the low vs. high training conditions
-
-```{python}
-fig_subdir = "force_response/compare-pert-vars"
-```
-
-There are only two figures here, for the forward/parallel and lateral/orthogonal directions respectively.
-
-```{python}
-figs = get_all_profiles(
-    impulse_responses[components_plot]['force'], 
-    var_label, 
-    disturbance_stds_train_lohi,
-)
-```
-
-```{python}
-def toggle_bounds_visibility(fig):
-    def toggle_visibility_if_bound(trace):
-        if 'bound' in trace.name:
-            if trace.visible is None:
-                trace.visible = False
-            else:
-                trace.visible = not trace.visible
-    
-    fig.for_each_trace(toggle_visibility_if_bound)
-
-
-def get_merged_context_annotation(*figs):
-    
-    annotations_text = [
-        next(iter(fig.select_annotations(selector=dict(name="context_annotation")))).text 
-        for fig in figs
-    ]
-    annotation_unique_lines = set(sum([text.split('<br>') for text in annotations_text], []))
-    merged_annotation = '<br>'.join(reversed(sorted(annotation_unique_lines)))
-    return merged_annotation 
-    
-
-# now merge the two figures in each inner dict
 def merge_profile_figs(figs):
     figs['pos'].update_traces(
         line_dash='dot',
@@ -923,101 +829,70 @@ def merge_profile_figs(figs):
     toggle_bounds_visibility(figs['vel'])
     
     return figs['vel']
-    
-
-figs_t = jt.transpose(jt.structure(dict.fromkeys(feedback_var_names, '*')), None, figs)
-
-figs_merged = {
-    label: merge_profile_figs(fs)
-    for label, fs in figs_t.items()
-}
 ```
 
+### Generate figures for each perturbation variable, comparing all training conditions
+
 ```{python}
-for path, fig in jax.tree_util.tree_flatten_with_path(figs_merged, is_leaf=is_type(go.Figure))[0]:
-    pert_var = path[0].key
-    pert_condition = '-'.join(dict_key.key for dict_key in path[:-1])
+figs = {
+    var_name: get_all_profiles(impulse_responses[components_plot][var_name], var_label)
+    for var_name, var_label in profile_vars_labels.items()
+}
+
+for path, fig in jax.tree_util.tree_flatten_with_path(figs, is_leaf=is_type(go.Figure))[0]:
+    var_name = path[0].key
+    var_label = profile_vars_labels[var_name]
+    pert_var = path[1].key
+    pert_condition = '-'.join(dict_key.key for dict_key in path[1:-1])
     component_name = path[-1].key  
-      
+    
     savefig(
         fig, 
         join([
             f"{var_label}-{component_name}",
-            f"pert-amp-{dict_str(impulse_amplitude)}",
+            f"pert-amp-{impulse_amplitude[pert_var]}",
         ]),
-        subdir=fig_subdir,
+        subdir=f"{var_name}_response/pert-{pert_condition}",
     )
     fig.show()
 ```
 
-**TODO** plot detail of during-perturbation region, *with* error bars (i.e. use `toggle_bounds_visibility` again), to show how the difference in response from low to high training disturbance is much larger for a velocity perturbation than a position perturbation
-
-### Velocity profiles 
-
-```{python}
-fig_subdir = "vel_profiles"
-```
-
-The x/y components:
-
-```{python}
-impulse_responses['xy']['vel'] = jt.map(
-    lambda states: states.mechanics.effector.vel,
-    all_states,
-    is_leaf=is_module,
-)
-```
-
-And the velocity components parallel and orthogonal to the perturbation directions:
-
-```{python}
-impulse_responses['aligned']['vel'] = project_and_lump(
-    all_states, 
-    lambda states: states.mechanics.effector.vel,
-    directions,
-)
-```
-
-#### Generate figures for each perturbation variable, comparing all train disturbance stds
-
-```{python}
-var_label = 'v'
-
-figs = get_all_profiles(impulse_responses[components_plot]['vel'], var_label)
-```
-
-```{python}
-for fig in jt.leaves(figs):
-    fig.show()
-```
 
 #### Generate figures comparing the perturbation variables, and the low vs. high training conditions
 
-```{python}
-fig_subdir = "vel_response/compare-pert-vars"
-```
+**TODO**: add legend for dotted lines -> pos, solid lines -> vel
 
 There are only two figures here, for the forward/parallel and lateral/orthogonal directions respectively.
 
+For each figure, we also generate a detail of the peri-perturbation region of the trials.
+
 ```{python}
-figs = get_all_profiles(
-    impulse_responses[components_plot]['vel'], 
-    var_label, 
-    disturbance_stds_train_lohi,
-)
+def get_summary_profiles(var, var_label):
+    figs = get_all_profiles(var, var_label, disturbance_train_stds_lohi)
+    
+    figs_t = jt.transpose(jt.structure(dict.fromkeys(feedback_var_names, '*')), None, figs)
 
-figs_t = jt.transpose(jt.structure(dict.fromkeys(feedback_var_names, '*')), None, figs)
-
-figs_merged = {
-    label: merge_profile_figs(fs)
-    for label, fs in figs_t.items()
-}
+    figs_merged = {
+        label: merge_profile_figs(fs)
+        for label, fs in figs_t.items()
+    }
+    
+    return figs_merged
 ```
 
 ```{python}
-for path, fig in jax.tree_util.tree_flatten_with_path(figs_merged, is_leaf=is_type(go.Figure))[0]:
-    pert_var = path[0].key
-    pert_condition = '-'.join(dict_key.key for dict_key in path[:-1])
+t_range_detail = [impulse_start_step - 1, impulse_end_step + 5]
+
+figs = {
+    var_name: get_summary_profiles(impulse_responses[components_plot][var_name], var_label)
+    for var_name, var_label in profile_vars_labels.items()
+}
+
+for path, fig in jax.tree_util.tree_flatten_with_path(figs, is_leaf=is_type(go.Figure))[0]:
+    var_name = path[0].key
+    var_label = profile_vars_labels[var_name]
+    pert_var = path[1].key
+    pert_condition = '-'.join(dict_key.key for dict_key in path[1:-1])
     component_name = path[-1].key  
       
     savefig(
@@ -1026,9 +901,33 @@ for path, fig in jax.tree_util.tree_flatten_with_path(figs_merged, is_leaf=is_ty
             f"{var_label}-{component_name}",
             f"pert-amp-{dict_str(impulse_amplitude)}",
         ]),
-        subdir=fig_subdir,
+        subdir=f"{var_name}_response/compare-pert-vars",
     )
     fig.show()
+    
+    # Generate detail of the perturbation region
+    fig_detail = go.Figure(fig)
+
+    all_y_in_t_range = np.concatenate([trace.y[slice(*t_range_detail)] for trace in fig_detail.data])
+    y_range = [np.min(all_y_in_t_range), np.max(all_y_in_t_range)]     
+    
+    fig_detail.update_layout(
+        xaxis_range=t_range_detail,
+        yaxis_range=y_range,
+    )
+    
+    toggle_bounds_visibility(fig_detail)
+      
+    savefig(
+        fig_detail, 
+        join([
+            f"{var_label}-{component_name}",
+            f"pert-amp-{dict_str(impulse_amplitude)}",
+            "detail",
+        ]),
+        subdir=fig_subdir,
+    )
+    fig_detail.show()
 ```
 
 ## Summary comparison of performance measures
@@ -1239,7 +1138,7 @@ all_measures = get_all_measures(all_measure_funcs, all_responses_tuples)
 
 all_measures_lohi = {
     measure_name: {
-        pert_var: subdict(train_condn_measures, disturbance_stds_train_lohi)
+        pert_var: subdict(train_condn_measures, disturbance_train_stds_lohi)
         for pert_var, train_condn_measures in all_measures[measure_name].items()
     }
     for measure_name in all_measures
