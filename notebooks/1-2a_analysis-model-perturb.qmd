@@ -345,7 +345,7 @@ We'll evaluate on a range of constant curl amplitudes, starting from 0 (no curl/
 
 For a 2*2  grid of 32-direction center-out reach sets, 10 replicates, and 5 trials per reach, evaluating each task variant leads to approximately 1.5 GB of states. If we run out memory, it may be necessary to:
 
-- reduce the number of evaluation reaches (e.g. `n_trials` or `eval_n_directions`);
+- reduce the number of evaluation reaches (e.g. `n_evals` or `eval_n_directions`);
 - wait to evaluate until we have decided on a subset of trials to plot; i.e. define a function to evaluate subsets of data as needed;
 - do this on CPU (assuming we have more RAM available)
 
@@ -458,11 +458,11 @@ pos_endpoints_small = jnp.stack([
 We'll evaluate each condition (reach direction) several times, to see how performance varies with noise.
 
 ```{python}
-n_trials = 5
-n_trials_small = 5
+n_evals = 5
+n_evals_small = 5
 
 if not any_system_noise:
-    n_trials = n_trials_small = 1
+    n_evals = n_evals_small = 1
 ```
 
 ## Setup colors for plots
@@ -471,7 +471,7 @@ Now that we know how many training and evaluation conditions we'll be working wi
 
 ```{python}
 trials_colors, trials_colors_dark = get_colors_dicts(
-    range(n_trials), COLORSCALES['trials'],
+    range(n_evals), COLORSCALES['trials'],
 )
 
 # by training condition
@@ -487,7 +487,7 @@ disturbance_amplitudes_colors, disturbance_amplitudes_colors_dark = get_colors_d
 
 ## Evaluate the trained models on each evaluation task
 
-In particular, for each trained ensemble of models (i.e. each training condition), evaluate each model in the ensemble on `n_trials` repetitions of each of the reach conditions. 
+In particular, for each trained ensemble of models (i.e. each training condition), evaluate each model in the ensemble on `n_evals` repetitions of each of the reach conditions. 
 
 ```{python}
 def get_eval_ensemble(models, task):
@@ -501,15 +501,15 @@ def get_eval_ensemble(models, task):
     return eval_ensemble
 
 @eqx.filter_jit
-def vmap_eval_ensemble(models, task, n_trials):
+def vmap_eval_ensemble(models, task, n_evals):
     # TODO: might save compulation if we modify the task here...
     return eqx.filter_vmap(get_eval_ensemble(models, task))(
-        jr.split(key_eval, n_trials)
+        jr.split(key_eval, n_evals)
     )
 
 all_states = jt.map(
     lambda task: jt.map(
-        lambda models: vmap_eval_ensemble(models, task, n_trials),
+        lambda models: vmap_eval_ensemble(models, task, n_evals),
         trained_models,
         is_leaf=is_module,
     ),
@@ -519,7 +519,7 @@ all_states = jt.map(
 
 all_states_small = jt.map(
     lambda task: jt.map(
-        lambda models: vmap_eval_ensemble(models, task, n_trials_small),
+        lambda models: vmap_eval_ensemble(models, task, n_evals_small),
         trained_models,
         is_leaf=is_module,
     ),
@@ -531,12 +531,12 @@ all_states_small = jt.map(
 Note that we:
 
 1. Set `ensemble_random_trials=False` so that each model in the ensemble will be evaluated on the same set of trials. 
-2. Vmap over `keys_eval`, to obtain `n_trials` different evaluations of the center-out set. 
+2. Vmap over `keys_eval`, to obtain `n_evals` different evaluations of the center-out set. 
 3. Use `jt.map` to repeat for each training condition (entry in `trained_models`).
 
 The objects `all_states` and `all_states_small` are dicts whose keys are the `disturbance_amplitudes`, and whose values are dicts whose keys are the `curl_stds` used in training, and whose values are the PyTrees of state arrays.
 
-Each state array has the following batch dimensions: `(n_trials, n_replicates, n_conditions, n_steps)`. For a single center-out set in `all_states_small`, `n_conditions = eval_n_directions`. But since `eval_grid_n != 1` for the full tasks evaluated in `all_states`, then there will be `eval_grid_n ** 2` center-out sets and the third dimension will have size `eval_n_directions * eval_grid_n ** 2`.
+Each state array has the following batch dimensions: `(n_evals, n_replicates, n_conditions, n_steps)`. For a single center-out set in `all_states_small`, `n_conditions = eval_n_directions`. But since `eval_grid_n != 1` for the full tasks evaluated in `all_states`, then there will be `eval_grid_n ** 2` center-out sets and the third dimension will have size `eval_n_directions * eval_grid_n ** 2`.
 
 ```{python}
 pp(all_states)
@@ -610,7 +610,7 @@ else:
                 perturbations={
                     f"{disturbance_type}": (disturbance_amplitude, None, None)
                 },
-                n=n_trials_small,
+                n=n_evals_small,
                 i_replicate=i_replicate,
             )
             add_endpoint_traces(
@@ -853,7 +853,7 @@ fig_subdir = "single_reach_condition/compare_test_conditions"
 # Stack the states for different test curls into single arrays
 plot_states_stacked = tree_stack(plot_states.values())
 
-n_trials_plot = n_trials_small * n_replicates
+n_trials_plot = n_evals_small * n_replicates
 
 figs = jt.map(
     lambda states: fbp.trajectories_2D(
@@ -944,7 +944,7 @@ figs = jt.map(
     is_leaf=is_module,
 )
 
-n_trials_plot = n_trials_small * n_replicates
+n_trials_plot = n_evals_small * n_replicates
 
 for disturbance_amplitude, fig in figs.items():
     add_context_annotation(

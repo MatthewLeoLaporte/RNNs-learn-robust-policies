@@ -1,12 +1,11 @@
 ---
 created: 2024-10-04T11:27
-updated: 2024-10-23T20:10
+updated: 2024-10-24T16:22
 ---
 - [ ] **Modify nb 1-2a to work with both disturbance types – mostly just renaming `curl_*` to `disturbance_*`, but also need to decide on file naming convention (in particular when train disturbance is not the same as test disturbance)**
-- [ ] **Compare measures across impulse amplitudes, for low versus high training condition**
-- [x] Plot comparing parallel force during the impulse perturbation, for pos versus vel fb perturbation. (i.e. detail of the grey region on the plots in 1-2b that have dotted traces)
-- [ ] **Update colorscales in 1-2a to match 1-2b**
-- [ ] After finishing up analyses in 1-2b, re-run batch quarto render for both 1-2a and 1-2b
+- [ ] **Compare measures across impulse amplitudes, for low versus high training condition
+- [x] Update colorscales in 1-2a to match 1-2b
+- [ ] After finishing up analyses in 1-2b, re-run batch quarto render for both 1-2a and 1-2b, for all noise and delay conditions, as well as for both curl and random training disturbances. Maybe reduce to 3 (lo-mid-high) disturbance levels. Also try training disturbance stds up to 1.5 or so (to see if the secondary peak disappears from profile)
 - [ ] Add notebook to load models for multiple noise/delay conditions, and plot distribution comparisons (only do this after deciding which plots to make – it’s too complicated to run *all* the existing plots as noise comparisons)
 - [ ] Max forward velocity – quantify number/amplitude of peaks…
 - [ ] Schedule a [[02 Questions#Steve]] with Steve. For one, ask about sensory perturbations in human tasks – do they see oscillations (i.e. going from straight to “loopy”, like we see in the control vs. robust networks)

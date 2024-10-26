@@ -3,12 +3,15 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Optional
 
-from jaxtyping import Array, Float
+import jax
 import jax.numpy as jnp
+from jaxtyping import Array, Float
 import matplotlib.figure as mplfig
 import plotly.colors as plc
 import plotly.graph_objects as go
 
+
+from feedbax import is_type
 import feedbax.plot as fbp
 
 from rnns_learn_robust_motor_policies.setup_utils import filename_join
@@ -50,6 +53,10 @@ def get_savefig_func(fig_dir: Path, suffix=""):
     return savefig
 
 
+def figs_flatten_with_paths(figs):
+    return jax.tree_util.tree_flatten_with_path(figs, is_leaf=is_type(go.Figure))[0]
+
+
 def add_context_annotation(
     fig: go.Figure,
     train_condition_strs: Optional[Sequence[str]] = None, 
@@ -69,7 +76,7 @@ def add_context_annotation(
         
     if perturbations is not None:
         for label, (amplitude, start, end) in perturbations.items():
-            line = f"Response to amplitude {amplitude} {label} "
+            line = f"Response to amplitude {amplitude:.2g} {label} "
             match (start, end):
                 case (None, None):
                     line += 'constant over trial'
