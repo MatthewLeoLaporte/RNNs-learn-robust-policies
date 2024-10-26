@@ -31,6 +31,7 @@ import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
+from jaxtyping import Array, Float, PyTree
 import matplotlib.pyplot as plt
 import numpy as np
 import plotly.colors as plc
@@ -42,6 +43,7 @@ from feedbax import (
     is_module, 
     is_type,
     tree_stack,
+    tree_unstack, 
     tree_take, 
     tree_take_multi,
     tree_unzip,
@@ -53,7 +55,12 @@ from feedbax.intervene import ConstantInput, CurlField, schedule_intervenor
 from feedbax.misc import git_commit_id, attr_str_tree_to_where_func
 import feedbax.plotly as fbp
 from feedbax.task import SimpleReaches
-from feedbax._tree import tree_key_tuples, tree_unstack, make_named_tuple_subclass
+from feedbax._tree import (
+    tree_key_tuples, 
+    make_named_tuple_subclass,
+    make_named_dict_subclass,
+    move_level_to_outside,
+)
 from feedbax.xabdeef.losses import simple_reach_loss
 
 from rnns_learn_robust_motor_policies.misc import dict_str
@@ -124,8 +131,8 @@ We may want to specify 1) which trained models to load, by their parameters, and
 
 # Specify which trained models to load 
 disturbance_type_load: Literal['curl', 'random'] = 'curl'
-feedback_noise_std_load = 0.02
-motor_noise_std_load = 0.02
+feedback_noise_std_load = 0.01
+motor_noise_std_load = 0.01
 feedback_delay_steps_load = 0  
 
 # Specify model parameters to use for analysis (None -> use training value)
@@ -372,9 +379,12 @@ impulse_time_idxs = slice(impulse_start_step, impulse_end_step)
 
 ```{python}
 analysis_variants = ('xy', 'rand')
+
 pert_var_names = ('pos', 'vel')
-coord_names = ('x', 'y')
+PertVarDict = make_named_dict_subclass('PertVarDict')
 feedback_var_idxs = dict(zip(pert_var_names, range(len(pert_var_names))))
+
+coord_names = ('x', 'y')
 coord_idxs = dict(zip(coord_names, range(len(coord_names))))
 ```
 
@@ -454,7 +464,7 @@ all_tasks_imp = dict()
 all_models_imp = dict()
 impulse_directions = dict()
 
-impulse_xy_conditions = dict.fromkeys(pert_var_names, dict.fromkeys(coord_names))
+impulse_xy_conditions = PertVarDict.fromkeys(pert_var_names, dict.fromkeys(coord_names))
 impulse_xy_conditions_keys = tree_key_tuples(
     impulse_xy_conditions, keys_to_strs=True, is_leaf=lambda x: x is None,
 )
@@ -1064,7 +1074,7 @@ all_responses['pos'] = jt.map(
 # all_responses['motor-noise'] = ...
 ```
 
-### Transpose tree of measures 
+### Rerrange the tree of responses
 
 We'll want to map over each combination of perturbation condition (feedback variable) and training condition (disturbance std), in each case passing the responses to the functions which calculate the measures. However, the response variables are currently in the outermost level of the `all_responses` tree, and the conditions we want to map over are inside. Thus we'll transpose the response variables to the inside of the array. 
 
@@ -1211,8 +1221,6 @@ all_measure_funcs, measure_handles = tree_unzip(OrderedDict({
 ### Calculate all performance measures 
 
 ```{python}
-from jaxtyping import PyTree
-
 def get_all_measures(measure_funcs: PyTree[Callable], all_responses: PyTree[Responses]):
     return jt.map(
         lambda func: jt.map(
@@ -1419,4 +1427,94 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
 ```{python}
 # for measure_name in all_measures:
 #     figs[measure_name].show()
+```
+
+### Comparison across impulse amplitudes
+
+First, generate separate figures for pos and vel perturbations. The x axis will be the impulse amplitude, and each violin will be split to compare the lowest and highest training conditions.
+
+```{python}
+fig_subdir = "performance_measures/compare_impulse_amplitudes"
+```
+
+```{python}
+def get_violins_comparing_amplitudes(measure_data, measure_name, pert_var, annotation_kws=None, layout_kws=None):
+    n_dist = np.prod(jt.leaves(measure_data)[0].shape)
+    
+    if layout_kws is None:
+        layout_kws = dict()
+        
+    if annotation_kws is None:
+        annotation_kws = dict()    
+        
+    fig = go.Figure()
+    
+    # Impulse perturbation amplitude (x axis)
+    for i, pert_amp in enumerate(impulse_amplitudes[pert_var]):
+        # Disturbance train std. (split)
+        for j, disturbance_train_std in enumerate(disturbance_train_stds_lohi):
+            fig.add_trace(
+                go.Violin(
+                    x=np.full((n_dist,), pert_amp),
+                    y=measure_data[i][pert_var][disturbance_train_std].flatten(),
+                    name=disturbance_train_std,
+                    box_visible=False,
+                    meanline_visible=True,
+                    side='positive' if j == 1 else 'negative',
+                    line_color=disturbance_train_stds_colors_dark[disturbance_train_std],
+                    showlegend=(i == 0),
+                    spanmode='hard',
+                )
+            )
+            
+    fig.update_layout(
+        xaxis_title="Impulse amplitude",
+        yaxis_title=measure_name,
+        # xaxis_range=[-0.5, len(measure_data) - 0.5],
+        # xaxis_tickvals=list(measure_data.keys()),
+        # yaxis_range=[0, None],
+        legend_title="Disturbance train std.",
+        violinmode='overlay',
+        violingap=0,
+        **layout_kws,
+    )
+
+    add_context_annotation(
+        fig, 
+        train_condition_strs=[f"{disturbance_type_train} force fields"],
+        n=n_dist, 
+        **annotation_kws,
+    )
+    
+    return fig
+```
+
+
+```{python}
+figs = {
+    measure_name: {
+        pert_var: get_violins_comparing_amplitudes(
+            measure, 
+            measure_name,
+            pert_var,
+            layout_kws=dict(
+                width=800,
+                height=500,
+                yaxis_range=[0, measure_ranges_lohi[measure_name][1]],
+            ),
+            # annotation_kws=dict(
+            #     perturbations={
+            #         f"{pert_var} impulse ({analysis_variant} direction)": (
+            #             impulse_amplitudes[pert_var][impulse_amplitude_idx], 
+            #             impulse_start_step, 
+            #             impulse_end_step,
+            #         )
+            #         for pert_var in impulse_amplitude
+            #     }
+            # )
+        )
+        for pert_var in pert_var_names
+    }
+    for measure_name, measure in all_measures_lohi.items()
+}
 ```
