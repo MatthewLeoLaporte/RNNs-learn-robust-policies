@@ -42,6 +42,7 @@ from collections import OrderedDict
 from datetime import datetime
 import json
 from pathlib import Path
+from typing import Literal
 
 import equinox as eqx
 import jax
@@ -108,12 +109,11 @@ These are parameters that can be [varied](https://quarto.org/docs/computations/p
 
 ```{python}
 #| tags: [parameters]
-
-disturbance_type = 'curl'  # or 'random'
+disturbance_type: Literal['curl', 'random'] = 'random'  # or 'random'
 hidden_size = 50
 feedback_delay_steps = 0
-feedback_noise_std = 0.0
-motor_noise_std = 0.0
+feedback_noise_std = 0.04
+motor_noise_std = 0.04
 ```
 
 ```{python}
@@ -210,22 +210,29 @@ Schedule random curl fields in the training trials.
 
 ```{python}
 if disturbance_type == 'curl':
-    disturbance_stds = jnp.linspace(0, 1, 5).tolist()
+    disturbance_stds = [0, 0.2, 0.4, 0.8, 1.6]
     
     def disturbance(curl_std):
         return CurlField.with_params(
             scale=curl_std,
             amplitude=lambda trial_spec, *, key: jr.normal(key, (1,)),
         )
-        
+
 elif disturbance_type == 'random':
-    disturbance_stds = jnp.linspace(0, 0.1, 2).tolist()
+    disturbance_stds = [0, 0.001, 0.01, 0.1, 1.0]
     
-    # TODO: sample Gaussian magnitude and uniform direction
     def disturbance(field_std):
+        def vector_with_gaussian_length(trial_spec, *, key):
+            key1, key2 = jr.split(key)
+            
+            angle = jr.uniform(key1, (), minval=-jnp.pi, maxval=jnp.pi)
+            length = jr.normal(key2, ())
+        
+            return jnp.array([jnp.cos(angle), jnp.sin(angle)]) * length
+            
         return FixedField.with_params(
             scale=field_std,
-            field=lambda trial_spec, *, key: jr.normal(key, (2,)),
+            field=vector_with_gaussian_length,
             # active=True,
         )
 else:
@@ -277,8 +284,8 @@ trainer = TaskTrainer(
 trained_models = OrderedDict({})
 train_histories = OrderedDict({})
 
-for curl_std, (task_, models_) in tqdm(list(zip(disturbance_stds, task_model_pairs))):
-    trained_models[curl_std], train_histories[curl_std] = trainer(
+for disturbance_std, (task_, models_) in tqdm(list(zip(disturbance_stds, task_model_pairs))):
+    trained_models[disturbance_std], train_histories[disturbance_std] = trainer(
         task_, 
         models_,
         ensembled=True,
@@ -405,11 +412,13 @@ model_parameter_histories_ = load(
 
 ```{python}
 
-for curl_std, history in train_histories.items():
+for disturbance_std, history in train_histories.items():
     label = join([
         NB_ID,
         "loss-history",
-        f"curl-std-{curl_std}",
+        f"{disturbance_type}",
+        f"std-{disturbance_std}",
+        f"replicates-{n_replicates}",
     ])
     
     p1, _ = fbplt.loss_history(history.loss)

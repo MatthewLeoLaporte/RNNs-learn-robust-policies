@@ -55,8 +55,13 @@ from feedbax import (
     tree_unzip,
 )
 from feedbax.channel import toggle_channel_noise
-from feedbax.intervene import CurlField, schedule_intervenor
-from feedbax.misc import git_commit_id, attr_str_tree_to_where_func
+from feedbax.intervene import (
+    CurlField, 
+    FixedField, 
+    add_intervenors, 
+    schedule_intervenor,
+)
+from feedbax.misc import git_commit_id, attr_str_tree_to_where_func, lohi
 import feedbax.plotly as fbp
 from feedbax.task import SimpleReaches
 from feedbax.xabdeef.losses import simple_reach_loss
@@ -85,8 +90,9 @@ from rnns_learn_robust_motor_policies.setup_utils import (
     set_model_noise,
     find_unique_filepath,
 )
-from rnns_learn_robust_motor_policies.constants import (
+from rnns_learn_robust_motor_policies.colors import (
     COLORSCALES, 
+    MEAN_LIGHTEN_FACTOR,
     get_colors_dicts,
 )
 
@@ -96,7 +102,7 @@ from rnns_learn_robust_motor_policies.constants import (
 jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
 jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
 jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
-jax.config.update("jax_explain_cache_misses", True)
+# jax.config.update("jax_explain_cache_misses", True)
 ```
 
 Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
@@ -122,7 +128,7 @@ We may want to specify 1) which trained models to load, by their parameters, and
 #| tags: [parameters]
 
 # Specify which trained models to load 
-disturbance_type_load: Literal['curl', 'random'] = 'curl'
+disturbance_type_load: Literal['curl', 'random'] = 'random'
 feedback_noise_std_load = 0.0
 motor_noise_std_load = 0.0
 feedback_delay_steps_load = 0  
@@ -240,9 +246,9 @@ trained_models = jt.map(
     is_leaf=is_module,
 )
 
-curl_stds_train = hyperparameters['disturbance_stds']
+disturbance_train_stds = hyperparameters['disturbance_stds']
 
-trained_models = dict(zip(curl_stds_train, trained_models))
+trained_models = dict(zip(disturbance_train_stds, trained_models))
 ```
 
 ### Load parameters from earlier training iterations, where necessary
@@ -250,20 +256,28 @@ trained_models = dict(zip(curl_stds_train, trained_models))
 Also depending on how training goes, we might want to use model parameters from an earlier training iteration. 
 
 ```{python}
-model_parameter_histories, train_hyperparameters = load_with_hyperparameters(
-    MODELS_DIR / models_filepath.replace('trained_models', 'model_parameter_histories'),
-    partial(setup_model_parameter_histories, list(trained_models.values())),
+def load_model_parameter_histories(models_filepath):
+    # Wrap in a function to avoid polluting the global namespace
+    model_parameter_histories_load, train_hyperparameters = load_with_hyperparameters(
+        MODELS_DIR / models_filepath.replace('trained_models', 'model_parameter_histories'),
+        partial(setup_model_parameter_histories, list(trained_models.values())),
+    )
+    model_parameter_histories = dict(zip(disturbance_train_stds, model_parameter_histories_load))
+    return model_parameter_histories, train_hyperparameters
+    
+model_parameter_histories, train_hyperparameters = load_model_parameter_histories(
+    models_filepath,
 )
 
 where_train = attr_str_tree_to_where_func(train_hyperparameters['where_train_strs'])
 
-model_parameter_histories = dict(zip(curl_stds_train, model_parameter_histories))
-
 # load_spec = {0.4: -1, 0.5: -1}
 
-# for curl_std, i in load_spec.items():
-#     trained_models[curl_std] = swap_model_trainables(
-#         trained_models[curl_std], tree_take(model_parameter_histories[curl_std], i), where_train
+# for disturbance_train_std, i in load_spec.items():
+#     trained_models[disturbance_train_std] = swap_model_trainables(
+#         trained_models[disturbance_train_std], 
+#         tree_take(model_parameter_histories[disturbance_train_std], i), 
+#         where_train,
 #     )
 ```
 
@@ -305,15 +319,9 @@ any_system_noise = any(jt.leaves(noise_stds))
 Depending on how training goes, we might want to leave out some of the extreme curl strength training conditions from the analysis.
 
 ```{python}
-include_curl_stds = curl_stds_train  # Change nothing.
+include_disturbance_train_stds = disturbance_train_stds  # Change nothing.
 
-trained_models = {key: trained_models[key] for key in include_curl_stds}
-```
-
-Some summary plots will only include the lowest and highest training curl conditions. 
-
-```{python}
-curl_stds_train_lohi = [0, curl_stds_train[-1]]
+trained_models = {key: trained_models[key] for key in include_disturbance_train_stds}
 ```
 
 ### Additional setup that depends on having loaded the models
@@ -335,7 +343,7 @@ savefig = get_savefig_func(FIGS_DIR)
 
 ## Set up evaluation tasks
 
-We will generally evaluate on a 2*2 grid of center-out reach sets, with 32 reach directions per set. 
+We will generally evaluate on a 2*2 grid of center-out reach sets (i.e. 4 sets total), with 24 reach directions per set. 
 
 This is to ensure good coverage and a larger set of conditions/trials on which to perform statistics. 
 
@@ -343,7 +351,7 @@ In the case of visualization of center-out sets, we'll use a smaller version of 
 
 We'll evaluate on a range of constant curl amplitudes, starting from 0 (no curl/control).
 
-For a 2*2  grid of 32-direction center-out reach sets, 10 replicates, and 5 trials per reach, evaluating each task variant leads to approximately 1.5 GB of states. If we run out memory, it may be necessary to:
+For 4 sets of 24 center-out reaches (i.e. 96 reach conditions), with 10 replicates and 5 evaluations (i.e. 50 trials) per reach condition, and 100 timesteps, evaluating each task variant leads to approximately 1.5 GB of states. If we run out memory, it may be necessary to:
 
 - reduce the number of evaluation reaches (e.g. `n_evals` or `eval_n_directions`);
 - wait to evaluate until we have decided on a subset of trials to plot; i.e. define a function to evaluate subsets of data as needed;
@@ -355,22 +363,19 @@ if disturbance_type == 'curl':
     
     def disturbance(amplitude):
         return CurlField.with_params(amplitude=amplitude)    
-
+        
 elif disturbance_type == 'random':
     disturbance_amplitudes = [0.0, 0.05, 0.1, 0.2, 0.4]
     
-    # TODO: sample Gaussian magnitude and uniform direction
-    def disturbance(amplitude):
+    def disturbance(field_std):
+        # Could do random direction; see 1-1.             
         return FixedField.with_params(
             scale=field_std,
-            field=lambda trial_spec, *, key: jr.normal(key, (2,)),
-            # active=True,
-        )
-        
+            field=jnp.array([0.0, 1.0]),  # to the right
+        ) 
+          
 else:
     raise ValueError(f"Unknown disturbance type: {disturbance_type}")
-
-disturbance_amplitudes_lohi = [0.0, disturbance_amplitudes[-1]]
 ```
 
 ```{python}
@@ -400,17 +405,29 @@ task = SimpleReaches(
 ```
 
 ```{python}
-# Make task variants with different levels of disturbance.
-# The trained models already have a `CurlField` intervenor, so we can just 
-# schedule an intervenor (of the same label) with the task, and discard the modified 
-# model returned by `schedule_intervenor`. 
+intervenor_label = "DisturbanceField"
+
+# Insert the disturbance field component into each model
+models = jt.map(
+    lambda models: add_intervenors(
+        models,
+        lambda model: model.step.mechanics,
+        # The first key is the model stage where to insert the disturbance field;
+        # `None` means prior to the first stage.
+        # The field parameters will come from the task, so use an amplitude 0.0 placeholder.
+        {None: {intervenor_label: disturbance(0.0)}},
+    ),
+    trained_models,
+    is_leaf=is_module,
+)
+
+# Generate tasks with different amplitudes of disturbance field
 tasks, _ = tree_unzip(jt.map(
     lambda disturbance_amplitude: schedule_intervenor(
         task, trained_models[0],
         lambda model: model.step.mechanics,
-        CurlField.with_params(amplitude=disturbance_amplitude),
-        # Ensures the schedule will be applied to the labelled intervenors already present in the trained models
-        label="CurlField",  
+        disturbance(disturbance_amplitude),
+        label=intervenor_label,  
         default_active=False,
     ),
     dict(zip(disturbance_amplitudes, disturbance_amplitudes)),
@@ -475,12 +492,12 @@ trials_colors, trials_colors_dark = get_colors_dicts(
 )
 
 # by training condition
-disturbance_train_stds_colors, disturbance_train_stds_colors_dark = get_colors_dict(
+disturbance_train_stds_colors, disturbance_train_stds_colors_dark = get_colors_dicts(
     disturbance_train_stds, COLORSCALES['disturbance_train_stds'],
 )
 
 # by evaluation condition
-disturbance_amplitudes_colors, disturbance_amplitudes_colors_dark = get_colors_dict(
+disturbance_amplitudes_colors, disturbance_amplitudes_colors_dark = get_colors_dicts(
     disturbance_amplitudes, COLORSCALES['disturbance_amplitudes'], 
 )
 ```
@@ -506,35 +523,44 @@ def vmap_eval_ensemble(models, task, n_evals):
     return eqx.filter_vmap(get_eval_ensemble(models, task))(
         jr.split(key_eval, n_evals)
     )
-
-all_states = jt.map(
-    lambda task: jt.map(
-        lambda models: vmap_eval_ensemble(models, task, n_evals),
-        trained_models,
-        is_leaf=is_module,
-    ),
-    tasks,
-    is_leaf=is_module,
-)
-
-all_states_small = jt.map(
-    lambda task: jt.map(
-        lambda models: vmap_eval_ensemble(models, task, n_evals_small),
-        trained_models,
-        is_leaf=is_module,
-    ),
-    tasks_small,
-    is_leaf=is_module,
-)
 ```
 
 Note that we:
 
 1. Set `ensemble_random_trials=False` so that each model in the ensemble will be evaluated on the same set of trials. 
 2. Vmap over `keys_eval`, to obtain `n_evals` different evaluations of the center-out set. 
-3. Use `jt.map` to repeat for each training condition (entry in `trained_models`).
+3. Use `jt.map` to repeat for each training condition (entry in `models`).
 
-The objects `all_states` and `all_states_small` are dicts whose keys are the `disturbance_amplitudes`, and whose values are dicts whose keys are the `curl_stds` used in training, and whose values are the PyTrees of state arrays.
+Now, evaluate the trained models on each of the task variants. First, define the full evaluation as a function so that we can estimate the memory needed for the result. 
+
+```{python}
+def evaluate_all_states(tasks, n_evals):
+    return jt.map(
+        lambda task: jt.map(
+            lambda models: vmap_eval_ensemble(models, task, n_evals),
+            models,
+            is_leaf=is_module,
+        ),
+        tasks,
+        is_leaf=is_module,
+    )
+```
+
+```{python}
+all_states_bytes = (
+    tree_struct_bytes(eqx.filter_eval_shape(evaluate_all_states, tasks, n_evals)),
+    tree_struct_bytes(eqx.filter_eval_shape(evaluate_all_states, tasks_small, n_evals_small)),
+)
+
+print(f"Estimate {sum(all_states_bytes) / 1e9:.2f} GB of memory needed to evaluate all states.")
+```
+
+```{python}
+all_states = evaluate_all_states(tasks, n_evals)
+all_states_small = evaluate_all_states(tasks_small, n_evals_small)
+```
+
+The objects `all_states` and `all_states_small` are dicts whose keys are the `disturbance_amplitudes`, and whose values are dicts whose keys are the `disturbance_train_stds` used in training, and whose values are the PyTrees of state arrays.
 
 Each state array has the following batch dimensions: `(n_evals, n_replicates, n_conditions, n_steps)`. For a single center-out set in `all_states_small`, `n_conditions = eval_n_directions`. But since `eval_grid_n != 1` for the full tasks evaluated in `all_states`, then there will be `eval_grid_n ** 2` center-out sets and the third dimension will have size `eval_n_directions * eval_grid_n ** 2`.
 
@@ -542,7 +568,7 @@ Each state array has the following batch dimensions: `(n_evals, n_replicates, n_
 pp(all_states)
 ```
 
-TODO: Instead of a two-layer `jt.map`, we could instead define a function (to schedule the intervenor given a `curl_std` and then `jt.map` the vmapped `eval_ensemble`) and then vmap it over `curl_stds_test` to get a single-level dict with a bit less overhead.
+TODO: Instead of a two-layer `jt.map`, we could instead define a function (to schedule the intervenor given a `disturbance_amplitude` and then `jt.map` the vmapped `eval_ensemble`) and then vmap it over `disturbance_amplitudes` to get a single-level dict with a bit less overhead.
 
 ## Plot example center-out sets
 
@@ -575,37 +601,34 @@ i_replicate = 0
 ```
 
 ```{python}
-plot_states = tree_take_multi(all_states_small, [i_replicate], [1])
-
-figs = jt.map(
-    lambda states: fbp.trajectories_2D(
-        where_plot(states),
-        var_labels=var_labels,
-        axes_labels=('x', 'y'),
-        colorscale=COLORSCALES['reach_condition'],
-        colorscale_axis=1,  # Color/group by reach condition
-        mode='lines',
-        legend_title='Reach direction',
-        scatter_kws=dict(line_width=0.5),
-    ),
-    plot_states,
-    is_leaf=is_module,
-)
-```
-
-Add an annotation to provide context, and save figures. Display just the (2x2) zero versus high curl, training versus evaluation conditions.
-
-
-```{python}
 if not any_system_noise:
     print("Skipping center-out sets that compare different evaluations, for this zero-noise condition")
 else:
+    plot_states = tree_take_multi(all_states_small, [i_replicate], [1])
+    
+    figs = jt.map(
+        lambda states: fbp.trajectories_2D(
+            where_plot(states),
+            var_labels=var_labels,
+            axes_labels=('x', 'y'),
+            colorscale=COLORSCALES['reach_condition'],
+            colorscale_axis=1,  # Color/group by reach condition
+            mode='lines',
+            legend_title='Reach direction',
+            scatter_kws=dict(line_width=0.5),
+        ),
+        plot_states,
+        is_leaf=is_module,
+    )
+    
     for disturbance_amplitude in figs:
-        for train_curl_std, fig in figs[disturbance_amplitude].items():
+        for disturbance_train_std, fig in figs[disturbance_amplitude].items():
+            # Add an annotation that provides some context if the figure is shared.
+            # This will be removed before publication
             add_context_annotation(
                 fig,
                 train_condition_strs=[
-                    f"{disturbance_type_train} with amplitude ~ \U0001d4dd(0,{train_curl_std})"
+                    f"{disturbance_type_train} with amplitude ~ \U0001d4dd(0,{disturbance_train_std})"
                 ],
                 perturbations={
                     f"{disturbance_type}": (disturbance_amplitude, None, None)
@@ -613,22 +636,25 @@ else:
                 n=n_evals_small,
                 i_replicate=i_replicate,
             )
+            # Plot the reach endpoints on the effector position subplot
             add_endpoint_traces(
                 fig, pos_endpoints_small, xaxis='x1', yaxis='y1', colorscale='phase'
             )
+            # Save to disk.
             savefig(
                 fig, 
                 join([
-                    f"eval-curl-{disturbance_amplitude}",
-                    f"train-curl-std-{train_curl_std}",
+                    f"{disturbance_type}-field-{disturbance_amplitude}",
+                    f"{disturbance_type_train}-std-{disturbance_train_std}",
                     f"replicate-{i_replicate}",
                 ]),
                 subdir=fig_subdir,
             )
-            
-    for disturbance_amplitude in disturbance_amplitudes_lohi:
-        for train_curl_std in curl_stds_train_lohi:
-            figs[disturbance_amplitude][train_curl_std].show()
+    
+    # Only display figures for the low-high train and eval conditions.        
+    for disturbance_amplitude in lohi(disturbance_amplitudes):
+        for disturbance_train_std in lohi(disturbance_train_stds):
+            figs[disturbance_amplitude][disturbance_train_std].show()
 ```
 
 ### A single trial set, for a single replicate
@@ -660,11 +686,11 @@ figs = jt.map(
 
 ```{python}
 for disturbance_amplitude in figs:
-    for train_curl_std, fig in figs[disturbance_amplitude].items():
+    for disturbance_train_std, fig in figs[disturbance_amplitude].items():
         add_context_annotation(
             fig,
             train_condition_strs=[
-                f"{disturbance_type_train} with amplitude ~ \U0001d4dd(0,{train_curl_std})"
+                f"{disturbance_type_train} with amplitude ~ \U0001d4dd(0,{disturbance_train_std})"
             ],
             perturbations={
                 f"{disturbance_type}": (disturbance_amplitude, None, None)
@@ -676,8 +702,8 @@ for disturbance_amplitude in figs:
             fig, pos_endpoints_small, xaxis='x1', yaxis='y1', colorscale='phase'
         )
         filename = join([
-                f"eval-curl-{disturbance_amplitude}",
-                f"train-curl-std-{train_curl_std}",
+                f"{disturbance_type}-amp-{disturbance_amplitude}",
+                f"{disturbance_type_train}-train-std-{disturbance_train_std}",
                 f"rep-{i_replicate}",
                 f"eval-{i_trial}",
         ])
@@ -685,9 +711,9 @@ for disturbance_amplitude in figs:
 ```
 
 ```{python}
-for disturbance_amplitude in disturbance_amplitudes_lohi:
-    for train_curl_std in curl_stds_train_lohi:
-        figs[disturbance_amplitude][train_curl_std].show()
+for disturbance_amplitude in lohi(disturbance_amplitudes):
+    for disturbance_train_std in lohi(disturbance_train_stds):
+        figs[disturbance_amplitude][disturbance_train_std].show()
 ```
 
 ### A single trial, for all replicates
@@ -717,11 +743,11 @@ figs = jt.map(
 
 ```{python}
 for disturbance_amplitude in figs:
-    for train_curl_std, fig in figs[disturbance_amplitude].items():
+    for disturbance_train_std, fig in figs[disturbance_amplitude].items():
         add_context_annotation(
             fig,
             train_condition_strs=[
-                f"{disturbance_type_train} with amplitude ~ \U0001d4dd(0,{train_curl_std})"
+                f"{disturbance_type_train} with amplitude ~ \U0001d4dd(0,{disturbance_train_std})"
             ],
             perturbations={
                 f"{disturbance_type}": (disturbance_amplitude, None, None)
@@ -736,8 +762,8 @@ for disturbance_amplitude in figs:
         savefig(
             fig, 
             join([
-                f"eval-curl-{disturbance_amplitude}",
-                f"train-curl-std-{train_curl_std}",
+                f"{disturbance_type}-field-{disturbance_amplitude}",
+                f"{disturbance_type_load}-train-std-{disturbance_train_std}",
                 f"eval-{i_trial}",
             ]),
             subdir=fig_subdir,
@@ -745,20 +771,20 @@ for disturbance_amplitude in figs:
 ```
 
 ```{python}
-for disturbance_amplitude in disturbance_amplitudes_lohi:
-    for train_curl_std in curl_stds_train_lohi:
-        figs[disturbance_amplitude][train_curl_std].show()
+for disturbance_amplitude in lohi(disturbance_amplitudes):
+    for disturbance_train_std in lohi(disturbance_train_stds):
+        figs[disturbance_amplitude][disturbance_train_std].show()
 ```
 
 ### Side-by-side comparison of position trajectories across training conditions
 
-i.e. show center-out sets for model trained without curl vs. with strongest curl
+i.e. show center-out sets for model trained without dsiturbance vs. with strongest disturbance
 
 TODO: one comparison require a single call to `trajectories_2D`
 
 ## Plot example trajectories for a single reach condition
 
-i.e. for a single reach direction, compare multiple trials/replicates different training conditions; visualize how training on different curl strengths affects response.
+i.e. for a single reach direction, compare multiple trials/replicates different training conditions; visualize how training on different disturbance strengths affects response.
 
 ```{python}
 fig_subdir = "single_reach_condition"
@@ -811,13 +837,13 @@ figs = jt.map(
 
 ```{python}
 for disturbance_amplitude in figs:
-    for train_curl_std, fig in figs[disturbance_amplitude].items():
+    for disturbance_train_std, fig in figs[disturbance_amplitude].items():
         add_endpoint_traces(fig, pos_endpoints_i, xaxis='x1', yaxis='y1')
         
         add_context_annotation(
             fig,
             train_condition_strs=[
-                f"{disturbance_type_train} with amplitude ~ \U0001d4dd(0,{train_curl_std})"
+                f"{disturbance_type_train} with amplitude ~ \U0001d4dd(0,{disturbance_train_std})"
             ],
             perturbations={
                 f"{disturbance_type}": (disturbance_amplitude, None, None)
@@ -830,27 +856,27 @@ for disturbance_amplitude in figs:
             fig, 
             join([
                 f"single-condition-{i_condition}",
-                f"eval-curl-{disturbance_amplitude}",
-                f"train-curl-std-{train_curl_std}",
+                f"{disturbance_type}-field-{disturbance_amplitude}",
+                f"{disturbance_type_load}-train-std-{disturbance_train_std}",
             ]),
             subdir=fig_subdir,
         )
 ```
 
 ```{python}
-for disturbance_amplitude in disturbance_amplitudes_lohi:
-    for train_curl_std in curl_stds_train_lohi:
-        figs[disturbance_amplitude][train_curl_std].show()
+for disturbance_amplitude in lohi(disturbance_amplitudes):
+    for disturbance_train_std in lohi(disturbance_train_stds):
+        figs[disturbance_amplitude][disturbance_train_std].show()
 ```
 
-### Compare the test curl amplitude, for each training curl std
+### Compare disturbance amplitudes, for each trained disturbance std
 
 ```{python}
 fig_subdir = "single_reach_condition/compare_test_conditions"
 ```
 
 ```{python}
-# Stack the states for different test curls into single arrays
+# Stack the states for different disturbance amplitudes into single arrays
 plot_states_stacked = tree_stack(plot_states.values())
 
 n_trials_plot = n_evals_small * n_replicates
@@ -874,11 +900,11 @@ figs = jt.map(
 ```
 
 ```{python}
-for train_curl_std, fig in figs.items():
+for disturbance_train_std, fig in figs.items():
     add_context_annotation(
         fig,
         train_condition_strs=[
-            f"{disturbance_type_train} with amplitude ~ \U0001d4dd(0,{train_curl_std})"
+            f"{disturbance_type_train} with amplitude ~ \U0001d4dd(0,{disturbance_train_std})"
         ],
         n=n_trials_plot,
     )
@@ -889,18 +915,18 @@ for train_curl_std, fig in figs.items():
         fig, 
         join([
             f"single-condition-{i_condition}",
-            f"train-curl-std-{train_curl_std}",
+            f"{disturbance_type_load}-train-std-{disturbance_train_std}",
         ]),
         subdir=fig_subdir,
     )    
 ```
 
 ```{python}
-for train_curl_std in curl_stds_train_lohi:
-    figs[train_curl_std].show()
+for disturbance_train_std in lohi(disturbance_train_stds):
+    figs[disturbance_train_std].show()
 ```
 
-### Compare the training curl std, for each test curl amplitude
+### Compare the trained disturbance stds, for each test disturbance amplitude
 
 ```{python}
 fig_subdir = "single_reach_condition/compare_train_conditions"
@@ -908,18 +934,18 @@ fig_subdir = "single_reach_condition/compare_train_conditions"
 
 ```{python}
 # Only plot a subset of the training conditions
-# curl_stds_train_plot = [
-#     curl_stds_train[0],
-#     curl_stds_train[len(curl_stds_train) // 2],
-#     curl_stds_train[-1],
+# disturbance_train_stds_plot = [
+#     disturbance_train_stds[0],
+#     disturbance_train_stds[len(disturbance_train_stds) // 2],
+#     disturbance_train_stds[-1],
 # ]
-curl_stds_train_plot = curl_stds_train 
-stride = 2
+disturbance_train_stds_plot = disturbance_train_stds
+stride = 1
 
-# Stack the states for different training curl stds into single arrays
+# Stack the states for different training disturbance stds into single arrays
 # (also taking a subset of the training conditions with `subdict`)
 plot_states_stacked = {
-    disturbance_amplitude: tree_stack(subdict(states, curl_stds_train_plot).values())
+    disturbance_amplitude: tree_stack(subdict(states, disturbance_train_stds_plot).values())
     for disturbance_amplitude, states in plot_states.items()
 }
 
@@ -929,7 +955,7 @@ figs = jt.map(
         var_labels=var_labels,
         # ref_endpoints=(pos_endpoints, None),
         mean_trajectory_line_width=3,
-        darken_mean=lighten_factor,
+        darken_mean=MEAN_LIGHTEN_FACTOR,
         var_endpoint_ms=0,
         axes_labels=('x', 'y'),
         mode='lines',
@@ -937,7 +963,7 @@ figs = jt.map(
         colorscale=COLORSCALES['disturbance_train_stds'],
         colorscale_axis=0,
         legend_title='Train disturbance std.',
-        legend_labels=curl_stds_train,
+        legend_labels=disturbance_train_stds_plot,
         scatter_kws=dict(line_width=1, opacity=0.3),
     ),
     plot_states_stacked,
@@ -961,14 +987,14 @@ for disturbance_amplitude, fig in figs.items():
         fig, 
         join([
             f"single-condition-{i_condition}",
-            f"disturbance_amplitude-{disturbance_amplitude}",
+            f"{disturbance_type}-field-{disturbance_amplitude}",
         ]),
         subdir=fig_subdir,
     )   
 ```
 
 ```{python}
-for disturbance_amplitude in disturbance_amplitudes_lohi:
+for disturbance_amplitude in lohi(disturbance_amplitudes):
     figs[disturbance_amplitude].show()
 ```
 
@@ -1026,7 +1052,7 @@ fig_subdir = "velocity_profiles/speed"
 #         y=1.1,
 #     )
 
-# for disturbance_amplitude in disturbance_amplitudes_lohi:
+# for disturbance_amplitude in lohi(disturbance_amplitudes):
 #     figs[disturbance_amplitude].show()
 ```
 
@@ -1054,10 +1080,10 @@ figs = {
         label: fbp.profiles(
             tree_take(forward_lateral_vel, i, -1)[disturbance_amplitude],
             varname=f"{label} velocity",
-            legend_title="Train curl std.",
+            legend_title="Train disturbance std.",
             mode='std', # or 'curves'
             n_std_plot=1,
-            colors=curl_stds_train_colors_dark,
+            colors=list(disturbance_train_stds_colors_dark.values()),
             # stride_curves=500,
             # curves_kws=dict(opacity=0.7),
         )
@@ -1077,10 +1103,10 @@ for disturbance_amplitude in disturbance_amplitudes:
             },
             n=n_dist,
         )
-        filename = f"eval-curl-{disturbance_amplitude}_{label.lower()}-vels"
+        filename = f"{disturbance_type}-field-{disturbance_amplitude}_{label.lower()}-vels"
         savefig(fig, filename, subdir=fig_subdir)
         
-for disturbance_amplitude in disturbance_amplitudes_lohi:
+for disturbance_amplitude in lohi(disturbance_amplitudes):
     figs[disturbance_amplitude]["Forward"].show()
     figs[disturbance_amplitude]["Lateral"].show()
 
@@ -1247,7 +1273,7 @@ box_measures = get_all_measures(box_measure_funcs, all_states)
 fig_subdir = "performance_measures/compare_train_conditions"
 ```
 
-One plot per evaluation condition (curl amplitude); one violin per training condition (curl std).
+One plot per evaluation condition (disturbance amplitude); one violin per training condition (disturbance std).
 
 Distributions are aggregated over all replicates and trials. 
 
@@ -1258,21 +1284,21 @@ def get_violins_across_train_conditions(data, measure_name, disturbance_amplitud
     fig = go.Figure(
         data=[
             go.Violin(
-                y=data[train_curl_std].flatten(),
-                name=train_curl_std,
+                y=data[disturbance_train_std].flatten(),
+                name=disturbance_train_std,
                 box_visible=False,
                 meanline_visible=True,
-                line_color=curl_stds_train_colors_dark[i],
+                line_color=disturbance_train_stds_colors_dark[disturbance_train_std],
                 showlegend=False,
                 opacity=1,
                 spanmode='hard',
                 
             )
-            for i, train_curl_std in enumerate(data)
+            for i, disturbance_train_std in enumerate(data)
         ],
         layout=dict(
-            # title=(f"Response to amplitude {disturbance_amplitude} curl field <br>N = {n_dist}"),
-            xaxis_title="Training curl std.",
+            # title=(f"Response to amplitude {disturbance_amplitude} field <br>N = {n_dist}"),
+            xaxis_title="Train disturbance std.",
             yaxis_title=measure_name,
             xaxis_range=[-0.5, len(data) - 0.5],
             xaxis_tickvals=list(data.keys()),
@@ -1322,7 +1348,7 @@ for measure_name, measure_handle in measure_handles.items():
             fig, 
             join([
                 f"{measure_handle}",
-                f"eval-curl-{disturbance_amplitude}",
+                f"{disturbance_type}-field-{disturbance_amplitude}",
             ]),
             subdir=fig_subdir,
         )
@@ -1330,7 +1356,7 @@ for measure_name, measure_handle in measure_handles.items():
 
 ```{python}
 for measure_name in all_measures:
-    figs[measure_name][4].show()
+    figs[measure_name][disturbance_amplitudes[-1]].show()
 ```
 
 ### Repeat for just a single reach condition
@@ -1363,14 +1389,14 @@ TODO: could use `all_states_small` and increase the number of trials...
 #             fig, 
 #             join([
 #                 f"{measure_handle}",
-#                 f"eval-curl-{disturbance_amplitude}",
+#                 f"{disturbance_type}-field-{disturbance_amplitude}",
 #                 f"condition-{i_condition}",
 #             ]),
 #             subdir=fig_subdir,
 #         )
 
 # for measure_name in all_measures:
-#     figs0[measure_name][4].show()
+#     figs0[measure_name][disturbance_amplitudes[-1]].show()
 ```
 
 ### Repeat for just the zero vs. highest-std training condition
@@ -1384,13 +1410,13 @@ fig_subdir = "performance_measures/compare_train_conditions/lowhigh_only"
 ```
 
 ```{python}
-all_measures_subset_curl_stds_train = {
-    k1: {k2: subdict(v, curl_stds_train_lohi) for k2, v in all_measures[k1].items()}
+all_measures_subset_disturbance_train_stds = {
+    k1: {k2: subdict(v, lohi(disturbance_train_stds)) for k2, v in all_measures[k1].items()}
     for k1 in all_measures
 }
 
-box_measures_subset_curl_stds_train = {
-    k1: {k2: subdict(v, curl_stds_train_lohi) for k2, v in box_measures[k1].items()}
+box_measures_subset_disturbance_train_stds = {
+    k1: {k2: subdict(v, lohi(disturbance_train_stds)) for k2, v in box_measures[k1].items()}
     for k1 in box_measures
 }
 ```
@@ -1398,7 +1424,7 @@ box_measures_subset_curl_stds_train = {
 ```{python}
 # figs = get_one_measure_plot_per_eval_condition(
 #     get_violins_across_train_conditions, 
-#     all_measures_subset_curl_stds_train,
+#     all_measures_subset_disturbance_train_stds ,
 # )
 
 # figs = jt.map(
@@ -1416,27 +1442,27 @@ box_measures_subset_curl_stds_train = {
 #             fig, 
 #             join([
 #                 f"{measure_handle}",
-#                 f"eval-curl-{disturbance_amplitude}",
+#                 f"{disturbance_type}-field-{disturbance_amplitude}",
 #                 "lowest-vs-highest",
 #             ]),
 #             subdir=fig_subdir,
 #         )
 
 # for measure_name in all_measures:
-#     figs[measure_name][4].show()
+#     figs[measure_name][disturbance_amplitudes[-1]].show()
 ```
 
-### Plot comparison of distributions for zero vs. high train curl std, for different replicates
+### Plot comparison of distributions for zero vs. high train disturbance std, for different replicates
 
-Compare the smallest (zero) and largest training curl stds. For the plots above, this would mean keeping just the leftmost and the rightmost violins. However, those plots were aggregated over replicates and trials. Now we would like to examine the variance across model replicates. Thus, for each measure, we will generate one plot for each evaluation condition (curl amplitude) as before, but now each containing `n_replicates` *split* violins, where the left half corresponds to the zero training curl std, and the right half to the largest training curl std.
+Compare the smallest (zero) and largest training disturbance stds. For the plots above, this would mean keeping just the leftmost and the rightmost violins. However, those plots were aggregated over replicates and trials. Now we would like to examine the variance across model replicates. Thus, for each measure, we will generate one plot for each evaluation condition (disturbance amplitude) as before, but now each containing `n_replicates` *split* violins, where the left half corresponds to the zero training disturbance std, and the right half to the largest training disturbance std.
 
 ```{python}
 fig_subdir = "performance_measures/compare_replicates_lowhigh_train_conditions"
 ```
 
 ```{python}
-labels = curl_stds_train_lohi
-colors = curl_stds_train_colors_dark_lohi
+labels = lohi(disturbance_train_stds)
+colors = lohi(disturbance_train_stds_colors_dark)
 
 def get_measure_replicate_comparisons(data, measure_name, disturbance_amplitude, annotation_kws=None):
     n_dist = np.prod(jt.leaves(data)[0].shape)
@@ -1446,7 +1472,7 @@ def get_measure_replicate_comparisons(data, measure_name, disturbance_amplitude,
     fig = go.Figure()
     # x axis: replicates
     for i in range(data.shape[-2]):
-        # split violin: smallest vs. largest train curl std
+        # split violin: smallest vs. largest train disturbance std
         for j in range(data.shape[0]):
         
             fig.add_trace(
@@ -1470,7 +1496,7 @@ def get_measure_replicate_comparisons(data, measure_name, disturbance_amplitude,
         yaxis_range=[0, None],
         violinmode='overlay',
         violingap=0,
-        # title=(f"Response to amplitude {disturbance_amplitude} curl field <br>N = {n_dist}"),
+        # title=(f"Response to amplitude {disturbance_amplitude} {disturbance_type} field <br>N = {n_dist}"),
     )
     
     if annotation_kws is None:
@@ -1489,7 +1515,7 @@ def get_measure_replicate_comparisons(data, measure_name, disturbance_amplitude,
     
 figs = get_one_measure_plot_per_eval_condition(
     get_measure_replicate_comparisons, 
-    all_measures_subset_curl_stds_train,
+    all_measures_subset_disturbance_train_stds,
 )
 ```
 
@@ -1500,7 +1526,7 @@ for measure_name, measure_handle in measure_handles.items():
             fig, 
             join([
                 f"{measure_handle}",
-                f"eval-curl-{disturbance_amplitude}",
+                f"{disturbance_type}-field-{disturbance_amplitude}",
             ]),
             subdir=fig_subdir,
         )
@@ -1511,7 +1537,7 @@ for measure_name in all_measures:
     figs[measure_name][4].show()
 ```
 
-### Summary comparison of no-curl vs. high-curl evaluation, for no-curl vs. high-curl training
+### Summary comparison of no-disturbance vs. high-disturbance evaluation, for no-disturbance vs. high-disturbance training
 
 ```{python}
 fig_subdir = "performance_measures/lowhigh_summaries"
@@ -1519,13 +1545,13 @@ fig_subdir = "performance_measures/lowhigh_summaries"
 
 ```{python}
 all_measures_lohi = {
-    measure_name: subdict(measure, disturbance_amplitudes_lohi)
-    for measure_name, measure in all_measures_subset_curl_stds_train.items()
+    measure_name: subdict(measure, lohi(disturbance_amplitudes))
+    for measure_name, measure in all_measures_subset_disturbance_train_stds.items()
 }
 
 box_measures_lohi = {
-    measure_name: subdict(measure, disturbance_amplitudes_lohi)
-    for measure_name, measure in box_measures_subset_curl_stds_train.items()
+    measure_name: subdict(measure, lohi(disturbance_amplitudes))
+    for measure_name, measure in box_measures_subset_disturbance_train_stds.items()
 }
 ```
 
@@ -1537,28 +1563,29 @@ def get_lohi_summary_violins(measure_data, measure_name, annotation_kws=None):
         data=jt.leaves([
             [
                 go.Violin(
-                    x=jnp.full((n_dist,), train_curl_std),
+                    x=jnp.full((n_dist,), disturbance_train_std),
                     y=data.flatten(),
                     name=disturbance_amplitude,
                     box_visible=False,
                     meanline_visible=True,
-                    line_color=disturbance_amplitudes_colors_dark_lohi[i],
+                    line_color=disturbance_amplitudes_colors_dark[disturbance_amplitude],
                     showlegend=(j == 0),
                     spanmode='hard',
                 )
-                for j, (train_curl_std, data) in enumerate(measure_data[disturbance_amplitude].items())
+                for j, (disturbance_train_std, data) 
+                in enumerate(measure_data[disturbance_amplitude].items())
             ]
             for i, disturbance_amplitude in enumerate(measure_data)
         ]),
         layout=dict(
             width=500,
             height=400,
-            xaxis_title="Training curl std.",
+            xaxis_title="Train disturbance std.",
             yaxis_title=measure_name,
             xaxis_range=[-0.5, len(measure_data) - 0.5],
             xaxis_tickvals=list(measure_data.keys()),
             yaxis_range=[0, None],
-            legend_title="Curl amplitude",
+            legend_title="Disturbance amplitude",
             # violinmode='overlay',
             violingap=0,
         )
@@ -1595,7 +1622,7 @@ for measure_name in all_measures:
     figs[measure_name].show()
 ```
 
-i.e. not one plot for each evaluation condition for each measure, but a single plot for each measure, comparing the distributions for zero vs. high training curl std, on zero vs. high evaluation curl amplitude.
+i.e. not one plot for each evaluation condition for each measure, but a single plot for each measure, comparing the distributions for zero vs. high training disturbance std, on zero vs. high evaluation disturbance amplitude.
 
 ### Time to peak velocity
 
@@ -1609,28 +1636,29 @@ Since this is an integer (# timesteps), a KDE is not great for visualization (lu
 #         data=jt.leaves([
 #             [
 #                 go.Box(
-#                     x=jnp.full((n_dist,), train_curl_std),
+#                     x=jnp.full((n_dist,), disturbance_train_std),
 #                     y=data.flatten(),
 #                     name=disturbance_amplitude,
 #                     # box_visible=False,
 #                     # meanline_visible=True,
-#                     line_color=disturbance_amplitudes_colors_dark_lohi[i],
+#                     line_color=disturbance_amplitudes_colors_dark[disturbance_amplitude],
 #                     showlegend=(j == 0),
 #                     # spanmode='hard',
 #                 )
-#                 for j, (train_curl_std, data) in enumerate(measure_data[disturbance_amplitude].items())
+#                 for j, (disturbance_train_std, data) 
+#                 in enumerate(measure_data[disturbance_amplitude].items())
 #             ]
 #             for i, disturbance_amplitude in enumerate(measure_data)
 #         ]),
 #         layout=dict(
 #             width=500,
 #             height=400,
-#             xaxis_title="Training curl std.",
+#             xaxis_title="Train disturbance std.",
 #             yaxis_title=measure_name,
 #             xaxis_range=[-0.5, len(measure_data) - 0.5],
 #             xaxis_tickvals=list(measure_data.keys()),
 #             yaxis_range=[0, None],
-#             legend_title="Curl amplitude",
+#             legend_title="Disturbance amplitude",
 #             # violinmode='overlay',
 #             # violingap=0,
 #         )

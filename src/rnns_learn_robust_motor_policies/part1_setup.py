@@ -1,11 +1,12 @@
 from operator import attrgetter
+from typing import Literal
 import equinox as eqx
 import jax.numpy as jnp
 import jax.tree as jt
 
 from feedbax import get_ensemble, is_module, tree_unzip
 from feedbax.misc import attr_str_tree_to_where_func
-from feedbax.intervene import CurlField, schedule_intervenor
+from feedbax.intervene import CurlField, FixedField, schedule_intervenor
 from feedbax.train import filter_spec_leaves
 from feedbax.xabdeef.models import point_mass_nn
 from feedbax.xabdeef.losses import simple_reach_loss
@@ -22,7 +23,7 @@ def setup_models(
     feedback_delay_steps,
     feedback_noise_std,
     motor_noise_std,
-    disturbance_type,
+    disturbance_type: Literal['random', 'curl'],
     disturbance_stds,
     key,
 ):
@@ -47,11 +48,20 @@ def setup_models(
         key=key,
     )
     
+    if disturbance_type == 'curl':        
+        disturbance = CurlField.with_params(amplitude=jnp.array(1).item())    
+            
+    elif disturbance_type == 'random':
+        disturbance = FixedField.with_params(
+            scale=1,
+            field=jnp.array([1.0, 0.0]),  # to the right
+        ) 
+    
     _, models = tree_unzip(jt.map(
         lambda curl_std: schedule_intervenor(
             task_train_dummy, models,
             lambda model: model.step.mechanics,
-            CurlField.with_params(amplitude=jnp.array(1).item()),
+            disturbance,
             default_active=False,
         ),
         disturbance_stds,    
