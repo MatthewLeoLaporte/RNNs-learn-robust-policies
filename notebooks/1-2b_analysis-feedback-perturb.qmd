@@ -52,7 +52,7 @@ from feedbax import (
 )
 from feedbax.channel import toggle_channel_noise
 from feedbax.intervene import ConstantInput, CurlField, schedule_intervenor
-from feedbax.misc import git_commit_id, attr_str_tree_to_where_func, lohi
+from feedbax.misc import git_commit_id, attr_str_tree_to_where_func
 import feedbax.plotly as fbp
 from feedbax.task import SimpleReaches
 from feedbax._tree import (
@@ -63,7 +63,7 @@ from feedbax._tree import (
 )
 from feedbax.xabdeef.losses import simple_reach_loss
 
-from rnns_learn_robust_motor_policies.misc import dict_str
+from rnns_learn_robust_motor_policies.misc import dict_str, lohi
 from rnns_learn_robust_motor_policies.part1_setup import (
     setup_models, 
     setup_model_parameter_histories,

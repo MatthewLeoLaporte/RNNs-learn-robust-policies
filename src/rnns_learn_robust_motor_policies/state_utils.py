@@ -90,7 +90,7 @@ def get_lateral_distance(
 
     # Calculate the cross product between the line vector and the point vector
     # This is the area of the parallelogram they form.
-    cross_product = jnp.cross(direction_vec, point_vec)
+    cross_product = jnp.cross(direction_vec[..., None, :], point_vec)
     
     # Obtain the parallelogram heights (i.e. the lateral distances) by dividing 
     # by the length of the line vectors.

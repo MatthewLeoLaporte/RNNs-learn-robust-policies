@@ -112,8 +112,8 @@ These are parameters that can be [varied](https://quarto.org/docs/computations/p
 disturbance_type: Literal['curl', 'random'] = 'random'  # or 'random'
 hidden_size = 50
 feedback_delay_steps = 0
-feedback_noise_std = 0.04
-motor_noise_std = 0.04
+feedback_noise_std = 0.0
+motor_noise_std = 0.0
 ```
 
 ```{python}
