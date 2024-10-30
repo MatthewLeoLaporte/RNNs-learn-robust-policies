@@ -116,7 +116,7 @@ Log the library versions and the feedbax commit ID, so they appear in any report
 for mod in (jax, eqx): 
     print(f"{mod.__name__} version: {mod.__version__}")
     
-print(f"\nFeedbax commit hash: {git_commit_id()}")
+print(f"feedbax commit: {git_commit_id()}\n")
 ```
 
 Unique ID for notebook, for naming outputs.
@@ -136,7 +136,7 @@ We may want to specify 1) which trained models to load, by their parameters, and
 disturbance_type_load: Literal['curl', 'random'] = 'curl'
 feedback_noise_std_load = 0.0
 motor_noise_std_load = 0.0
-feedback_delay_steps_load = 2  
+feedback_delay_steps_load = 0
 
 # Specify model parameters to use for analysis (None -> use training value)
 disturbance_type: Optional[Literal['curl', 'random']] = None
@@ -355,12 +355,14 @@ best_replicate = TrainStdDict({
 
 def take_replicate_or_best(tree: TrainStdDict, i_replicate=None, replicate_axis=1):
     if i_replicate is None:
-        return TrainStdDict({
+        map_func = lambda tree: TrainStdDict({
             train_std: tree_take(subtree, best_replicate[train_std], replicate_axis)
             for train_std, subtree in tree.items()
         })
     else:
-        return tree_take_multi(tree, [i_replicate], [replicate_axis])
+        map_func = lambda tree: tree_take_multi(tree, [i_replicate], [replicate_axis])
+        
+    return jt.map(map_func, tree, is_leaf=is_type(TrainStdDict))
 ```
 
 ```{python}
@@ -665,6 +667,11 @@ else:
     
     for disturbance_amplitude in figs:
         for disturbance_train_std, fig in figs[disturbance_amplitude].items():
+            if i_replicate is None:
+                i_rep = best_replicate[disturbance_train_std]
+            else:
+                i_rep = i_replicate
+            
             # Add an annotation that provides some context if the figure is shared.
             # This will be removed before publication
             add_context_annotation(
@@ -676,7 +683,7 @@ else:
                     f"{disturbance_type}": (disturbance_amplitude, None, None)
                 },
                 n=n_evals_small,
-                i_replicate=i_replicate,
+                i_replicate=i_rep,
             )
             # Plot the reach endpoints on the effector position subplot
             add_endpoint_traces(
@@ -688,7 +695,7 @@ else:
                 join([
                     f"{disturbance_type}-field-{disturbance_amplitude}",
                     f"{disturbance_type_train}-std-{disturbance_train_std}",
-                    f"replicate-{i_replicate}",
+                    f"replicate-{i_rep}",
                 ]),
                 subdir=fig_subdir,
             )
@@ -708,7 +715,8 @@ fig_subdir = "center_out_sets/single_eval_single_replicate"
 ```{python}
 i_trial = 0
 
-plot_states = tree_take_multi(all_states_small, [i_trial, i_replicate], [0, 1])
+plot_states = take_replicate_or_best(all_states_small, i_replicate)
+plot_states = tree_take(plot_states, i_trial, 0)
 
 figs = jt.map(
     lambda states: fbp.trajectories_2D(
@@ -729,6 +737,11 @@ figs = jt.map(
 ```{python}
 for disturbance_amplitude in figs:
     for disturbance_train_std, fig in figs[disturbance_amplitude].items():
+        if i_replicate is None:
+            i_rep = best_replicate[disturbance_train_std]
+        else:
+            i_rep = i_replicate
+            
         add_context_annotation(
             fig,
             train_condition_strs=[
@@ -738,7 +751,7 @@ for disturbance_amplitude in figs:
                 f"{disturbance_type}": (disturbance_amplitude, None, None)
             },
             i_trial=i_trial,
-            i_replicate=i_replicate,
+            i_replicate=i_rep,
         )
         add_endpoint_traces(
             fig, pos_endpoints_small, xaxis='x1', yaxis='y1', colorscale='phase'
@@ -746,7 +759,7 @@ for disturbance_amplitude in figs:
         filename = join([
                 f"{disturbance_type}-amp-{disturbance_amplitude}",
                 f"{disturbance_type_train}-train-std-{disturbance_train_std}",
-                f"rep-{i_replicate}",
+                f"rep-{i_rep}",
                 f"eval-{i_trial}",
         ])
         savefig(fig, filename, subdir=fig_subdir)
@@ -1398,6 +1411,7 @@ for measure_name, measure_handle in measure_handles.items():
 
 ```{python}
 for measure_name in all_measures:
+    figs[measure_name][disturbance_amplitudes[0]].show()
     figs[measure_name][disturbance_amplitudes[-1]].show()
 ```
 
@@ -1635,8 +1649,8 @@ def get_lohi_summary_violins(measure_data, measure_name, annotation_kws=None):
             height=400,
             xaxis_title="Train disturbance std.",
             yaxis_title=measure_name,
-            xaxis_range=[-0.5, len(measure_data) - 0.5],
-            xaxis_ticktext=list(measure_data.keys()),
+            # xaxis_range=[-0.5, len(measure_data) - 0.5],
+            # xaxis_ticktext=list(measure_data.keys()),
             yaxis_range=[0, None],
             legend_title="Disturbance amplitude",
             # violinmode='overlay',

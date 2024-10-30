@@ -19,11 +19,6 @@ The training objective is to minimize a continuous cost function which penalizes
 - the force vector output by the neural network;
 - the activations of the network units.
 
-In addition to the two main classes of models, we also train:
-
-1. A model with increased system noise;
-2. A model that is disturbed by a random force field -- state independent, and constant across a trial -- rather than a curl force field. 
-
 ## Environment setup
 
 ```{python}
@@ -49,8 +44,7 @@ import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
-import matplotlib.pyplot as plt
-import matplotlib.colors as mplc
+import matplotlib.pyplot as plt 
 import numpy as np
 import optax 
 from tqdm.auto import tqdm
@@ -92,7 +86,7 @@ Log the library versions and the feedbax commit ID, so they appear in any report
 for mod in (jax, eqx, optax): 
     print(f"{mod.__name__} version: {mod.__version__}")
     
-print(f"\nFeedbax commit hash: {git_commit_id()}")
+print(f"feedbax commit: {git_commit_id()}\n")
 ```
 
 Unique ID for notebook, for naming outputs.
@@ -113,11 +107,14 @@ These are parameters that can be [varied](https://quarto.org/docs/computations/p
 
 ```{python}
 #| tags: [parameters]
+
 disturbance_type: Literal['curl', 'random'] = 'random'  
-hidden_size = 50
 feedback_delay_steps = 0
 feedback_noise_std = 0.0
 motor_noise_std = 0.0
+hidden_size = 50
+n_replicates = 10
+dt = 0.05
 ```
 
 ```{python}
@@ -140,12 +137,7 @@ for d in (FIGS_DIR, MODELS_DIR):
 
 ### Plotting setup
 
-Define colormap to consistently assign colors to different trials/episodes in plots.
-
-```{python}
-trials_cmap = 'viridis'  # for trials
-trials_cmap_func = plt.get_cmap(trials_cmap)
-```
+Get function to save figures to figure directory.
 
 ```{python}
 savefig = get_savefig_func(FIGS_DIR)
@@ -179,20 +171,12 @@ task_train = SimpleReaches(
 ## Model setup
 
 ```{python}
-n_replicates = 10
-
-dt = 0.05
-
-mass = 1.0
-```
-
-```{python}
 models = get_ensemble(
     point_mass_nn,
     task_train,
     n_ensemble=n_replicates,
     dt=dt,
-    mass=mass,
+    mass=1.0,
     hidden_size=hidden_size, 
     n_steps=n_steps,
     feedback_delay_steps=feedback_delay_steps,
@@ -200,11 +184,7 @@ models = get_ensemble(
     motor_noise_std=motor_noise_std,
     key=key_init,
 )
-
-# if NO_SYSTEM_NOISE:
-#     models = toggle_channel_noise(models, False)
 ```
-
 
 ## Training setup
 
@@ -214,7 +194,7 @@ Schedule force fields in the training trials.
 
 ```{python}
 if disturbance_type == 'curl':
-    disturbance_stds = [0, 0.2, 0.4, 0.8, 1.6]
+    disturbance_stds = [0, 0.2, 0.4, 0.8, 1.6, 2.4]
     # disturbance_stds = [0, 0.4, 1.2]
    
     def disturbance(curl_std):
@@ -224,7 +204,7 @@ if disturbance_type == 'curl':
         )
 
 elif disturbance_type == 'random':
-    disturbance_stds = [0, 0.001, 0.01, 0.1, 1.0]
+    disturbance_stds = [0, 0.001, 0.01, 0.1, 1.0, 2.0]
     # disturbance_stds = [0, 0.01, 1.0]
     
     # Uniform in angle, Gaussian in amplitude, constant over trial
@@ -553,32 +533,36 @@ for label, losses_by_replicate in {
     "Final": loss_at_final_iteration_by_replicate,
 }.items():
     df = pd.DataFrame(losses_by_replicate).reset_index().melt(id_vars='index')
+    df["index"] = df["index"].astype(str)
 
     fig = go.Figure()
 
-    strips = px.strip(
+    strips = px.scatter(
         df,
         x='variable',
         y='value',
         color="index",
         labels=dict(x="Train disturbance std.", y=f"{label} total loss"),
         title=f"{label} total loss across training by disturbance std.",
-        color_discrete_sequence=px.colors.qualitative.T10,
+        color_discrete_sequence=px.colors.qualitative.Plotly,
         # stripmode='overlay',
     )
     
     strips.update_traces(
-        marker_size=8
+        marker_size=10,
+        marker_symbol='circle-open',
+        marker_line_width=3,
     )
     
-    strips.for_each_trace(
-        lambda trace: trace.update(x=trace.x + 0.05)
-    )
+    # strips.for_each_trace(
+    #     lambda trace: trace.update(x=list(trace.x))
+    # )
 
     violins = [
         go.Violin(
+            x=[disturbance_std] * n_replicates,
             y=losses_by_replicate[disturbance_std],
-            box_visible=True,
+            # box_visible=True,
             line_color='black',
             meanline_visible=True,
             fillcolor='lightgrey',
@@ -593,19 +577,21 @@ for label, losses_by_replicate in {
     fig.add_traces(strips.data)
 
     fig.update_layout(
-        xaxis_type='linear',
+        xaxis_type='category',
         width=800,
         height=500,
         xaxis_title="Train disturbance std.",
         yaxis_title=f"{label} total loss",
-        xaxis_range=[-0.25, max(disturbance_stds) + 0.25],
-        xaxis_tickvals=np.linspace(0,1.2,4),
+        # xaxis_range=[-0.5, len(disturbance_stds) + 0.5],
+        # xaxis_tickvals=np.linspace(0,1.2,4),
         # yaxis_type='log',
         violingap=0.1,
         # showlegend=False,
         legend_title='Replicate',
         legend_tracegroupgap=4,
-        violinmode='overlay',  
+        # violinmode='overlay',  
+        barmode='overlay',
+        # boxmode='group',
     )
 
     fig.show()

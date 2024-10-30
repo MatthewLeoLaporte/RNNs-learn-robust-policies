@@ -117,7 +117,7 @@ def add_context_annotation(
         y=y,
         xanchor="center",
         yanchor="bottom",
-        font=dict(size=16),  # Adjust font size as needed
+        font=dict(size=12),  # Adjust font size as needed
         name='context_annotation',
         **kwargs,
     ))

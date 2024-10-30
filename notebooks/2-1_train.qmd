@@ -1,0 +1,147 @@
+---
+jupyter: python3
+---
+
+# Training models for Part 2
+
+In this notebook, we train models similarly to [Part 1](1-1_train.qmd). Most of the details of the models and the training process are identical, and they will not be explained again here.
+
+However, instead of training separate models on different amplitudes of perturbation, we instead train a single model, and give it contextual information about the amplitude of the current disturbance. Since the direction of the disturbance remains unknown to the model, it must still learn a robust policy (rather than an adaptation), but we expect it to learn to modulate the robustness (vs. efficiency) of its policy based on the amplitude information. 
+
+If that is the case, then following training, we should be able to control the robustness of the model's policy by adjusting the value of the contextual input. 
+
+:::{note}
+Because different types of perturbations (e.g. curl force fields vs. random constant force fields) may induce different robust policies, it may also make sense to provide a second contextual input which indicates the type of the current disturbance. In principle this input should be categorical, however we could indicate it probabilistically (e.g. 0 -> curl, 1 -> random, 0.5 -> 50% chance of curl, vs. random) and this might allow us to interpolate between the two policies as well. 
+
+However, in this notebook we will only train on the first contextual input.
+::: 
+
+## Environment setup
+
+```{python}
+%load_ext autoreload
+%autoreload 2
+```
+
+```{python}
+import os
+
+os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
+```
+
+
+```{python}
+import equinox as eqx
+import jax
+import jax.numpy as jnp
+import jax.random as jr
+import jax.tree as jt
+import matplotlib.pyplot as plt
+import numpy as np
+import optax 
+from tqdm.auto import tqdm
+```
+
+Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
+
+```{python}
+for mod in (jax, eqx, optax): 
+    print(f"{mod.__name__} version: {mod.__version__}")
+    
+print(f"\nFeedbax commit hash: {git_commit_id()}")
+```
+
+Unique ID for notebook, for naming outputs.
+
+```{python}
+NB_ID = "2-1"
+```
+
+### Hyperparameters
+
+These are parameters that can be [varied](https://quarto.org/docs/computations/parameters.html) through the command line interface to Quarto. 
+
+```{python}
+#| tags: [parameters]
+disturbance_type: Literal['curl', 'random'] = 'random'  
+feedback_delay_steps = 0
+feedback_noise_std = 0.0
+motor_noise_std = 0.0
+hidden_size = 50
+n_replicates = 10
+dt = 0.05
+```
+
+```{python}
+suffix = '_'.join([
+    f"{disturbance_type}",
+    f"noise-{feedback_noise_std}-{motor_noise_std}",
+    f"delay-{feedback_delay_steps}",
+])
+```
+
+### Directories setup
+
+```{python}
+FIGS_DIR = Path(f'../figures/{NB_ID}/{suffix}')
+MODELS_DIR = Path('../models')
+
+for d in (FIGS_DIR, MODELS_DIR):
+    d.mkdir(parents=True, exist_ok=True)
+```
+
+### Plotting setup
+
+Get function to save figures to figure directory.
+
+```{python}
+savefig = get_savefig_func(FIGS_DIR)
+```
+
+### RNG setup
+
+```{python}
+SEED = 5566
+key = jr.PRNGKey(SEED)
+key_init, key_train, key_eval = jr.split(key, 3)
+```
+
+## Base training task setup
+
+```{python}
+n_steps = 100
+workspace = ((-1., -1.),
+             (1., 1.))
+
+task_train = SimpleReaches(
+    loss_func=simple_reach_loss(),
+    workspace=workspace, 
+    n_steps=n_steps,
+    eval_grid_n=2,
+    eval_n_directions=8,
+    eval_reach_length=0.5,    
+)
+```
+
+## Model setup
+
+```{python}
+models = get_ensemble(
+    point_mass_nn,
+    task_train,
+    n_ensemble=n_replicates,
+    dt=dt,
+    mass=1.0,
+    hidden_size=hidden_size, 
+    n_steps=n_steps,
+    feedback_delay_steps=feedback_delay_steps,
+    feedback_noise_std=feedback_noise_std,
+    motor_noise_std=motor_noise_std,
+    key=key_init,
+)
+
+# if NO_SYSTEM_NOISE:
+#     models = toggle_channel_noise(models, False)
+```
+
+## Training setup
