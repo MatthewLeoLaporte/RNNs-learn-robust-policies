@@ -62,6 +62,9 @@ from feedbax import (
     load,
     save,
     tree_unzip,
+    tree_stack,
+    tree_take_multi,
+    is_type,
 )
 from feedbax.channel import toggle_channel_noise
 from feedbax.misc import git_commit_id, where_func_to_labels
@@ -80,6 +83,7 @@ from feedbax.intervene import (
 
 from rnns_learn_robust_motor_policies.plot_utils import get_savefig_func
 from rnns_learn_robust_motor_policies.setup_utils import filename_join as join
+from rnns_learn_robust_motor_policies.misc import write_to_json
 ```
 
 Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
@@ -109,7 +113,7 @@ These are parameters that can be [varied](https://quarto.org/docs/computations/p
 
 ```{python}
 #| tags: [parameters]
-disturbance_type: Literal['curl', 'random'] = 'random'  # or 'random'
+disturbance_type: Literal['curl', 'random'] = 'random'  
 hidden_size = 50
 feedback_delay_steps = 0
 feedback_noise_std = 0.0
@@ -206,12 +210,12 @@ models = get_ensemble(
 
 ### Create model-task pairings for different disturbance conditions
 
-Schedule random curl fields in the training trials.
+Schedule force fields in the training trials.
 
 ```{python}
 if disturbance_type == 'curl':
     disturbance_stds = [0, 0.2, 0.4, 0.8, 1.6]
-    
+   
     def disturbance(curl_std):
         return CurlField.with_params(
             scale=curl_std,
@@ -221,6 +225,7 @@ if disturbance_type == 'curl':
 elif disturbance_type == 'random':
     disturbance_stds = [0, 0.001, 0.01, 0.1, 1.0]
     
+    # Uniform in angle, Gaussian in amplitude, constant over trial
     def disturbance(field_std):
         def vector_with_gaussian_length(trial_spec, *, key):
             key1, key2 = jr.split(key)
@@ -233,10 +238,10 @@ elif disturbance_type == 'random':
         return FixedField.with_params(
             scale=field_std,
             field=vector_with_gaussian_length,
-            # active=True,
         )
 else:
     raise ValueError(f"Unknown disturbance type: {disturbance_type}")
+
 
 task_model_pairs = jt.map(
     lambda disturbance_std: schedule_intervenor(
@@ -299,17 +304,103 @@ for disturbance_std, (task_, models_) in tqdm(list(zip(disturbance_stds, task_mo
     )
 ```
 
+## Keep best parameters for each model replicate
+
+**TODO**: Ensure the final parameters get saved along with the rest of the `train_histories`, since we may be discarding them otherwise, here.
+**TODO**: Also, `best_iteration_by_replicate` and `best_replicates` are not hyperparameters, but are currently saved with the hyperparameters; they should probably be saved as part of `train_histories`
+
+Some model replicates may diverge at some point during training. Thus, considering the iterations for which we kept model parameters, we will keep the parameters from the iteration with the lowest total loss, for each replicate. 
+
+```{python}
+# For each ensemble, what are the indices in `save_model_parameters` of the lowest-loss parameters?
+argmin_loss_by_replicate = jt.map(
+    lambda history: jnp.argmin(
+        history.loss.total[save_model_parameters], 
+        axis=0,
+    ), 
+    train_histories, 
+    is_leaf=is_module,
+)
+
+# What are the corresponding training iterations? 
+best_iteration_by_replicate = jt.map(
+    lambda idx: save_model_parameters[idx].tolist(), 
+    argmin_loss_by_replicate, 
+)
+```
+
+```{python}
+best_parameters_by_replicate = tree_stack([
+    jt.map(
+        lambda train_history, best_idx_by_replicate: tree_take_multi(
+            train_history.model_parameters, 
+            [int(best_idx_by_replicate[i]), i], 
+            [0, 1],
+        ),
+        train_histories, argmin_loss_by_replicate,
+        is_leaf=is_module,
+    )
+    for i in range(n_replicates)
+])
+```
+
+```{python}
+loss_at_best_iteration_by_replicate = jt.map(
+    lambda history, saved_iterations: (
+        history.loss.total[jnp.array(saved_iterations), jnp.arange(n_replicates)]
+    ),
+    train_histories, best_iteration_by_replicate,
+    is_leaf=is_module,
+)
+
+best_replicate_by_loss = jt.map(
+    lambda best_losses: jnp.argmin(best_losses).item(), 
+    loss_at_best_iteration_by_replicate,
+    is_leaf=is_module,
+)
+```
+
+```{python}
+saved_models = jt.map(
+    lambda model, best_params: eqx.tree_at(
+        where_train,
+        model, 
+        where_train(best_params),
+    ),
+    trained_models, best_parameters_by_replicate,
+    is_leaf=is_module,
+)
+```
+
+## Determine models to be excluded from analysis, based on loss quantile bounds
+
+```{python}
+fig_subdir = "best-loss-distributions-by-replicate"
+```
+
+Determine which replicates have a best total loss in the 20th percentile, in case we want to exclude these from further analysis. 
+
+**TODO**: the losses are not terribly variable, so it might be better to exclude models based on a behavioural measure, such as the endpoint error on the control (no perturbation) task
+
+```{python}
+percentile = 80
+
+exclusion_loss_bound = jt.map(
+    lambda losses: jnp.percentile(losses, percentile).item(),
+    loss_at_best_iteration_by_replicate,
+)
+
+included_replicates = jt.map(
+    lambda losses, bound: losses < bound,
+    loss_at_best_iteration_by_replicate, exclusion_loss_bound,
+)
+```
+
 ## Save trained models 
 
 ```{python}
 model_file_label = "trained_models"
-model_param_histories_file_label = "model_parameter_histories"
-```
-
-```{python}
-def write_to_json(data, file_path):
-    with open(file_path, 'w') as jsonf:
-        json.dump(data, jsonf, indent=4)
+train_histories_file_label = "train_histories"
 ```
 
 ```{python}
@@ -335,6 +426,13 @@ training_hyperparameters = dict(
     disturbance_stds=disturbance_stds,
     disturbance_type=disturbance_type,
 )
+
+extras = dict(
+    best_iteration_by_replicate=best_iteration_by_replicate,
+    loss_at_best_iteration_by_replicate=loss_at_best_iteration_by_replicate,
+    best_replicate_by_loss=best_replicate_by_loss,
+    included_replicates=included_replicates,    
+)
 ```
 
 ```{python}
@@ -345,10 +443,12 @@ model_basename = join([
     suffix,
     model_file_label,
 ])
+```
 
+```{python}
 save(
     str(MODELS_DIR / model_basename) + '.eqx',
-    list(trained_models.values()),
+    saved_models,
     hyperparameters=model_hyperparameters,
 )
 
@@ -356,32 +456,33 @@ write_to_json(
     model_hyperparameters | training_hyperparameters,
     str(MODELS_DIR / model_basename.replace(model_file_label, 'hyperparameters')) + '.json',
 )
+
+write_to_json(
+    extras,
+    str(MODELS_DIR / model_basename.replace(model_file_label, 'extras')) + '.json',
+)
 ```
 
-To reload our models in later notebooks, we will need a function that regenerates a skeleton PyTree with the same structure as `list(trained_models.values())`, given the stored `hyperparameters`. See the function `setup_models` in `src/rnns_learn_robust_motor_policies/part1_setup.py`.
+To reload our models in later notebooks, we will need a function that regenerates a skeleton PyTree with the same structure as `saved_models`, given the stored `hyperparameters`. See the function `setup_models` in `src/rnns_learn_robust_motor_policies/part1_setup.py`.
 
-### Save training parameter histories
+### Save training histories
 
-Any analysis of the losses, learning rates, etc. over training will be performed in this notebook. 
-
-However, in later analyses we may be interested in the history of the model parameters across training. These should also be saved to disk. 
+In later analyses we may be interested in the history of the losses or model parameters across training. These should also be saved to disk. 
 
 ```{python}
-model_param_histories = jt.map(
-    lambda tree: tree.model_parameters, 
-    list(train_histories.values()), 
-    is_leaf=is_module,
-)
-
-model_param_histories_basename = model_basename.replace(
+train_histories_basename = model_basename.replace(
     model_file_label, 
-    model_param_histories_file_label,
+    train_histories_file_label,
 )
 
 save(
-    str(MODELS_DIR / model_param_histories_basename) + ".eqx",
-    model_param_histories,
+    str(MODELS_DIR / train_histories_basename) + ".eqx",
+    train_histories,
     hyperparameters=dict(
+        disturbance_stds=disturbance_stds,
+        n_batches=n_batches,
+        batch_size=batch_size,
+        n_replicates=n_replicates,
         where_train_strs=where_func_to_labels(where_train),
         save_model_parameters=save_model_parameters.tolist(),
     ),
@@ -394,15 +495,15 @@ Note that we cannot save lambda functions to disk, so we save the string represe
 
 I'm including this here for reference.
 
-Because we'll generally have already loaded the trained models by the time we also want to load the parameter histories, our `setup_model_parameter_histories` function can use it to determine the correct PyTree structure. Thus we can avoid reconstructing the PyTree of models from scratch -- and storing all the required hyperparameters -- a second time.  
+Because we'll generally have already loaded the trained models by the time we also want to load the train histories, our `setup_train_histories` function can use it to determine the correct PyTree structure. Thus we can avoid reconstructing the PyTree of models from scratch -- and storing all the required hyperparameters -- a second time.  
 
 ```{python}
 from functools import partial
-from rnns_learn_robust_motor_policies.part1_setup import setup_model_parameter_histories
+from rnns_learn_robust_motor_policies.part1_setup import setup_train_histories
 
 model_parameter_histories_ = load(
-    str(MODELS_DIR / model_param_histories_basename) + ".eqx",
-    partial(setup_model_parameter_histories, list(trained_models.values())),
+    str(MODELS_DIR / train_histories_basename) + ".eqx",
+    partial(setup_train_histories, task_train, trained_models),
 )
 ```
 
@@ -431,3 +532,9 @@ for disturbance_std, history in train_histories.items():
 ```
 
 TODO: these plots are large/sluggish for `n_steps` >> 1e3. Can probably downsample; start with every 1 to 1000, then every 10 to 10000.
+
+### Distribute of losses over replicates
+
+**TODO** 
+
+i.e. for different disturbance levels, what is the distribution over replicates of the minimum (over training iterations) of the total loss?

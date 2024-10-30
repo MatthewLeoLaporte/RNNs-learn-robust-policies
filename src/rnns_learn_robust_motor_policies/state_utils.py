@@ -81,9 +81,6 @@ def get_lateral_distance(
     """
     init_pos, goal_pos = pos_endpoints
     
-    # Rearrange input axes to ensure proper broadcasting over conditions
-    # pos = jnp.swapaxes(pos, -3, -2)
-    
     # Calculate the vectors from 1) inits to goals, and 2) inits to trajectory positions
     direction_vec = goal_pos - init_pos
     point_vec = pos - init_pos[..., None, :]
@@ -99,7 +96,6 @@ def get_lateral_distance(
     lateral_dist = jnp.abs(cross_product) / line_length[..., None]
 
     return lateral_dist
-    # return jnp.swapaxes(lateral_dist, -2, -1)
 
 
 def _get_eval_ensemble(models, task):
@@ -107,6 +103,7 @@ def _get_eval_ensemble(models, task):
         return task.eval_ensemble(
             models,
             n_replicates=tree_infer_batch_size(models, exclude=is_type(AbstractIntervenor)),
+            # Each member of the model ensemble will be evaluated on the same trials
             ensemble_random_trials=False,
             key=key,
         )
@@ -115,7 +112,7 @@ def _get_eval_ensemble(models, task):
     
 @eqx.filter_jit
 def vmap_eval_ensemble(models, task, n_trials: int, key):
-    """Evaluate an ensemble of models on `n` random trials of a task."""
+    """Evaluate an ensemble of models on `n` random repeats of a task's validation set."""
     return eqx.filter_vmap(_get_eval_ensemble(models, task))(
         jr.split(key, n_trials)
     )

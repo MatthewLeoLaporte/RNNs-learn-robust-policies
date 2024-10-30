@@ -1,3 +1,8 @@
+"""Run batches of `quarto render` commands.
+
+Written with the help of Claude 3.5 Sonnet.
+"""
+
 import argparse
 import os
 import yaml
@@ -17,19 +22,23 @@ def apply_rules(combination: List[Any], parameter_names: List[str], rules: List[
     """Apply rules to a single combination and return new combinations."""
     new_combinations = [combination]
     for rule in rules:
-        condition = list(rule['condition'].items())[0]
         actions = rule['action']
         
-        if condition[0] in parameter_names:
-            idx = parameter_names.index(condition[0])
-            if combination[idx] == condition[1]:
-                new_combo = combination.copy()
-                for action_param, action_value in actions.items():
-                    if action_param in parameter_names:
-                        new_combo[parameter_names.index(action_param)] = action_value
-                new_combinations.append(new_combo)
-    
+        conditions_met = (
+            combination[parameter_names.index(param_name)] == str(required_value)
+            for param_name, required_value in rule['condition'].items()
+            # if param_name in parameter_names
+        )
+        
+        if all(conditions_met):
+            new_combo = tuple(
+                str(rule['action'][param]) if param in rule['action'] else value
+                for param, value in zip(parameter_names, combination)
+            )
+            new_combinations.append(new_combo)
+        
     return new_combinations
+
 
 def apply_default_assignments(params: Dict[str, Any], default_assignments: List[Dict[str, str]]) -> Dict[str, Any]:
     """Apply default assignments to the parameters when they are null."""
@@ -39,18 +48,21 @@ def apply_default_assignments(params: Dict[str, Any], default_assignments: List[
                 params[target_key] = params.get(source_key)
     return params
 
+
 def expand_combinations(combinations: List[List[Any]], parameter_names: List[str], rules: List[Dict[str, Any]]) -> List[List[Any]]:
     """Expand all combinations by applying rules."""
     expanded = []
     for combo in combinations:
         expanded.extend(apply_rules(combo, parameter_names, rules))
-    return [list(x) for x in set(tuple(x) for x in expanded)]  # Remove duplicates
+    return list(set(tuple(x) for x in expanded))  # Remove duplicates
+
 
 def format_output_label(output_format: List[List[str]], params: Dict[str, Any]) -> str:
     """Format the output label based on the given format and parameters."""
     return '/'.join('_'.join(
         s.format(**params) for s in part
     ) for part in output_format)
+
 
 def render_quarto(quarto_doc: str, output_dir: str, params: Dict[str, Any]):
     """Render a Quarto document with the given parameters."""
@@ -60,6 +72,7 @@ def render_quarto(quarto_doc: str, output_dir: str, params: Dict[str, Any]):
             cmd.extend(["-P", f"{key}:{value}"])
     logger.info(f"Executing command: {' '.join(cmd)}")
     subprocess.run(cmd, check=True)
+    
 
 def process_quarto_doc(quarto_doc: str, combinations: List[List[Any]], parameter_names: List[str], output_format: List[List[str]], default_assignments: List[Dict[str, str]]):
     """Process a single Quarto document with all parameter combinations."""
@@ -85,6 +98,7 @@ def process_quarto_doc(quarto_doc: str, combinations: List[List[Any]], parameter
         logger.info(f"Formatted output label: {output_label}")
         output_dir = os.path.join("_output", first_part, output_label)
         render_quarto(quarto_doc, output_dir, params)
+
 
 def main():
     """Main function to orchestrate the Quarto document generation process."""

@@ -8,7 +8,8 @@ parameter_names:
   - motor_noise_std
 
 parameter_combinations:
-  - ['curl', 0.0, 0.0, 0, null, null, null]
+  - ['curl', '0.0', '0.0', '3', 'random', null, null]
+  - ['random', '0.0', '0.0', '3', 'curl', null, null]
 
 output_format: 
   - - "train"
@@ -21,9 +22,23 @@ output_format:
 rules:
   - condition:
       feedback_noise_std_load: 0.0
+      motor_noise_std_load: 0.0
+      feedback_delay_steps_load: 0
     action:
       feedback_noise_std: 0.1
       motor_noise_std: 0.1
+  - condition:
+      feedback_noise_std_load: 0.0
+      motor_noise_std_load: 0.0
+      disturbance_type_load: random
+    action:
+      disturbance_type: curl
+  - condition:
+      feedback_noise_std_load: 0.0
+      motor_noise_std_load: 0.0
+      disturbance_type_load: curl
+    action:
+      disturbance_type: random
       
 default_assignments:
   - disturbance_type: disturbance_type_load

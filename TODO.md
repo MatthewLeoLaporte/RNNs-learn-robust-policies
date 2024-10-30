@@ -1,16 +1,64 @@
 ---
 created: 2024-10-04T11:27
-updated: 2024-10-27T18:39
+updated: 2024-10-29T11:01
 ---
-- [x] Modify nb 1-2a to work with both disturbance types – mostly just renaming `curl_*` to `disturbance_*`, but also need to decide on file naming convention (in particular when train disturbance is not the same as test disturbance)
-- [x] Compare measures across impulse amplitudes, for low versus high training condition
-- [x] Update colorscales in 1-2a to match 1-2b
-- [ ] Do zero-noise comparisons of training disturbance type vs. eval disturbance type (e.g. trained on random fields, tested on curl fields)
+- [x] Do zero-noise comparisons of training disturbance type vs. eval disturbance type (e.g. trained on random fields, tested on curl fields)
 - [ ] After finishing up analyses in 1-2b, re-run batch quarto render for both 1-2a and 1-2b, for all noise and delay conditions, as well as for both curl and random training disturbances. Maybe reduce to 3 (lo-mid-high) disturbance levels. Also try training disturbance stds up to 1.5 or so (to see if the secondary peak disappears from profile)
+- [ ] **Try a 200-step solution for networks trained on random and tested on curl, to see how the “goal orbit” evolves**
+- [ ] **Review the results so far and make a summary of the ones that should appear as main/supplementary figures in paper**
 - [ ] Add notebook to load models for multiple noise/delay conditions, and plot distribution comparisons (only do this after deciding which plots to make – it’s too complicated to run *all* the existing plots as noise comparisons)
+- [ ] [[#Exclude model replicates whose training diverged]] 
 - [ ] Max forward velocity – quantify number/amplitude of peaks…
 - [ ] Schedule a [[02 Questions#Steve]] with Steve. For one, ask about sensory perturbations in human tasks – do they see oscillations (i.e. going from straight to “loopy”, like we see in the control vs. robust networks)
+## Gunnar meeting
+
+### Choice of disturbance train stds 
+
+- Levels are different for random and curl
+- I think it’s mostly fine so long as we can show a spread of robustness behaviour for each disturbance type. 
+
+### Choice of feedback impulse amplitudes
+
+- How to make pos vs. vel perturbations comparable?
+- Choose amplitudes to align the max (or sum?) deviation for the control (zero train std) condition?
+
+### Comparison of types of robustness
+
+Basic observations:
+
+- In the presence of a constant random field, the network must output a constant non-zero force to remain stationary at the goal. The models are able to do this, regardless of whether they were trained on random fields; however, the control models do a straight reach to a position that is rotated away from the goal, almost like the first trial of a visuomotor adaptation task
+- The acceleration phase of the reach, as well as the max net force/velocity, are *identical* in the presence and absence of a random field, for all models, regardless of whether the model was trained in the presence of random fields (however, there is a difference in these measures between the model trained in the presence of random fields, versus not)
+- Training on random fields initially leads to a little “hook” correction at the end of the reach, in addition to a reduction in the slope of deviation during the rest of the reach. At higher train std, a smoother curvature of the solution is achieved.
+- Compensation for random fields is less sensitive to delays. This makes sense since there isn’t closed-loop coupling between control forces and orthogonal velocities. (How do networks trained on curl+delay perform, on random fields? and so on)
+
+When we switch the disturbance type during testing:
+
+- Training on curl reduces deviations for random fields
+- Training on random fields reduces deviations *during* the reach in the presence of curl, but also leads to oscillations around the goal
+
+How can we interpret this?
+
+- Should we train on a combination of the two? 
+
+**Presumably, in part 2 of the project we may be able to interpret these differences in terms of gains.**
+
+#### Is there another kind of disturbance that we should try? 
+
+- Acceleration/force – e.g. a task rotation, forces on the point mass actually are applied partially in another direction, etc.
+- Parallel velocity-dep – like a curl field but parallel instead of orthogonal, such that there is positive feedback between velocity and acceleration in any direction
+
+### Local disturbances
+
+e.g. only apply the force field on a certain part of the reach
+
+This might help to make conclusions about the “types” of robustness, and the nature of the network policies. 
+
+However, I am not sure yet how to think about this. Worth discussing.
+
 ## Exclude model replicates whose training diverged
+
+> [!todo]
+> **ALSO**: figure out which replicate was the best (lowest loss?) and use it for the single-replicate plots; and possibly also do some measure distribution plots for the best replicate only
 
 Or else save/load earlier checkpoint. 
 

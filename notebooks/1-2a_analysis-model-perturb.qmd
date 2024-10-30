@@ -46,7 +46,7 @@ import plotly.colors as plc
 import plotly.graph_objects as go
 
 from feedbax import (
-    load_with_hyperparameters, 
+    load, 
     is_module, 
     is_type,
     tree_stack,
@@ -54,6 +54,7 @@ from feedbax import (
     tree_take_multi,
     tree_unzip,
     tree_struct_bytes,
+    make_named_dict_subclass,
 )
 from feedbax.channel import toggle_channel_noise
 from feedbax.intervene import (
@@ -70,6 +71,7 @@ from feedbax.xabdeef.losses import simple_reach_loss
 from rnns_learn_robust_motor_policies.part1_setup import (
     setup_models, 
     setup_model_parameter_histories,
+    setup_train_histories,
 )
 from rnns_learn_robust_motor_policies.plot_utils import (
     get_savefig_func,
@@ -79,6 +81,7 @@ from rnns_learn_robust_motor_policies.plot_utils import (
 from rnns_learn_robust_motor_policies.state_utils import (
     get_forward_lateral_vel, 
     get_lateral_distance,
+    vmap_eval_ensemble,
 )
 from rnns_learn_robust_motor_policies.tree_utils import (
     swap_model_trainables, 
@@ -96,7 +99,7 @@ from rnns_learn_robust_motor_policies.colors import (
     MEAN_LIGHTEN_FACTOR,
     get_colors_dicts,
 )
-from rnns_learn_robust_motor_policies.misc import lohi
+from rnns_learn_robust_motor_policies.misc import lohi, load_from_json
 
 ```
 
@@ -130,10 +133,10 @@ We may want to specify 1) which trained models to load, by their parameters, and
 #| tags: [parameters]
 
 # Specify which trained models to load 
-disturbance_type_load: Literal['curl', 'random'] = 'random'
+disturbance_type_load: Literal['curl', 'random'] = 'curl'
 feedback_noise_std_load = 0.0
 motor_noise_std_load = 0.0
-feedback_delay_steps_load = 0  
+feedback_delay_steps_load = 2  
 
 # Specify model parameters to use for analysis (None -> use training value)
 disturbance_type: Optional[Literal['curl', 'random']] = None
@@ -179,17 +182,61 @@ key = jr.PRNGKey(SEED)
 key_init, key_train, key_eval = jr.split(key, 3)
 ```
 
+## Define base task
+
+We will generally evaluate on a 2*2 grid of center-out reach sets (i.e. 4 sets total), with 24 reach directions per set. This is to ensure good coverage and a larger set of conditions/trials on which to perform statistics. 
+
+In the case of visualization of center-out sets, we'll use a smaller version of the task with only a single set of 7 reaches (using an odd number helps with visualization).
+
+For 4 sets of 24 center-out reaches (i.e. 96 reach conditions), with 10 replicates and 5 evaluations (i.e. 50 trials) per reach condition, and 100 timesteps, evaluating each task variant leads to approximately 1.5 GB of states. If we run out memory, it may be necessary to:
+
+- reduce the number of evaluation reaches (e.g. `n_evals` or `eval_n_directions`);
+- wait to evaluate until we have decided on a subset of trials to plot; i.e. define a function to evaluate subsets of data as needed;
+- evaluate on CPU (assuming we have more RAM available).
+
+```{python}
+n_steps = 100
+workspace = ((-1., -1.),
+             (1., 1.))
+
+eval_grid_n = 2
+eval_n_directions = 24
+eval_reach_length = 0.5
+n_conditions = eval_grid_n ** 2 * eval_n_directions
+
+eval_grid_n_small = 1
+eval_n_directions_small = 7
+eval_reach_length_small = 0.5
+n_conditions_small = eval_grid_n_small ** 2 * eval_n_directions_small
+
+# Define the base task
+task_base = SimpleReaches(
+    loss_func=simple_reach_loss(),
+    workspace=workspace, 
+    n_steps=n_steps,
+    eval_grid_n=eval_grid_n,
+    eval_n_directions=eval_n_directions,
+    eval_reach_length=eval_reach_length,  
+)
+```
+
+We need to define the base task now so that we can load the training histories (particularly, the losses) in a moment. The actual task variants we'll evaluate on -- large and small, and across a range of disturbance amplitudes -- will be defined after the trained models are loaded.
+
+**TODO**: We can probably move this back down to where the rest of the task setup is done, if we no longer need to load the entire training histories but only the stuff in the "extras" file.
+
 ## Load and adjust trained models
 
-We'll provide a couple of options, here. 
+### Specify file to load 
 
-### Specify file by noise and delay hyperparameters
-
-First, we can specify all the hyperparameters to load the corresponding model, assuming it has been trained.
+We provide a couple of options, here: either we load trained models based on their hyperparameters as specified [above](#Hyperparameters), or we allow the user to select a file. We control which method to use by toggling the following variable:
 
 ```{python}
 load_from_parameters = True
 ```
+
+Note that when we load from parameters, this assumes that models have been trained with those parameters. Otherwise, an error will be raised as the respectively-named file will not be found.
+
+#### By noise and delay hyperparameters
 
 ```{python}
 suffix_load = '_'.join([
@@ -202,9 +249,9 @@ if load_from_parameters and 'None' in suffix_load:
     raise ValueError("If loading from parameters, all parameters must be specified.")
 ```
 
-### Specify file by user selection
+#### Specify file to load by user selection
 
-On the other hand, maybe the user wants to browse and select a trained model file. In that case we can display a file chooser.
+Maybe the user wants to browse and select a trained model file. In that case we can display a file chooser.
 
 ```{python}
 if not load_from_parameters:
@@ -226,10 +273,14 @@ else:
     if models_filepath is None:
         raise FileNotFoundError(f"No models found with file label: {suffix_load}")
 
-trained_models, hyperparameters = load_with_hyperparameters(
-    # MODELS_DIR / models_filepath, setup_models,
+trained_models = load(
     MODELS_DIR / models_filepath, setup_models,
 )
+
+hyperpameters_filepath = models_filepath.replace('trained_models.eqx', 'hyperparameters.json')
+hyperparameters = load_from_json(hyperpameters_filepath)
+extras_filepath = models_filepath.replace('trained_models.eqx', 'extras.json')
+extras = load_from_json(extras_filepath)
 
 # We'll use this for creating figure subdirectories according to the training conditions
 suffix_train = models_filepath.split('__')[1]
@@ -249,39 +300,42 @@ trained_models = jt.map(
 )
 
 disturbance_train_stds = hyperparameters['disturbance_stds']
-
-trained_models = dict(zip(disturbance_train_stds, trained_models))
 ```
 
-### Load parameters from earlier training iterations, where necessary
+### Optionally exclude replicates that perform much worse than average
 
-Also depending on how training goes, we might want to use model parameters from an earlier training iteration. 
+When plotting single-replicate examples, we want to show the best replicate. Also, when lumping together replicates and plotting distributions, we want to include as many replicates as possible to show how performance may vary, but also exclude replicates whose performance is much worse than the best replicate.
+
+:::{note}
+The logic here is that systems like the brain will have much more efficient learning systems, and that we are approximating their efficiency by taking advantage of variance between model initializations. 
+
+In other words: we are interested in the kind of performance that is feasible with these kinds of networked controllers, more than the kind of performance that we should expect on average (or in the worst case) given the technical details of network initialization etc.
+:::
 
 ```{python}
-def load_model_parameter_histories(models_filepath):
-    # Wrap in a function to avoid polluting the global namespace
-    model_parameter_histories_load, train_hyperparameters = load_with_hyperparameters(
-        MODELS_DIR / models_filepath.replace('trained_models', 'model_parameter_histories'),
-        partial(setup_model_parameter_histories, list(trained_models.values())),
-    )
-    model_parameter_histories = dict(zip(disturbance_train_stds, model_parameter_histories_load))
-    return model_parameter_histories, train_hyperparameters
-    
-model_parameter_histories, train_hyperparameters = load_model_parameter_histories(
-    models_filepath,
+train_histories = load(
+    # MODELS_DIR / models_filepath.replace('trained_models', 'train_histories'),
+    models_filepath.replace('trained_models', 'train_histories'),
+    partial(setup_train_histories, task_base, trained_models),
 )
 
-where_train = attr_str_tree_to_where_func(train_hyperparameters['where_train_strs'])
+losses = jt.map(
+    lambda history: history.loss.total,
+    train_histories,
+    is_leaf=is_module,
+)
 
-# load_spec = {0.4: -1, 0.5: -1}
+where_train = attr_str_tree_to_where_func(hyperparameters['where_train_strs'])
 
-# for disturbance_train_std, i in load_spec.items():
-#     trained_models[disturbance_train_std] = swap_model_trainables(
-#         trained_models[disturbance_train_std], 
-#         tree_take(model_parameter_histories[disturbance_train_std], i), 
-#         where_train,
-#     )
+best_replicate = {
+    float(k): v for k,v in extras['best_replicate_by_loss'].items()
+}
+included_replicates = {
+    float(k): v for k,v in extras['included_replicates'].items()
+}
 ```
+
+**TODO**: Actually use `included_replicates` to filter the replicates, in what follows. It would be nice to do it once and for all, but then we should probably make an annotation that indicates "$n/N$ replicates are included" or something.
 
 ### Assign some variables to indicate which parameters we used/will be using
 
@@ -292,7 +346,7 @@ feedback_delay_steps = hyperparameters['feedback_delay_steps']
 n_replicates = hyperparameters['n_replicates']
 ```
 
-The following may vary in analysis but we may want to refer to the training values.
+The following may change for the analysis, but we may want to refer to the training values.
 
 ```{python}
 disturbance_type_train = hyperparameters['disturbance_type']
@@ -343,47 +397,9 @@ for d in (FIGS_DIR,):
 savefig = get_savefig_func(FIGS_DIR)
 ```
 
-## Set up evaluation tasks
-
-We will generally evaluate on a 2*2 grid of center-out reach sets (i.e. 4 sets total), with 24 reach directions per set. 
-
-This is to ensure good coverage and a larger set of conditions/trials on which to perform statistics. 
-
-In the case of visualization of center-out sets, we'll use a smaller version of the task with only a single set of 7 reaches (an odd number helps with visualization).
+## Set up evaluation tasks with different disturbance amplitudes
 
 We'll evaluate on a range of constant curl amplitudes, starting from 0 (no curl/control).
-
-For 4 sets of 24 center-out reaches (i.e. 96 reach conditions), with 10 replicates and 5 evaluations (i.e. 50 trials) per reach condition, and 100 timesteps, evaluating each task variant leads to approximately 1.5 GB of states. If we run out memory, it may be necessary to:
-
-- reduce the number of evaluation reaches (e.g. `n_evals` or `eval_n_directions`);
-- wait to evaluate until we have decided on a subset of trials to plot; i.e. define a function to evaluate subsets of data as needed;
-- do this on CPU (assuming we have more RAM available)
-
-```{python}
-n_steps = 100
-workspace = ((-1., -1.),
-             (1., 1.))
-
-eval_grid_n = 2
-eval_n_directions = 24
-eval_reach_length = 0.5
-n_conditions = eval_grid_n ** 2 * eval_n_directions
-
-eval_grid_n_small = 1
-eval_n_directions_small = 7
-eval_reach_length_small = 0.5
-n_conditions_small = eval_grid_n_small ** 2 * eval_n_directions_small
-
-# Define the base task
-task = SimpleReaches(
-    loss_func=simple_reach_loss(),
-    workspace=workspace, 
-    n_steps=n_steps,
-    eval_grid_n=eval_grid_n,
-    eval_n_directions=eval_n_directions,
-    eval_reach_length=eval_reach_length,  
-)
-```
 
 ```{python}
 if disturbance_type == 'curl':
@@ -416,6 +432,9 @@ else:
 ```{python}
 intervenor_label = "DisturbanceField"
 
+TrainStdDict = make_named_dict_subclass('TrainStdDict')
+PertAmpDict = make_named_dict_subclass('PertAmpDict')
+
 # Insert the disturbance field component into each model
 models = jt.map(
     lambda models: add_intervenors(
@@ -426,20 +445,20 @@ models = jt.map(
         # The field parameters will come from the task, so use an amplitude 0.0 placeholder.
         {None: {intervenor_label: disturbance(0.0)}},
     ),
-    trained_models,
+    TrainStdDict(trained_models),
     is_leaf=is_module,
 )
 
 # Generate tasks with different amplitudes of disturbance field
 tasks, _ = tree_unzip(jt.map(
     lambda disturbance_amplitude: schedule_intervenor(
-        task, trained_models[0],
+        task_base, trained_models[0],
         lambda model: model.step.mechanics,
         disturbance(disturbance_amplitude),
         label=intervenor_label,  
         default_active=False,
     ),
-    dict(zip(disturbance_amplitudes, disturbance_amplitudes)),
+    PertAmpDict(zip(disturbance_amplitudes, disturbance_amplitudes)),
 ))
 
 # Make smaller versions of the tasks for visualization.
@@ -468,15 +487,14 @@ And for convenience:
 trial_specs = task.validation_trials
 trial_specs_small = jt.leaves(tasks_small, is_leaf=is_module)[0].validation_trials
 
-pos_endpoints = jnp.stack([
-    trial_specs.inits['mechanics.effector'].pos, 
-    jnp.take(trial_specs.targets['mechanics.effector.pos'].value, -1, axis=-2),
-], axis=0)
+def get_pos_endpoints(trial_specs):
+    return jnp.stack([
+        trial_specs.inits['mechanics.effector'].pos, 
+        jnp.take(trial_specs.targets['mechanics.effector.pos'].value, -1, axis=-2),
+    ], axis=0)
 
-pos_endpoints_small = jnp.stack([
-    trial_specs_small.inits['mechanics.effector'].pos, 
-    jnp.take(trial_specs_small.targets['mechanics.effector.pos'].value, -1, axis=-2),
-], axis=0)
+pos_endpoints = get_pos_endpoints(trial_specs)
+pos_endpoints_small = get_pos_endpoints(trial_specs_small)
 ```
 
 ### Number of evaluations per model and condition
@@ -513,39 +531,14 @@ disturbance_amplitudes_colors, disturbance_amplitudes_colors_dark = get_colors_d
 
 ## Evaluate the trained models on each evaluation task
 
-In particular, for each trained ensemble of models (i.e. each training condition), evaluate each model in the ensemble on `n_evals` repetitions of each of the reach conditions. 
+In particular, for each trained ensemble of models (i.e. each training condition), evaluate each model in the ensemble on `n_evals` repetitions of each of the reach conditions, for each of the task variants. 
 
-```{python}
-def get_eval_ensemble(models, task):
-    def eval_ensemble(key):
-        return task.eval_ensemble(
-            models,
-            n_replicates=n_replicates,
-            ensemble_random_trials=False,
-            key=key,
-        )
-    return eval_ensemble
-
-@eqx.filter_jit
-def vmap_eval_ensemble(models, task, n_evals):
-    # TODO: might save compulation if we modify the task here...
-    return eqx.filter_vmap(get_eval_ensemble(models, task))(
-        jr.split(key_eval, n_evals)
-    )
-```
-
-Note that we:
-
-1. Set `ensemble_random_trials=False` so that each model in the ensemble will be evaluated on the same set of trials. 
-2. Vmap over `keys_eval`, to obtain `n_evals` different evaluations of the center-out set. 
-3. Use `jt.map` to repeat for each training condition (entry in `models`).
-
-Now, evaluate the trained models on each of the task variants. First, define the full evaluation as a function so that we can estimate the memory needed for the result. 
+First, define the full evaluation as a function so that we can estimate the memory needed for the result. 
 
 ```{python}
 def evaluate_all_states(tasks, n_evals):
-    return jt.map(
-        lambda task: jt.map(
+    return jt.map( # Map over task variants
+        lambda task: jt.map(  # Map over training conditions (`models` entries)
             lambda models: vmap_eval_ensemble(models, task, n_evals),
             models,
             is_leaf=is_module,
@@ -561,15 +554,17 @@ all_states_bytes = (
     tree_struct_bytes(eqx.filter_eval_shape(evaluate_all_states, tasks_small, n_evals_small)),
 )
 
-print(f"Estimate {sum(all_states_bytes) / 1e9:.2f} GB of memory needed to evaluate all states.")
+print(f"{sum(all_states_bytes) / 1e9:.2f} GB of memory estimated to store all states.")
 ```
+
+Now actually evaluate the states:
 
 ```{python}
 all_states = evaluate_all_states(tasks, n_evals)
 all_states_small = evaluate_all_states(tasks_small, n_evals_small)
 ```
 
-The objects `all_states` and `all_states_small` are dicts whose keys are the `disturbance_amplitudes`, and whose values are dicts whose keys are the `disturbance_train_stds` used in training, and whose values are the PyTrees of state arrays.
+The objects `all_states` and `all_states_small` are dicts whose keys are the `disturbance_amplitudes`, and whose values are dicts whose keys are the `disturbance_train_stds` used in training, and whose values in turn are the state PyTrees.
 
 Each state array has the following batch dimensions: `(n_evals, n_replicates, n_conditions, n_steps)`. For a single center-out set in `all_states_small`, `n_conditions = eval_n_directions`. But since `eval_grid_n != 1` for the full tasks evaluated in `all_states`, then there will be `eval_grid_n ** 2` center-out sets and the third dimension will have size `eval_n_directions * eval_grid_n ** 2`.
 
@@ -1295,6 +1290,7 @@ def get_violins_across_train_conditions(data, measure_name, disturbance_amplitud
             go.Violin(
                 y=data[disturbance_train_std].flatten(),
                 name=disturbance_train_std,
+                legendgroup=disturbance_train_std,
                 box_visible=False,
                 meanline_visible=True,
                 line_color=disturbance_train_stds_colors_dark[disturbance_train_std],
@@ -1410,25 +1406,34 @@ TODO: could use `all_states_small` and increase the number of trials...
 
 ### Repeat for just the zero vs. highest-std training condition
 
-:::{note}
-Omitting this from the output since the low-high summary figures below will include this comparison.
-:::
-
 ```{python}
 fig_subdir = "performance_measures/compare_train_conditions/lowhigh_only"
 ```
 
 ```{python}
-all_measures_subset_disturbance_train_stds = {
-    k1: {k2: subdict(v, lohi(disturbance_train_stds)) for k2, v in all_measures[k1].items()}
-    for k1 in all_measures
-}
+def subset_dict_tree_level(tree, subset_keys, dict_type=dict):
+    return jt.map(
+        lambda measure: subdict(measure, subset_keys),
+        tree,
+        is_leaf=is_type(dict_type),
+    )
+    
+subset_by_train_stds = partial(subset_dict_tree_level, dict_type=TrainStdDict)
 
-box_measures_subset_disturbance_train_stds = {
-    k1: {k2: subdict(v, lohi(disturbance_train_stds)) for k2, v in box_measures[k1].items()}
-    for k1 in box_measures
-}
+all_measures_subset_disturbance_train_stds = subset_by_train_stds(
+    all_measures,
+    lohi(disturbance_train_stds),
+)
+
+box_measures_subset_disturbance_train_stds = subset_by_train_stds(
+    box_measures,
+    lohi(disturbance_train_stds),
+)
 ```
+
+:::{note}
+Omitting these figures since the low-high summary figures below will include this comparison.
+:::
 
 ```{python}
 # figs = get_one_measure_plot_per_eval_condition(
@@ -1461,7 +1466,7 @@ box_measures_subset_disturbance_train_stds = {
 #     figs[measure_name][disturbance_amplitudes[-1]].show()
 ```
 
-### Plot comparison of distributions for zero vs. high train disturbance std, for different replicates
+### Comparison of zero vs. high train disturbance std, for different replicates
 
 Compare the smallest (zero) and largest training disturbance stds. For the plots above, this would mean keeping just the leftmost and the rightmost violins. However, those plots were aggregated over replicates and trials. Now we would like to examine the variance across model replicates. Thus, for each measure, we will generate one plot for each evaluation condition (disturbance amplitude) as before, but now each containing `n_replicates` *split* violins, where the left half corresponds to the zero training disturbance std, and the right half to the largest training disturbance std.
 
@@ -1471,7 +1476,7 @@ fig_subdir = "performance_measures/compare_replicates_lowhigh_train_conditions"
 
 ```{python}
 labels = lohi(disturbance_train_stds)
-colors = lohi(list(disturbance_train_stds_colors_dark.values()))
+colors = lohi(disturbance_train_stds_colors_dark)
 
 def get_measure_replicate_comparisons(data, measure_name, disturbance_amplitude, annotation_kws=None):
     n_dist = np.prod(jt.leaves(data)[0].shape)
@@ -1489,6 +1494,7 @@ def get_measure_replicate_comparisons(data, measure_name, disturbance_amplitude,
                     x=np.full_like(data[j, :, i].flatten(), i),
                     y=data[j, :, i].flatten(),
                     name=labels[j],
+                    legendgroup=labels[j],
                     box_visible=False,
                     meanline_visible=True,
                     line_color=colors[j],
@@ -1575,6 +1581,7 @@ def get_lohi_summary_violins(measure_data, measure_name, annotation_kws=None):
                     x=jnp.full((n_dist,), disturbance_train_std),
                     y=data.flatten(),
                     name=disturbance_amplitude,
+                    legendgroup=disturbance_amplitude,
                     box_visible=False,
                     meanline_visible=True,
                     line_color=disturbance_amplitudes_colors_dark[disturbance_amplitude],
