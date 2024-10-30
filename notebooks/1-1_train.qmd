@@ -215,6 +215,7 @@ Schedule force fields in the training trials.
 ```{python}
 if disturbance_type == 'curl':
     disturbance_stds = [0, 0.2, 0.4, 0.8, 1.6]
+    # disturbance_stds = [0, 0.4, 1.2]
    
     def disturbance(curl_std):
         return CurlField.with_params(
@@ -224,6 +225,7 @@ if disturbance_type == 'curl':
 
 elif disturbance_type == 'random':
     disturbance_stds = [0, 0.001, 0.01, 0.1, 1.0]
+    # disturbance_stds = [0, 0.01, 1.0]
     
     # Uniform in angle, Gaussian in amplitude, constant over trial
     def disturbance(field_std):
@@ -353,6 +355,12 @@ loss_at_best_iteration_by_replicate = jt.map(
     is_leaf=is_module,
 )
 
+loss_at_final_iteration_by_replicate = jt.map(
+    lambda history: history.loss.total[-1],
+    train_histories,
+    is_leaf=is_module,
+)
+
 best_replicate_by_loss = jt.map(
     lambda best_losses: jnp.argmin(best_losses).item(), 
     loss_at_best_iteration_by_replicate,
@@ -380,10 +388,10 @@ fig_subdir = "best-loss-distributions-by-replicate"
 
 Determine which replicates have a best total loss in the 20th percentile, in case we want to exclude these from further analysis. 
 
-**TODO**: the losses are not terribly variable, so it might be better to exclude models based on a behavioural measure, such as the endpoint error on the control (no perturbation) task
+**TODO**: the best losses are not terribly variable, so it might be better to exclude models based on a behavioural measure, such as the endpoint error on the control (no perturbation) task. Also, in cases where most of the replicates perform poorly, then excluding by percentile may end up including some models that perform poorly.
 
 ```{python}
-percentile = 80
+percentile = 75
 
 exclusion_loss_bound = jt.map(
     lambda losses: jnp.percentile(losses, percentile).item(),
@@ -423,8 +431,6 @@ training_hyperparameters = dict(
     batch_size=batch_size,
     save_model_parameters=save_model_parameters.tolist(),
     where_train_strs=where_func_to_labels(where_train),
-    disturbance_stds=disturbance_stds,
-    disturbance_type=disturbance_type,
 )
 
 extras = dict(
@@ -535,6 +541,74 @@ TODO: these plots are large/sluggish for `n_steps` >> 1e3. Can probably downsamp
 
 ### Distribute of losses over replicates
 
-**TODO** 
-
 i.e. for different disturbance levels, what is the distribution over replicates of the minimum (over training iterations) of the total loss?
+
+```{python}
+import pandas as pd
+import plotly.graph_objects as go
+import plotly.express as px
+
+for label, losses_by_replicate in {
+    "Best": loss_at_best_iteration_by_replicate,
+    "Final": loss_at_final_iteration_by_replicate,
+}.items():
+    df = pd.DataFrame(losses_by_replicate).reset_index().melt(id_vars='index')
+
+    fig = go.Figure()
+
+    strips = px.strip(
+        df,
+        x='variable',
+        y='value',
+        color="index",
+        labels=dict(x="Train disturbance std.", y=f"{label} total loss"),
+        title=f"{label} total loss across training by disturbance std.",
+        color_discrete_sequence=px.colors.qualitative.T10,
+        # stripmode='overlay',
+    )
+    
+    strips.update_traces(
+        marker_size=8
+    )
+    
+    strips.for_each_trace(
+        lambda trace: trace.update(x=trace.x + 0.05)
+    )
+
+    violins = [
+        go.Violin(
+            y=losses_by_replicate[disturbance_std],
+            box_visible=True,
+            line_color='black',
+            meanline_visible=True,
+            fillcolor='lightgrey',
+            opacity=0.6,
+            name=f"{disturbance_std}",
+            showlegend=False,     
+        )
+        for disturbance_std in disturbance_stds
+    ]
+    
+    fig.add_traces(violins)
+    fig.add_traces(strips.data)
+
+    fig.update_layout(
+        xaxis_type='linear',
+        width=800,
+        height=500,
+        xaxis_title="Train disturbance std.",
+        yaxis_title=f"{label} total loss",
+        xaxis_range=[-0.25, max(disturbance_stds) + 0.25],
+        xaxis_tickvals=np.linspace(0,1.2,4),
+        # yaxis_type='log',
+        violingap=0.1,
+        # showlegend=False,
+        legend_title='Replicate',
+        legend_tracegroupgap=4,
+        violinmode='overlay',  
+    )
+
+    fig.show()
+
+    savefig(fig, f"{label.lower()}-loss-distn-by-replicate")
+```

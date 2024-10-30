@@ -182,6 +182,17 @@ key = jr.PRNGKey(SEED)
 key_init, key_train, key_eval = jr.split(key, 3)
 ```
 
+### Data structures
+
+Our PyTrees will contain levels corresponding to training conditions (standard deviation of disturbance amplitude during training) and evaluation conditions (disturbance amplitudes during analysis).
+
+Here, define some trivial subclasses of `dict` that can be identified by name, when manipulating these levels in the trees.
+
+```{python}
+TrainStdDict = make_named_dict_subclass('TrainStdDict')
+PertAmpDict = make_named_dict_subclass('PertAmpDict')
+```
+
 ## Define base task
 
 We will generally evaluate on a 2*2 grid of center-out reach sets (i.e. 4 sets total), with 24 reach directions per set. This is to ensure good coverage and a larger set of conditions/trials on which to perform statistics. 
@@ -260,7 +271,7 @@ if not load_from_parameters:
 
 The default filename is the one that sorts last. If the user does not select a file or if the following cell is run before they do, then the default file will be loaded.
 
-### Load the specified model
+### Load the specified model and associated parameters and metadata
 
 ```{python}
 if not load_from_parameters:
@@ -273,14 +284,19 @@ else:
     if models_filepath is None:
         raise FileNotFoundError(f"No models found with file label: {suffix_load}")
 
-trained_models = load(
+trained_models_load: dict[float, eqx.Module] = TrainStdDict(load(
     MODELS_DIR / models_filepath, setup_models,
-)
+))
+```
 
+```{python}
 hyperpameters_filepath = models_filepath.replace('trained_models.eqx', 'hyperparameters.json')
 hyperparameters = load_from_json(hyperpameters_filepath)
 extras_filepath = models_filepath.replace('trained_models.eqx', 'extras.json')
 extras = load_from_json(extras_filepath)
+
+disturbance_train_stds = hyperparameters['disturbance_stds']
+n_replicates = hyperparameters['n_replicates']
 
 # We'll use this for creating figure subdirectories according to the training conditions
 suffix_train = models_filepath.split('__')[1]
@@ -289,17 +305,15 @@ suffix_train = models_filepath.split('__')[1]
 ### Modify the system noise if needed
 
 ```{python}
-trained_models = jt.map(
+trained_models_load = jt.map(
     partial(
         set_model_noise, 
         noise_stds=noise_stds,
         enable_noise=True,
     ),
-    trained_models,
+    trained_models_load,
     is_leaf=is_module,
 )
-
-disturbance_train_stds = hyperparameters['disturbance_stds']
 ```
 
 ### Optionally exclude replicates that perform much worse than average
@@ -313,37 +327,73 @@ In other words: we are interested in the kind of performance that is feasible wi
 :::
 
 ```{python}
-train_histories = load(
-    # MODELS_DIR / models_filepath.replace('trained_models', 'train_histories'),
-    models_filepath.replace('trained_models', 'train_histories'),
-    partial(setup_train_histories, task_base, trained_models),
-)
-
-losses = jt.map(
-    lambda history: history.loss.total,
-    train_histories,
-    is_leaf=is_module,
-)
-
-where_train = attr_str_tree_to_where_func(hyperparameters['where_train_strs'])
-
-best_replicate = {
-    float(k): v for k,v in extras['best_replicate_by_loss'].items()
-}
-included_replicates = {
-    float(k): v for k,v in extras['included_replicates'].items()
-}
+exclude_underperformers = True
 ```
 
-**TODO**: Actually use `included_replicates` to filter the replicates, in what follows. It would be nice to do it once and for all, but then we should probably make an annotation that indicates "$n/N$ replicates are included" or something.
+```{python}
+# train_histories = load(
+#     # MODELS_DIR / models_filepath.replace('trained_models', 'train_histories'),
+#     models_filepath.replace('trained_models', 'train_histories'),
+#     partial(setup_train_histories, task_base, trained_models),
+# )
 
-### Assign some variables to indicate which parameters we used/will be using
+# losses = jt.map(
+#     lambda history: history.loss.total,
+#     train_histories,
+#     is_leaf=is_module,
+# )
 
-The following will not vary between training and analysis.
+# where_train = attr_str_tree_to_where_func(hyperparameters['where_train_strs'])
+
+included_replicates = TrainStdDict({
+    float(k): jnp.array(v) for k,v in extras['included_replicates'].items()
+})
+best_replicate = TrainStdDict({
+    # JSON stores keys as strings, so cast them back to floats
+    float(k): v for k,v in extras['best_replicate_by_loss'].items()
+})
+
+def take_replicate_or_best(tree: TrainStdDict, i_replicate=None, replicate_axis=1):
+    if i_replicate is None:
+        return TrainStdDict({
+            train_std: tree_take(subtree, best_replicate[train_std], replicate_axis)
+            for train_std, subtree in tree.items()
+        })
+    else:
+        return tree_take_multi(tree, [i_replicate], [replicate_axis])
+```
+
+```{python}
+if exclude_underperformers:
+    trained_models = jt.map(
+        lambda models, included: tree_take(models, jnp.where(included)[0], 0),
+        trained_models_load, included_replicates,
+        is_leaf=is_module,
+    )
+    n_replicates_included = jt.map(lambda x: jnp.sum(x).item(), included_replicates)
+else:
+    trained_models = trained_models_load
+    n_replicates_included = dict.fromkeys(trained_models.keys(), n_replicates)
+```
+
+**TODO**: Make an annotation that indicates "$n/N$ replicates are included" or something.
+
+### Define subsets of models/training conditions
+
+Depending on how training goes, we might want to leave out some of the training conditions (i.e. training disturbance stds) from the analysis.
+
+```{python}
+include_disturbance_train_stds = disturbance_train_stds  # Change nothing.
+
+trained_models = TrainStdDict({key: trained_models[key] for key in include_disturbance_train_stds})
+```
+
+### Sort out the training and testing hyperparameters
+
+The following will never vary between training and analysis.
 
 ```{python}
 feedback_delay_steps = hyperparameters['feedback_delay_steps']
-n_replicates = hyperparameters['n_replicates']
 ```
 
 The following may change for the analysis, but we may want to refer to the training values.
@@ -370,17 +420,7 @@ noise_stds = {
 any_system_noise = any(jt.leaves(noise_stds))
 ```
 
-### Define subsets of models/training conditions
-
-Depending on how training goes, we might want to leave out some of the extreme curl strength training conditions from the analysis.
-
-```{python}
-include_disturbance_train_stds = disturbance_train_stds  # Change nothing.
-
-trained_models = {key: trained_models[key] for key in include_disturbance_train_stds}
-```
-
-### Additional setup that depends on having loaded the models
+### Setup figure directories
 
 The hierarchy of figure directories depends on the hyperparameters of the trained model. Now that we've sorted that out, we can set up the base subdirectory for figures generated in the analyses that follow in this notebook.
 
@@ -432,9 +472,6 @@ else:
 ```{python}
 intervenor_label = "DisturbanceField"
 
-TrainStdDict = make_named_dict_subclass('TrainStdDict')
-PertAmpDict = make_named_dict_subclass('PertAmpDict')
-
 # Insert the disturbance field component into each model
 models = jt.map(
     lambda models: add_intervenors(
@@ -484,7 +521,7 @@ tasks_small = jt.map(
 And for convenience:
 
 ```{python}
-trial_specs = task.validation_trials
+trial_specs = task_base.validation_trials
 trial_specs_small = jt.leaves(tasks_small, is_leaf=is_module)[0].validation_trials
 
 def get_pos_endpoints(trial_specs):
@@ -539,7 +576,7 @@ First, define the full evaluation as a function so that we can estimate the memo
 def evaluate_all_states(tasks, n_evals):
     return jt.map( # Map over task variants
         lambda task: jt.map(  # Map over training conditions (`models` entries)
-            lambda models: vmap_eval_ensemble(models, task, n_evals),
+            lambda models: vmap_eval_ensemble(models, task, n_evals, key_eval),
             models,
             is_leaf=is_module,
         ),
@@ -601,14 +638,15 @@ fig_subdir = "center_out_sets/all_evals_single_replicate"
 ```
 
 ```{python}
-i_replicate = 0
+# If None, plot the replicate with the lowest total training loss
+i_replicate = None
 ```
 
 ```{python}
 if not any_system_noise:
     print("Skipping center-out sets that compare different evaluations, for this zero-noise condition")
 else:
-    plot_states = tree_take_multi(all_states_small, [i_replicate], [1])
+    plot_states = take_replicate_or_best(all_states_small, i_replicate)
     
     figs = jt.map(
         lambda states: fbp.trajectories_2D(
@@ -757,7 +795,7 @@ for disturbance_amplitude in figs:
                 f"{disturbance_type}": (disturbance_amplitude, None, None)
             },
             i_trial=i_trial,
-            n=n_replicates,
+            n=n_replicates_included[disturbance_train_std],
         )
         add_endpoint_traces(
             fig, pos_endpoints_small, xaxis='x1', yaxis='y1', colorscale='phase'
@@ -852,7 +890,7 @@ for disturbance_amplitude in figs:
             perturbations={
                 f"{disturbance_type}": (disturbance_amplitude, None, None)
             },
-            n=n_replicates,  # color/legend is by trial, so this is N per trial
+            n=n_replicates_included[disturbance_train_std],  # color/legend is by trial, so this is N per trial
             # i_condition=i_condition,
         )
         
@@ -883,8 +921,6 @@ fig_subdir = "single_reach_condition/compare_test_conditions"
 # Stack the states for different disturbance amplitudes into single arrays
 plot_states_stacked = tree_stack(plot_states.values())
 
-n_trials_plot = n_evals_small * n_replicates
-
 figs = jt.map(
     lambda states: fbp.trajectories_2D(
         where_plot(states),
@@ -905,12 +941,14 @@ figs = jt.map(
 
 ```{python}
 for disturbance_train_std, fig in figs.items():
+    n_trials = n_evals_small * n_replicates_included[disturbance_train_std]
+    
     add_context_annotation(
         fig,
         train_condition_strs=[
             f"{disturbance_type_train} with amplitude ~ \U0001d4dd(0,{disturbance_train_std})"
         ],
-        n=n_trials_plot,
+        n=n_trials,
     )
     
     add_endpoint_traces(fig, pos_endpoints_i, xaxis='x1', yaxis='y1')
@@ -974,15 +1012,14 @@ figs = jt.map(
     is_leaf=is_module,
 )
 
-n_trials_plot = n_evals_small * n_replicates
-
 for disturbance_amplitude, fig in figs.items():
     add_context_annotation(
         fig,
         perturbations={
             f"{disturbance_type}": (disturbance_amplitude, None, None)
         },
-        n=n_trials_plot,
+        # TODO: The number of replicates (`n_replicates_included`) may vary with the disturbance train std!
+        # n=n_evals_small * n_replicates,
     )
     
     add_endpoint_traces(fig, pos_endpoints_i, xaxis='x1', yaxis='y1')

@@ -133,7 +133,7 @@ We may want to specify 1) which trained models to load, by their parameters, and
 disturbance_type_load: Literal['curl', 'random'] = 'random'
 feedback_noise_std_load = 0.0
 motor_noise_std_load = 0.0
-feedback_delay_steps_load = 0  
+feedback_delay_steps_load = 2
 
 # Specify model parameters to use for analysis (None -> use training value)
 disturbance_type: Optional[Literal['curl', 'random']] = None
@@ -171,6 +171,26 @@ if not MODELS_DIR.exists():
     raise FileNotFoundError(f"Models directory not found: {MODELS_DIR.absolute()}")
 ```
 
+### RNG setup
+
+```{python}
+SEED = 5566
+key = jr.PRNGKey(SEED)
+key_init, key_train, key_eval = jr.split(key, 3)
+```
+
+### Data structures
+
+Our PyTrees will contain levels corresponding to training conditions (standard deviation of disturbance amplitude during training) and evaluation conditions (disturbance amplitudes during analysis).
+
+Here, define some trivial subclasses of `dict` and `tuple` that can be identified by name, when manipulating these levels in the trees.
+
+```{python}
+TrainStdDict = make_named_dict_subclass('TrainStdDict')
+PertVarDict = make_named_dict_subclass('PertVarDict')
+ImpulseAmpTuple = make_named_tuple_subclass('ImpulseAmpTuple')
+```
+
 ### Plotting setup 
 
 The following is a workaround to get LaTeX to display in Plotly figures in VSCode.
@@ -184,14 +204,6 @@ if os.environ.get('VSCODE_PID') is not None:
     display(HTML(
         '<script type="text/javascript" async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-MML-AM_SVG"></script>'
     ))
-```
-
-### RNG setup
-
-```{python}
-SEED = 5566
-key = jr.PRNGKey(SEED)
-key_init, key_train, key_eval = jr.split(key, 3)
 ```
 
 ## Load the trained models
@@ -239,10 +251,20 @@ else:
     if models_filepath is None:
         raise FileNotFoundError(f"No models found with file label: {suffix_load}")
 
-trained_models_load, hyperparameters = load_with_hyperparameters(
-    # MODELS_DIR / models_filepath, setup_models,
+trained_models: dict[float, eqx.Module] = TrainStdDict(load(
     MODELS_DIR / models_filepath, setup_models,
-)
+))
+```
+
+```{python}
+hyperpameters_filepath = models_filepath.replace('trained_models.eqx', 'hyperparameters.json')
+hyperparameters = load_from_json(hyperpameters_filepath)
+extras_filepath = models_filepath.replace('trained_models.eqx', 'extras.json')
+extras = load_from_json(extras_filepath)
+
+disturbance_type_train = hyperparameters['disturbance_type']
+disturbance_train_stds = hyperparameters['disturbance_stds']
+n_replicates = hyperparameters['n_replicates']
 
 # We'll use this for creating figure subdirectories according to the training conditions
 suffix_train = models_filepath.split('__')[1]
@@ -260,49 +282,62 @@ trained_models_load = jt.map(
     trained_models_load,
     is_leaf=is_module,
 )
-
-disturbance_type_train = hyperparameters['disturbance_type']
-disturbance_train_stds = hyperparameters['disturbance_stds']
-lohi(disturbance_train_stds) = [disturbance_train_stds[0], disturbance_train_stds[-1]]
-
-trained_models = OrderedDict(zip(disturbance_train_stds, trained_models_load))
 ```
 
-### Load parameters from earlier training iterations, where necessary
-
-Also depending on how training goes, we might want to use model parameters from an earlier training iteration. 
+### Optionally exclude replicates that perform much worse than average
 
 ```{python}
-def load_model_parameter_histories(models_filepath):
-    # Wrap in a function to avoid polluting the global namespace
-    model_parameter_histories_load, train_hyperparameters = load_with_hyperparameters(
-        MODELS_DIR / models_filepath.replace('trained_models', 'model_parameter_histories'),
-        partial(setup_model_parameter_histories, list(trained_models.values())),
-    )
-    model_parameter_histories = dict(zip(disturbance_train_stds, model_parameter_histories_load))
-    return model_parameter_histories, train_hyperparameters
-    
-model_parameter_histories, train_hyperparameters = load_model_parameter_histories(
-    models_filepath,
-)
-
-where_train = attr_str_tree_to_where_func(train_hyperparameters['where_train_strs'])
-
-# load_spec = {0.4: -1, 0.5: -1}
-
-# for curl_std, i in load_spec.items():
-#     trained_models[curl_std] = swap_model_trainables(
-#         trained_models[curl_std], tree_take(model_parameter_histories[curl_std], i), where_train
-#     )
+exclude_underperformers = True
 ```
 
-### Assign some variables to indicate which parameters we used/will be using
+```{python}
+included_replicates = TrainStdDict({
+    float(k): jnp.array(v) for k,v in extras['included_replicates'].items()
+})
+best_replicate = TrainStdDict({
+    # JSON stores keys as strings, so cast them back to floats
+    float(k): v for k,v in extras['best_replicate_by_loss'].items()
+})
+
+def take_replicate_or_best(tree: TrainStdDict, i_replicate=None, replicate_axis=1):
+    if i_replicate is None:
+        return TrainStdDict({
+            train_std: tree_take(subtree, best_replicate[train_std], replicate_axis)
+            for train_std, subtree in tree.items()
+        })
+    else:
+        return tree_take_multi(tree, [i_replicate], [replicate_axis])
+```
+
+```{python}
+if exclude_underperformers:
+    trained_models = jt.map(
+        lambda models, included: tree_take(models, jnp.where(included)[0], 0),
+        trained_models_load, included_replicates,
+        is_leaf=is_module,
+    )
+    n_replicates_included = jt.map(lambda x: jnp.sum(x).item(), included_replicates)
+else:
+    trained_models = trained_models_load
+    n_replicates_included = dict.fromkeys(trained_models.keys(), n_replicates)
+```
+
+### Define subsets of models/training conditions
+
+Depending on how training goes, we might want to leave out some of the training conditions (i.e. training disturbance stds) from the analysis.
+
+```{python}
+include_disturbance_train_stds = disturbance_train_stds  # Change nothing.
+
+trained_models = TrainStdDict({key: trained_models[key] for key in include_disturbance_train_stds})
+```
+
+### Sort out the training and testing hyperparameters
 
 The following will not vary between training and analysis.
 
 ```{python}
 feedback_delay_steps = hyperparameters['feedback_delay_steps']
-n_replicates = hyperparameters['n_replicates']
 ```
 
 The following may vary in analysis but we may want to refer to the training values.
@@ -385,7 +420,6 @@ impulse_time_idxs = slice(impulse_start_step, impulse_end_step)
 analysis_variants = ('xy', 'rand')
 
 pert_var_names = ('pos', 'vel')
-PertVarDict = make_named_dict_subclass('PertVarDict')
 feedback_var_idxs = dict(zip(pert_var_names, range(len(pert_var_names))))
 
 coord_names = ('x', 'y')
@@ -600,8 +634,6 @@ all_states_imp = evaluate_all_impulse_responses()
 
 ```{python}
 analysis_variant: Literal['xy', 'rand'] = 'rand'
-
-ImpulseAmpTuple = make_named_tuple_subclass('ImpulseAmpTuple')
 
 # Unstack the first array dimension (impulse amplitude) into another PyTree level
 all_states = {

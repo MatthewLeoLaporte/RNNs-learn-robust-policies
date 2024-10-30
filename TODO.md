@@ -1,15 +1,16 @@
 ---
 created: 2024-10-04T11:27
-updated: 2024-10-29T11:01
+updated: 2024-10-30T14:07
 ---
 - [x] Do zero-noise comparisons of training disturbance type vs. eval disturbance type (e.g. trained on random fields, tested on curl fields)
 - [ ] After finishing up analyses in 1-2b, re-run batch quarto render for both 1-2a and 1-2b, for all noise and delay conditions, as well as for both curl and random training disturbances. Maybe reduce to 3 (lo-mid-high) disturbance levels. Also try training disturbance stds up to 1.5 or so (to see if the secondary peak disappears from profile)
-- [ ] **Try a 200-step solution for networks trained on random and tested on curl, to see how the “goal orbit” evolves**
+- [ ] Try a 200-step solution for networks trained on random and tested on curl, to see how the “goal orbit” evolves
 - [ ] **Review the results so far and make a summary of the ones that should appear as main/supplementary figures in paper**
 - [ ] Add notebook to load models for multiple noise/delay conditions, and plot distribution comparisons (only do this after deciding which plots to make – it’s too complicated to run *all* the existing plots as noise comparisons)
-- [ ] [[#Exclude model replicates whose training diverged]] 
+- [ ] **Move post-training analysis (best replicates, excludes, loss plots, etc) to a separate notebook/script so that we can re-run it easily without needing to re-train models**
+- [x] [[#Exclude model replicates whose training diverged]] 
 - [ ] Max forward velocity – quantify number/amplitude of peaks…
-- [ ] Schedule a [[02 Questions#Steve]] with Steve. For one, ask about sensory perturbations in human tasks – do they see oscillations (i.e. going from straight to “loopy”, like we see in the control vs. robust networks)
+- [ ] Schedule a [[02 Questions#Steve|meeting]] with Steve. For one, ask about sensory perturbations in human tasks – do they see oscillations (i.e. going from straight to “loopy”, like we see in the control vs. robust networks)
 ## Gunnar meeting
 
 ### Choice of disturbance train stds 
