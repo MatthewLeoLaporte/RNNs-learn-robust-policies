@@ -1,13 +1,14 @@
 ---
 created: 2024-10-04T11:27
-updated: 2024-10-30T15:29
+updated: 2024-10-30T21:09
 ---
+- [ ] **Review the results so far and make a summary of the ones that should appear as main/supplementary figures in paper**. Probably, make 2-3 files: 1) results that will almost certainly appear in the paper, 2) (maybe) results that may or may not be supplementary, 3) results that will be supplementary if they are included at all.
+- [ ] **Move part 1 training to a script + a yaml file defining which hyperparameters to train** — or otherwise we’ll have to use batch quarto render to 
+- [ ] **Move post-training analysis (best replicates, excludes, loss plots, etc) to a script so that we can run it easily without needing to re-train models**
+- [ ] **Exclude models based on behavioural measures rather than total loss.** It looks like max net control force or end position error might be good indicators. 
 - [ ] After finishing up analyses in 1-2b, re-run batch quarto render for both 1-2a and 1-2b, for all noise and delay conditions, as well as for both curl and random training disturbances. Maybe reduce to 3 (lo-mid-high) disturbance levels. Also try training disturbance stds up to 1.5 or so (to see if the secondary peak disappears from profile)
 - [ ] Try a 200-step solution for networks trained on random and tested on curl, to see how the “goal orbit” evolves
-- [ ] **Review the results so far and make a summary of the ones that should appear as main/supplementary figures in paper**
 - [ ] Add notebook to load models for multiple noise/delay conditions, and plot distribution comparisons (only do this after deciding which plots to make – it’s too complicated to run *all* the existing plots as noise comparisons)
-- [ ] **Move post-training analysis (best replicates, excludes, loss plots, etc) to a separate notebook/script so that we can re-run it easily without needing to re-train models**
-- [ ] **Exclude models based on behavioural measures rather than total loss.** It looks like max net control force or end position error might be good indicators. 
 - [ ] Max forward velocity – quantify number/amplitude of peaks…
 - [ ] Schedule a [[02 Questions#Steve|meeting]] with Steve. For one, ask about sensory perturbations in human tasks – do they see oscillations (i.e. going from straight to “loopy”, like we see in the control vs. robust networks)
 ## Gunnar meeting

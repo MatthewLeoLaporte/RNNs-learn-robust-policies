@@ -44,6 +44,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import plotly.colors as plc
 import plotly.graph_objects as go
+from tqdm.auto import tqdm
 
 from feedbax import (
     load, 
@@ -735,7 +736,7 @@ figs = jt.map(
 ```
 
 ```{python}
-for disturbance_amplitude in figs:
+for disturbance_amplitude in tqdm(figs):
     for disturbance_train_std, fig in figs[disturbance_amplitude].items():
         if i_replicate is None:
             i_rep = best_replicate[disturbance_train_std]
@@ -797,7 +798,7 @@ figs = jt.map(
 ```
 
 ```{python}
-for disturbance_amplitude in figs:
+for disturbance_amplitude in tqdm(figs):
     for disturbance_train_std, fig in figs[disturbance_amplitude].items():
         add_context_annotation(
             fig,
@@ -891,7 +892,7 @@ figs = jt.map(
 ```
 
 ```{python}
-for disturbance_amplitude in figs:
+for disturbance_amplitude in tqdm(figs):
     for disturbance_train_std, fig in figs[disturbance_amplitude].items():
         add_endpoint_traces(fig, pos_endpoints_i, xaxis='x1', yaxis='y1')
         
@@ -953,7 +954,7 @@ figs = jt.map(
 ```
 
 ```{python}
-for disturbance_train_std, fig in figs.items():
+for disturbance_train_std, fig in tqdm(figs.items()):
     n_trials = n_evals_small * n_replicates_included[disturbance_train_std]
     
     add_context_annotation(
@@ -1025,7 +1026,7 @@ figs = jt.map(
     is_leaf=is_module,
 )
 
-for disturbance_amplitude, fig in figs.items():
+for disturbance_amplitude, fig in tqdm(figs.items()):
     add_context_annotation(
         fig,
         perturbations={
@@ -1146,7 +1147,7 @@ figs = {
     for disturbance_amplitude in disturbance_amplitudes
 }
 
-for disturbance_amplitude in disturbance_amplitudes:
+for disturbance_amplitude in tqdm(disturbance_amplitudes):
     for i, label in enumerate(("Forward", "Lateral")):
         fig = figs[disturbance_amplitude][label]
         fig.add_hline(y=0, line_color="grey", layer="below")
@@ -1397,7 +1398,7 @@ figs = get_one_measure_plot_per_eval_condition(
 ```
 
 ```{python}
-for measure_name, measure_handle in measure_handles.items():
+for measure_name, measure_handle in tqdm(measure_handles.items()):
     for disturbance_amplitude, fig in figs[measure_name].items():
         savefig(
             fig, 
@@ -1586,7 +1587,7 @@ figs = get_one_measure_plot_per_eval_condition(
 ```
 
 ```{python}
-for measure_name, measure_handle in measure_handles.items():
+for measure_name, measure_handle in tqdm(measure_handles.items()):
     for disturbance_amplitude, fig in figs[measure_name].items():
         savefig(
             fig, 
@@ -1673,7 +1674,7 @@ figs = {
 ```
 
 ```{python}
-for measure_name, measure_handle in measure_handles.items():
+for measure_name, measure_handle in tqdm(measure_handles.items()):
     savefig(
         figs[measure_name], 
         join([

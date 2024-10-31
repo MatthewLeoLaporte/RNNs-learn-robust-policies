@@ -90,7 +90,7 @@ print(f"feedbax commit: {git_commit_id()}\n")
 ```
 
 Unique ID for notebook, for naming outputs.
-
+ 
 ```{python}
 NB_ID = "1-1"
 ```
@@ -171,12 +171,14 @@ task_train = SimpleReaches(
 ## Model setup
 
 ```{python}
+mass = 1.0
+
 models = get_ensemble(
     point_mass_nn,
     task_train,
     n_ensemble=n_replicates,
     dt=dt,
-    mass=1.0,
+    mass=mass,
     hidden_size=hidden_size, 
     n_steps=n_steps,
     feedback_delay_steps=feedback_delay_steps,
@@ -286,10 +288,108 @@ for disturbance_std, (task_, models_) in tqdm(list(zip(disturbance_stds, task_mo
     )
 ```
 
-## Keep best parameters for each model replicate
+## Save the models with their parameters on the final iteration
 
-**TODO**: Ensure the final parameters get saved along with the rest of the `train_histories`, since we may be discarding them otherwise, here.
-**TODO**: Also, `best_iteration_by_replicate` and `best_replicates` are not hyperparameters, but are currently saved with the hyperparameters; they should probably be saved as part of `train_histories`
+```{python}
+model_file_label = "trained_models"
+train_histories_file_label = "train_histories"
+```
+
+```{python}
+# datestr = get_datestr()
+
+model_basename = join([
+    NB_ID,
+    suffix,
+    model_file_label,
+])
+```
+
+```{python}
+training_hyperparameters = dict(
+    learning_rate=learning_rate,
+    n_batches=n_batches,
+    batch_size=batch_size,
+    save_model_parameters=save_model_parameters.tolist(),
+    where_train_strs=where_func_to_labels(where_train),
+)
+```
+
+```{python}
+model_hyperparameters = dict(
+    n_replicates=n_replicates,
+    hidden_size=hidden_size,
+    feedback_delay_steps=feedback_delay_steps,
+    feedback_noise_std=feedback_noise_std,
+    motor_noise_std=motor_noise_std,
+    dt=dt,
+    n_steps=n_steps,
+    mass=mass,
+    disturbance_type=disturbance_type,
+    disturbance_stds=disturbance_stds,
+)
+```
+
+```{python}
+save(
+    str(MODELS_DIR / model_basename) + '.eqx',
+    trained_models,
+    hyperparameters=model_hyperparameters,
+)
+
+write_to_json(
+    model_hyperparameters | training_hyperparameters,
+    str(MODELS_DIR / model_basename.replace(model_file_label, 'hyperparameters')) + '.json',
+)
+```
+
+To reload our models in later notebooks, we will need a function that regenerates a skeleton PyTree with the same structure as `saved_models`, given the stored `model_hyperparameters`. See the function `setup_models` in `src/rnns_learn_robust_motor_policies/part1_setup.py`.
+
+### Save training histories
+
+In later analyses we may be interested in the history of the losses or model parameters across training, so these should also be saved to disk. 
+
+```{python}
+train_histories_basename = model_basename.replace(
+    model_file_label, 
+    train_histories_file_label,
+)
+
+save(
+    str(MODELS_DIR / train_histories_basename) + ".eqx",
+    train_histories,
+    hyperparameters=dict(
+        disturbance_stds=disturbance_stds,
+        n_batches=n_batches,
+        batch_size=batch_size,
+        n_replicates=n_replicates,
+        where_train_strs=where_func_to_labels(where_train),
+        save_model_parameters=save_model_parameters.tolist(),
+    ),
+)
+```
+
+Note that we cannot save lambda functions to disk, so we save the string representation of the `where_train` PyTree.
+
+#### Reloading parameter histories
+
+I'm including this here for reference.
+
+Because we'll generally have already loaded the trained models by the time we also want to load the train histories, our `setup_train_histories` function can use it to determine the correct PyTree structure. Thus we can avoid reconstructing the PyTree of models from scratch -- and storing all the required hyperparameters -- a second time.  
+
+```{python}
+from functools import partial
+from rnns_learn_robust_motor_policies.part1_setup import setup_train_histories
+
+model_parameter_histories_ = load(
+    str(MODELS_DIR / train_histories_basename) + ".eqx",
+    partial(setup_train_histories, task_train, trained_models),
+)
+```
+
+## For each training condition, find the best-performing replicate, and the best parameters for each replicate
+
+**TODO**: Refactor `part1_post_training.py` into functions, and (probably) remove this section.
 
 Some model replicates may diverge at some point during training. Thus, considering the iterations for which we kept model parameters, we will keep the parameters from the iteration with the lowest total loss, for each replicate. 
 
@@ -340,7 +440,9 @@ loss_at_final_iteration_by_replicate = jt.map(
     train_histories,
     is_leaf=is_module,
 )
+```
 
+```{python}
 best_replicate_by_loss = jt.map(
     lambda best_losses: jnp.argmin(best_losses).item(), 
     loss_at_best_iteration_by_replicate,
@@ -348,8 +450,10 @@ best_replicate_by_loss = jt.map(
 )
 ```
 
+### Save another copy of the models, with the best parameters for each replicate
+
 ```{python}
-saved_models = jt.map(
+models_with_best_parameters = jt.map(
     lambda model, best_params: eqx.tree_at(
         where_train,
         model, 
@@ -360,11 +464,15 @@ saved_models = jt.map(
 )
 ```
 
-## Determine models to be excluded from analysis, based on loss quantile bounds
-
 ```{python}
-fig_subdir = "best-loss-distributions-by-replicate"
+save(
+    str(MODELS_DIR / model_basename) + '_best_params.eqx',
+    models_with_best_parameters,
+    hyperparameters=model_hyperparameters,
+)
 ```
+
+### Compute exclusion criteria for replicates
 
 Determine which replicates have a best total loss in the 20th percentile, in case we want to exclude these from further analysis. 
 
@@ -384,35 +492,9 @@ included_replicates = jt.map(
 )
 ```
 
-## Save trained models 
+### Save the extra info about replicates to JSON
 
 ```{python}
-model_file_label = "trained_models"
-train_histories_file_label = "train_histories"
-```
-
-```{python}
-model_hyperparameters = dict(
-    n_replicates=n_replicates,
-    hidden_size=hidden_size,
-    feedback_delay_steps=feedback_delay_steps,
-    feedback_noise_std=feedback_noise_std,
-    motor_noise_std=motor_noise_std,
-    dt=dt,
-    n_steps=n_steps,
-    mass=mass,
-    disturbance_type=disturbance_type,
-    disturbance_stds=disturbance_stds,
-)
-
-training_hyperparameters = dict(
-    learning_rate=learning_rate,
-    n_batches=n_batches,
-    batch_size=batch_size,
-    save_model_parameters=save_model_parameters.tolist(),
-    where_train_strs=where_func_to_labels(where_train),
-)
-
 extras = dict(
     best_iteration_by_replicate=best_iteration_by_replicate,
     loss_at_best_iteration_by_replicate=loss_at_best_iteration_by_replicate,
@@ -422,74 +504,9 @@ extras = dict(
 ```
 
 ```{python}
-datestr = get_datestr()
-
-model_basename = join([
-    NB_ID,
-    suffix,
-    model_file_label,
-])
-```
-
-```{python}
-save(
-    str(MODELS_DIR / model_basename) + '.eqx',
-    saved_models,
-    hyperparameters=model_hyperparameters,
-)
-
-write_to_json(
-    model_hyperparameters | training_hyperparameters,
-    str(MODELS_DIR / model_basename.replace(model_file_label, 'hyperparameters')) + '.json',
-)
-
 write_to_json(
     extras,
     str(MODELS_DIR / model_basename.replace(model_file_label, 'extras')) + '.json',
-)
-```
-
-To reload our models in later notebooks, we will need a function that regenerates a skeleton PyTree with the same structure as `saved_models`, given the stored `hyperparameters`. See the function `setup_models` in `src/rnns_learn_robust_motor_policies/part1_setup.py`.
-
-### Save training histories
-
-In later analyses we may be interested in the history of the losses or model parameters across training. These should also be saved to disk. 
-
-```{python}
-train_histories_basename = model_basename.replace(
-    model_file_label, 
-    train_histories_file_label,
-)
-
-save(
-    str(MODELS_DIR / train_histories_basename) + ".eqx",
-    train_histories,
-    hyperparameters=dict(
-        disturbance_stds=disturbance_stds,
-        n_batches=n_batches,
-        batch_size=batch_size,
-        n_replicates=n_replicates,
-        where_train_strs=where_func_to_labels(where_train),
-        save_model_parameters=save_model_parameters.tolist(),
-    ),
-)
-```
-
-Note that we cannot save lambda functions to disk, so we save the string representation of the `where_train` PyTree.
-
-#### Reloading parameter histories
-
-I'm including this here for reference.
-
-Because we'll generally have already loaded the trained models by the time we also want to load the train histories, our `setup_train_histories` function can use it to determine the correct PyTree structure. Thus we can avoid reconstructing the PyTree of models from scratch -- and storing all the required hyperparameters -- a second time.  
-
-```{python}
-from functools import partial
-from rnns_learn_robust_motor_policies.part1_setup import setup_train_histories
-
-model_parameter_histories_ = load(
-    str(MODELS_DIR / train_histories_basename) + ".eqx",
-    partial(setup_train_histories, task_train, trained_models),
 )
 ```
 

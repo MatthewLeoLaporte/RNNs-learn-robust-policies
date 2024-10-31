@@ -101,7 +101,6 @@ def setup_model_parameter_histories(
 
 
 def setup_train_histories(
-    task,  
     models_tree,
     disturbance_stds,
     n_batches,
@@ -126,9 +125,9 @@ def setup_train_histories(
     
     assert list(models_tree.keys()) == list(disturbance_stds)
     
-    aaa= {
+    return {
         train_std: init_task_trainer_history(
-            task,
+            simple_reach_loss(),
             n_batches,
             n_replicates,
             ensembled=True,
@@ -141,5 +140,3 @@ def setup_train_histories(
         )
         for train_std, model in models_tree.items()
     }
-
-    return aaa

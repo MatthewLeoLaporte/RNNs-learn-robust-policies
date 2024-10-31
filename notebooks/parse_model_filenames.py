@@ -2,7 +2,7 @@ import os
 import re
 import yaml
 import argparse
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 
 class FlowList(list):
@@ -75,12 +75,18 @@ def parse_filename(filename: str, format_string: str) -> Dict[str, str]:
     return result
 
 
-def generate_params_yaml(directory: str, file_pattern: str, format_string: str, output_file: str, template_file: str = None):    
+def generate_params_yaml(
+    directory: str, 
+    file_pattern: str, 
+    format_string: str, 
+    output_file: str, 
+    template_file: Optional[str] = None,
+):    
     parsed_param_names = set(re.findall(r'\{(\w+)\}', format_string))
 
     # Load the template YAML file if provided
     existing_data = {}
-    if template_file and os.path.exists(template_file):
+    if template_file is not None and os.path.exists(template_file):
         with open(template_file, 'r') as f:
             existing_data = yaml.safe_load(f)
 
