@@ -47,15 +47,16 @@ import plotly.graph_objects as go
 from tqdm.auto import tqdm
 
 from feedbax import (
-    load, 
     is_module, 
     is_type,
+    load, 
+    make_named_dict_subclass,
+    tree_set_scalar,
     tree_stack,
+    tree_struct_bytes,
     tree_take, 
     tree_take_multi,
     tree_unzip,
-    tree_struct_bytes,
-    make_named_dict_subclass,
 )
 from feedbax.channel import toggle_channel_noise
 from feedbax.intervene import (
@@ -267,7 +268,7 @@ Maybe the user wants to browse and select a trained model file. In that case we 
 
 ```{python}
 if not load_from_parameters:
-    fc = display_model_filechooser(MODELS_DIR, filter_pattern='1-1_*trained_models.eqx')
+    fc = display_model_filechooser(MODELS_DIR, filter_pattern='1-1_*trained_models*')
 ```
 
 The default filename is the one that sorts last. If the user does not select a file or if the following cell is run before they do, then the default file will be loaded.
@@ -275,13 +276,15 @@ The default filename is the one that sorts last. If the user does not select a f
 ### Load the specified model and associated parameters and metadata
 
 ```{python}
+model_file_label = "trained_models_best_params"
+
 if not load_from_parameters:
     if fc.selected is None:
         models_filepath = f"{fc.default_path}/{fc.default_filename}"
     else:
         models_filepath = fc.selected
 else: 
-    models_filepath = str(find_unique_filepath(MODELS_DIR, f"1-1__{suffix_load}__trained_models"))
+    models_filepath = str(find_unique_filepath(MODELS_DIR, f"1-1__{suffix_load}__{model_file_label}"))
     if models_filepath is None:
         raise FileNotFoundError(f"No models found with file label: {suffix_load}")
 
@@ -291,12 +294,12 @@ trained_models_load: dict[float, eqx.Module] = TrainStdDict(load(
 ```
 
 ```{python}
-hyperpameters_filepath = models_filepath.replace('trained_models.eqx', 'hyperparameters.json')
-hyperparameters = load_from_json(hyperpameters_filepath)
-extras_filepath = models_filepath.replace('trained_models.eqx', 'extras.json')
+hyperparameters_filepath = models_filepath.replace(f'{model_file_label}.eqx', 'hyperparameters.json')
+hyperparameters = load_from_json(hyperparameters_filepath)
+extras_filepath = models_filepath.replace(f'{model_file_label}.eqx', 'extras.json')
 extras = load_from_json(extras_filepath)
 
-disturbance_train_stds = hyperparameters['disturbance_stds']
+disturbance_train_stds_load = hyperparameters['disturbance_stds']
 n_replicates = hyperparameters['n_replicates']
 
 # We'll use this for creating figure subdirectories according to the training conditions
@@ -332,20 +335,6 @@ exclude_underperformers = True
 ```
 
 ```{python}
-# train_histories = load(
-#     # MODELS_DIR / models_filepath.replace('trained_models', 'train_histories'),
-#     models_filepath.replace('trained_models', 'train_histories'),
-#     partial(setup_train_histories, task_base, trained_models),
-# )
-
-# losses = jt.map(
-#     lambda history: history.loss.total,
-#     train_histories,
-#     is_leaf=is_module,
-# )
-
-# where_train = attr_str_tree_to_where_func(hyperparameters['where_train_strs'])
-
 included_replicates = TrainStdDict({
     float(k): jnp.array(v) for k,v in extras['included_replicates'].items()
 })
@@ -366,10 +355,18 @@ def take_replicate_or_best(tree: TrainStdDict, i_replicate=None, replicate_axis=
     return jt.map(map_func, tree, is_leaf=is_type(TrainStdDict))
 ```
 
+Which replicates are included?
+
+```{python}
+eqx.tree_pprint(included_replicates, short_arrays=False)
+```
+
+Set the indices corresponding to the excluded replicates to NaN in each of the model arrays. This ensures that the shapes of the arrays remain consistent. NaN results will be ignored at plotting time. 
+
 ```{python}
 if exclude_underperformers:
     trained_models = jt.map(
-        lambda models, included: tree_take(models, jnp.where(included)[0], 0),
+        lambda models, included: tree_set_scalar(models, jnp.nan, jnp.where(~included)[0]),
         trained_models_load, included_replicates,
         is_leaf=is_module,
     )
@@ -386,9 +383,9 @@ else:
 Depending on how training goes, we might want to leave out some of the training conditions (i.e. training disturbance stds) from the analysis.
 
 ```{python}
-include_disturbance_train_stds = disturbance_train_stds  # Change nothing.
+disturbance_train_stds = disturbance_train_stds_load[:-1]  # Change nothing.
 
-trained_models = TrainStdDict({key: trained_models[key] for key in include_disturbance_train_stds})
+trained_models = subdict(trained_models, disturbance_train_stds)
 ```
 
 ### Sort out the training and testing hyperparameters
@@ -871,7 +868,7 @@ fig_subdir = "single_reach_condition/per_train_test_pair"
 ```
 
 ```{python}
-plot_states = tree_take_multi(all_states_small, [i_condition], [2])
+plot_states = tree_take(all_states_small, i_condition, 2)
 ```
 
 ```{python}
@@ -1001,6 +998,7 @@ stride = 1
 # Stack the states for different training disturbance stds into single arrays
 # (also taking a subset of the training conditions with `subdict`)
 plot_states_stacked = {
+    # concatenate along the replicate axis, which has variable length
     disturbance_amplitude: tree_stack(subdict(states, disturbance_train_stds_plot).values())
     for disturbance_amplitude, states in plot_states.items()
 }

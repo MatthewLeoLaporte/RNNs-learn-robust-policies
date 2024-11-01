@@ -112,13 +112,14 @@ disturbance_type: Literal['curl', 'random'] = 'random'
 feedback_delay_steps = 0
 feedback_noise_std = 0.0
 motor_noise_std = 0.0
-hidden_size = 50
+hidden_size = 25
 n_replicates = 10
 dt = 0.05
 ```
 
 ```{python}
 suffix = '_'.join([
+    f"{hidden_size}-units",
     f"{disturbance_type}",
     f"noise-{feedback_noise_std}-{motor_noise_std}",
     f"delay-{feedback_delay_steps}",
@@ -383,7 +384,7 @@ from rnns_learn_robust_motor_policies.part1_setup import setup_train_histories
 
 model_parameter_histories_ = load(
     str(MODELS_DIR / train_histories_basename) + ".eqx",
-    partial(setup_train_histories, task_train, trained_models),
+    partial(setup_train_histories, trained_models),
 )
 ```
 

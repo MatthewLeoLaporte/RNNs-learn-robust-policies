@@ -8,8 +8,6 @@ parameter_names:
   - motor_noise_std
 
 parameter_combinations:
-  - ['curl', '0.0', '0.0', '3', 'random', null, null]
-  - ['random', '0.0', '0.0', '3', 'curl', null, null]
 
 output_format: 
   - - "train"

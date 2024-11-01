@@ -76,7 +76,12 @@ def add_context_annotation(
         
     if perturbations is not None:
         for label, (amplitude, start, end) in perturbations.items():
-            line = f"Response to amplitude {amplitude:.2g} {label} "
+            if amplitude is None:
+                amplitude_str = ''
+            else:
+                amplitude_str = f" amplitude {amplitude:.2g}"
+                
+            line = f"Response to{amplitude_str} {label} "
             match (start, end):
                 case (None, None):
                     line += 'constant over trial'

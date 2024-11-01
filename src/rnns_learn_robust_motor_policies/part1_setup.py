@@ -7,7 +7,7 @@ import jax.tree as jt
 from feedbax import get_ensemble, is_module, tree_unzip
 from feedbax.misc import attr_str_tree_to_where_func
 from feedbax.intervene import CurlField, FixedField, schedule_intervenor
-from feedbax.train import filter_spec_leaves, init_task_trainer_history
+from feedbax.train import TaskTrainerHistory, filter_spec_leaves, init_task_trainer_history
 from feedbax.xabdeef.models import point_mass_nn
 from feedbax.xabdeef.losses import simple_reach_loss
 from feedbax.task import SimpleReaches
@@ -110,7 +110,7 @@ def setup_train_histories(
     where_train_strs,
     save_model_parameters,
     key,
-):
+) -> dict[float, TaskTrainerHistory]:
     """Returns a skeleton PyTree for the training histories (losses, parameter history, etc.)
     
     Note that `init_task_trainer_history` depends on `task` to infer 

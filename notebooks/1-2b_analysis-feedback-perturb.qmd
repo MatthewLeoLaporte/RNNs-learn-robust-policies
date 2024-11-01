@@ -39,31 +39,36 @@ import plotly.graph_objects as go
 from tqdm.auto import tqdm
 
 from feedbax import (
-    load, 
     is_module, 
     is_type,
+    load, 
+    make_named_tuple_subclass,
+    make_named_dict_subclass,
+    move_level_to_outside,
+    tree_key_tuples, 
+    tree_prefix_expand,
+    tree_set_scalar,
     tree_stack,
-    tree_unstack, 
+    tree_struct_bytes,
     tree_take, 
     tree_take_multi,
+    tree_unstack, 
     tree_unzip,
-    tree_prefix_expand,
-    tree_struct_bytes,
 )
 from feedbax.channel import toggle_channel_noise
 from feedbax.intervene import ConstantInput, CurlField, schedule_intervenor
 from feedbax.misc import git_commit_id, attr_str_tree_to_where_func
 import feedbax.plotly as fbp
 from feedbax.task import SimpleReaches
-from feedbax._tree import (
-    tree_key_tuples, 
-    make_named_tuple_subclass,
-    make_named_dict_subclass,
-    move_level_to_outside,
-)
+
 from feedbax.xabdeef.losses import simple_reach_loss
 
-from rnns_learn_robust_motor_policies.misc import dict_str, lohi, load_from_json
+from rnns_learn_robust_motor_policies.misc import (
+    dict_str, 
+    lohi, 
+    lomidhi,
+    load_from_json,
+)
 from rnns_learn_robust_motor_policies.part1_setup import (
     setup_models, 
     setup_model_parameter_histories,
@@ -233,7 +238,7 @@ On the other hand, maybe the user wants to browse and select a trained model fil
 
 ```{python}
 if not load_from_parameters:
-    fc = display_model_filechooser(MODELS_DIR, filter_pattern='1-1_*trained_models.eqx')
+    fc = display_model_filechooser(MODELS_DIR, filter_pattern='1-1_*trained_models*')
 ```
 
 The default filename is the one that sorts last. If the user does not select a file or if the following cell is run before they do, then the default file will be loaded.
@@ -241,13 +246,15 @@ The default filename is the one that sorts last. If the user does not select a f
 ### Load the specified model
 
 ```{python}
+model_file_label = "trained_models_best_params"
+
 if not load_from_parameters:
     if fc.selected is None:
         models_filepath = f"{fc.default_path}/{fc.default_filename}"
     else:
         models_filepath = fc.selected
 else: 
-    models_filepath = str(find_unique_filepath(MODELS_DIR, f"1-1__{suffix_load}__trained_models"))
+    models_filepath = str(find_unique_filepath(MODELS_DIR, f"1-1__{suffix_load}__{model_file_label}"))
     if models_filepath is None:
         raise FileNotFoundError(f"No models found with file label: {suffix_load}")
 
@@ -257,13 +264,13 @@ trained_models_load: dict[float, eqx.Module] = TrainStdDict(load(
 ```
 
 ```{python}
-hyperpameters_filepath = models_filepath.replace('trained_models.eqx', 'hyperparameters.json')
-hyperparameters = load_from_json(hyperpameters_filepath)
-extras_filepath = models_filepath.replace('trained_models.eqx', 'extras.json')
+hyperparameters_filepath = models_filepath.replace(f'{model_file_label}.eqx', 'hyperparameters.json')
+hyperparameters = load_from_json(hyperparameters_filepath)
+extras_filepath = models_filepath.replace(f'{model_file_label}.eqx', 'extras.json')
 extras = load_from_json(extras_filepath)
 
 disturbance_type_train = hyperparameters['disturbance_type']
-disturbance_train_stds = hyperparameters['disturbance_stds']
+disturbance_train_stds_load = hyperparameters['disturbance_stds']
 n_replicates = hyperparameters['n_replicates']
 
 # We'll use this for creating figure subdirectories according to the training conditions
@@ -309,10 +316,18 @@ def take_replicate_or_best(tree: TrainStdDict, i_replicate=None, replicate_axis=
         return tree_take_multi(tree, [i_replicate], [replicate_axis])
 ```
 
+Which replicates are included?
+
+```{python}
+eqx.tree_pprint(included_replicates, short_arrays=False)
+```
+
+Set the indices corresponding to the excluded replicates to NaN in each of the model arrays. This ensures that the shapes of the arrays remain consistent. NaN results will be ignored at plotting time. 
+
 ```{python}
 if exclude_underperformers:
     trained_models = jt.map(
-        lambda models, included: tree_take(models, jnp.where(included)[0], 0),
+        lambda models, included: tree_set_scalar(models, jnp.nan, jnp.where(~included)[0]),
         trained_models_load, included_replicates,
         is_leaf=is_module,
     )
@@ -327,9 +342,9 @@ else:
 Depending on how training goes, we might want to leave out some of the training conditions (i.e. training disturbance stds) from the analysis.
 
 ```{python}
-include_disturbance_train_stds = disturbance_train_stds  # Change nothing.
+disturbance_train_stds = disturbance_train_stds_load[:-1] 
 
-trained_models = TrainStdDict({key: trained_models[key] for key in include_disturbance_train_stds})
+trained_models = subdict(trained_models, disturbance_train_stds) 
 ```
 
 ### Sort out the training and testing hyperparameters
@@ -853,7 +868,7 @@ impulse_responses = jt.map(
 ```
 
 ```{python}
-pp(impulse_responses)
+# pp(impulse_responses)
 ```
 
 ### Define some plotting functions
@@ -1137,7 +1152,7 @@ all_responses_tuples = move_level_to_outside(
 ```
 
 ```{python}
-pp(all_responses_tuples)
+# pp(all_responses_tuples)
 ```
 
 :::{note}
@@ -1487,25 +1502,40 @@ def get_violins_comparing_amplitudes(measure_data, measure_name, pert_var, annot
     if annotation_kws is None:
         annotation_kws = dict()    
         
+    plot_disturbance_train_stds = [0, 0.8, 1.6]   
+    
     fig = go.Figure()
     
     # Impulse perturbation amplitude (x axis)
-    for i, pert_amp in enumerate(impulse_amplitudes[pert_var]):
-        # Disturbance train std. (split)
-        for j, disturbance_train_std in enumerate(lohi(disturbance_train_stds)):
-            fig.add_trace(
-                go.Violin(
-                    x=np.full((n_dist,), pert_amp),
-                    y=measure_data[i][pert_var][disturbance_train_std].flatten(),
-                    name=disturbance_train_std,
-                    box_visible=False,
-                    meanline_visible=True,
-                    side='positive' if j == 1 else 'negative',
-                    line_color=disturbance_train_stds_colors_dark[disturbance_train_std],
-                    showlegend=(i == 0),
-                    spanmode='hard',
-                )
+    # for i, pert_amp in enumerate(impulse_amplitudes[pert_var]):
+    
+    # Disturbance train std. (split)
+    for j, disturbance_train_std in enumerate(plot_disturbance_train_stds):
+        measure_data_j = [
+            d[pert_var][disturbance_train_std].flatten() for d in measure_data
+        ]
+        
+        xs = [
+            np.full_like(arr, impulse_amplitudes[pert_var][i]) 
+            for i, arr in enumerate(measure_data_j)
+        ]
+        
+        fig.add_trace(
+            go.Violin(
+                x=jnp.concatenate(xs),
+                y=jnp.concatenate(measure_data_j),
+                name=disturbance_train_std,
+                scalegroup=disturbance_train_std,
+                legendgroup=disturbance_train_std,
+                box_visible=False,
+                meanline_visible=True,
+                # side='positive' if j == 1 else 'negative',
+                line_color=disturbance_train_stds_colors_dark[disturbance_train_std],
+                # showlegend=True,
+                # spanmode='hard',
+                scalemode='width',
             )
+        )
             
     fig.update_layout(
         xaxis_title="Impulse amplitude",
@@ -1514,21 +1544,24 @@ def get_violins_comparing_amplitudes(measure_data, measure_name, pert_var, annot
         # xaxis_tickvals=list(measure_data.keys()),
         # yaxis_range=[0, None],
         legend_title="Disturbance train std.",
-        violinmode='overlay',
-        violingap=0,
+        violinmode='group',
+        violingap=0.25,
+        violingroupgap=0,
         **layout_kws,
     )
 
     add_context_annotation(
         fig, 
         train_condition_strs=[f"{disturbance_type_train} force fields"],
+        perturbations={
+            f"{pert_var} feedback impulse": (None, impulse_start_step, impulse_end_step),
+        },
         n=n_dist, 
         **annotation_kws,
     )
     
     return fig
 ```
-
 
 ```{python}
 figs = {
@@ -1540,25 +1573,30 @@ figs = {
             layout_kws=dict(
                 width=800,
                 height=500,
-                yaxis_range=[0, measure_ranges_lohi[measure_name][1]],
+                yaxis_range=[0, measure_ranges[measure_name][1]],
             ),
-            # annotation_kws=dict(
-            #     perturbations={
-            #         f"{pert_var} impulse ({analysis_variant} direction)": (
-            #             impulse_amplitudes[pert_var][impulse_amplitude_idx], 
-            #             impulse_start_step, 
-            #             impulse_end_step,
-            #         )
-            #         for pert_var in impulse_amplitude
-            #     }
-            # )
         )
         for pert_var in pert_var_names
     }
-    for measure_name, measure in all_measures_lohi.items()
+    for measure_name, measure in all_measures.items()
 }
 ```
 
+```{python}
+for path, fig in tqdm(figs_flatten_with_paths(figs)):
+    measure_name = path[0].key
+    measure_handle = measure_handles[measure_name]
+    pert_var = path[1].key
+    
+    savefig(
+        figs[measure_name][pert_var], 
+        join([
+            f"{measure_handle}",
+            f"{pert_var}-pert",
+        ]),
+        subdir=fig_subdir,
+    )
+```
 
 ```{python}
 for measure_name in all_measures:

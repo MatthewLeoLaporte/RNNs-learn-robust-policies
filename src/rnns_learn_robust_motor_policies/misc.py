@@ -1,11 +1,14 @@
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 import json
 import subprocess
 
 import equinox as eqx
 import jax.tree as jt
+from jaxtyping import Array
 
 from feedbax._tree import apply_to_filtered_leaves
+
+from rnns_learn_robust_motor_policies.tree_utils import subdict
 
 
 def dict_str(d, value_format='.2f'):
@@ -29,18 +32,37 @@ def lohi(x: Iterable):
     """Returns a tuple containing the first and last values of a sequence, mapping, or other iterable."""
     if isinstance(x, Mapping):
         # TODO: Maybe should return first and last key-value pairs?
-        return lohi(tuple(x.values()))
+        return subdict(x, lohi(tuple(x.values())))
     
     elif isinstance(x, Iterator):
         first = last = next(x)
-        for last in iterable:
+        for last in x:
             pass
         
-    else:
+    elif isinstance(x, Sequence):
         first = x[0]
         last = x[-1]
     
+    elif isinstance(x, Array):
+        return lohi(x.tolist())
+        
+    else: 
+        raise ValueError(f"Unsupported type: {type(x)}")
+    
     return first, last
+
+
+def lomidhi(x: Sequence | Mapping):
+    if isinstance(x, Mapping):
+        return subdict(x, lomidhi(tuple(x.values())))
+
+    elif isinstance(x, Sequence):
+        first, last = lohi(x)
+        mid = x[len(x) // 2]
+        return first, mid, last
+
+    elif isinstance(x, Array):
+        return lomidhi(x.tolist())
 
 
 def load_from_json(path):
