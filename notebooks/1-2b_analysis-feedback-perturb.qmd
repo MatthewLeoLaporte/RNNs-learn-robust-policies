@@ -1,3 +1,12 @@
+---
+jupyter: python3
+format:
+  html:
+    toc: true 
+execute:
+  echo: false
+---
+
 # Analysis of feedback perturbations
 
 We continue our perturbation analysis by examining the response of the trained models to perturbations of their feedback inputs at steady state. 
@@ -106,9 +115,9 @@ from rnns_learn_robust_motor_policies.colors import(
 ```
 
 ```{python}
-jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
-jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
-jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
+# jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
+# jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
+# jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
 # jax.config.update("jax_explain_cache_misses", True)
 ```
 
@@ -135,13 +144,13 @@ We may want to specify 1) which trained models to load, by their parameters, and
 #| tags: [parameters]
 
 # Specify which trained models to load 
-disturbance_type_load: Literal['curl', 'random'] = 'curl'
-feedback_noise_std_load = 0.0
-motor_noise_std_load = 0.0
+disturbance_type_load: Literal['curl', 'random'] = 'random'
+feedback_noise_std_load = 0.1
+motor_noise_std_load = 0.1
 feedback_delay_steps_load = 0
 
 # Specify model parameters to use for analysis (None -> use training value)
-disturbance_type: Optional[Literal['curl', 'random']] = None
+# disturbance_type: Optional[Literal['curl', 'random']] = None
 feedback_noise_std: Optional[float] = None
 motor_noise_std: Optional[float] = None
 ```
@@ -407,14 +416,14 @@ task = SimpleReaches(
 
 ```{python}
 max_impulse_amplitude = dict(
-    pos=2.0,
+    pos=1.8,
     vel=1.2,
 )
 # impulse_amplitude = dict(
 #     pos=2.0,
 #     vel=1.2,
 # )
-n_impulse_amplitudes = 4
+n_impulse_amplitudes = 3
 
 impulse_start_step = 30  
 impulse_duration = 5  # steps
@@ -872,6 +881,8 @@ impulse_responses = jt.map(
 ```
 
 ### Define some plotting functions
+
+**TODO**: Make the figures shorter (too much vertical whitespace) 
 
 ```{python}
 def get_all_profiles(all_plot, var_label, disturbance_stds=None, colors=None):    
@@ -1440,7 +1451,7 @@ figs = {
             measure, 
             measure_name,
             layout_kws=dict(
-                width=500,
+                width=550,
                 height=400,
                 yaxis_range=[0, measure_ranges_lohi[measure_name][1]],
             ),
@@ -1494,7 +1505,8 @@ fig_subdir = "performance_measures/compare_impulse_amplitudes"
 
 ```{python}
 def get_violins_comparing_amplitudes(measure_data, measure_name, pert_var, annotation_kws=None, layout_kws=None):
-    n_dist = np.prod(jt.leaves(measure_data)[0].shape)
+    example_arr = jt.leaves(measure_data)[0]
+    n_dist = np.prod(example_arr.shape)
     
     if layout_kws is None:
         layout_kws = dict()
@@ -1502,12 +1514,18 @@ def get_violins_comparing_amplitudes(measure_data, measure_name, pert_var, annot
     if annotation_kws is None:
         annotation_kws = dict()    
         
-    plot_disturbance_train_stds = [0, 0.8, 1.6]   
+    plot_disturbance_train_stds = [disturbance_train_stds[0], disturbance_train_stds[-2], disturbance_train_stds[-1]]
     
     fig = go.Figure()
     
-    # Impulse perturbation amplitude (x axis)
-    # for i, pert_amp in enumerate(impulse_amplitudes[pert_var]):
+    # Get trial, replicate, and task condition indices for hoverinfo
+    customdata = jnp.tile(
+        jnp.stack(jnp.unravel_index(
+            jnp.arange(n_dist), 
+            example_arr.shape,
+        ), axis=-1), 
+        (len(impulse_amplitudes[pert_var]), 1),
+    )
     
     # Disturbance train std. (split)
     for j, disturbance_train_std in enumerate(plot_disturbance_train_stds):
@@ -1534,6 +1552,14 @@ def get_violins_comparing_amplitudes(measure_data, measure_name, pert_var, annot
                 # showlegend=True,
                 # spanmode='hard',
                 scalemode='width',
+                customdata=customdata,
+                hovertemplate='<br>'.join([
+                    "%{y:.2f}",
+                    "Task condition: %{customdata[2]}",
+                    "Replicate: %{customdata[1]}",
+                    "Evaluation: %{customdata[0]}",
+                    "<extra></extra>",
+                ]),
             )
         )
             

@@ -1533,21 +1533,27 @@ def get_measure_replicate_comparisons(data, measure_name, disturbance_amplitude,
     
     data = jnp.stack(list(data.values()))
     
+    # TODO: Exclude replicates which were excluded from analysis for either training condition
+    # replicates_any_nan = jnp.any(jnp.isnan(data), axis=-2)
+    # data = jnp.take(data, jnp.where(replicates_any_nan)[0], axis=-2)
+
     fig = go.Figure()
     # x axis: replicates
-    for i in range(data.shape[-2]):
+    for i in range(data.shape[-2]):        
         # split violin: smallest vs. largest train disturbance std
-        for j in range(data.shape[0]):
+        for j, train_std in enumerate(labels):
         
+            data_j = data[j, :, i].flatten()
+            
             fig.add_trace(
                 go.Violin(
-                    x=np.full_like(data[j, :, i].flatten(), i),
-                    y=data[j, :, i].flatten(),
-                    name=labels[j],
-                    legendgroup=labels[j],
+                    x=np.full_like(data_j, i),
+                    y=data_j.flatten(),
+                    name=train_std,
+                    legendgroup=train_std,
                     box_visible=False,
                     meanline_visible=True,
-                    line_color=colors[j],
+                    line_color=colors[train_std],
                     side='positive' if j == 1 else 'negative',
                     showlegend=(i == 0),
                     spanmode='hard',

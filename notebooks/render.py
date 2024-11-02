@@ -10,13 +10,16 @@ import subprocess
 import logging
 from typing import Generic, List, Dict, Any, TypeVar, Union
 
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
 
 def load_yaml(file_path: str) -> Dict[str, Any]:
     """Load and parse a YAML file."""
     with open(file_path, 'r') as file:
         return yaml.safe_load(file)
+
 
 def apply_rules(combination: List[Any], parameter_names: List[str], rules: List[Dict[str, Any]]) -> List[List[Any]]:
     """Apply rules to a single combination and return new combinations."""
@@ -49,7 +52,9 @@ def apply_default_assignments(params: Dict[str, Any], default_assignments: List[
     return params
 
 
-def expand_combinations(combinations: List[List[Any]], parameter_names: List[str], rules: List[Dict[str, Any]]) -> List[List[Any]]:
+def expand_combinations(
+    combinations: list[list[Any]], parameter_names: list[str], rules: list[dict[str, Any]]
+) -> list[tuple[Any]]:
     """Expand all combinations by applying rules."""
     expanded = []
     for combo in combinations:
@@ -74,31 +79,30 @@ def render_quarto(quarto_doc: str, output_dir: str, params: Dict[str, Any]):
     subprocess.run(cmd, check=True)
     
 
-def process_quarto_doc(quarto_doc: str, combinations: List[List[Any]], parameter_names: List[str], output_format: List[List[str]], default_assignments: List[Dict[str, str]]):
-    """Process a single Quarto document with all parameter combinations."""
-    if not os.path.exists(quarto_doc):
-        logger.warning(f"The file '{quarto_doc}' does not exist. Skipping.")
-        return
-
-    logger.info(f"Processing {quarto_doc}")
-
-    base_name = os.path.splitext(os.path.basename(quarto_doc))[0]
-    first_part = base_name.split('_')[0]
-
-    for combo in combinations:
-        logger.info(f"Processing combination: {combo}")
-        
-        # Create a dictionary of parameters
-        params = dict(zip(parameter_names, combo))
-        
-        # Apply default assignments
-        params = apply_default_assignments(params, default_assignments)
+def process_combination(quarto_docs: List[str], combo: List[Any], parameter_names: List[str], 
+                       output_format: List[List[str]], default_assignments: List[Dict[str, str]]):
+    """Process all Quarto documents with a single parameter combination."""
+    logger.info(f"Processing combination: {combo}")
+    
+    # Create a dictionary of parameters
+    params = dict(zip(parameter_names, combo))
+    
+    # Apply default assignments
+    params = apply_default_assignments(params, default_assignments)
+    
+    for quarto_doc in quarto_docs:
+        if not os.path.exists(quarto_doc):
+            logger.warning(f"The file '{quarto_doc}' does not exist. Skipping.")
+            continue
+            
+        logger.info(f"Processing {quarto_doc}")
+        base_name = os.path.splitext(os.path.basename(quarto_doc))[0]
+        first_part = base_name.split('_')[0]
         
         output_label = format_output_label(output_format, params)
         logger.info(f"Formatted output label: {output_label}")
         output_dir = os.path.join("_output", first_part, output_label)
         render_quarto(quarto_doc, output_dir, params)
-
 
 def main():
     """Main function to orchestrate the Quarto document generation process."""
@@ -123,8 +127,9 @@ def main():
     logger.info(f"Output format: {output_format}")
     logger.info(f"Parameter names: {parameter_names}")
 
-    for quarto_doc in args.quarto_docs:
-        process_quarto_doc(quarto_doc, combinations, parameter_names, output_format, default_assignments)
+    # Process each combination for all documents
+    for combo in combinations:
+        process_combination(args.quarto_docs, combo, parameter_names, output_format, default_assignments)
 
 
 if __name__ == "__main__":

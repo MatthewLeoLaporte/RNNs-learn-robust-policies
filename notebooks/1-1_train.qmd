@@ -119,7 +119,7 @@ dt = 0.05
 
 ```{python}
 suffix = '_'.join([
-    f"{hidden_size}-units",
+    # f"{hidden_size}-units",
     f"{disturbance_type}",
     f"noise-{feedback_noise_std}-{motor_noise_std}",
     f"delay-{feedback_delay_steps}",
@@ -560,7 +560,7 @@ for label, losses_by_replicate in {
         x='variable',
         y='value',
         color="index",
-        labels=dict(x="Train disturbance std.", y=f"{label} total loss"),
+        labels=dict(x="Train disturbance std.", y=f"{label} batch total loss"),
         title=f"{label} total loss across training by disturbance std.",
         color_discrete_sequence=px.colors.qualitative.Plotly,
         # stripmode='overlay',
@@ -586,7 +586,8 @@ for label, losses_by_replicate in {
             fillcolor='lightgrey',
             opacity=0.6,
             name=f"{disturbance_std}",
-            showlegend=False,     
+            showlegend=False,   
+            spanmode='hard',  
         )
         for disturbance_std in disturbance_stds
     ]

@@ -1,6 +1,6 @@
 ---
 created: 2024-10-04T11:27
-updated: 2024-10-31T14:59
+updated: 2024-11-01T23:57
 ---
 - [ ] [[#Part 1 results review and synthesis|Review part 1 results]]
 - [ ] **Move part 1 training to a script + a yaml file defining which hyperparameters to train** — or otherwise we’ll have to use batch quarto render 
@@ -18,6 +18,13 @@ Review the results so far and make a summary of the ones that should appear as m
 ### For results
 
 - [ ] Try a 200-step solution for networks trained on random and tested on curl, to see how the “goal orbit” evolves
+
+### TODO
+
+- [ ] Reduce the height of the center-out sets and the aligned condition comparisons in 1-2a (i.e. there’s too much vertical white space)
+- [ ] Respect the y axis limits (zero at bottom!) for the violin plots in 1-2a — neither the Quarto rendered nor the exported PNG/HTML Plotly figures do so!
+- [ ] Exclude from the replicate-comparison violins, any replicates which *for either the zero or the highest training condition* were excluded from analysis.
+
 ## Gunnar meeting
 
 ### Choice of disturbance train stds 

@@ -32,7 +32,7 @@ def lohi(x: Iterable):
     """Returns a tuple containing the first and last values of a sequence, mapping, or other iterable."""
     if isinstance(x, Mapping):
         # TODO: Maybe should return first and last key-value pairs?
-        return subdict(x, lohi(tuple(x.values())))
+        return subdict(x, lohi(tuple(x.keys())))
     
     elif isinstance(x, Iterator):
         first = last = next(x)
@@ -54,7 +54,7 @@ def lohi(x: Iterable):
 
 def lomidhi(x: Sequence | Mapping):
     if isinstance(x, Mapping):
-        return subdict(x, lomidhi(tuple(x.values())))
+        return subdict(x, lomidhi(tuple(x.keys())))
 
     elif isinstance(x, Sequence):
         first, last = lohi(x)
