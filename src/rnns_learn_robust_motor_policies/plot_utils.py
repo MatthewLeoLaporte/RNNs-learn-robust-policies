@@ -110,8 +110,15 @@ def add_context_annotation(
     
     if i_condition is not None:
         lines.append(f"For single task condition ({i_condition})")
-                
-    fig.update_layout(margin_t=100 + 5 * len(lines))
+    
+    # Adjust the layout of the figure to make room for the annotation
+    if (margin_t := fig.layout.margin.t) is None:  # type: ignore
+        margin_t = 100
+    
+    fig.update_layout(margin_t=margin_t + 5 * len(lines))
+    
+    if (height := fig.layout.height) is not None: # type: ignore    
+        fig.update_layout(height=height + 5 * len(lines))  
     
     fig.add_annotation(dict(
         text='<br>'.join(lines),
@@ -149,6 +156,7 @@ def get_merged_context_annotation(*figs):
 def add_endpoint_traces(
     fig: go.Figure,
     pos_endpoints: Float[Array, "ends=2 *trials xy=2"],
+    visible: tuple[bool, bool] = (True, True),
     colorscale: Optional[str] = None,  # overrides `color` properties in `marker_kws` args
     colorscale_axis: int = 0,  # of `trials` axes
     init_marker_kws: Optional[dict] = None, 
@@ -214,6 +222,7 @@ def add_endpoint_traces(
                     hovertemplate=f"{label}<extra></extra>",
                     x=pos_endpoints[j, ..., 0],
                     y=pos_endpoints[j, ..., 1],
+                    visible=visible[j],
                     mode="markers",
                     marker=kws,
                     marker_colorscale=colorscale,

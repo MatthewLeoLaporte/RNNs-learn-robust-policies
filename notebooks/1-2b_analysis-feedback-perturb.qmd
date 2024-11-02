@@ -353,6 +353,12 @@ Depending on how training goes, we might want to leave out some of the training 
 ```{python}
 disturbance_train_stds = disturbance_train_stds_load[:-1] 
 
+# TODO
+# TODO: Remove this after the next round of training!
+# TODO
+disturbance_train_stds.pop(1)
+# TODO
+
 trained_models = subdict(trained_models, disturbance_train_stds) 
 ```
 
@@ -728,24 +734,31 @@ i_trial = 0
 i_replicate = 0
 
 # Index the trial and replicate
-plot_states = tree_take_multi(all_states, [i_trial, i_replicate], [0, 1])
+# plot_states = tree_take_multi(all_states, [i_trial, i_replicate], [0, 1])
 
 # Select the variables to plot
-plot_states = jt.map(where_plot, plot_states, is_leaf=is_module)
+plot_states = jt.map(where_plot, all_states, is_leaf=is_module)
 ```
 
 ```{python}
 figs = jt.map(
-    lambda states: fbp.trajectories_2D(
-        tuple(states),
-        var_labels=var_labels,
-        axes_labels=('x', 'y'),
-        mode='markers+lines',
-        ms=3,
-        scatter_kws=dict(line_width=0.75),
-    ),
+    lambda states: {
+        train_std: fbp.trajectories_2D(
+            tuple(tree_take_multi(
+                states, 
+                [i_trial, best_replicate[train_std]],
+                [0, 1]
+            )),
+            var_labels=var_labels,
+            axes_labels=('x', 'y'),
+            mode='markers+lines',
+            ms=3,
+            scatter_kws=dict(line_width=0.75),
+        )
+        for train_std in states.items()
+    },
     plot_states,
-    is_leaf=is_type(ExamplePlotVars),
+    is_leaf=is_type(TrainStdDict),
 )    
 ```
 
@@ -787,6 +800,8 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
     pert_amplitude = impulse_amplitudes[pert_var][path[-2].key]
     disturbance_train_std = path[-1].key
     
+    i_rep = best_replicate[disturbance_train_std]
+    
     add_context_annotation(
         fig,
         train_condition_strs=[
@@ -798,7 +813,7 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
             )
         },
         i_trial=i_trial,
-        i_replicate=i_replicate,
+        i_replicate=i_rep,
     )
 
     savefig(
@@ -806,7 +821,7 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
         join([
             f"imp-{analysis_variant}-{pert_var}_amp-{pert_amplitude}",
             f"disturbance-std-train-{disturbance_train_std}",
-            f"rep-{i_replicate}",
+            f"rep-{i_rep}",
             f"eval-{i_trial}",
         ]),
         subdir=fig_subdir,
@@ -909,7 +924,10 @@ def get_all_profiles(all_plot, var_label, disturbance_stds=None, colors=None):
                     mode='std', 
                     varname=fr"${y_axes_labels[i]}$",
                     colors=list(colors.values()),
-                    layout_kws=dict(legend_title="Train disturbance std."),
+                    layout_kws=dict(
+                        legend_title="Train<br>field std.",
+                        legend_tracegroupgap=1,
+                    ),
                 ),
                 var_by_pert_amp,
                 is_leaf=is_type(TrainStdDict),
@@ -1342,12 +1360,13 @@ def get_violins(measure_data, measure_name, annotation_kws=None, layout_kws=None
             for i, pert_var in enumerate(measure_data)
         ]),
         layout=dict(
-            xaxis_title="Train disturbance std.",
+            xaxis_title="Train field std.",
             yaxis_title=measure_name,
             # xaxis_range=[-0.5, len(measure_data) - 0.5],
             # xaxis_tickvals=list(measure_data.keys()),
-            # yaxis_range=[0, None],
-            legend_title="Perturbed feedback var.",
+            yaxis_range=[0, None],
+            legend_title="Perturbed<br>feedback var.",
+            legend_tracegroupgap=1,
             # violinmode='overlay',
             violingap=0,
             **layout_kws,
@@ -1564,12 +1583,15 @@ def get_violins_comparing_amplitudes(measure_data, measure_name, pert_var, annot
         )
             
     fig.update_layout(
+        width=900,
+        height=400,
         xaxis_title="Impulse amplitude",
         yaxis_title=measure_name,
         # xaxis_range=[-0.5, len(measure_data) - 0.5],
         # xaxis_tickvals=list(measure_data.keys()),
-        # yaxis_range=[0, None],
-        legend_title="Disturbance train std.",
+        yaxis_range=[0, None],
+        legend_title="Train<br>field std.",
+        legend_tracegroupgap=1,
         violinmode='group',
         violingap=0.25,
         violingroupgap=0,

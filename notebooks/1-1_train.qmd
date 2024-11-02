@@ -197,7 +197,7 @@ Schedule force fields in the training trials.
 
 ```{python}
 if disturbance_type == 'curl':
-    disturbance_stds = [0, 0.2, 0.4, 0.8, 1.6, 2.4]
+    disturbance_stds = [0, 0.4, 0.8, 1.6, 2.4]
     # disturbance_stds = [0, 0.4, 1.2]
    
     def disturbance(curl_std):
@@ -207,7 +207,7 @@ if disturbance_type == 'curl':
         )
 
 elif disturbance_type == 'random':
-    disturbance_stds = [0, 0.001, 0.01, 0.1, 1.0, 2.0]
+    disturbance_stds = [0, 0.01, 0.1, 1.0, 2.0]
     # disturbance_stds = [0, 0.01, 1.0]
     
     # Uniform in angle, Gaussian in amplitude, constant over trial

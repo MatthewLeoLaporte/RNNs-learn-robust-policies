@@ -93,7 +93,7 @@ def get_lateral_distance(
     # by the length of the line vectors.
     line_length = jnp.linalg.norm(direction_vec, axis=-1)
     # lateral_dist = jnp.abs(cross_product) / line_length
-    lateral_dist = jnp.abs(cross_product) / line_length[..., None]
+    lateral_dist = cross_product / line_length[..., None]
 
     return lateral_dist
 

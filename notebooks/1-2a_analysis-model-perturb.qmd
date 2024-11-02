@@ -28,7 +28,7 @@ os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 ```
 
 ```{python}
-from collections import OrderedDict
+from collections import OrderedDict, namedtuple
 from functools import partial
 from itertools import zip_longest
 from pathlib import Path
@@ -383,7 +383,13 @@ else:
 Depending on how training goes, we might want to leave out some of the training conditions (i.e. training disturbance stds) from the analysis.
 
 ```{python}
-disturbance_train_stds = disturbance_train_stds_load[:-1]  # Change nothing.
+disturbance_train_stds = disturbance_train_stds_load[:-1]  
+
+# TODO
+# TODO: Remove this after the next round of training!
+# TODO
+disturbance_train_stds.pop(1)
+# TODO
 
 trained_models = subdict(trained_models, disturbance_train_stds)
 ```
@@ -532,6 +538,15 @@ def get_pos_endpoints(trial_specs):
 
 pos_endpoints = get_pos_endpoints(trial_specs)
 pos_endpoints_small = get_pos_endpoints(trial_specs_small)
+
+# Once the positions are center-subtracted and aligned to reach direction,
+# all the endpoints will be the same.
+pos_endpoints_aligned = jnp.array([
+    [0., 0.], [eval_reach_length, 0.]
+])
+pos_endpoints_small_aligned = jnp.array([
+    [0., 0.], [eval_reach_length_small, 0.]
+])
 ```
 
 ### Number of evaluations per model and condition
@@ -611,6 +626,47 @@ pp(all_states)
 
 TODO: Instead of a two-layer `jt.map`, we could instead define a function (to schedule the intervenor given a `disturbance_amplitude` and then `jt.map` the vmapped `eval_ensemble`) and then vmap it over `disturbance_amplitudes` to get a single-level dict with a bit less overhead.
 
+### Project positions, velocities, and forces into reach direction
+
+In other words, change from x/y components to parallel/orthogonal components, relative to a straight reach.
+
+```{python}
+from rnns_learn_robust_motor_policies.state_utils import project_onto_direction
+from typing import Any
+
+Responses = namedtuple('Responses', ('pos', 'vel', 'force'))
+
+# class Responses(eqx.Module):
+#     pos: Any
+#     vel: Any
+#     force: Any
+
+aligned_var_labels = Responses('Position', 'Velocity', 'Control force')
+where_vars_to_align = lambda states, pos_endpoints: Responses(
+    # Positions with respect to the origin
+    states.mechanics.effector.pos - pos_endpoints[0][..., None, :],
+    states.mechanics.effector.vel,
+    states.efferent.output,
+)
+```
+
+```{python}
+def get_aligned_vars(all_states, where, endpoints): 
+    directions = endpoints[1] - endpoints[0]
+    
+    return jt.map(
+        lambda states: jt.map(
+            lambda var: project_onto_direction(var, directions),
+            where(states, endpoints),
+        ),
+        all_states,
+        is_leaf=is_module,
+    )
+    
+aligned_vars = get_aligned_vars(all_states, where_vars_to_align, pos_endpoints)
+aligned_vars_small = get_aligned_vars(all_states_small, where_vars_to_align, pos_endpoints_small)
+```
+
 ## Plot example center-out sets
 
 i.e. show trials for multiple reach directions, to show performance across conditions at a glance, for a single model
@@ -628,6 +684,24 @@ where_plot = lambda states: (
     states.mechanics.effector.pos,
     states.mechanics.effector.vel,
     states.efferent.output,
+)
+```
+
+```{python}
+plot_trajectories = lambda states, *args, **kwargs: fbp.trajectories_2D(
+    where_plot(states),
+    var_labels=var_labels,
+    axes_labels=('x', 'y'),
+    colorscale=COLORSCALES['reach_condition'],
+    legend_title='Reach direction',
+    # scatter_kws=dict(line_width=0.5),
+    layout_kws=dict(
+        width=1000,
+        height=400,
+        legend_tracegroupgap=1,
+    ),
+    *args, 
+    **kwargs,
 )
 ```
 
@@ -649,14 +723,12 @@ else:
     plot_states = take_replicate_or_best(all_states_small, i_replicate)
     
     figs = jt.map(
-        lambda states: fbp.trajectories_2D(
-            where_plot(states),
-            var_labels=var_labels,
-            axes_labels=('x', 'y'),
-            colorscale=COLORSCALES['reach_condition'],
-            colorscale_axis=1,  # Color/group by reach condition
-            mode='lines',
-            legend_title='Reach direction',
+        partial(
+            plot_trajectories, 
+            mode='lines', 
+            colorscale_axis=1, 
+            mean_trajectory_line_width=2.5,
+            darken_mean=MEAN_LIGHTEN_FACTOR,
             scatter_kws=dict(line_width=0.5),
         ),
         plot_states,
@@ -717,13 +789,9 @@ plot_states = take_replicate_or_best(all_states_small, i_replicate)
 plot_states = tree_take(plot_states, i_trial, 0)
 
 figs = jt.map(
-    lambda states: fbp.trajectories_2D(
-        where_plot(states),
-        var_labels=var_labels,
-        axes_labels=('x', 'y'),
-        mode='markers+lines',
-        colorscale=COLORSCALES['reach_condition'],
-        legend_title='Reach direction',
+    partial(
+        plot_trajectories, 
+        mode='markers+lines', 
         ms=3,
         scatter_kws=dict(line_width=0.75),
     ),
@@ -779,15 +847,13 @@ fig_subdir = "center_out_sets/single_eval_all_replicates"
 plot_states = tree_take_multi(all_states_small, [i_trial], [0])
 
 figs = jt.map(
-    lambda states: fbp.trajectories_2D(
-        where_plot(states),
-        var_labels=var_labels,
-        axes_labels=('x', 'y'),
-        colorscale=COLORSCALES['reach_condition'],
-        colorscale_axis=1,  # Color/group by reach condition
-        mode='lines',
-        legend_title='Reach direction',
-        scatter_kws=dict(line_width=0.5),
+    partial(
+        plot_trajectories, 
+        mode='lines', 
+        colorscale_axis=1, 
+        mean_trajectory_line_width=2.5,
+        darken_mean=MEAN_LIGHTEN_FACTOR,
+        scatter_kws=dict(line_width=0.75),
     ),
     plot_states,
     is_leaf=is_module,
@@ -809,9 +875,12 @@ for disturbance_amplitude in tqdm(figs):
             n=n_replicates_included[disturbance_train_std],
         )
         add_endpoint_traces(
-            fig, pos_endpoints_small, xaxis='x1', yaxis='y1', colorscale='phase'
+            fig, pos_endpoints_small, visible=[False, True], xaxis='x1', yaxis='y1', colorscale='phase'
         )
-        fig.update_layout(legend_tracegroupgap=5)
+```
+```{python}
+for disturbance_amplitude in tqdm(figs):
+    for disturbance_train_std, fig in figs[disturbance_amplitude].items():        
         savefig(
             fig, 
             join([
@@ -829,69 +898,53 @@ for disturbance_amplitude in lohi(disturbance_amplitudes):
         figs[disturbance_amplitude][disturbance_train_std].show()
 ```
 
-### Side-by-side comparison of position trajectories across training conditions
-
-i.e. show center-out sets for model trained without dsiturbance vs. with strongest disturbance
-
-TODO: one comparison require a single call to `trajectories_2D`
-
-## Plot example trajectories for a single reach condition
+## Plot aligned trajectories
 
 i.e. for a single reach direction, compare multiple trials/replicates different training conditions; visualize how training on different disturbance strengths affects response.
 
 ```{python}
-fig_subdir = "single_reach_condition"
+fig_subdir = "aligned_to_reach_condition"
 ```
 
 ```{python}
-i_condition = 0
-```
-
-```{python}
-pos_endpoints_i = pos_endpoints_small[:, i_condition]
-```
-
-```{python}
-var_labels = ('Position', 'Velocity', 'Control force')
-
-where_plot = lambda states: (
-    states.mechanics.effector.pos,
-    states.mechanics.effector.vel,
-    states.efferent.output,
+plot_condition_trajectories = partial(
+    fbp.trajectories_2D,
+    var_labels=aligned_var_labels,
+    axes_labels=('x', 'y'),
+    layout_kws=dict(
+        width=900,
+        height=400,
+        legend_tracegroupgap=1,
+        margin_t=75,
+    ),
 )
 ```
 
 ### All trials and replicates for a given train-test condition, indexing by trial
 
 ```{python}
-fig_subdir = "single_reach_condition/per_train_test_pair"
-```
-
-```{python}
-plot_states = tree_take(all_states_small, i_condition, 2)
+fig_subdir = "aligned_to_reach_condition/per_train_test_pair"
 ```
 
 ```{python}
 figs = jt.map(
-    lambda states: fbp.trajectories_2D(
-        where_plot(states),
-        var_labels=var_labels,
-        axes_labels=('x', 'y'),
-        mode='lines',
+    partial(
+        plot_condition_trajectories, 
         legend_title="Trial",
         colorscale=COLORSCALES['trials'],
-        colorscale_axis=0,
+        colorscale_axis=0, 
+        mode='lines', 
         scatter_kws=dict(line_width=0.5),
     ),
-    plot_states,
-    is_leaf=is_module,
+    aligned_vars_small,
+    is_leaf=is_type(Responses),
 )
 ```
 
 ```{python}
 for disturbance_amplitude in tqdm(figs):
     for disturbance_train_std, fig in figs[disturbance_amplitude].items():
-        add_endpoint_traces(fig, pos_endpoints_i, xaxis='x1', yaxis='y1')
+        add_endpoint_traces(fig, pos_endpoints_small_aligned, xaxis='x1', yaxis='y1')
         
         add_context_annotation(
             fig,
@@ -901,14 +954,13 @@ for disturbance_amplitude in tqdm(figs):
             perturbations={
                 f"{disturbance_type}": (disturbance_amplitude, None, None)
             },
-            n=n_replicates_included[disturbance_train_std],  # color/legend is by trial, so this is N per trial
+            n=n_replicates_included[disturbance_train_std] * n_conditions_small,  # color/legend is by trial, so this is N per trial
             # i_condition=i_condition,
         )
         
         savefig(
             fig, 
             join([
-                f"single-condition-{i_condition}",
                 f"{disturbance_type}-field-{disturbance_amplitude}",
                 f"{disturbance_type_load}-train-std-{disturbance_train_std}",
             ]),
@@ -925,49 +977,46 @@ for disturbance_amplitude in lohi(disturbance_amplitudes):
 ### Compare disturbance amplitudes, for each trained disturbance std
 
 ```{python}
-fig_subdir = "single_reach_condition/compare_test_conditions"
+fig_subdir = "aligned_to_reach_condition/compare_test_conditions"
 ```
 
 ```{python}
 # Stack the states for different disturbance amplitudes into single arrays
-plot_states_stacked = tree_stack(plot_states.values())
+plot_vars_stacked = tree_stack(aligned_vars_small.values())
 
 figs = jt.map(
-    lambda states: fbp.trajectories_2D(
-        where_plot(states),
-        var_labels=var_labels,
-        mean_trajectory_line_width=3,
-        axes_labels=('x', 'y'),
-        mode='lines',
+    partial(
+        plot_condition_trajectories, 
         colorscale=COLORSCALES['disturbance_amplitudes'],
         colorscale_axis=0,
-        legend_title="Disturbance amplitude",
+        legend_title="Field<br>amplitude",
         legend_labels=disturbance_amplitudes,
+        mode='lines',
+        mean_trajectory_line_width=3,
         scatter_kws=dict(line_width=1, opacity=0.75),
     ),
-    plot_states_stacked,
-    is_leaf=is_module,
+    plot_vars_stacked,
+    is_leaf=is_type(Responses),
 )
 ```
 
 ```{python}
 for disturbance_train_std, fig in tqdm(figs.items()):
-    n_trials = n_evals_small * n_replicates_included[disturbance_train_std]
+    n_trials = n_evals_small * n_conditions_small * n_replicates_included[disturbance_train_std]
     
     add_context_annotation(
         fig,
         train_condition_strs=[
-            f"{disturbance_type_train} with amplitude ~ \U0001d4dd(0,{disturbance_train_std})"
+            f"{disturbance_type_train} fields with amplitude ~ \U0001d4dd(0,{disturbance_train_std})"
         ],
         n=n_trials,
     )
     
-    add_endpoint_traces(fig, pos_endpoints_i, xaxis='x1', yaxis='y1')
+    add_endpoint_traces(fig, pos_endpoints_small_aligned, xaxis='x1', yaxis='y1')
     
     savefig(
         fig, 
         join([
-            f"single-condition-{i_condition}",
             f"{disturbance_type_load}-train-std-{disturbance_train_std}",
         ]),
         subdir=fig_subdir,
@@ -982,7 +1031,7 @@ for disturbance_train_std in lohi(disturbance_train_stds):
 ### Compare the trained disturbance stds, for each test disturbance amplitude
 
 ```{python}
-fig_subdir = "single_reach_condition/compare_train_conditions"
+fig_subdir = "aligned_to_reach_condition/compare_train_conditions"
 ```
 
 ```{python}
@@ -997,49 +1046,52 @@ stride = 1
 
 # Stack the states for different training disturbance stds into single arrays
 # (also taking a subset of the training conditions with `subdict`)
-plot_states_stacked = {
+plot_vars_stacked = {
     # concatenate along the replicate axis, which has variable length
-    disturbance_amplitude: tree_stack(subdict(states, disturbance_train_stds_plot).values())
-    for disturbance_amplitude, states in plot_states.items()
+    disturbance_amplitude: tree_stack(subdict(vars_, disturbance_train_stds_plot).values())
+    for disturbance_amplitude, vars_ in aligned_vars_small.items()
 }
-
+```
+```{python}
 figs = jt.map(
-    lambda states: fbp.trajectories_2D(
-        where_plot(states),
-        var_labels=var_labels,
-        # ref_endpoints=(pos_endpoints, None),
-        mean_trajectory_line_width=3,
-        darken_mean=MEAN_LIGHTEN_FACTOR,
-        var_endpoint_ms=0,
-        axes_labels=('x', 'y'),
-        mode='lines',
-        stride=stride,
+    partial(
+        plot_condition_trajectories, 
         colorscale=COLORSCALES['disturbance_train_stds'],
         colorscale_axis=0,
-        legend_title='Train disturbance std.',
+        stride=stride,
+        legend_title="Train<br>field std.",
         legend_labels=disturbance_train_stds_plot,
-        scatter_kws=dict(line_width=1, opacity=0.3),
+        mode='lines',
+        mean_trajectory_line_width=3,
+        var_endpoint_ms=0,
+        darken_mean=MEAN_LIGHTEN_FACTOR,
+        scatter_kws=dict(line_width=0.5, opacity=0.3),
+        # ref_endpoints=(pos_endpoints, None),
     ),
-    plot_states_stacked,
-    is_leaf=is_module,
+    plot_vars_stacked,
+    is_leaf=is_type(Responses),
 )
+```
 
+```{python}
 for disturbance_amplitude, fig in tqdm(figs.items()):
     add_context_annotation(
         fig,
         perturbations={
             f"{disturbance_type}": (disturbance_amplitude, None, None)
         },
+        train_condition_strs=[
+            f"{disturbance_type_train} fields",
+        ],        
         # TODO: The number of replicates (`n_replicates_included`) may vary with the disturbance train std!
         # n=n_evals_small * n_replicates,
     )
     
-    add_endpoint_traces(fig, pos_endpoints_i, xaxis='x1', yaxis='y1')
+    add_endpoint_traces(fig, pos_endpoints_small_aligned, xaxis='x1', yaxis='y1')
 
     savefig(
         fig, 
         join([
-            f"single-condition-{i_condition}",
             f"{disturbance_type}-field-{disturbance_amplitude}",
         ]),
         subdir=fig_subdir,
@@ -1050,6 +1102,7 @@ for disturbance_amplitude, fig in tqdm(figs.items()):
 for disturbance_amplitude in lohi(disturbance_amplitudes):
     figs[disturbance_amplitude].show()
 ```
+
 
 ## Compare velocity profiles
 
@@ -1079,10 +1132,10 @@ fig_subdir = "velocity_profiles/speed"
 ```
 
 ```{python}
-# def get_speed(states):
-#     return jnp.linalg.norm(states.mechanics.effector.vel, axis=-1)
+def get_speed(responses):
+    return jnp.linalg.norm(responses.vel, axis=-1)
 
-# all_speeds = jt.map(get_speed, all_states, is_leaf=is_module)
+# all_speeds = jt.map(get_speed, aligned_vars, is_leaf=is_module)
 
 # n_dist = np.prod(jt.leaves(all_speeds)[0].shape[:-1])
 
@@ -1118,27 +1171,32 @@ fig_subdir = "velocity_profiles/forward_lateral"
 **TODO: Plot on shared time axis**
 
 ```{python}
-forward_lateral_vel = jt.map(
-    lambda state: get_forward_lateral_vel(state.mechanics.effector.vel, pos_endpoints),
-    all_states,
-    is_leaf=is_module,
+aligned_vel = jt.map(
+    lambda responses: responses.vel,
+    aligned_vars,
+    is_leaf=is_type(Responses),
 )
 ```
 
 ```{python}
-n_dist = np.prod(jt.leaves(forward_lateral_vel)[0].shape[:-2])
+n_dist = np.prod(jt.leaves(aligned_vel)[0].shape[:-2])
 
 figs = {
     disturbance_amplitude: {
         label: fbp.profiles(
-            tree_take(forward_lateral_vel, i, -1)[disturbance_amplitude],
+            tree_take(aligned_vel, i, -1)[disturbance_amplitude],
             varname=f"{label} velocity",
-            legend_title="Train disturbance std.",
+            legend_title="Train<br>field std.",
             mode='std', # or 'curves'
             n_std_plot=1,
             colors=list(disturbance_train_stds_colors_dark.values()),
             # stride_curves=500,
             # curves_kws=dict(opacity=0.7),
+            layout_kws=dict(
+                width=600,
+                height=400,
+                legend_tracegroupgap=1,
+            ),
         )
         for i, label in enumerate(("Forward", "Lateral"))
     }
@@ -1154,7 +1212,11 @@ for disturbance_amplitude in tqdm(disturbance_amplitudes):
             perturbations={
                 f"{disturbance_type}": (disturbance_amplitude, None, None)
             },
+            train_condition_strs=[
+                f"{disturbance_type_train} fields",
+            ],  
             n=n_dist,
+            y=0.95,
         )
         filename = f"{disturbance_type}-field-{disturbance_amplitude}_{label.lower()}-vels"
         savefig(fig, filename, subdir=fig_subdir)
@@ -1176,35 +1238,27 @@ fig_subdir = "performance_measures"
 Maximum speed
 
 ```{python}
-def get_max_speed(states):
-    return jnp.max(get_speed(states), axis=-1)
+def get_max_speed(responses):
+    return jnp.max(get_speed(responses), axis=-1)
 ```
 
 Maximum lateral (left and right relative to reach direction) and forward velocities
 
-**TODO: avoid repeat calculation of forward_lateral_vel; perhaps by inserting subtrees in `all_measure_funcs` and then flattening?**
-(alternatively, pre-calculate a PyTree of the relevant variables, as in 1-2b)
-**TODO: don't hard-code `pos_endpoints` otherwise we can't use the resulting functions on other task states (e.g. all_states_small)**
-
 ```{python}
-def get_max_forward_vel(states):
-    vel = states.mechanics.effector.vel
-    forward_lateral_vel = get_forward_lateral_vel(vel, pos_endpoints)
-    return jnp.max(forward_lateral_vel[..., 0], axis=-1)
+def get_max_forward_vel(aligned_vars, mul=1.):
+    return jnp.max(mul * aligned_vars.vel[..., 0], axis=-1)
 ```
 
 ```{python}
-def get_max_lateral_vel(states, mul=1.):
-    vel = states.mechanics.effector.vel
-    return jnp.max(mul * get_forward_lateral_vel(vel, pos_endpoints)[..., 1], axis=-1)
+def get_max_lateral_vel(aligned_vars, mul=1.):
+    return jnp.max(mul * aligned_vars.vel[..., 1], axis=-1)
 ```
 
 Time to peak forward velocity
 
 ```{python}
-def get_argmax_forward_vel(states):
-    vel = states.mechanics.effector.vel
-    return jnp.argmax(get_forward_lateral_vel(vel, pos_endpoints)[..., 0], axis=-1)
+def get_argmax_forward_vel(aligned_vars, mul=1.):
+    return jnp.argmax(mul * aligned_vars.vel[..., 0], axis=-1)
 ```
 
 Maximum and summed lateral distance of the effector from a straight trajectory
@@ -1214,16 +1268,14 @@ Maximum and summed lateral distance of the effector from a straight trajectory
 ```
 
 ```{python}
-def get_max_lateral_distance(states, eval_reach_length=None):
-    pos = states.mechanics.effector.pos
-    distances = jnp.max(get_lateral_distance(pos, pos_endpoints), axis=-1)
+def get_max_lateral_distance(aligned_vars, eval_reach_length=None):
+    distances = jnp.max(aligned_vars.pos[..., 1], axis=-1)
     if eval_reach_length is not None:
         distances = 100 * distances / eval_reach_length
     return distances
-    
-def get_sum_lateral_distance(states):
-    pos = states.mechanics.effector.pos
-    return jnp.sum(jnp.abs(get_lateral_distance(pos, pos_endpoints)), axis=-1)
+
+def get_sum_lateral_distance(aligned_vars):
+    return jnp.sum(jnp.abs(aligned_vars.pos[..., 1]), axis=-1)
 ```
 
 (Note that we use `jnp.abs`, so perturbations that cause oscillation about the straight reach line will lead to accumulation of summed deviation, not cancellation.)
@@ -1233,17 +1285,18 @@ Position and velocity errors relative to the goal, averaged over the last `last_
 ```{python}
 last_n_steps = 10
 
-def end_position_error(states, last_n_steps=1, eval_reach_length=None):
-    final_pos = states.mechanics.effector.pos[..., -last_n_steps:, :]
-    goal_pos = trial_specs.targets['mechanics.effector.pos'].value[..., -last_n_steps:, :]
+def end_position_error(aligned_vars, eval_reach_length=1, last_n_steps=1):
+    final_pos = aligned_vars.pos[..., -last_n_steps:, :]
+    # Since the data is aligned, the goal is always at the same position
+    goal_pos = jnp.array([eval_reach_length, 0])
     error = jnp.mean(jnp.linalg.norm(final_pos - goal_pos, axis=-1), axis=-1)
     if eval_reach_length is not None:
         error = 100 * error / eval_reach_length
     return error
     
 # TODO: This could be normalized by the max. velocity
-def end_velocity_error(states, last_n_steps=1):
-    final_vel = states.mechanics.effector.vel[..., -last_n_steps:, :]
+def end_velocity_error(aligned_vars, last_n_steps=1):
+    final_vel = aligned_vars.vel[..., -last_n_steps:, :]
     goal_vel = 0
     return jnp.mean(jnp.linalg.norm(final_vel - goal_vel, axis=-1), axis=-1)
 ```
@@ -1251,14 +1304,26 @@ def end_velocity_error(states, last_n_steps=1):
 Max and sum of the net control forces
 
 ```{python}
-def get_net_control_force(states):
-    return jnp.linalg.norm(states.efferent.output, axis=-1)
+def get_net_control_force(aligned_vars):
+    return jnp.linalg.norm(aligned_vars.force, axis=-1)
 
-def get_max_net_control_force(states):
-    return jnp.max(get_net_control_force(states), axis=-1)
+def get_max_net_control_force(aligned_vars):
+    return jnp.max(get_net_control_force(aligned_vars), axis=-1)
     
-def get_sum_net_control_force(states):
-    return jnp.sum(get_net_control_force(states), axis=-1)
+def get_sum_net_control_force(aligned_vars):
+    return jnp.sum(get_net_control_force(aligned_vars), axis=-1)
+    
+def get_max_parallel_force(aligned_vars, mul=1., timesteps=slice(None)):
+    return jnp.max(mul * aligned_vars.force[..., timesteps, 0], axis=-1)
+    
+def get_sum_parallel_force(aligned_vars, timesteps=slice(None)):
+    return jnp.sum(jnp.abs(aligned_vars.force[..., timesteps, 0]), axis=-1)
+    
+def get_max_lateral_force(aligned_vars, mul=1., timesteps=slice(None)):
+    return jnp.max(mul * aligned_vars.force[..., timesteps, 1], axis=-1)
+    
+def get_sum_lateral_force(aligned_vars, timesteps=slice(None)):
+    return jnp.sum(jnp.abs(aligned_vars.force[..., timesteps, 1]), axis=-1)
 ```
 
 Collect measures into PyTree
@@ -1290,6 +1355,22 @@ all_measure_funcs, measure_handles = tree_unzip(OrderedDict({
     ),
     "Max net control force": (get_max_net_control_force, "force-net-max"),
     "Sum net control force": (get_sum_net_control_force, "force-net-sum"),
+    "Max forward force": (
+        partial(get_max_parallel_force, mul=1.), 
+        "force-forward-max",
+    ),
+    "Sum parallel force": (
+        partial(get_sum_parallel_force), 
+        "force-forward-sum",
+    ),
+    "Max lateral (counter pert.) force": (
+        partial(get_max_lateral_force, mul=-1.), 
+        "force-counterfield-lateral-max",
+    ),
+    "Sum lateral force": (
+        partial(get_sum_lateral_force), 
+        "force-lateral-sum",
+    ),
 }))
 
 box_measure_funcs, box_measure_handles = tree_unzip(OrderedDict({
@@ -1302,25 +1383,29 @@ from jaxtyping import PyTree
 from collections.abc import Callable
 from feedbax.bodies import SimpleFeedbackState
 
-def get_all_measures(measure_funcs: PyTree[Callable], states: PyTree[SimpleFeedbackState]):
+def get_all_measures(measure_funcs: PyTree[Callable], all_aligned_vars: PyTree[SimpleFeedbackState]):
     return jt.map(
         lambda func: jt.map(
-            lambda states: func(states),
-            states,
-            is_leaf=is_module,
+            lambda aligned_vars: func(aligned_vars),
+            all_aligned_vars,
+            is_leaf=is_type(Responses),
         ),
         measure_funcs,
     )
     
-all_measures = get_all_measures(all_measure_funcs, all_states)
+all_measures = get_all_measures(all_measure_funcs, aligned_vars)
 
-box_measures = get_all_measures(box_measure_funcs, all_states)
+box_measures = get_all_measures(box_measure_funcs, aligned_vars)
 
 # TODO: fix the `pos_endpoints` hardcoding, above
 # all_measures_small = get_all_measures(all_measure_funcs, all_states_small)
 ```
 
 ### For each evaluation condition, plot measure distributions by training condition
+
+:::{note}
+Skip this, since better summary plots immediately follow
+:::
 
 ```{python}
 fig_subdir = "performance_measures/compare_train_conditions"
@@ -1346,19 +1431,23 @@ def get_violins_across_train_conditions(data, measure_name, disturbance_amplitud
                 showlegend=False,
                 opacity=1,
                 spanmode='hard',
-                
             )
             for i, disturbance_train_std in enumerate(data)
         ],
+        
         layout=dict(
             # title=(f"Response to amplitude {disturbance_amplitude} field <br>N = {n_dist}"),
-            xaxis_title="Train disturbance std.",
+            width=900,
+            height=400,
+            xaxis_title="Train field std.",
             yaxis_title=measure_name,
             xaxis_range=[-0.5, len(data) - 0.5],
             xaxis_tickvals=list(data.keys()),
             yaxis_range=[0, None],
             # violinmode='overlay',
             violingap=0,
+            margin_t=75,
+            legend_tracegroupgap=1,
         )
     )
     
@@ -1368,8 +1457,11 @@ def get_violins_across_train_conditions(data, measure_name, disturbance_amplitud
     add_context_annotation(
         fig, 
         perturbations={
-            f"{disturbance_type}": (disturbance_amplitude, None, None)
+            f"{disturbance_type} field": (disturbance_amplitude, None, None)
         },
+        train_condition_strs=[
+            f"{disturbance_type_train} fields",
+        ],
         n=n_dist, 
         **annotation_kws,
     )
@@ -1389,7 +1481,119 @@ def get_one_measure_plot_per_eval_condition(plot_func, all_measures, **kwargs):
     }
     
 
-figs = get_one_measure_plot_per_eval_condition(
+# figs = get_one_measure_plot_per_eval_condition(
+#     get_violins_across_train_conditions, 
+#     all_measures,
+# )
+```
+
+```{python}
+# for measure_name, measure_handle in tqdm(measure_handles.items()):
+#     for disturbance_amplitude, fig in figs[measure_name].items():
+#         savefig(
+#             fig, 
+#             join([
+#                 f"{measure_handle}",
+#                 f"{disturbance_type}-field-{disturbance_amplitude}",
+#             ]),
+#             subdir=fig_subdir,
+#         )
+```
+
+```{python}
+# for measure_name in all_measures:
+#     figs[measure_name][disturbance_amplitudes[0]].show()
+#     figs[measure_name][disturbance_amplitudes[-1]].show()
+```
+
+### Plot measure distributions by training condition, across evaluation conditions
+
+```{python}
+fig_subdir = "performance_measures/compare_train_conditions"
+```
+
+One plot per evaluation condition (disturbance amplitude); one violin per training condition (disturbance std).
+
+Distributions are aggregated over all replicates and trials. 
+
+```{python}
+def get_violins_across_train_conditions(measure_data, measure_name, annotation_kws=None):
+    example_traindict = jt.leaves(measure_data, is_leaf=is_type(TrainStdDict))[0]
+    n_train_std = len(example_traindict)
+    n_dist = np.prod(jt.leaves(measure_data)[0].shape)
+
+    fig = go.Figure(
+        layout=dict(
+            # title=(f"Response to amplitude {disturbance_amplitude} field <br>N = {n_dist}"),
+            width=900,
+            height=400,
+            legend_title="Field<br>amplitude",
+            yaxis_title=measure_name,
+            xaxis_title="Train field std.",
+            xaxis_type='category',
+            # xaxis_range=[-0.5, n_train_std - 0.5],
+            xaxis_tickvals=np.arange(n_train_std),
+            xaxis_ticktext=[f'{std:.1f}' for std in example_traindict.keys()],
+            xaxis_tickformat='.1',
+            yaxis_range=[0, None],
+            violinmode='overlay',
+            violingap=0,
+            violingroupgap=0,
+            margin_t=75,
+        )
+    )
+    
+    for i, disturbance_amplitude in enumerate(measure_data):
+        measure_data_i = measure_data[disturbance_amplitude]
+        
+        xs = jnp.stack([
+            jnp.full_like(data, disturbance_train_std)
+            for disturbance_train_std, data in measure_data_i.items()
+        ]).flatten()
+        
+        fig.add_trace(
+            go.Violin(
+                x=xs,
+                y=jnp.stack(tuple(measure_data_i.values())).flatten(),
+                name=disturbance_amplitude,
+                legendgroup=disturbance_amplitude,
+                box_visible=False,
+                meanline_visible=True,
+                line_color=disturbance_amplitudes_colors_dark[disturbance_amplitude],
+                # showlegend=False,
+                opacity=1,
+                spanmode='hard',
+            )
+        )
+        
+    if annotation_kws is None:
+        annotation_kws = dict()
+    
+    add_context_annotation(
+        fig, 
+        perturbations={
+            f"{disturbance_type} field": (None, None, None)
+        },
+        train_condition_strs=[
+            f"{disturbance_type_train} fields",
+        ],
+        n=n_dist, 
+        **annotation_kws,
+    )
+    
+    return fig
+
+
+def get_violins_per_measure(plot_func, all_measures, **kwargs):
+    return {
+        measure_name: plot_func(
+            measure, measure_name, **kwargs
+        )
+        for measure_name, measure in all_measures.items()
+    }
+    
+
+figs = get_violins_per_measure(
     get_violins_across_train_conditions, 
     all_measures,
 )
@@ -1397,21 +1601,18 @@ figs = get_one_measure_plot_per_eval_condition(
 
 ```{python}
 for measure_name, measure_handle in tqdm(measure_handles.items()):
-    for disturbance_amplitude, fig in figs[measure_name].items():
-        savefig(
-            fig, 
-            join([
-                f"{measure_handle}",
-                f"{disturbance_type}-field-{disturbance_amplitude}",
-            ]),
-            subdir=fig_subdir,
-        )
+    savefig(
+        fig, 
+        join([
+            f"{measure_handle}",
+        ]),
+        subdir=fig_subdir,
+    )
 ```
 
 ```{python}
 for measure_name in all_measures:
-    figs[measure_name][disturbance_amplitudes[0]].show()
-    figs[measure_name][disturbance_amplitudes[-1]].show()
+    figs[measure_name].show()
 ```
 
 ### Repeat for just a single reach condition
