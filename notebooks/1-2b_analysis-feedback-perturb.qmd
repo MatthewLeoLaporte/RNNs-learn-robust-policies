@@ -89,6 +89,7 @@ from rnns_learn_robust_motor_policies.plot_utils import (
     toggle_bounds_visibility,
     get_merged_context_annotation,
     figs_flatten_with_paths,
+    figleaves,
 )
 from rnns_learn_robust_motor_policies.state_utils import (
     get_forward_lateral_vel, 
@@ -144,9 +145,9 @@ We may want to specify 1) which trained models to load, by their parameters, and
 #| tags: [parameters]
 
 # Specify which trained models to load 
-disturbance_type_load: Literal['curl', 'random'] = 'random'
-feedback_noise_std_load = 0.1
-motor_noise_std_load = 0.1
+disturbance_type_load: Literal['curl', 'random'] = 'curl'
+feedback_noise_std_load = 0.04
+motor_noise_std_load = 0.04
 feedback_delay_steps_load = 0
 
 # Specify model parameters to use for analysis (None -> use training value)
@@ -683,7 +684,7 @@ models = all_models_imp[analysis_variant]
 ```{python}
 suffix = f"imp-steps-{impulse_start_step}-to-{impulse_end_step}_noise-{noise_stds['feedback']}-{noise_stds['motor']}_delay-{feedback_delay_steps}"
 
-FIGS_DIR = Path(f'../figures/{NB_ID}/train__{suffix_train}/{suffix}')
+FIGS_DIR = Path(f'/mnt/storage/tmp/figures/{NB_ID}/train__{suffix_train}/{suffix}')
 
 FIGS_DIR.mkdir(parents=True, exist_ok=True)
 ```
@@ -716,22 +717,30 @@ fig_subdir = 'example_trial_sets'
 ```
 
 ```{python}
-var_labels = ('Position', 'Velocity', 'Control force')
-
-ExamplePlotVars = namedtuple("ExamplePlotVars", ['pos', 'vel', 'force'])
-
-where_plot = lambda states: ExamplePlotVars(
-    states.mechanics.effector.pos,
-    states.mechanics.effector.vel,
-    states.efferent.output,
-)
+if not any_system_noise:
+    ExamplePlotVars = namedtuple("ExamplePlotVars", ['pos', 'vel', 'force'])
+    var_labels = ExamplePlotVars('Position', 'Velocity', 'Control force')
+    where_plot = lambda states: ExamplePlotVars(
+        states.mechanics.effector.pos,
+        states.mechanics.effector.vel,
+        states.efferent.output,
+    )
+else:
+    ExamplePlotVars = namedtuple("ExamplePlotVars", ['pos', 'vel'])
+    var_labels = ExamplePlotVars('Position', 'Velocity')
+    # Forces are very messy when there's noise,
+    # and we'll visualize the aligned forces anyway
+    where_plot = lambda states: ExamplePlotVars(
+        states.mechanics.effector.pos,
+        states.mechanics.effector.vel,
+    )
 ```
 
 ### A single trial set, for a single replicate
 
 ```{python}
 i_trial = 0
-i_replicate = 0
+i_replicate = None
 
 # Index the trial and replicate
 # plot_states = tree_take_multi(all_states, [i_trial, i_replicate], [0, 1])
@@ -741,21 +750,31 @@ plot_states = jt.map(where_plot, all_states, is_leaf=is_module)
 ```
 
 ```{python}
+if i_replicate is None:
+    get_replicate = lambda train_std: best_replicate[train_std]
+else:
+    get_replicate = lambda _: i_replicate
+
 figs = jt.map(
     lambda states: {
         train_std: fbp.trajectories_2D(
-            tuple(tree_take_multi(
-                states, 
-                [i_trial, best_replicate[train_std]],
+            tree_take_multi(
+                plot_vars, 
+                [i_trial, get_replicate(train_std)],
                 [0, 1]
-            )),
+            ),
             var_labels=var_labels,
             axes_labels=('x', 'y'),
-            mode='markers+lines',
+            curves_mode='markers+lines',
             ms=3,
             scatter_kws=dict(line_width=0.75),
+            layout_kws=dict(
+                width=100 + len(var_labels) * 300,
+                height=400,
+                legend_tracegroupgap=1,
+            ),
         )
-        for train_std in states.items()
+        for train_std, plot_vars in states.items()
     },
     plot_states,
     is_leaf=is_type(TrainStdDict),
@@ -772,25 +791,26 @@ def merge_xy_trial_set_figs(figs):
     return fig
 
 # TODO: Alter something (e.g. color) so it is easier to tell the directions apart
-if analysis_variant == 'xy':
-    figs = {
-        label: jt.map(
-            lambda train_std_figs: OrderedDict({
-                std: merge_xy_trial_set_figs(figs_xy)
-                for std, figs_xy in train_std_figs.items()
-            }),
-            figs_t,
-            is_leaf=is_type(OrderedDict),
-        )
-        for label, figs_t in {
-            label: jt.transpose(
-                jt.structure(dict.fromkeys(coord_names, '*')),
-                jt.structure(OrderedDict.fromkeys(disturbance_train_stds, '*')),
-                fs,
-            )
-            for label, pert_var_figs in figs.items()
-        }.items()
-    }
+# TODO: Make sure this is still working, if xy perturbations ever become relevant again
+# if analysis_variant == 'xy':
+#     figs = {
+#         label: jt.map(
+#             lambda train_std_figs: OrderedDict({
+#                 std: merge_xy_trial_set_figs(figs_xy)
+#                 for std, figs_xy in train_std_figs.items()
+#             }),
+#             figs_t,
+#             is_leaf=is_type(OrderedDict),
+#         )
+#         for label, figs_t in {
+#             label: jt.transpose(
+#                 jt.structure(dict.fromkeys(coord_names, '*')),
+#                 jt.structure(OrderedDict.fromkeys(disturbance_train_stds, '*')),
+#                 fs,
+#             )
+#             for label, pert_var_figs in figs.items()
+#         }.items()
+#     }
 ```
 
 ```{python}
@@ -926,6 +946,8 @@ def get_all_profiles(all_plot, var_label, disturbance_stds=None, colors=None):
                     colors=list(colors.values()),
                     layout_kws=dict(
                         legend_title="Train<br>field std.",
+                        width=600,
+                        height=400,
                         legend_tracegroupgap=1,
                     ),
                 ),
@@ -1335,6 +1357,7 @@ fig_subdir = "performance_measures/all_train_conditions"
 ```{python}
 def get_violins(measure_data, measure_name, annotation_kws=None, layout_kws=None):
     n_dist = np.prod(jt.leaves(measure_data)[0].shape)
+    n_violins = len(jt.leaves(measure_data, is_leaf=is_type(TrainStdDict))[0])
     
     if layout_kws is None:
         layout_kws = dict()
@@ -1349,6 +1372,7 @@ def get_violins(measure_data, measure_name, annotation_kws=None, layout_kws=None
                     x=np.full((n_dist,), disturbance_train_std),
                     y=data.flatten(),
                     name=pert_var,
+                    legendgroup=pert_var,
                     box_visible=False,
                     meanline_visible=True,
                     line_color=pert_vars_colors[pert_var],
@@ -1361,10 +1385,11 @@ def get_violins(measure_data, measure_name, annotation_kws=None, layout_kws=None
         ]),
         layout=dict(
             xaxis_title="Train field std.",
+            xaxis_type='category',
             yaxis_title=measure_name,
-            # xaxis_range=[-0.5, len(measure_data) - 0.5],
-            # xaxis_tickvals=list(measure_data.keys()),
-            yaxis_range=[0, None],
+            xaxis_range=[-0.5, n_violins - 0.5],
+            xaxis_tickvals=np.arange(n_violins),
+            # yaxis_range=[0, None],
             legend_title="Perturbed<br>feedback var.",
             legend_tracegroupgap=1,
             # violinmode='overlay',
@@ -1388,8 +1413,8 @@ We'll find the maximum measure value for each measure type, and apply the same y
 ```{python}
 measure_ranges = {
     measure_name: (
-            jnp.min(measure_data_stacked),
-            jnp.max(measure_data_stacked),   
+            jnp.nanmin(measure_data_stacked),
+            jnp.nanmax(measure_data_stacked),   
     )
     for measure_name, measure_data_stacked in {
         measure_name: jnp.stack(jt.leaves(measure_data))
@@ -1442,8 +1467,8 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
 ```
 
 ```{python}
-# for measure_name in all_measures:
-#     figs[measure_name].show()
+for measure_name in all_measures:
+    figs[measure_name][-1].show()
 ```
 
 ### Comparison of low-high training conditions
@@ -1455,8 +1480,8 @@ fig_subdir = "performance_measures/lohi_train_conditions"
 ```{python}
 measure_ranges_lohi = {
     measure_name: (
-            jnp.min(measure_data_stacked),
-            jnp.max(measure_data_stacked),   
+            jnp.nanmin(measure_data_stacked),
+            jnp.nanmax(measure_data_stacked),   
     )
     for measure_name, measure_data_stacked in {
         measure_name: jnp.stack(jt.leaves(measure_data))
@@ -1470,7 +1495,7 @@ figs = {
             measure, 
             measure_name,
             layout_kws=dict(
-                width=550,
+                width=500,
                 height=400,
                 yaxis_range=[0, measure_ranges_lohi[measure_name][1]],
             ),
@@ -1583,13 +1608,13 @@ def get_violins_comparing_amplitudes(measure_data, measure_name, pert_var, annot
         )
             
     fig.update_layout(
-        width=900,
+        width=600,
         height=400,
         xaxis_title="Impulse amplitude",
         yaxis_title=measure_name,
         # xaxis_range=[-0.5, len(measure_data) - 0.5],
         # xaxis_tickvals=list(measure_data.keys()),
-        yaxis_range=[0, None],
+        # yaxis_range=[0, None],
         legend_title="Train<br>field std.",
         legend_tracegroupgap=1,
         violinmode='group',
@@ -1619,8 +1644,6 @@ figs = {
             measure_name,
             pert_var,
             layout_kws=dict(
-                width=800,
-                height=500,
                 yaxis_range=[0, measure_ranges[measure_name][1]],
             ),
         )

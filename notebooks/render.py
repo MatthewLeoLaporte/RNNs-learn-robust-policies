@@ -80,7 +80,8 @@ def render_quarto(quarto_doc: str, output_dir: str, params: Dict[str, Any]):
     
 
 def process_combination(quarto_docs: List[str], combo: List[Any], parameter_names: List[str], 
-                       output_format: List[List[str]], default_assignments: List[Dict[str, str]]):
+                       output_format: List[List[str]], default_assignments: List[Dict[str, str]], 
+                       output_base_dir: str = "_output"):  # Add output_base_dir parameter
     """Process all Quarto documents with a single parameter combination."""
     logger.info(f"Processing combination: {combo}")
     
@@ -101,14 +102,15 @@ def process_combination(quarto_docs: List[str], combo: List[Any], parameter_name
         
         output_label = format_output_label(output_format, params)
         logger.info(f"Formatted output label: {output_label}")
-        output_dir = os.path.join("_output", first_part, output_label)
+        output_dir = os.path.join(output_base_dir, first_part, output_label)  # Use output_base_dir instead of hardcoded "_output"
         render_quarto(quarto_doc, output_dir, params)
-
+        
 def main():
     """Main function to orchestrate the Quarto document generation process."""
     parser = argparse.ArgumentParser(description="Generate Quarto documents with parameter combinations.")
     parser.add_argument("quarto_docs", nargs='+', help="Quarto document filenames")
     parser.add_argument("-a", "--all", action="store_true", help="Use render_params_all.yaml instead of render_params.yaml")
+    parser.add_argument("-o", "--output-dir", default="_output", help="Base output directory (default: _output)")  # Add argument
     args = parser.parse_args()
 
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -120,8 +122,6 @@ def main():
     combinations = expand_combinations(config['parameter_combinations'], parameter_names, config.get('rules', []))
     logger.info(f"Expanded combinations: {combinations}")
     output_format = config['output_format']
-    
-    # Fetch default assignments from the config
     default_assignments = config.get('default_assignments', [])
     
     logger.info(f"Output format: {output_format}")
@@ -129,8 +129,8 @@ def main():
 
     # Process each combination for all documents
     for combo in combinations:
-        process_combination(args.quarto_docs, combo, parameter_names, output_format, default_assignments)
-
-
+        process_combination(args.quarto_docs, combo, parameter_names, output_format, 
+                          default_assignments, args.output_dir)  # Pass output_dir argument
+        
 if __name__ == "__main__":
     main()

@@ -5,6 +5,7 @@ from typing import Optional
 
 import jax
 import jax.numpy as jnp
+import jax.tree as jt
 from jaxtyping import Array, Float
 import matplotlib.figure as mplfig
 import plotly.colors as plc
@@ -43,7 +44,7 @@ def get_savefig_func(fig_dir: Path, suffix=""):
         
         elif isinstance(fig, go.Figure):
             # Save HTML for easy viewing, and JSON for embedding.
-            fig.write_html(save_dir / f'{label}.html')
+            # fig.write_html(save_dir / f'{label}.html')
             fig.write_json(save_dir / f'{label}.json')
             
             # Also save PNG for easy browsing and sharing
@@ -55,6 +56,10 @@ def get_savefig_func(fig_dir: Path, suffix=""):
 
 def figs_flatten_with_paths(figs):
     return jax.tree_util.tree_flatten_with_path(figs, is_leaf=is_type(go.Figure))[0]
+
+
+def figleaves(tree):
+    return jt.leaves(tree, is_leaf=is_type(go.Figure))
 
 
 def add_context_annotation(

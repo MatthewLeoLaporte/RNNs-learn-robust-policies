@@ -1,6 +1,6 @@
 ---
 created: 2024-10-04T11:27
-updated: 2024-11-02T16:24
+updated: 2024-11-03T16:15
 ---
 - [ ] [[#Part 1 results review and synthesis|Review part 1 results]]
 - [ ] **Move part 1 training to a script + a yaml file defining which hyperparameters to train** — or otherwise we’ll have to use batch quarto render 
@@ -25,8 +25,8 @@ Review the results so far and make a summary of the ones that should appear as m
 - [x] Respect the y axis limits (zero at bottom!) for the violin plots in 1-2a — neither the Quarto rendered nor the exported PNG/HTML Plotly figures do so! **I think the issue with the *saved* plots was only in 1-2b. It’s fixed now. Not sure the Quarto problem is fixable or worth the time.***
 - [x] Show average trajectories in multi-trial center out sets
 - [x] “Max/sum net control force” in 1-2a should be divided into parallel/orthogonal versions; it looks like the parallel component doesn’t vary between test conditions for a given train condition, but the orthogonal component does.
-- [ ] **Debug 1-2b: use best replicate**
-- [ ] Plot std bounds (or similar) for aligned 2D trajectories; plotting all the individual trials is too expensive once they are aligned. I’m not sure how to plot filled areas between fully 2D curves; instead it might make sense to use a [KDE](https://plotly.com/python/2d-histogram-contour/) with a single contour.
+- [x] **Debug 1-2b: use best replicate**
+- [ ] ~~Plot std bounds (or similar) for aligned 2D trajectories; plotting all the individual trials is too expensive once they are aligned. I’m not sure how to plot filled areas between fully 2D curves; instead it might make sense to use a [KDE](https://plotly.com/python/2d-histogram-contour/) with a single contour.~~ It’s hard to plot multiple KDEs on the same subplot in different colors. It would make more sense to plot confidence bounds, but this is also tricky. Leaving it be for now; instead I will downsample the curves if they exceed a specified quantity.
 - [ ] Exclude from the replicate-comparison violins, any replicates which *for either the zero or the highest training condition* were excluded from analysis.
 
 ## Gunnar meeting

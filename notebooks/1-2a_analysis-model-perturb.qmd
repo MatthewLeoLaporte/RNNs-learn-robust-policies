@@ -79,6 +79,7 @@ from rnns_learn_robust_motor_policies.plot_utils import (
     get_savefig_func,
     add_context_annotation,
     add_endpoint_traces,
+    figleaves,
 )
 from rnns_learn_robust_motor_policies.state_utils import (
     get_forward_lateral_vel, 
@@ -136,8 +137,8 @@ We may want to specify 1) which trained models to load, by their parameters, and
 
 # Specify which trained models to load 
 disturbance_type_load: Literal['curl', 'random'] = 'curl'
-feedback_noise_std_load = 0.0
-motor_noise_std_load = 0.0
+feedback_noise_std_load = 0.04
+motor_noise_std_load = 0.04
 feedback_delay_steps_load = 0
 
 # Specify model parameters to use for analysis (None -> use training value)
@@ -433,7 +434,7 @@ The hierarchy of figure directories depends on the hyperparameters of the traine
 ```{python}
 suffix = f"{disturbance_type}_noise-{noise_stds['feedback']}-{noise_stds['motor']}_delay-{feedback_delay_steps}"
 
-FIGS_DIR = Path(f'../figures/{NB_ID}/train__{suffix_train}/{suffix}')
+FIGS_DIR = Path(f'/mnt/storage/tmp/figures/{NB_ID}/train__{suffix_train}/{suffix}')
 
 for d in (FIGS_DIR,):
     d.mkdir(parents=True, exist_ok=True)
@@ -678,13 +679,21 @@ fig_subdir = "center_out_sets"
 ```
 
 ```{python}
-var_labels = ('Position', 'Velocity', 'Control force')
-
-where_plot = lambda states: (
-    states.mechanics.effector.pos,
-    states.mechanics.effector.vel,
-    states.efferent.output,
-)
+if not any_system_noise:
+    var_labels = ('Position', 'Velocity', 'Control force')
+    where_plot = lambda states: (
+        states.mechanics.effector.pos,
+        states.mechanics.effector.vel,
+        states.efferent.output,
+    )
+else:
+    var_labels = ('Position', 'Velocity')
+    # Forces are very messy when there's noise,
+    # and we'll visualize the aligned forces anyway
+    where_plot = lambda states: (
+        states.mechanics.effector.pos,
+        states.mechanics.effector.vel,
+    )
 ```
 
 ```{python}
@@ -696,7 +705,7 @@ plot_trajectories = lambda states, *args, **kwargs: fbp.trajectories_2D(
     legend_title='Reach direction',
     # scatter_kws=dict(line_width=0.5),
     layout_kws=dict(
-        width=1000,
+        width=100 + len(var_labels) * 300,
         height=400,
         legend_tracegroupgap=1,
     ),
@@ -725,7 +734,7 @@ else:
     figs = jt.map(
         partial(
             plot_trajectories, 
-            mode='lines', 
+            curves_mode='lines', 
             colorscale_axis=1, 
             mean_trajectory_line_width=2.5,
             darken_mean=MEAN_LIGHTEN_FACTOR,
@@ -849,7 +858,7 @@ plot_states = tree_take_multi(all_states_small, [i_trial], [0])
 figs = jt.map(
     partial(
         plot_trajectories, 
-        mode='lines', 
+        curves_mode='lines', 
         colorscale_axis=1, 
         mean_trajectory_line_width=2.5,
         darken_mean=MEAN_LIGHTEN_FACTOR,
@@ -907,15 +916,25 @@ fig_subdir = "aligned_to_reach_condition"
 ```
 
 ```{python}
+n_curves_max = 20
+
 plot_condition_trajectories = partial(
     fbp.trajectories_2D,
     var_labels=aligned_var_labels,
     axes_labels=('x', 'y'),
+    # mode='std',
+    mean_trajectory_line_width=3,
+    n_curves_max=n_curves_max,
+    darken_mean=MEAN_LIGHTEN_FACTOR,
     layout_kws=dict(
         width=900,
         height=400,
         legend_tracegroupgap=1,
         margin_t=75,
+    ),
+    scatter_kws=dict(
+        line_width=1, 
+        opacity=0.6,
     ),
 )
 ```
@@ -933,8 +952,7 @@ figs = jt.map(
         legend_title="Trial",
         colorscale=COLORSCALES['trials'],
         colorscale_axis=0, 
-        mode='lines', 
-        scatter_kws=dict(line_width=0.5),
+        curves_mode='lines', 
     ),
     aligned_vars_small,
     is_leaf=is_type(Responses),
@@ -944,6 +962,8 @@ figs = jt.map(
 ```{python}
 for disturbance_amplitude in tqdm(figs):
     for disturbance_train_std, fig in figs[disturbance_amplitude].items():
+        n_dist = n_replicates_included[disturbance_train_std] * n_conditions_small
+        
         add_endpoint_traces(fig, pos_endpoints_small_aligned, xaxis='x1', yaxis='y1')
         
         add_context_annotation(
@@ -954,24 +974,27 @@ for disturbance_amplitude in tqdm(figs):
             perturbations={
                 f"{disturbance_type}": (disturbance_amplitude, None, None)
             },
-            n=n_replicates_included[disturbance_train_std] * n_conditions_small,  # color/legend is by trial, so this is N per trial
+            n=min(n_dist, n_curves_max),  # color/legend is by trial, so this is N per trial
             # i_condition=i_condition,
         )
         
-        savefig(
-            fig, 
-            join([
-                f"{disturbance_type}-field-{disturbance_amplitude}",
-                f"{disturbance_type_load}-train-std-{disturbance_train_std}",
-            ]),
-            subdir=fig_subdir,
-        )
+        # savefig(
+        #     fig, 
+        #     join([
+        #         f"{disturbance_type}-field-{disturbance_amplitude}",
+        #         f"{disturbance_type_load}-train-std-{disturbance_train_std}",
+        #     ]),
+        #     subdir=fig_subdir,
+        # )
 ```
 
+Just show a single example, so we'll know if something is really amiss. But these plots are not very interesting except to show the overall variation for a given noise condition.
+
 ```{python}
-for disturbance_amplitude in lohi(disturbance_amplitudes):
-    for disturbance_train_std in lohi(disturbance_train_stds):
-        figs[disturbance_amplitude][disturbance_train_std].show()
+figleaves(figs)[-1].show()
+# for disturbance_amplitude in lohi(disturbance_amplitudes):
+#     for disturbance_train_std in lohi(disturbance_train_stds):
+#         figs[disturbance_amplitude][disturbance_train_std].show()
 ```
 
 ### Compare disturbance amplitudes, for each trained disturbance std
@@ -991,9 +1014,7 @@ figs = jt.map(
         colorscale_axis=0,
         legend_title="Field<br>amplitude",
         legend_labels=disturbance_amplitudes,
-        mode='lines',
-        mean_trajectory_line_width=3,
-        scatter_kws=dict(line_width=1, opacity=0.75),
+        curves_mode='lines',
     ),
     plot_vars_stacked,
     is_leaf=is_type(Responses),
@@ -1009,7 +1030,7 @@ for disturbance_train_std, fig in tqdm(figs.items()):
         train_condition_strs=[
             f"{disturbance_type_train} fields with amplitude ~ \U0001d4dd(0,{disturbance_train_std})"
         ],
-        n=n_trials,
+        n=min(n_dist, n_curves_max),
     )
     
     add_endpoint_traces(fig, pos_endpoints_small_aligned, xaxis='x1', yaxis='y1')
@@ -1061,10 +1082,8 @@ figs = jt.map(
         stride=stride,
         legend_title="Train<br>field std.",
         legend_labels=disturbance_train_stds_plot,
-        mode='lines',
-        mean_trajectory_line_width=3,
+        curves_mode='lines',
         var_endpoint_ms=0,
-        darken_mean=MEAN_LIGHTEN_FACTOR,
         scatter_kws=dict(line_width=0.5, opacity=0.3),
         # ref_endpoints=(pos_endpoints, None),
     ),
@@ -1084,7 +1103,7 @@ for disturbance_amplitude, fig in tqdm(figs.items()):
             f"{disturbance_type_train} fields",
         ],        
         # TODO: The number of replicates (`n_replicates_included`) may vary with the disturbance train std!
-        # n=n_evals_small * n_replicates,
+        # n=min(n_evals_small * n_replicates, n_curves_max),
     )
     
     add_endpoint_traces(fig, pos_endpoints_small_aligned, xaxis='x1', yaxis='y1')
@@ -1102,7 +1121,6 @@ for disturbance_amplitude, fig in tqdm(figs.items()):
 for disturbance_amplitude in lohi(disturbance_amplitudes):
     figs[disturbance_amplitude].show()
 ```
-
 
 ## Compare velocity profiles
 
@@ -1531,7 +1549,7 @@ def get_violins_across_train_conditions(measure_data, measure_name, annotation_k
             yaxis_title=measure_name,
             xaxis_title="Train field std.",
             xaxis_type='category',
-            # xaxis_range=[-0.5, n_train_std - 0.5],
+            xaxis_range=[-0.75, n_train_std - 0.25],
             xaxis_tickvals=np.arange(n_train_std),
             xaxis_ticktext=[f'{std:.1f}' for std in example_traindict.keys()],
             xaxis_tickformat='.1',
@@ -1602,7 +1620,7 @@ figs = get_violins_per_measure(
 ```{python}
 for measure_name, measure_handle in tqdm(measure_handles.items()):
     savefig(
-        fig, 
+        figs[measure_name], 
         join([
             f"{measure_handle}",
         ]),
@@ -1955,9 +1973,4 @@ Since this is an integer (# timesteps), a KDE is not great for visualization (lu
 #     figs[measure_name].show()
 ```
 
-### Others
-
-#### Trend lines? 
-
-Not sure the relationship is linear...
 
