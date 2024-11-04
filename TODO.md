@@ -1,6 +1,6 @@
 ---
 created: 2024-10-04T11:27
-updated: 2024-11-03T22:44
+updated: 2024-11-04T11:01
 ---
 - [ ] [[#Part 1 results review and synthesis|Review part 1 results]]
 - [ ] **Move part 1 training to a script + a yaml file defining which hyperparameters to train** — or otherwise we’ll have to use batch quarto render 
@@ -41,11 +41,9 @@ e.g. does training on delay increase sensitivity to added noise?
 
 ### TODO
 
-- [x] Reduce the height of the center-out sets and the aligned condition comparisons in 1-2a (i.e. there’s too much vertical white space). **They had no height/width specified, now they do.**
-- [x] Respect the y axis limits (zero at bottom!) for the violin plots in 1-2a — neither the Quarto rendered nor the exported PNG/HTML Plotly figures do so! **I think the issue with the *saved* plots was only in 1-2b. It’s fixed now. Not sure the Quarto problem is fixable or worth the time.***
-- [x] Show average trajectories in multi-trial center out sets
-- [x] “Max/sum net control force” in 1-2a should be divided into parallel/orthogonal versions; it looks like the parallel component doesn’t vary between test conditions for a given train condition, but the orthogonal component does.
-- [x] **Debug 1-2b: use best replicate**
+- [ ] Fix x axis tick labels for random constant field train stds, for “performance_measures/compare_train_conditions”
+- [ ] Reduce width of “performance_measures/compare_train_conditions” in 1-2a
+- [ ] Show trial, replicate, condition info in hoverinfo of individual *aligned* trajectories
 - [ ] ~~Plot std bounds (or similar) for aligned 2D trajectories; plotting all the individual trials is too expensive once they are aligned. I’m not sure how to plot filled areas between fully 2D curves; instead it might make sense to use a [KDE](https://plotly.com/python/2d-histogram-contour/) with a single contour.~~ It’s hard to plot multiple KDEs on the same subplot in different colors. It would make more sense to plot confidence bounds, but this is also tricky. Leaving it be for now; instead I will downsample the curves if they exceed a specified quantity.
 - [ ] Exclude from the replicate-comparison violins, any replicates which *for either the zero or the highest training condition* were excluded from analysis.
 
@@ -56,35 +54,52 @@ e.g. does training on delay increase sensitivity to added noise?
 - Levels are different for random and curl
 - I think it’s mostly fine so long as we can show a spread of robustness behaviour for each disturbance type. 
 
-### Choice of feedback impulse amplitudes
+### Exclusion of replicates from analysis
 
-- How to make pos vs. vel perturbations comparable?
-- Choose amplitudes to align the max (or sum?) deviation for the control (zero train std) condition?
+Currently based on standard deviations away from the mean best loss.
+
+### Confidence bounds in parametric trajectory plots
+
+Currently just plotting a sample of individual curves; but this can be messy.
 
 ### Comparison of types of robustness
 
-Basic observations:
+Observations:
 
-- In the presence of a constant random field, the network must output a constant non-zero force to remain stationary at the goal. The models are able to do this, regardless of whether they were trained on random fields; however, the control models do a straight reach to a position that is rotated away from the goal, almost like the first trial of a visuomotor adaptation task
-- The acceleration phase of the reach, as well as the max net force/velocity, are *identical* in the presence and absence of a random field, for all models, regardless of whether the model was trained in the presence of random fields (however, there is a difference in these measures between the model trained in the presence of random fields, versus not)
+- In the presence of a constant random field, the network must output a constant non-zero force to remain stationary at the goal. The models are able to do this, regardless of whether they were trained on random fields; however, the control models do a ~straight reach to a position that is rotated away from the goal, almost like the first (naive) trial of a visuomotor rotation task,
+- The forward velocity profiles are *identical* in the presence and absence of a random field, for all models, regardless of what perturbation the model was trained on 
+- However, there is a difference in certain related measures (max net force?) between the model trained in the presence of random fields, versus not.
 - Training on random fields initially leads to a little “hook” correction at the end of the reach, in addition to a reduction in the slope of deviation during the rest of the reach. At higher train std, a smoother curvature of the solution is achieved.
-- Compensation for random fields is less sensitive to delays. This makes sense since there isn’t closed-loop coupling between control forces and orthogonal velocities. (How do networks trained on curl+delay perform, on random fields? and so on)
+- Compensation for random fields is much less sensitive to delays, versus curl fields. This makes sense since there isn’t feedback between control forces and orthogonal velocities. 
+- Likewise, networks trained on curl fields + delays tend to be worse at all tasks, presumably because it was harder for them to learn any coherent policy to reach the goal.
 
 When we switch the disturbance type during testing:
 
-- Training on curl reduces deviations for random fields
-- Training on random fields reduces deviations *during* the reach in the presence of curl, but also leads to oscillations around the goal
+- Training on curl reduces deviations for random fields, but does not totally eliminate endpoint error
+- Training on random fields reduces deviations in the presence of modest curls, but also leads to oscillations around the goal for larger curls
 
 How can we interpret this?
 
 - Should we train on a combination of the two? 
 
-**Presumably, in part 2 of the project we may be able to interpret these differences in terms of gains.**
+In part 2 of the project we may be able to interpret these differences more easily.
 
 #### Is there another kind of disturbance that we should try? 
 
-- Acceleration/force – e.g. a task rotation, forces on the point mass actually are applied partially in another direction, etc.
-- Parallel velocity-dep – like a curl field but parallel instead of orthogonal, such that there is positive feedback between velocity and acceleration in any direction
+##### **Random velocity-dep**
+
+- this includes curl fields as a special case 
+- curl fields may be the most interesting case of a velocity dependent field because of their orthogonality
+- whereas a velocity dependent field parallel to the velocity vector would merely lead to changes in gain/limitations on achievable accelerations
+
+##### Force transformation
+
+Acceleration/force – e.g. a task rotation, forces on the point mass actually are applied partially in another direction, etc.
+
+### Choice of feedback impulse amplitudes
+
+- How to make pos vs. vel perturbations comparable?
+- Choose amplitudes to align the max (or sum?) deviation for the control (zero train std) condition?
 
 ### Local disturbances
 

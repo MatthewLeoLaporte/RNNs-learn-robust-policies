@@ -1,9 +1,9 @@
 ---
 created: 2024-09-24T10:14
-updated: 2024-11-04T00:07
+updated: 2024-11-04T12:00
 ---
 
-This is where I’m outlining the modeling results for this project, in the sequence that they will appear in publication.
+This is where I’m outlining the modeling results for this project.
 
 ## Training networks on different disturbance levels
 
@@ -120,35 +120,35 @@ I also generated plots that show the variance over the replicates, but I will on
 ##### No training perturbation
 ![[curl-amp-0.0__curl-train-std-0__rep-6__eval-0.png]]
 
-###### All replicates %% fold %%
+###### All replicates 
 ![[10 Projects/10 PhD/41 RNNs learn robust policies/results-1.assets/curl-field-0.0__curl-train-std-0__eval-0.png]]
 ##### Trained on curl fields
 ![[curl-amp-0.0__curl-train-std-1.6__rep-3__eval-0.png]]
-###### All replicates %% fold %%
+###### All replicates 
 
 Interesting that the variance in the control forces is a bit higher between replicates than it was for the control network. Note that the control forces are larger, but that this is the no-noise condition, so this effect cannot be due to multiplicative noise.
 ![[10 Projects/10 PhD/41 RNNs learn robust policies/results-1.assets/curl-field-0.0__curl-train-std-1.6__eval-0.png]]
 ##### Trained on random constant fields
 ![[random-amp-0.0__random-train-std-1.0__rep-0__eval-0.png]]
-###### All replicates %% fold %%
+###### All replicates 
 
 The variance in the control forces is even greater than for networks trained on curl fields. Again, this has nothing to do with noise.
 ![[random-field-0.0__random-train-std-1.0__eval-0.png]]
 #### Curl field perturbation
 ##### No training perturbation
 ![[curl-amp-4.0__curl-train-std-0__rep-6__eval-0.png]]
-###### All replicates %% fold %%
+###### All replicates 
 ![[10 Projects/10 PhD/41 RNNs learn robust policies/results-1.assets/curl-field-4.0__curl-train-std-0__eval-0.png]]
-###### Evaluated with system noise %% fold %%
+###### Evaluated with system noise 
 
 Whatever policy the network learned, its performance appears not to be significantly affected by system noise. Note that the following plot shows multiple evaluations for a single replicate.
 ![[curl-field-4.0__curl-std-0__replicate-6.png]]
 ##### Trained on curl fields
 ![[curl-amp-4.0__curl-train-std-1.6__rep-3__eval-0.png]]
-###### All replicates %% fold %%
+###### All replicates 
 ![[10 Projects/10 PhD/41 RNNs learn robust policies/results-1.assets/curl-field-4.0__curl-train-std-1.6__eval-0.png]]
 
-###### Evaluated with system noise %% fold %%
+###### Evaluated with system noise 
 
 Similarly to the control case, noise does not make the policy ineffective.
 ![[curl-field-4.0__curl-std-1.6__replicate-3.png]]
@@ -158,9 +158,9 @@ Similarly to the control case, noise does not make the policy ineffective.
 - I suppose it is because the attractors that get strengthened by training on random fields are the ones that output a constant force at the target, but because the network is not accustomed to the curl, it tries to correct the error (similarly but a little better than the control network) until it approaches a ring of constant-force attractors that allow it to orbit the target.
 - [ ] Try running this eval for twice as long (200 steps) and see if it keeps orbiting or if it become unstable.
 ![[curl-amp-4.0__random-train-std-1.0__rep-0__eval-0.png]]
-###### All replicates %% fold %%
+###### All replicates 
 ![[curl-field-4.0__random-train-std-1.0__eval-0.png]]
-###### Evaluated with system noise %% fold %%
+###### Evaluated with system noise 
 
 - Noise perhaps has a slightly worse negative effect than it did in the control and curl-trained conditions.
 - Probably because the constant-force orbit attractors are sensitive to changes in position.  
@@ -172,24 +172,24 @@ Similarly to the control case, noise does not make the policy ineffective.
 - [ ] Perhaps the largest perturbation strength should be higher. 
 ![[random-amp-0.4__random-train-std-0__rep-6__eval-0.png]]
 
-###### All replicates %% fold %%
+###### All replicates 
 ![[random-field-0.4__random-train-std-0__eval-0.png]]
-###### Evaluated with system noise %% fold %%
+###### Evaluated with system noise 
 
 ##### Trained on random constant fields
 ![[random-amp-0.4__random-train-std-1.0__rep-0__eval-0.png]]
-###### All replicates %% fold %%
+###### All replicates 
 ![[random-field-0.4__random-train-std-1.0__eval-0.png]]
-###### Evaluated with system noise %% fold %%
+###### Evaluated with system noise 
 ![[random-field-0.4__random-std-1.0__replicate-0.png]]
 ##### Trained on curl fields
 
 - This fares better than the opposite case, where we trained on random fields and evaluated on curl fields. 
 - The network is able to reduce most of the deviation caused by the field, and stop very close to the target.
 ![[random-amp-0.4__curl-train-std-1.6__rep-3__eval-0.png]]
-###### All replicates %% fold %%
+###### All replicates 
 ![[random-field-0.4__curl-train-std-1.6__eval-0.png]]
-###### Evaluated with system noise %% fold %%
+###### Evaluated with system noise 
 ![[random-field-0.4__curl-std-1.6__replicate-3.png]]
 ### No noise, but with delay
 #### No perturbation
@@ -209,7 +209,7 @@ And a **4-step delay**
 ![[curl-field-0.0__curl-train-std-1.6__eval-0 2.png]]
 ##### Trained on random constant fields
 
-###### 4-step delay %% fold %%
+###### 4-step delay 
 ![[random-field-0.0__random-train-std-1.0__eval-0 1.png]]
 
 - More variable than the control network, but not so bad as the curl one
@@ -217,21 +217,21 @@ And a **4-step delay**
 #### Curl field perturbation
 ##### No training perturbation
 
-###### 2-step delay %% fold %%
+###### 2-step delay 
 ![[curl-field-4.0__curl-train-std-0__eval-0 2.png]]
 
 - The rate and severity of the “curl oscillations” is increased by the delay.
 
-###### 4-step delay %% fold %%
+###### 4-step delay 
 ![[curl-field-4.0__curl-train-std-0__eval-0 1.png]]
 
 - The control network is totally unstable in this setting. 
 - If we look at the unit activities, they are probably saturating, trying to compensate for movements of the effector away from the intended direction, which it always learns about too late to do anything.
 
 ##### Trained on curl fields
-###### 2-step delay %% fold %%
+###### 2-step delay 
 ![[curl-field-4.0__curl-train-std-1.6__eval-0 1.png]]
-###### 4-step delay %% fold %%
+###### 4-step delay 
 ![[curl-field-4.0__curl-train-std-1.6__eval-0 2.png]]
 
 - Clearly, delay negatively impacts the ability to deal with curl fields
@@ -241,13 +241,13 @@ And a **4-step delay**
 - It is interesting that some of the replicates are “loopy”, but these loops are tighter than the control network’s, probably because the control gains are higher.
 
 ##### Trained on random constant fields
-###### 2-step delay %% fold %%
+###### 2-step delay 
 ![[curl-field-4.0__random-train-std-1.0__eval-0 1.png]]
 
 - This is the condition that had the orbits, prior to the delay.
 - The addition of a short delay makes this condition unstable.
 
-###### 4-step delay %% fold %%
+###### 4-step delay 
 ![[curl-field-4.0__random-train-std-1.0__eval-0 2.png]]
 
 - Total instability/saturation in this condition.
@@ -255,25 +255,25 @@ And a **4-step delay**
 #### Random constant field perturbation
 
 ##### No training perturbation
-###### 4-step delay %% fold %%
+###### 4-step delay 
 ![[random-field-0.4__random-train-std-0__eval-0 1.png]]
 
 - As expected (see below) the delay does not seriously affect the control network’s policy, which ends up being influenced by the constant field more or less like it would have been without the delay. 
 - In other words, this condition is to the undelayed control network perturbed by random field, what the delayed unperturbed control network is to the undelayed unperturbed control network.
 - Neither the delay nor the field creates an unstable feedback in the system.
 ##### Trained on curl fields
-###### 2-step delay %% fold %%
+###### 2-step delay 
 ![[random-field-0.4__curl-train-std-1.6__eval-0 1.png]]
-###### 4-step delay %% fold %%
+###### 4-step delay 
 ![[random-field-0.4__curl-train-std-1.6__eval-0 2.png]]
 
 - Performance isn’t great, probably because the network was trained in a condition where it was nearly unstable, so the resulting policy is not great at reaching the goal in any case.
 - On the other hand, performance in the 2-step case just above was okay, because the network was still able to perform pretty well in its training condition.
 
 ##### Trained on random constant fields
-###### 2-step delay %% fold %%
+###### 2-step delay 
 ![[random-field-0.4__random-train-std-1.0__eval-0 1.png]]
-###### 4-step delay %% fold %%
+###### 4-step delay 
 ![[random-field-0.4__random-train-std-1.0__eval-0 2.png]]
 
 
@@ -285,7 +285,7 @@ And a **4-step delay**
 - [ ] Compile some figures suggesting that training on noise doesn’t significantly alter the resulting policies
 - However, it might somewhat decrease performance on noise-free conditions? Since the network was trained with a floor on its loss, and thus may not be adapted to minimize state errors below a certain point?
 
-## Aligned trajectory comparisons
+## Aligned trajectories
 ### No noise, no delay
 #### Evaluated on curl fields
 ##### No training perturbation
@@ -437,8 +437,313 @@ And the next-weakest training condition:
 - The “kick” away from the goal is a bit exaggerated in the stronger training conditions, here.
 ### 0.1 noise, no delay
 
-- [ ] Compile a few examples here
+#### Evaluated on curl fields
+##### No training perturbation versus max curl field training perturbation
+![[curl-train-std-0 3.png]]
+![[curl-train-std-1.6 6.png]]
+
+- This is pretty similar to training without noise, except of course that the average force trajectories [[results-1#^xe3mdu]]
+- [ ] I haven’t yet evaluated a model trained on noise, in the absence of noise. This would reveal if the control forces/policy really are different due to training on noise.
+
+##### Comparison of curl field training conditions
+![[curl-field-4.0 7.png]]
+
+- One thing that looks a bit different here is that the “elbows” are less evident in the mean trajectory for the zero curl training condition. 
+- However, looking at the individual curves, there are definitely elbows; it is probably that the noise causes them to happen at somewhat different times and this gets averaged out. 
+
+##### Comparison of random constant field training conditions
+
+- [ ] I haven’t evaluated noise-trained random constant field models on noise+curl yet.
+
+#### Evaluated on random constant fields
+#####  No training perturbation versus max. random constant field training perturbation
+![[random-train-std-0 3.png]]
+![[random-train-std-1.0 5.png]]
+
+- As with the curl field, the resulting trajectories are similar to the no-noise condition
+- Interesting that the little crook away from the goal is present for the zero training std network; this was also seen when using curl-trained networks to mitigate random constant fields. 
+##### Comparison of random constant field training conditions
+![[random-field-0.4 6.png]]
+
 ## Velocity profiles
+### No noise, no delay
+#### No perturbation
+##### Comparison of curl field training conditions
+![[curl-field-0.0_forward-vels.png]]
+
+- One thing that is clear is that training on stronger curl fields leads to higher acceleration at the beginning of the reach.
+- However, it does not necessarily lead to higher peak velocity in this case.
+- This makes sense given that higher peak velocity leads to stronger curl.
+- [ ] Perhaps in the delay condition we should see the peak velocity decrease when trained on stronger curl fields?
+
+![[curl-field-0.0_lateral-vels.png]]
+
+- These values are overall very low
+- But the variation in lateral velocity is higher for stronger training conditions, which is interesting.
+
+##### Comparison of random constant field training conditions
+![[random-field-0.0_forward-vels.png]]
+
+- The initial acceleration also increases with training std., as with the curl fields
+- But unlike curl training, the peak velocity also increases, which makes sense – the disturbance is not aggravated by velocity, here.
+- Thus this comparison looks more like what we expect from a robust controller.
+
+![[random-field-0.0_lateral-vels.png]]
+#### Evaluated on curl fields
+##### Comparison of curl field training conditions
+![[curl-field-4.0_forward-vels.png]]
+
+- Here the peak velocity definitely increases with train curl std.
+- [ ] Look at the velocity profile for the best replicate at train field std. 2.4: does the “double peak” disappear?
+
+![[curl-field-4.0_lateral-vels.png]]
+
+Looking at the next-weakest curl test condition shows that the strength of the effect on the forward vs. lateral velocity profile depends on curl strength.
+![[curl-field-2.0_forward-vels.png]]
+![[curl-field-2.0_lateral-vels.png]]
+##### Comparison of random constant field training conditions
+![[curl-field-4.0_forward-vels 2.png]]
+![[curl-field-4.0_lateral-vels 2.png]]
+
+The “orbiting” is clear here. What about the next-weakest curl strength?
+![[curl-field-2.0_forward-vels 2.png]]
+![[curl-field-2.0_lateral-vels 2.png]]
+#### Evaluated on random constant fields
+##### Comparison of curl field training conditions
+![[random-field-0.4_forward-vels.png]]
+
+- Interestingly the forward velocity looks almost identical to what it did when trained on curl fields and then tested without perturbation.
+
+![[random-field-0.4_lateral-vels.png]]
+
+##### Comparison of random constant field training conditions
+![[random-field-0.4_forward-vels 1.png]]
+
+- Almost identical to the no-perturbation condition, when trained on random constant fields. 
+
+![[random-field-0.4_lateral-vels 1.png]]
+
+### No noise, 2-step delay
+#### No perturbation
+##### Comparison of curl field training conditions
+![[curl-field-0.0_forward-vels 1.png]]
+![[curl-field-0.0_lateral-vels 1.png]]
+
+##### Comparison of random constant field training conditions
+![[random-field-0.0_forward-vels 1.png]]
+
+- Very similar to the no-delay condition.
+
+![[random-field-0.0_lateral-vels 1.png]]
+#### Evaluated on curl fields
+##### Comparison of curl field training conditions
+![[curl-field-4.0_forward-vels 1.png]]
+![[curl-field-4.0_lateral-vels 1.png]]
+
+And for the next-weakest eval curl:
+![[curl-field-2.0_forward-vels 1.png]]
+![[curl-field-2.0_lateral-vels 1.png]]
+
+##### Comparison of random constant field training conditions
+![[curl-field-4.0_forward-vels 3.png]]
+![[curl-field-4.0_lateral-vels 3.png]]
+
+The more vigorous response of the networks trained on random fields are counterproductive when there is curl+delay.
+
+#### Evaluated on random constant fields
+##### Comparison of curl field training conditions
+![[random-field-0.4_forward-vels 2.png]]
+![[random-field-0.4_lateral-vels 2.png]]
+
+- Keeping with the trend seen previously, the forward velocities are very similar to the no-perturbation test condition for these models.
+- The variance of the responses is significantly higher for the 1.6 std train condition, presumably because this level of curl+delay during training makes it difficult to learn a coherent policy.
+
+##### Comparison of random constant field training conditions
+![[random-field-0.4_forward-vels 3.png]]
+
+![[random-field-0.4_lateral-vels 3.png]]
+
+- Both the forward and lateral profiles are similar to the no-delay case.
+
+### 0.1 noise, no delay (TODO)
+#### No perturbation
+##### Comparison of curl field training conditions
+##### Comparison of random constant field training conditions
+#### Evaluated on curl fields
+##### Comparison of curl field training conditions
+##### Comparison of random constant field training conditions
+#### Evaluated on random constant fields
+##### Comparison of curl field training conditions
+##### Comparison of random constant field training conditions
+
+
+## Distributions of performance measures
+
+Here I’ll show the full plots with all train and test conditions; however I have also produced figures that only show the 2x2 comparison between the lowest and highest of each condition.
+
+### No noise, no delay (unless otherwise stated)
+#### Max forward velocity
+##### Train curl, test curl
+![[vel-forward-max.png]]
+###### 2-step delay
+![[vel-forward-max 4.png]]
+##### Train random, test random
+![[vel-forward-max 1.png]]
+###### 2-step delay
+![[vel-forward-max 6.png]]
+##### Train curl, test random
+![[vel-forward-max 3.png]]
+##### Train random, test curl
+![[vel-forward-max 2.png]]
+###### 2-step delay
+![[vel-forward-max 5.png]]
+#### Max forward control force
+
+- These are always the ~same across field amplitudes, which suggests this is entirely due to the difference in initial acceleration induced by training on perturbations.
+- [ ] It might also make sense to look at the sum of forward control forces.
+
+##### Train curl, test curl
+![[force-forward-max.png]]
+
+###### 2-step delay
+![[force-forward-max 4.png]]
+##### Train random, test random
+![[force-forward-max 1.png]]
+###### 2-step delay
+![[force-forward-max 5.png]]
+##### Train curl, test random
+![[force-forward-max 3.png]]
+##### Train random, test curl
+![[force-forward-max 2.png]]
+###### 2-step delay
+![[force-forward-max 6.png]]
+
+- The outlier distribution is due to instability, and not due to a change in the initial accelerating force.
+
+#### Max lateral velocity (in disturbance direction)
+
+- [ ] The max lateral velocity in the opposite direction may also be interesting.
+
+##### Train curl, test curl
+![[vel-lateral-left-max.png]]
+###### 2-step delay
+![[vel-lateral-left-max 4.png]]
+##### Train random, test random
+![[vel-lateral-left-max 1.png]]
+###### 2-step delay
+![[vel-lateral-left-max 6.png]]
+##### Train curl, test random
+![[vel-lateral-left-max 3.png]]
+##### Train random, test curl
+![[vel-lateral-left-max 2.png]]
+###### 2-step delay
+![[vel-lateral-left-max 5.png]]
+#### Max lateral displacement (in disturbance direction)
+##### Train curl, test curl
+![[dist-lateral-max.png]]
+
+###### 2-step delay
+![[dist-lateral-max 4.png]]
+##### Train random, test random
+![[dist-lateral-max 1.png]]
+###### 2-step delay
+![[dist-lateral-max 5.png]]
+##### Train curl, test random
+![[dist-lateral-max 3.png]]
+
+##### Train random, test curl
+![[dist-lateral-max 2.png]]
+###### 2-step delay
+![[dist-lateral-max 6.png]]
+#### Sum of absolute lateral displacements
+##### Train curl, test curl
+![[dist-lateral-sum.png]]
+###### 2-step delay
+![[dist-lateral-sum 4.png]]
+##### Train random, test random
+![[dist-lateral-sum 1.png]]
+###### 2-step delay
+![[dist-lateral-sum 6.png]]
+##### Train curl, test random
+![[dist-lateral-sum 3.png]]
+##### Train random, test curl
+![[dist-lateral-sum 2.png]]
+###### 2-step delay
+![[dist-lateral-sum 5.png]]
+#### Max lateral control force (against disturbance)
+##### Train curl, test curl
+![[force-counterfield-lateral-max.png]]
+###### 2-step delay
+![[force-counterfield-lateral-max 4.png]]
+##### Train random, test random
+![[force-counterfield-lateral-max 1.png]]
+###### 2-step delay
+![[force-counterfield-lateral-max 5.png]]
+##### Train curl, test random
+![[force-counterfield-lateral-max 3.png]]
+##### Train random, test curl
+![[force-counterfield-lateral-max 2.png]]
+###### 2-step delay
+![[force-counterfield-lateral-max 6.png]]
+#### Sum net control forces
+##### Train curl, test curl
+![[force-net-sum.png]]
+###### 2-step delay
+![[force-net-sum 4.png]]
+##### Train random, test random
+![[force-net-sum 1.png]]
+###### 2-step delay
+![[force-net-sum 6.png]]
+##### Train curl, test random
+![[force-net-sum 3.png]]
+##### Train random, test curl
+![[force-net-sum 2.png]]
+###### 2-step delay
+![[force-net-sum 5.png]]
+#### End position error
+##### Train curl, test curl
+![[error-end-pos.png]]
+###### 2-step delay
+![[error-end-pos 4.png]]
+##### Train random, test random
+![[error-end-pos 1.png]]
+###### 2-step delay
+![[error-end-pos 5.png]]
+##### Train curl, test random
+![[error-end-pos 3.png]]
+##### Train random, test curl
+![[error-end-pos 2.png]]
+
+- This is the “orbit” condition, which is why the error is so high for the max train field std.
+###### 2-step delay
+![[error-end-pos 6.png]]
+#### End velocity error
+##### Train curl, test curl
+![[error-end-vel.png]]
+###### 2-step delay
+![[error-end-vel 4.png]]
+##### Train random, test random
+![[error-end-vel 1.png]]
+###### 2-step delay
+![[error-end-vel 6.png]]
+##### Train curl, test random
+![[error-end-vel 3.png]]
+
+- Training on curl makes the model very good at stopping, at least.
+
+##### Train random, test curl
+![[error-end-vel 2.png]]
+
+- The orbit is relatively high velocity, hence the increase in this error relative to baseline.
+
+###### 2-step delay
+![[error-end-vel 5.png]]
+### Comparison of delay conditions (TODO)
+
+### Comparison of noise conditions (TODO)
+
+### Comparison of noise+delay interactions (TODO?)
+
 ## 1.2b: Evaluating on feedback perturbations
 
 #### Comparison of profiles for pos vs. vel perturbations, during the perturbation period
