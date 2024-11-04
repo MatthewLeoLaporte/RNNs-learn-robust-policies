@@ -1,6 +1,6 @@
 ---
 created: 2024-10-04T11:27
-updated: 2024-11-04T11:01
+updated: 2024-11-04T12:38
 ---
 - [ ] [[#Part 1 results review and synthesis|Review part 1 results]]
 - [ ] **Move part 1 training to a script + a yaml file defining which hyperparameters to train** — or otherwise we’ll have to use batch quarto render 
@@ -12,7 +12,7 @@ updated: 2024-11-04T11:01
 Review the results so far and make a summary of the ones that should appear as main/supplementary figures in paper. 
 
 - [x] re-run batch quarto render for both 1-2a and 1-2b, for all noise and delay conditions, as well as for both curl and random training disturbances. Maybe reduce to 3 (lo-mid-high) disturbance levels. 
-- [ ] Probably, make 2-3 files: 1) results that will almost certainly appear in the paper, 2) (maybe) results that may or may not be supplementary, 3) results that will be supplementary if they are included at all.
+- [ ] ~~Probably, make 2-3 files: 1) results that will almost certainly appear in the paper, 2) (maybe) results that may or may not be supplementary, 3) results that will be supplementary if they are included at all.~~ Need to contemplate, and discuss this with Gunnar first. There are too many potential results and I need to decide which ones are most worth showing.
 - [ ] Try a 200-step solution for networks trained on random and tested on curl, to see how the “goal orbit” evolves
 - [ ] Increase the test amplitudes for the random constant fields, a bit
 
@@ -41,6 +41,7 @@ e.g. does training on delay increase sensitivity to added noise?
 
 ### TODO
 
+- [ ] The context annotations are cut off for the velocity/force profile plots in 1-2b
 - [ ] Fix x axis tick labels for random constant field train stds, for “performance_measures/compare_train_conditions”
 - [ ] Reduce width of “performance_measures/compare_train_conditions” in 1-2a
 - [ ] Show trial, replicate, condition info in hoverinfo of individual *aligned* trajectories
@@ -48,19 +49,6 @@ e.g. does training on delay increase sensitivity to added noise?
 - [ ] Exclude from the replicate-comparison violins, any replicates which *for either the zero or the highest training condition* were excluded from analysis.
 
 ## Gunnar meeting
-
-### Choice of disturbance train stds 
-
-- Levels are different for random and curl
-- I think it’s mostly fine so long as we can show a spread of robustness behaviour for each disturbance type. 
-
-### Exclusion of replicates from analysis
-
-Currently based on standard deviations away from the mean best loss.
-
-### Confidence bounds in parametric trajectory plots
-
-Currently just plotting a sample of individual curves; but this can be messy.
 
 ### Comparison of types of robustness
 
@@ -100,6 +88,20 @@ Acceleration/force – e.g. a task rotation, forces on the point mass actually a
 
 - How to make pos vs. vel perturbations comparable?
 - Choose amplitudes to align the max (or sum?) deviation for the control (zero train std) condition?
+
+### Choice of disturbance train stds 
+
+- Levels are different for random and curl
+- I think it’s mostly fine so long as we can show a spread of robustness behaviour for each disturbance type. 
+- The test amplitude for random fields could be a bit higher.
+
+### Exclusion of replicates from analysis
+
+Currently based on standard deviations away from the mean best loss.
+
+### Confidence bounds in parametric trajectory plots
+
+Currently just plotting a sample of individual curves; but this can be messy.
 
 ### Local disturbances
 
