@@ -1,6 +1,6 @@
 ---
 created: 2024-10-04T11:27
-updated: 2024-11-03T16:15
+updated: 2024-11-03T22:44
 ---
 - [ ] [[#Part 1 results review and synthesis|Review part 1 results]]
 - [ ] **Move part 1 training to a script + a yaml file defining which hyperparameters to train** — or otherwise we’ll have to use batch quarto render 
@@ -11,13 +11,33 @@ updated: 2024-11-03T16:15
 
 Review the results so far and make a summary of the ones that should appear as main/supplementary figures in paper. 
 
-- [ ] re-run batch quarto render for both 1-2a and 1-2b, for all noise and delay conditions, as well as for both curl and random training disturbances. Maybe reduce to 3 (lo-mid-high) disturbance levels. 
+- [x] re-run batch quarto render for both 1-2a and 1-2b, for all noise and delay conditions, as well as for both curl and random training disturbances. Maybe reduce to 3 (lo-mid-high) disturbance levels. 
 - [ ] Probably, make 2-3 files: 1) results that will almost certainly appear in the paper, 2) (maybe) results that may or may not be supplementary, 3) results that will be supplementary if they are included at all.
-- [ ] Add notebook to load models for multiple noise/delay conditions, and plot distribution comparisons (only do this after deciding which plots to make – it’s too complicated to run *all* the existing plots as noise comparisons)
-
-### For results
-
 - [ ] Try a 200-step solution for networks trained on random and tested on curl, to see how the “goal orbit” evolves
+- [ ] Increase the test amplitudes for the random constant fields, a bit
+
+### Important notes
+
+- There are 3 train and 3 test perturbation conditions (control, curl, random) such that for each noise+delay condition we can do 3x3 train-test comparisons
+- There are 3 delay conditions (0, 2, 4 steps); these do not vary between 
+- There are 3 noise conditions (0, 0.04, 0.1)
+
+### Additional analyses/notebooks
+
+#### Comparison of delay conditions
+
+How much does delay degrade learned performance? 
+
+- [ ] Full 3x3 (control, curl, random) test-train comparison for the zero-noise condition
+	- first option: train condition on x axis, eval condition in legend, and zero vs. 4 step in splits
+
+#### Comparison of noise conditions
+
+How does addition of system noise affect major performance measures (endpoint error, max control?) for different train-test conditions?
+
+#### Interaction of noise and delay
+
+e.g. does training on delay increase sensitivity to added noise?
 
 ### TODO
 
