@@ -5,12 +5,12 @@ import jax.numpy as jnp
 import jax.tree as jt
 
 from feedbax import get_ensemble, is_module, tree_unzip
-from feedbax.misc import attr_str_tree_to_where_func
 from feedbax.intervene import CurlField, FixedField, schedule_intervenor
+from feedbax.misc import attr_str_tree_to_where_func
+from feedbax.task import SimpleReaches
 from feedbax.train import TaskTrainerHistory, filter_spec_leaves, init_task_trainer_history
 from feedbax.xabdeef.models import point_mass_nn
 from feedbax.xabdeef.losses import simple_reach_loss
-from feedbax.task import SimpleReaches
 
 
 def setup_models(
@@ -58,7 +58,7 @@ def setup_models(
         ) 
     
     _, models = tree_unzip(jt.map(
-        lambda curl_std: schedule_intervenor(
+        lambda field_std: schedule_intervenor(
             task_train_dummy, models,
             lambda model: model.step.mechanics,
             disturbance,

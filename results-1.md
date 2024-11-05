@@ -1,9 +1,7 @@
 ---
 created: 2024-09-24T10:14
-updated: 2024-11-04T12:58
+updated: 2024-11-05T15:02
 ---
-
-This is where I’m outlining the modeling results for this project.
 
 ## Training networks on different disturbance levels
 
@@ -169,7 +167,8 @@ Similarly to the control case, noise does not make the policy ineffective.
 #### Random constant field perturbation
 ##### No training perturbation
 
-- [ ] Perhaps the largest perturbation strength should be higher. 
+- [ ] Perhaps the perturbation strengths should be bit higher
+- Is there any field strength at which the system will be unstable? Probably not, due to the lack of feedback with the disturbance.
 ![[random-amp-0.4__random-train-std-0__rep-6__eval-0.png]]
 
 ###### All replicates  %% fold %%

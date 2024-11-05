@@ -769,15 +769,15 @@ else:
                 fig, pos_endpoints_small, xaxis='x1', yaxis='y1', colorscale='phase'
             )
             # Save to disk.
-            savefig(
-                fig, 
-                join([
-                    f"{disturbance_type}-field-{disturbance_amplitude}",
-                    f"{disturbance_type_train}-std-{disturbance_train_std}",
-                    f"replicate-{i_rep}",
-                ]),
-                subdir=fig_subdir,
-            )
+            # savefig(
+            #     fig, 
+            #     join([
+            #         f"{disturbance_type}-field-{disturbance_amplitude}",
+            #         f"{disturbance_type_train}-std-{disturbance_train_std}",
+            #         f"replicate-{i_rep}",
+            #     ]),
+            #     subdir=fig_subdir,
+            # )
     
     # Only display figures for the low-high train and eval conditions.        
     for disturbance_amplitude in lohi(disturbance_amplitudes):

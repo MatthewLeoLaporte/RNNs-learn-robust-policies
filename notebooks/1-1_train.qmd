@@ -61,23 +61,24 @@ from feedbax import (
     is_type,
 )
 from feedbax.channel import toggle_channel_noise
-from feedbax.misc import git_commit_id, where_func_to_labels
-import feedbax.plotly as fbp
-import feedbax.plot as fbplt
-from feedbax.xabdeef.losses import simple_reach_loss
-from feedbax.xabdeef.models import point_mass_nn
-from feedbax.task import SimpleReaches
-from feedbax.train import TaskTrainer
-
 from feedbax.intervene import (
     CurlField, 
     FixedField,
     schedule_intervenor,
 )
+from feedbax.misc import git_commit_id, where_func_to_labels
+import feedbax.plot as fbplt
+import feedbax.plotly as fbp
+from feedbax.task import SimpleReaches
+from feedbax.train import TaskTrainer
+from feedbax.xabdeef.losses import simple_reach_loss
+from feedbax.xabdeef.models import point_mass_nn
 
+
+from rnns_learn_robust_motor_policies.misc import write_to_json
 from rnns_learn_robust_motor_policies.plot_utils import get_savefig_func
 from rnns_learn_robust_motor_policies.setup_utils import filename_join as join
-from rnns_learn_robust_motor_policies.misc import write_to_json
+from rnns_learn_robust_motor_policies.tree_utils import pp
 ```
 
 Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
@@ -228,15 +229,15 @@ else:
     raise ValueError(f"Unknown disturbance type: {disturbance_type}")
 
 
-task_model_pairs = jt.map(
-    lambda disturbance_std: schedule_intervenor(
+task_model_pairs = {
+    disturbance_std: schedule_intervenor(
         task_train, models,
         lambda model: model.step.mechanics,
         disturbance(disturbance_std),
         default_active=False,
-    ),
-    disturbance_stds,
-)
+    )
+    for disturbance_std in disturbance_stds
+}
 ```
 
 ### Training hyperparameters and optimizer
@@ -274,7 +275,7 @@ trainer = TaskTrainer(
 trained_models = OrderedDict({})
 train_histories = OrderedDict({})
 
-for disturbance_std, (task_, models_) in tqdm(list(zip(disturbance_stds, task_model_pairs))):
+for disturbance_std, (task_, models_) in tqdm(task_model_pairs.items()):
     trained_models[disturbance_std], train_histories[disturbance_std] = trainer(
         task_, 
         models_,
@@ -284,7 +285,7 @@ for disturbance_std, (task_, models_) in tqdm(list(zip(disturbance_stds, task_mo
         log_step=n_batches // 10,
         where_train=where_train,
         save_model_parameters=save_model_parameters,
-        disable_tqdm=True,
+        # disable_tqdm=True,
         key=key_train,
     )
 ```

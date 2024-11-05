@@ -1,11 +1,13 @@
 ---
 created: 2024-10-04T11:27
-updated: 2024-11-04T12:38
+updated: 2024-11-05T15:01
 ---
-- [ ] [[#Part 1 results review and synthesis|Review part 1 results]]
+- [x] [[#Part 1 results review and synthesis|Review part 1 results]]
+- [ ] **Clean up this file**
+- [ ] **Try a learning rate schedule when training part 2**
 - [ ] **Move part 1 training to a script + a yaml file defining which hyperparameters to train** — or otherwise we’ll have to use batch quarto render 
 - [x] Move post-training analysis (best replicates, excludes, loss plots, etc) to a script so that we can run it easily without needing to re-train models
-- [ ] **Exclude models based on 1) # stds above the best replicate, or 2) behavioural measures rather than total loss.** It looks like max net control force or end position error might be good indicators. 
+- [ ] **Exclude models based on 1) # stds above the *best* replicate, and possibly 2) behavioural measures rather than total loss.** It looks like max net control force or end position error might be good indicators. 
 - [ ] Schedule a [[02 Questions#Steve|meeting]] with Steve. For one, ask about sensory perturbations in human tasks – do they see oscillations (i.e. going from straight to “loopy”, like we see in the control vs. robust networks)
 ## Part 1 results review and synthesis
 
@@ -13,8 +15,7 @@ Review the results so far and make a summary of the ones that should appear as m
 
 - [x] re-run batch quarto render for both 1-2a and 1-2b, for all noise and delay conditions, as well as for both curl and random training disturbances. Maybe reduce to 3 (lo-mid-high) disturbance levels. 
 - [ ] ~~Probably, make 2-3 files: 1) results that will almost certainly appear in the paper, 2) (maybe) results that may or may not be supplementary, 3) results that will be supplementary if they are included at all.~~ Need to contemplate, and discuss this with Gunnar first. There are too many potential results and I need to decide which ones are most worth showing.
-- [ ] Try a 200-step solution for networks trained on random and tested on curl, to see how the “goal orbit” evolves
-- [ ] Increase the test amplitudes for the random constant fields, a bit
+
 
 ### Important notes
 
@@ -104,6 +105,8 @@ Currently based on standard deviations away from the mean best loss.
 Currently just plotting a sample of individual curves; but this can be messy.
 
 ### Local disturbances
+
+- [ ] **Difference between early vs. late perturbations to see if response is the same at different points during the reach**. Just a couple of examples 
 
 e.g. only apply the force field on a certain part of the reach
 
