@@ -8,7 +8,7 @@ from feedbax import get_ensemble, is_module, tree_unzip
 from feedbax.intervene import CurlField, FixedField, schedule_intervenor
 from feedbax.misc import attr_str_tree_to_where_func
 from feedbax.task import SimpleReaches
-from feedbax.train import TaskTrainerHistory, filter_spec_leaves, init_task_trainer_history
+from feedbax.train import filter_spec_leaves
 from feedbax.xabdeef.models import point_mass_nn
 from feedbax.xabdeef.losses import simple_reach_loss
 
@@ -100,43 +100,4 @@ def setup_model_parameter_histories(
     return model_parameter_histories
 
 
-def setup_train_histories(
-    models_tree,
-    disturbance_stds,
-    n_batches,
-    batch_size,
-    n_replicates,
-    *,
-    where_train_strs,
-    save_model_parameters,
-    key,
-) -> dict[float, TaskTrainerHistory]:
-    """Returns a skeleton PyTree for the training histories (losses, parameter history, etc.)
-    
-    Note that `init_task_trainer_history` depends on `task` to infer 
-    
-    1) The number and name of loss function terms;
-    2) The structure of trial specs, in case `save_trial_specs is not None`.
-    
-    Here, neither of these are much of a concern since 1) we are always using the same 
-    loss function for each set of saved/loaded models in this project, 2) `save_trial_specs is None`.
-    """   
-    where_train = attr_str_tree_to_where_func(where_train_strs)
-    
-    assert list(models_tree.keys()) == list(disturbance_stds)
-    
-    return {
-        train_std: init_task_trainer_history(
-            simple_reach_loss(),
-            n_batches,
-            n_replicates,
-            ensembled=True,
-            ensemble_random_trials=False,
-            save_model_parameters=jnp.array(save_model_parameters),
-            save_trial_specs=None,
-            batch_size=batch_size,
-            model=model,
-            where_train=where_train,  
-        )
-        for train_std, model in models_tree.items()
-    }
+

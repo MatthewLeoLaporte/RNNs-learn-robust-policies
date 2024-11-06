@@ -70,16 +70,28 @@ import feedbax.plotly as fbp
 from feedbax.task import SimpleReaches
 from feedbax.xabdeef.losses import simple_reach_loss
 
+from rnns_learn_robust_motor_policies.colors import (
+    COLORSCALES, 
+    MEAN_LIGHTEN_FACTOR,
+    get_colors_dicts,
+)
+from rnns_learn_robust_motor_policies.misc import lohi, load_from_json
 from rnns_learn_robust_motor_policies.part1_setup import (
     setup_models, 
     setup_model_parameter_histories,
-    setup_train_histories,
 )
 from rnns_learn_robust_motor_policies.plot_utils import (
-    get_savefig_func,
     add_context_annotation,
     add_endpoint_traces,
     figleaves,
+    get_savefig_func,
+)
+from rnns_learn_robust_motor_policies.setup_utils import (
+    display_model_filechooser,
+    filename_join as join,
+    find_unique_filepath,
+    set_model_noise,
+    setup_train_histories,
 )
 from rnns_learn_robust_motor_policies.state_utils import (
     get_forward_lateral_vel, 
@@ -87,29 +99,17 @@ from rnns_learn_robust_motor_policies.state_utils import (
     vmap_eval_ensemble,
 )
 from rnns_learn_robust_motor_policies.tree_utils import (
-    swap_model_trainables, 
-    subdict, 
     pp,
+    subdict, 
+    swap_model_trainables, 
 )
-from rnns_learn_robust_motor_policies.setup_utils import (
-    display_model_filechooser,
-    filename_join as join,
-    set_model_noise,
-    find_unique_filepath,
-)
-from rnns_learn_robust_motor_policies.colors import (
-    COLORSCALES, 
-    MEAN_LIGHTEN_FACTOR,
-    get_colors_dicts,
-)
-from rnns_learn_robust_motor_policies.misc import lohi, load_from_json
 
 ```
 
 ```{python}
-jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
-jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
-jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
+# jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
+# jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
+# jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
 # jax.config.update("jax_explain_cache_misses", True)
 ```
 
@@ -212,6 +212,8 @@ For 4 sets of 24 center-out reaches (i.e. 96 reach conditions), with 10 replicat
 n_steps = 100
 workspace = ((-1., -1.),
              (1., 1.))
+
+# TODO: Define this centrally
 
 eval_grid_n = 2
 eval_n_directions = 24
@@ -477,6 +479,7 @@ else:
 ```
 
 ```{python}
+# TODO: import this from `setup_utils`
 intervenor_label = "DisturbanceField"
 
 # Insert the disturbance field component into each model

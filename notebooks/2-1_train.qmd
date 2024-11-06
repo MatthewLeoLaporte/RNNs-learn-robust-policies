@@ -64,7 +64,7 @@ os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 from collections import namedtuple
 import json
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 import equinox as eqx
 import jax
@@ -99,7 +99,16 @@ from feedbax.train import TaskTrainer
 from feedbax.xabdeef.losses import simple_reach_loss
 from feedbax.xabdeef.models import point_mass_nn
 
+from rnns_learn_robust_motor_policies.misc import write_to_json
+from rnns_learn_robust_motor_policies.part2_setup import (
+    INTERVENOR_LABEL,
+    TaskModelPair,
+    setup_task_model_pairs, 
+    setup_models,
+)
 from rnns_learn_robust_motor_policies.plot_utils import get_savefig_func
+from rnns_learn_robust_motor_policies.setup_utils import filename_join as join
+from rnns_learn_robust_motor_policies.state_utils import project_onto_direction
 from rnns_learn_robust_motor_policies.tree_utils import pp
 ```
 
@@ -125,12 +134,12 @@ These are parameters that can be [varied](https://quarto.org/docs/computations/p
 ```{python}
 #| tags: [parameters]
 
-disturbance_type: Literal['curl', 'random'] = 'random'  
+disturbance_type: Literal['curl', 'random'] = 'curl'  
 feedback_delay_steps = 0
 feedback_noise_std = 0.0
 motor_noise_std = 0.0
 hidden_size = 50
-n_replicates = 10
+n_replicates = 5  # TODO
 dt = 0.05
 mass = 1.0
 ```
@@ -207,112 +216,52 @@ models_base = get_ensemble(
 
 We need to define:
 
-1. The disturbance (force field type);
+1. The type of disturbance, which is chosen as a hyperparameter earlier in this notebook;
 2. The disturbance amplitudes to train -- each resulting in a distinct trained model;
-3. For each training variant, the probability that each trial will be perturbed, as well as the form of the contextual input to the neural network;
-4. Finally, the task-model pairs that will be trained on each disturbance amplitude, for each training variant.
+3. For each training variant, the probability that each trial will be perturbed;
+4. The form of the context input to the neural network; 
+5. Finally, the task-model pairs that will be trained on each disturbance amplitude, for each training variant.
 
-**TODO** Add the third variant: it should set `scale` to a random value sampled from a Gaussian parameterized by `field_std`, and then set the contextual input to that value
+Some of these (e.g. the form of the context input, `CONTEXT_INPUT_FUNCS`) are defined once and for all in the project module `part2_setup.py`.
+
+
 
 ```{python}
-# Define the probability that a trial will be perturbed
+# Define the probability that a trial will be disturbed for those training methods where the 
+# disturbance is not always active
 p_perturbed = 0.5
-disturbance_active = {
-    "active": lambda trial_spec, key: jr.bernoulli(key, p=p_perturbed),
-    "amplitude": True,  # All trials perturbed
-    "std": True,  # All trials perturbed
-}
 
-def get_field_amplitude(intervenor_params):
-    if isinstance(intervenor_params, FixedFieldParams):
-        return jnp.linalg.norm(intervenor_params.field, axis=-1)
-    elif isinstance(intervenor_params, CurlFieldParams):
-        return jnp.abs(intervenor_params.amplitude)
-    else:
-        raise ValueError(f"Unknown intervenor parameters type: {type(intervenor)}")
-
-# Define how the network's context input will be determined from the trial specs, to which it is then added
-context_input_funcs = {
-    "active": lambda trial_specs, key: trial_specs.intervene['DisturbanceField'].active.astype(float),
-    "amplitude": lambda trial_specs, key: get_field_amplitude(trial_specs.intervene['DisturbanceField']),
-    "std": lambda trial_specs, key: trial_specs.intervene['DisturbanceField'].scale,
-}
-
-# We either scale the fields by a constant std, or we sample the std for each trial
-scale_funcs = {
-    "active": lambda field_std: field_std,
-    "amplitude": lambda field_std: field_std,
-    "std": lambda field_std: (
-        lambda trial_spec, key: field_std * jr.normal(key, (1,))
-    ),
-}
-
+# Define the disturbance amplitudes to train, depending on disturbance type
+# NOTE: Only one of these disturbance types is trained per notebook run; see the parameters cell above
 disturbance_stds = {
     'curl': [0.8],
     'random': [0.1],
 }
-
-disturbance_classes = {
-    'curl': CurlField,
-    'random': FixedField,
-}
-
-def vector_with_gaussian_length(trial_spec, key):
-    key1, key2 = jr.split(key)
-    
-    angle = jr.uniform(key1, (), minval=-jnp.pi, maxval=jnp.pi)
-    length = jr.normal(key2, ())
-
-    return length * jnp.array([jnp.cos(angle), jnp.sin(angle)]) 
-    
-disturbance_params = {
-    'curl': dict(amplitude=lambda trial_spec, key: jr.normal(key, (1,))),
-    'random': dict(field=vector_with_gaussian_length),
-}
-
-
-def disturbance(field_std, method_label):
-    return disturbance_classes[disturbance_type].with_params(
-        scale=scale_funcs[method_label](field_std),
-        active=disturbance_active[method_label],
-        **disturbance_params[disturbance_type],
-    )
 ```
 
 ```{python}
-intervenor_label = "DisturbanceField"
-
-tasks = {
-    method_label: eqx.tree_at(
-        lambda task: task.input_dependencies,
-        task_base,
-        dict(context=TrialSpecDependency(context_input_func))
-    )
-    for method_label, context_input_func in context_input_funcs.items()
-}
-
-TaskModelPair = namedtuple("TaskModelPair", ["task", "model"])
-
-task_model_pairs = {
-    method_label: {
-        disturbance_std: TaskModelPair(*schedule_intervenor(
-            task, models_base,
-            lambda model: model.step.mechanics,
-            disturbance(disturbance_std, method_label),
-            label=intervenor_label,
-            default_active=False,
-        ))
-        for disturbance_std in disturbance_stds[disturbance_type]
-    }
-    for method_label, task in tasks.items()
-}
+task_model_pairs = setup_task_model_pairs(
+    n_replicates=n_replicates,
+    dt=dt,
+    mass=mass,
+    hidden_size=hidden_size,
+    n_steps=n_steps,
+    workspace=workspace,
+    feedback_delay_steps=feedback_delay_steps,
+    feedback_noise_std=feedback_noise_std,
+    motor_noise_std=motor_noise_std,
+    disturbance_type=disturbance_type,
+    disturbance_stds=disturbance_stds[disturbance_type],
+    p_perturbed=p_perturbed,
+    key=key_init,
+)
 ```
 
 ## Training setup
 
 ```{python}
 learning_rate = 0.01
-n_batches = 50
+n_batches = 10000
 batch_size = 250
 
 where_train = lambda model: (
@@ -403,9 +352,11 @@ model_hyperparameters = dict(
     motor_noise_std=motor_noise_std,
     dt=dt,
     n_steps=n_steps,
+    workspace=workspace,
     mass=mass,
     disturbance_type=disturbance_type,
     disturbance_stds=disturbance_stds[disturbance_type],
+    p_perturbed=p_perturbed,
 )
 ```
 
@@ -438,7 +389,7 @@ save(
     str(MODELS_DIR / train_histories_basename) + ".eqx",
     train_histories,
     hyperparameters=dict(
-        disturbance_stds=disturbance_stds,
+        disturbance_stds=disturbance_stds[disturbance_type],
         n_batches=n_batches,
         batch_size=batch_size,
         n_replicates=n_replicates,
@@ -449,3 +400,13 @@ save(
 ```
 
 Note that we cannot save lambda functions to disk, so we save the string representation of the `where_train` PyTree.
+
+```{python}
+from functools import partial
+from rnns_learn_robust_motor_policies.setup_utils import setup_train_histories
+
+model_parameter_histories_ = load(
+    str(MODELS_DIR / train_histories_basename) + ".eqx",
+    partial(setup_train_histories, trained_models),
+)
+```

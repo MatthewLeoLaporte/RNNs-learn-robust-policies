@@ -1,0 +1,723 @@
+---
+jupyter: python3
+format:
+  html:
+    toc: true 
+execute:
+  echo: false
+---
+
+# Analysis of plant perturbations
+
+## Environment setup
+
+```{python}
+%load_ext autoreload
+%autoreload 2
+```
+
+```{python}
+import os
+
+os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
+```
+
+```{python}
+from functools import partial
+from typing import Literal, Optional
+from pathlib import Path
+
+import equinox as eqx
+import jax
+import jax.numpy as jnp
+import jax.random as jr
+import jax.tree as jt
+import matplotlib.pyplot as plt
+import numpy as np
+import plotly.colors as plc
+import plotly.graph_objects as go
+from tqdm.auto import tqdm
+
+from feedbax import (
+    is_module, 
+    is_type,
+    load, 
+    make_named_dict_subclass,
+    tree_set_scalar,
+    tree_stack,
+    tree_struct_bytes,
+    tree_take, 
+    tree_take_multi,
+    tree_unzip,
+)
+from feedbax.channel import toggle_channel_noise
+from feedbax.intervene import (
+    CurlField, 
+    FixedField, 
+    add_intervenors, 
+    schedule_intervenor,
+)
+from feedbax.misc import git_commit_id, attr_str_tree_to_where_func
+import feedbax.plotly as fbp
+from feedbax.task import SimpleReaches
+from feedbax.xabdeef.losses import simple_reach_loss
+
+from rnns_learn_robust_motor_policies.colors import (
+    COLORSCALES, 
+    MEAN_LIGHTEN_FACTOR,
+    get_colors_dicts,
+)
+from rnns_learn_robust_motor_policies.misc import lohi, load_from_json
+from rnns_learn_robust_motor_policies.part2_setup import setup_models, TrainStdDict
+from rnns_learn_robust_motor_policies.plot_utils import (
+    add_context_annotation,
+    add_endpoint_traces,
+    figleaves,
+    figs_flatten_with_paths,
+    get_savefig_func,
+)
+from rnns_learn_robust_motor_policies.setup_utils import (
+    display_model_filechooser,
+    filename_join as join,
+    find_unique_filepath,
+    set_model_noise,
+    setup_train_histories,
+)
+from rnns_learn_robust_motor_policies.state_utils import (
+    get_forward_lateral_vel, 
+    get_lateral_distance,
+    vmap_eval_ensemble,
+)
+from rnns_learn_robust_motor_policies.tree_utils import (
+    pp,
+    subdict, 
+    swap_model_trainables, 
+)
+```
+
+Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
+
+```{python}
+for mod in (jax, eqx): 
+    print(f"{mod.__name__} version: {mod.__version__}")
+    
+print(f"feedbax commit: {git_commit_id()}\n")
+```
+
+Unique ID for notebook, for naming outputs.
+
+```{python}
+NB_ID = "2-2"
+TRAIN_PREFIX = "2-1"  # Notebook the models were trained in
+```
+
+### Hyperparameters
+
+We may want to specify 1) which trained models to load, by their parameters, and 2) how to modify the model parameters for analysis.
+
+```{python}
+#| tags: [parameters]
+
+# Specify which trained models to load 
+disturbance_type_load: Literal['curl', 'random'] = 'curl'
+feedback_noise_std_load = 0.0
+motor_noise_std_load = 0.0
+feedback_delay_steps_load = 0
+
+# Specify model parameters to use for analysis (None -> use training value)
+disturbance_type: Optional[Literal['curl', 'random']] = None
+feedback_noise_std: Optional[float] = None
+motor_noise_std: Optional[float] = None
+```
+
+These parameters may be passed as strings from the command line in some cases, so we need to cast them to be sure.
+
+```{python}
+feedback_noise_std_load = float(feedback_noise_std_load)
+motor_noise_std_load = float(motor_noise_std_load)
+feedback_delay_steps_load = int(feedback_delay_steps_load)
+if feedback_noise_std is not None:
+    feedback_noise_std = float(feedback_noise_std)
+if motor_noise_std is not None:
+    motor_noise_std = float(motor_noise_std)
+```
+
+```{python}
+noise_stds = dict(
+    feedback=feedback_noise_std,
+    motor=motor_noise_std,
+)
+```
+
+See further below for parameter-based loading of models, as well as the code that modifies the models prior to analysis.
+
+### Directories
+
+```{python}
+MODELS_DIR = Path('../models')
+
+if not MODELS_DIR.exists():
+    raise FileNotFoundError(f"Models directory not found: {MODELS_DIR.absolute()}")
+```
+
+### RNG setup
+
+```{python}
+SEED = 5566
+key = jr.PRNGKey(SEED)
+key_init, key_train, key_eval = jr.split(key, 3)
+```
+
+### Data structures
+
+Our PyTrees will contain levels corresponding to training conditions (standard deviation of disturbance amplitude during training) and evaluation conditions (disturbance amplitudes during analysis).
+
+Here, define some trivial subclasses of `dict` that can be identified by name, when manipulating these levels in the trees.
+
+```{python}
+PertAmpDict = make_named_dict_subclass('PertAmpDict')
+```
+
+## Load and adjust trained models
+
+### Specify file to load 
+
+We provide a couple of options, here: either we load trained models based on their hyperparameters as specified [above](#Hyperparameters), or we allow the user to select a file. We control which method to use by toggling the following variable:
+
+```{python}
+load_from_parameters = True
+```
+
+Note that when we load from parameters, this assumes that models have been trained with those parameters. Otherwise, an error will be raised as the respectively-named file will not be found.
+
+#### By noise and delay hyperparameters
+
+```{python}
+suffix_load = '_'.join([
+    f"{disturbance_type_load}",
+    f"noise-{feedback_noise_std_load}-{motor_noise_std_load}",
+    f"delay-{feedback_delay_steps_load}",
+])
+
+if load_from_parameters and 'None' in suffix_load:
+    raise ValueError("If loading from parameters, all parameters must be specified.")
+```
+
+#### Specify file to load by user selection
+
+Maybe the user wants to browse and select a trained model file. In that case we can display a file chooser.
+
+```{python}
+if not load_from_parameters:
+    fc = display_model_filechooser(MODELS_DIR, filter_pattern=f'{TRAIN_PREFIX}_*trained_models*')
+```
+
+The default filename is the one that sorts last. If the user does not select a file or if the following cell is run before they do, then the default file will be loaded.
+
+### Load the specified model and associated parameters and metadata
+
+```{python}
+# model_file_label = "trained_models_best_params"
+model_file_label = "trained_models"
+
+if not load_from_parameters:
+    if fc.selected is None:
+        models_filepath = f"{fc.default_path}/{fc.default_filename}"
+    else:
+        models_filepath = fc.selected
+else: 
+    models_filepath = str(find_unique_filepath(
+        MODELS_DIR, f"{TRAIN_PREFIX}__{suffix_load}__{model_file_label}"
+    ))
+    if models_filepath is None:
+        raise FileNotFoundError(f"No models found with file label: {suffix_load}")
+
+trained_models_load: dict[float, eqx.Module] = load(
+    MODELS_DIR / models_filepath, setup_models,
+)
+```
+
+```{python}
+hyperparameters_filepath = models_filepath.replace(f'{model_file_label}.eqx', 'hyperparameters.json')
+hyperparameters = load_from_json(hyperparameters_filepath)
+# extras_filepath = models_filepath.replace(f'{model_file_label}.eqx', 'extras.json')
+# extras = load_from_json(extras_filepath)
+
+disturbance_train_stds_load = hyperparameters['disturbance_stds']
+n_replicates = hyperparameters['n_replicates']
+
+# We'll use this for creating figure subdirectories according to the training conditions
+suffix_train = models_filepath.split('__')[1]
+```
+
+### Modify the system noise if needed
+
+```{python}
+trained_models_load = jt.map(
+    partial(
+        set_model_noise, 
+        noise_stds=noise_stds,
+        enable_noise=True,
+    ),
+    trained_models_load,
+    is_leaf=is_module,
+)
+```
+
+### Optionally exclude replicates that perform much worse than average
+
+When plotting single-replicate examples, we want to show the best replicate. Also, when lumping together replicates and plotting distributions, we want to include as many replicates as possible to show how performance may vary, but also exclude replicates whose performance is much worse than the best replicate.
+
+:::{note}
+The logic here is that systems like the brain will have much more efficient learning systems, and that we are approximating their efficiency by taking advantage of variance between model initializations. 
+
+In other words: we are interested in the kind of performance that is feasible with these kinds of networked controllers, more than the kind of performance that we should expect on average (or in the worst case) given the technical details of network initialization etc.
+:::
+
+```{python}
+exclude_underperformers = False
+```
+
+```{python}
+# TODO
+# TODO: Use `TrainStdDict` from the start in `1-1`/`part1_setup`, and then `tree_map` over `TrainStdDict` 
+# leaves in `part1_post_training`, which can then just be `post_training`
+# TODO
+
+# included_replicates = TrainStdDict({
+#     float(k): jnp.array(v) for k,v in extras['included_replicates'].items()
+# })
+# best_replicate = TrainStdDict({
+#     # JSON stores keys as strings, so cast them back to floats
+#     float(k): v for k,v in extras['best_replicate_by_loss'].items()
+# })
+
+# def take_replicate_or_best(tree: TrainStdDict, i_replicate=None, replicate_axis=1):
+#     if i_replicate is None:
+#         map_func = lambda tree: TrainStdDict({
+#             train_std: tree_take(subtree, best_replicate[train_std], replicate_axis)
+#             for train_std, subtree in tree.items()
+#         })
+#     else:
+#         map_func = lambda tree: tree_take_multi(tree, [i_replicate], [replicate_axis])
+        
+#     return jt.map(map_func, tree, is_leaf=is_type(TrainStdDict))
+```
+
+Which replicates are included?
+
+```{python}
+# eqx.tree_pprint(included_replicates, short_arrays=False)
+```
+
+Set the indices corresponding to the excluded replicates to NaN in each of the model arrays. This ensures that the shapes of the arrays remain consistent. NaN results will be ignored at plotting time. 
+
+```{python}
+if exclude_underperformers:
+    trained_models = jt.map(
+        lambda models, included: tree_set_scalar(models, jnp.nan, jnp.where(~included)[0]),
+        trained_models_load, included_replicates,
+        is_leaf=is_module,
+    )
+    n_replicates_included = jt.map(lambda x: jnp.sum(x).item(), included_replicates)
+else:
+    trained_models = trained_models_load
+    n_replicates_included = dict.fromkeys(trained_models.keys(), n_replicates)
+```
+
+**TODO**: Make an annotation that indicates "$n/N$ replicates are included" or something.
+
+### Define subsets of models/training conditions
+
+Depending on how training goes, we might want to leave out some of the training conditions (i.e. training disturbance stds) from the analysis.
+
+```{python}
+# disturbance_train_stds = disturbance_train_stds_load
+
+# trained_models = jt.map(
+#     lambda train_std_dict: subdict(train_std_dict, disturbance_train_stds),
+#     trained_models,
+#     is_leaf=is_type(TrainStdDict),
+# )
+```
+
+### Sort out the training and testing hyperparameters
+
+The following will never vary between training and analysis.
+
+```{python}
+feedback_delay_steps = hyperparameters['feedback_delay_steps']
+```
+
+The following may change for the analysis, but we may want to refer to the training values.
+
+```{python}
+disturbance_type_train = hyperparameters['disturbance_type']
+noise_stds_train = dict(
+    feedback=hyperparameters['feedback_noise_std'],
+    motor=hyperparameters['motor_noise_std'],
+)
+```
+
+If we didn't alter the disturbance type or noise levels for the analysis, we can infer they'll be the same as the ones used during training.
+
+```{python}
+if disturbance_type is None:
+    disturbance_type = disturbance_type_train
+
+noise_stds = {
+    k: v if v is not None else noise_stds_train[k]
+    for k, v in noise_stds.items()
+} 
+
+any_system_noise = any(jt.leaves(noise_stds))
+```
+
+### Setup figure directories
+
+The hierarchy of figure directories depends on the hyperparameters of the trained model. Now that we've sorted that out, we can set up the base subdirectory for figures generated in the analyses that follow in this notebook.
+
+```{python}
+suffix = f"{disturbance_type}_noise-{noise_stds['feedback']}-{noise_stds['motor']}_delay-{feedback_delay_steps}"
+
+FIGS_DIR = Path(f'/mnt/storage/tmp/figures/{NB_ID}/train__{suffix_train}/{suffix}')
+
+for d in (FIGS_DIR,):
+    d.mkdir(parents=True, exist_ok=True)
+```
+
+```{python}
+savefig = get_savefig_func(FIGS_DIR)
+```
+
+## Define tasks
+
+### Define the disturbances
+
+```{python}
+# Evaluate only a single amplitude, for now;
+# we want to see variation over the context input
+disturbance_amplitude = {
+    'curl': 4,
+    'random': 0.4,
+}
+
+if disturbance_type == 'curl':  
+    def disturbance(amplitude):
+        return CurlField.with_params(amplitude=amplitude)    
+        
+elif disturbance_type == 'random':   
+    def disturbance(field_std):
+        def orthogonal_field(trial_spec, *, key):
+            init_pos = trial_spec.inits['mechanics.effector'].pos
+            goal_pos = jnp.take(trial_spec.targets['mechanics.effector.pos'].value, -1, axis=-2)
+            direction_vec = goal_pos - init_pos
+            direction_vec = direction_vec / jnp.linalg.norm(direction_vec)
+            return jnp.array([-direction_vec[1], direction_vec[0]])
+            
+        return FixedField.with_params(
+            scale=field_std,
+            field=orthogonal_field,  
+        ) 
+          
+else:
+    raise ValueError(f"Unknown disturbance type: {disturbance_type}")
+```
+
+### Set up the base task 
+
+See notebook 1-2a for some explanation of the parameter choices here.
+
+```{python}
+n_steps = 100
+workspace = ((-1., -1.),
+             (1., 1.))
+             
+# TODO: Define this centrally
+
+eval_grid_n = 2
+eval_n_directions = 24
+eval_reach_length = 0.5
+n_conditions = eval_grid_n ** 2 * eval_n_directions
+
+eval_grid_n_small = 1
+eval_n_directions_small = 7
+eval_reach_length_small = 0.5
+n_conditions_small = eval_grid_n_small ** 2 * eval_n_directions_small
+
+# Also add the intervenors to the trained models
+task_base, models = schedule_intervenor(
+    SimpleReaches(
+        loss_func=simple_reach_loss(),
+        workspace=workspace, 
+        n_steps=n_steps,
+        eval_grid_n=eval_grid_n,
+        eval_n_directions=eval_n_directions,
+        eval_reach_length=eval_reach_length,  
+    ),
+    trained_models,
+    lambda model: model.step.mechanics,
+    disturbance(disturbance_amplitude[disturbance_type]),
+    label=INTERVENOR_LABEL,
+    default_active=False,
+)
+```
+
+### Set up variants with different context inputs
+
+```{python}
+context_inputs = [0, 2, 4, 6, 8]
+
+def get_context_input_func(x):
+    return lambda trial_spec, key: (
+        jnp.full_like(trial_spec.intervene[INTERVENOR_LABEL].active, x, dtype=float)
+    )
+
+ContextInputDict = make_named_dict_subclass('ContextInputDict')
+
+tasks = ContextInputDict({
+    context_input: eqx.tree_at(
+        lambda task: task.input_dependencies,
+        task_base, 
+        {'context': TrialSpecDependency(get_context_input_func(context_input))},
+    )
+    for context_input in context_inputs
+})
+```
+
+### Make smaller versions of the tasks for visualization.
+
+```{python}
+tasks_small = jt.map(
+    lambda task: eqx.tree_at(
+        lambda task: (
+            task.eval_grid_n,
+            task.eval_n_directions,
+            task.eval_reach_length,
+        ),
+        task, 
+        (
+            eval_grid_n_small, 
+            eval_n_directions_small, 
+            eval_reach_length_small,
+        ),
+    ),
+    tasks,
+    is_leaf=is_module,
+)
+``` 
+
+### Assign some things for convenient reference
+
+```{python}
+trial_specs = task_base.validation_trials
+trial_specs_small = jt.leaves(tasks_small, is_leaf=is_module)[0].validation_trials
+
+def get_pos_endpoints(trial_specs):
+    return jnp.stack([
+        trial_specs.inits['mechanics.effector'].pos, 
+        jnp.take(trial_specs.targets['mechanics.effector.pos'].value, -1, axis=-2),
+    ], axis=0)
+
+pos_endpoints = get_pos_endpoints(trial_specs)
+pos_endpoints_small = get_pos_endpoints(trial_specs_small)
+
+# Once the positions are center-subtracted and aligned to reach direction,
+# all the endpoints will be the same.
+pos_endpoints_aligned = jnp.array([
+    [0., 0.], [eval_reach_length, 0.]
+])
+pos_endpoints_small_aligned = jnp.array([
+    [0., 0.], [eval_reach_length_small, 0.]
+])
+```
+
+### Number of evaluations per model and condition
+
+We'll evaluate each condition (reach direction) several times, to see how performance varies with noise.
+
+```{python}
+n_evals = 5
+n_evals_small = 5
+
+if not any_system_noise:
+    n_evals = n_evals_small = 1
+```
+
+## Setup colors for plots
+
+```{python}
+trials_colors, trials_colors_dark = get_colors_dicts(
+    range(n_evals), COLORSCALES['trials'],
+)
+
+# by training condition
+# disturbance_train_stds_colors, disturbance_train_stds_colors_dark = get_colors_dicts(
+#     disturbance_train_stds, COLORSCALES['disturbance_train_stds'],
+# )
+
+# by evaluation condition
+# disturbance_amplitudes_colors, disturbance_amplitudes_colors_dark = get_colors_dicts(
+#     disturbance_amplitudes, COLORSCALES['disturbance_amplitudes'], 
+# )
+
+# by context input 
+context_input_colors, context_input_colors_dark = get_colors_dicts(
+    context_inputs, COLORSCALES['context_inputs'],
+)
+```
+
+## Evaluate the trained models on each evaluation task
+
+```{python}
+def evaluate_all_states(tasks, n_evals):
+    return jt.map( # Map over task variants
+        lambda models: jt.map(  # Map over training conditions (`models` entries)
+            lambda task: vmap_eval_ensemble(models, task, n_evals, key_eval),
+            tasks,
+            is_leaf=is_module,
+        ),
+        models,
+        is_leaf=is_module,
+    )
+```
+
+```{python}
+all_states_bytes = (
+    tree_struct_bytes(eqx.filter_eval_shape(evaluate_all_states, tasks, n_evals)),
+    tree_struct_bytes(eqx.filter_eval_shape(evaluate_all_states, tasks_small, n_evals_small)),
+)
+
+print(f"{sum(all_states_bytes) / 1e9:.2f} GB of memory estimated to store all states.")
+```
+
+```{python}
+all_states = evaluate_all_states(tasks, n_evals)
+all_states_small = evaluate_all_states(tasks_small, n_evals_small)
+```
+
+### Project positions, velocities, and forces into reach direction
+
+```{python}
+Responses = namedtuple('Responses', ('pos', 'vel', 'force'))
+
+# class Responses(eqx.Module):
+#     pos: Any
+#     vel: Any
+#     force: Any
+
+aligned_var_labels = Responses('Position', 'Velocity', 'Control force')
+where_vars_to_align = lambda states, pos_endpoints: Responses(
+    # Positions with respect to the origin
+    states.mechanics.effector.pos - pos_endpoints[0][..., None, :],
+    states.mechanics.effector.vel,
+    states.efferent.output,
+)
+```
+
+```{python}
+def get_aligned_vars(all_states, where, endpoints): 
+    directions = endpoints[1] - endpoints[0]
+    
+    return jt.map(
+        lambda states: jt.map(
+            lambda var: project_onto_direction(var, directions),
+            where(states, endpoints),
+        ),
+        all_states,
+        is_leaf=is_module,
+    )
+    
+aligned_vars = get_aligned_vars(all_states, where_vars_to_align, pos_endpoints)
+aligned_vars_small = get_aligned_vars(all_states_small, where_vars_to_align, pos_endpoints_small)
+```
+
+## Plot aligned trajectories
+
+i.e. for a single reach direction, compare multiple trials/replicates different training conditions; visualize how training on different disturbance strengths affects response.
+
+```{python}
+fig_subdir = "aligned_to_reach_condition"
+```
+
+```{python}
+n_curves_max = 20
+
+plot_condition_trajectories = partial(
+    fbp.trajectories_2D,
+    var_labels=aligned_var_labels,
+    axes_labels=('x', 'y'),
+    # mode='std',
+    mean_trajectory_line_width=3,
+    n_curves_max=n_curves_max,
+    darken_mean=MEAN_LIGHTEN_FACTOR,
+    layout_kws=dict(
+        width=900,
+        height=400,
+        legend_tracegroupgap=1,
+        margin_t=75,
+    ),
+    scatter_kws=dict(
+        line_width=1, 
+        opacity=0.6,
+    ),
+)
+```
+
+### Comparison across context inputs
+
+```{python}
+plot_vars_stacked = jt.map(
+    lambda d: tree_stack(d.values()),
+    aligned_vars_small,
+    is_leaf=is_type(ContextInputDict),
+)
+```
+
+```{python}
+figs = jt.map(
+    partial(
+        plot_condition_trajectories, 
+        colorscale=COLORSCALES['context_inputs'],
+        colorscale_axis=0,
+        # stride=stride,
+        legend_title="Context input",
+        legend_labels=context_inputs,
+        curves_mode='lines',
+        var_endpoint_ms=0,
+        scatter_kws=dict(line_width=0.5, opacity=0.3),
+        # ref_endpoints=(pos_endpoints, None),
+    ),
+    plot_vars_stacked,
+    is_leaf=is_type(Responses),
+)
+```
+
+
+```{python}
+for path, fig in tqdm(figs_flatten_with_paths(figs)):
+    training_method = path[0].key
+    disturbance_amplitude = path[1].key
+    
+    add_context_annotation(
+        fig,
+        perturbations={
+            f"{disturbance_type}": (disturbance_amplitude, None, None)
+        },
+        train_condition_strs=[
+            f"{disturbance_type_train} fields",
+        ],        
+        # TODO: The number of replicates (`n_replicates_included`) may vary with the disturbance train std!
+        # n=min(n_evals_small * n_replicates, n_curves_max),
+    )
+    
+    add_endpoint_traces(fig, pos_endpoints_small_aligned, xaxis='x1', yaxis='y1')
+
+    # savefig(
+    #     fig, 
+    #     join([
+    #         f"{disturbance_type}-field-{disturbance_amplitude}",
+    #     ]),
+    #     subdir=fig_subdir,
+    # )  
+```

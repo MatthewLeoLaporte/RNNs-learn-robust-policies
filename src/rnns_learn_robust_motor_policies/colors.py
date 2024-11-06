@@ -20,6 +20,7 @@ COLORSCALES = dict(
     disturbance_train_stds='viridis',
     disturbance_amplitudes='plotly3',
     fb_pert_vars=plc.qualitative.D3,
+    context_inputs='thermal',
 )
 
 

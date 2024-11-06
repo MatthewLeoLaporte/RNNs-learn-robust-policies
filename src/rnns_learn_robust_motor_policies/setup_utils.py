@@ -9,11 +9,15 @@ import equinox as eqx
 from ipyfilechooser import FileChooser
 from ipywidgets import HTML
 from IPython.display import display
+import jax.numpy as jnp
 import jax.tree as jt
 
 from feedbax import is_type, is_module
-from feedbax._tree import tree_zip_named
+from feedbax.misc import attr_str_tree_to_where_func
 from feedbax.noise import Multiplicative, Normal
+from feedbax.train import TaskTrainerHistory, init_task_trainer_history
+from feedbax._tree import tree_zip_named
+from feedbax.xabdeef.losses import simple_reach_loss
 
 
 def get_latest_matching_file(directory: str, pattern: str) -> Optional[str]:
@@ -158,3 +162,61 @@ def set_model_noise(
         )
     
     return model
+
+
+def setup_train_histories(
+    models_tree,
+    disturbance_stds,
+    n_batches,
+    batch_size,
+    n_replicates,
+    *,
+    where_train_strs,
+    save_model_parameters,
+    key,
+) -> dict[float, TaskTrainerHistory]:
+    """Returns a skeleton PyTree for the training histories (losses, parameter history, etc.)
+    
+    Note that `init_task_trainer_history` depends on `task` to infer 
+    
+    1) The number and name of loss function terms;
+    2) The structure of trial specs, in case `save_trial_specs is not None`.
+    
+    Here, neither of these are much of a concern since 1) we are always using the same 
+    loss function for each set of saved/loaded models in this project, 2) `save_trial_specs is None`.
+    """   
+    where_train = attr_str_tree_to_where_func(where_train_strs)
+    loss_func = simple_reach_loss()
+    
+    return jt.map(
+        lambda models: init_task_trainer_history(
+            loss_func,
+            n_batches,
+            n_replicates,
+            ensembled=True,
+            ensemble_random_trials=False,
+            save_model_parameters=jnp.array(save_model_parameters),
+            save_trial_specs=None,
+            batch_size=batch_size,
+            model=models,
+            where_train=where_train,  
+        ),
+        models_tree,
+        is_leaf=is_module,
+    )
+    
+    # return {
+    #     train_std: init_task_trainer_history(
+    #         simple_reach_loss(),
+    #         n_batches,
+    #         n_replicates,
+    #         ensembled=True,
+    #         ensemble_random_trials=False,
+    #         save_model_parameters=jnp.array(save_model_parameters),
+    #         save_trial_specs=None,
+    #         batch_size=batch_size,
+    #         model=model,
+    #         where_train=where_train,  
+    #     )
+    #     for train_std, model in models_tree.items()
+    # }

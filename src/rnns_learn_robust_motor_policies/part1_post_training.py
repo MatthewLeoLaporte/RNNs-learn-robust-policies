@@ -26,7 +26,8 @@ from feedbax.misc import attr_str_tree_to_where_func
 from feedbax.train import TaskTrainerHistory
 
 from rnns_learn_robust_motor_policies.misc import load_from_json, write_to_json
-from rnns_learn_robust_motor_policies.part1_setup import setup_models, setup_train_histories
+from rnns_learn_robust_motor_policies.part1_setup import setup_models
+from rnns_learn_robust_motor_policies.setup_utils import setup_train_histories
 
 
 logging.basicConfig(

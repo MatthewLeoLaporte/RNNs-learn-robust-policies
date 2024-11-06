@@ -1,9 +1,10 @@
 ---
 created: 2024-10-04T11:27
-updated: 2024-11-05T15:01
+updated: 2024-11-06T13:25
 ---
 - [x] [[#Part 1 results review and synthesis|Review part 1 results]]
 - [ ] **Clean up this file**
+- [ ] Normal distribution is notated $\mathcal{N}(\mu,\sigma^{2})$, not $\mathcal{N}(\mu,\sigma)$ – fix context annotations
 - [ ] **Try a learning rate schedule when training part 2**
 - [ ] **Move part 1 training to a script + a yaml file defining which hyperparameters to train** — or otherwise we’ll have to use batch quarto render 
 - [x] Move post-training analysis (best replicates, excludes, loss plots, etc) to a script so that we can run it easily without needing to re-train models

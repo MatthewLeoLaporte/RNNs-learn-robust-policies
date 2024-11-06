@@ -381,7 +381,7 @@ Because we'll generally have already loaded the trained models by the time we al
 
 ```{python}
 from functools import partial
-from rnns_learn_robust_motor_policies.part1_setup import setup_train_histories
+from rnns_learn_robust_motor_policies.setup_utils import setup_train_histories
 
 model_parameter_histories_ = load(
     str(MODELS_DIR / train_histories_basename) + ".eqx",
