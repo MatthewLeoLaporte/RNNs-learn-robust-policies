@@ -1,8 +1,7 @@
 ---
 created: 2024-09-24T10:14
-updated: 2024-11-05T15:02
+updated: 2024-11-07T17:21
 ---
-
 ## Training networks on different disturbance levels
 
 ### No fields
@@ -739,9 +738,18 @@ Here I’ll show the full plots with all train and test conditions; however I ha
 ![[error-end-vel 5.png]]
 ### Comparison of delay conditions (TODO)
 
+How much does delay degrade learned performance? 
+
+- [ ] Full 3x3 (control, curl, random) test-train comparison for the zero-noise condition
+	- first option: train condition on x axis, eval condition in legend, and zero vs. 4 step in splits
+
 ### Comparison of noise conditions (TODO)
 
+How does addition of system noise affect major performance measures (endpoint error, max control?) for different train-test conditions?
+
 ### Comparison of noise+delay interactions (TODO?)
+
+e.g. does training on delay increase sensitivity to added noise?
 
 ## Feedback perturbations 
 
@@ -841,3 +849,22 @@ The effect is clearly different than for curl fields, however the increase in ve
 
 The overall conclusion seems to be that training on perturbations induces higher control gains, and that this effect is stronger on perturbations to velocity than position feedback.
 
+## Additional potential analyses
+
+### Early vs. late perturbations during reaching
+
+Difference between early vs. late perturbations *during reaching* to see if response is the same at different points during the reach.  
+
+.g. given that the maximal forward force output happens in the first couple of timesteps, and is invariant to the disturbance magnitude, does that mean that a disturbance that is only active at the very beginning has a different influence on the response? 
+
+### Low priority
+#### Enforce rotational invariance of the learned strategy
+
+This is motivated by the slightly different responses of the network when a feedback perturbation is in different directions. Is it possible to train the network so that its response in the x direction is just like a rotated version of its response in the y direction?
+
+Some ideas:
+
+- Provide the RNN inputs in a polar representation
+- Make the RNN output the force vector in a polar representation, by forcing their trigonometric conversion to x/y 
+- Add an explicit term to loss function; e.g. on each batch, evaluate on a big center-out set, and penalize for the difference between the control vectors when they are all rotated to lie in the same reach direction
+- Modify the network architecture to enforce symmetry. I’m not sure exactly how to do this.

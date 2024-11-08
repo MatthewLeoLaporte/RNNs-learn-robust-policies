@@ -51,8 +51,6 @@ from feedbax import (
     is_module, 
     is_type,
     load, 
-    make_named_tuple_subclass,
-    make_named_dict_subclass,
     move_level_to_outside,
     tree_key_tuples, 
     tree_prefix_expand,
@@ -113,6 +111,11 @@ from rnns_learn_robust_motor_policies.colors import(
     get_colors_dicts,
     get_colors_dicts_from_discrete,
 )
+from rnns_learn_robust_motor_policies.types import {
+    ImpulseAmpTuple, 
+    PertVarDict, 
+    TrainStdDict,
+}
 ```
 
 ```{python}
@@ -194,18 +197,6 @@ key = jr.PRNGKey(SEED)
 key_init, key_train, key_eval = jr.split(key, 3)
 ```
 
-### Data structures
-
-Our PyTrees will contain levels corresponding to training conditions (standard deviation of disturbance amplitude during training) and evaluation conditions (disturbance amplitudes during analysis).
-
-Here, define some trivial subclasses of `dict` and `tuple` that can be identified by name, when manipulating these levels in the trees.
-
-```{python}
-TrainStdDict = make_named_dict_subclass('TrainStdDict')
-PertVarDict = make_named_dict_subclass('PertVarDict')
-ImpulseAmpTuple = make_named_tuple_subclass('ImpulseAmpTuple')
-```
-
 ### Plotting setup 
 
 The following is a workaround to get LaTeX to display in Plotly figures in VSCode.
@@ -268,9 +259,9 @@ else:
     if models_filepath is None:
         raise FileNotFoundError(f"No models found with file label: {suffix_load}")
 
-trained_models_load: dict[float, eqx.Module] = TrainStdDict(load(
+trained_models_load: dict[float, eqx.Module] = load(
     MODELS_DIR / models_filepath, setup_models,
-))
+)
 ```
 
 ```{python}
@@ -353,12 +344,6 @@ Depending on how training goes, we might want to leave out some of the training 
 
 ```{python}
 disturbance_train_stds = disturbance_train_stds_load[:-1] 
-
-# TODO
-# TODO: Remove this after the next round of training!
-# TODO
-disturbance_train_stds.pop(1)
-# TODO
 
 trained_models = subdict(trained_models, disturbance_train_stds) 
 ```

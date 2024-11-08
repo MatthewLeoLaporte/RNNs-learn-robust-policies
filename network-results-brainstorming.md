@@ -1,0 +1,60 @@
+---
+created: 2024-11-07T11:45
+updated: 2024-11-07T13:14
+---
+
+## Unit perturbations
+
+
+## Alignment of unit activities and output weights
+
+As in [@SchuesslerEtAl_2024], assuming the network activities $x_{i}(t)$ are mean-subtracted (centered) over time:
+
+$$
+\rho= \frac{\lVert\mathbf{W}_{\mathrm{out}}^{\top}\mathbf{X}\rVert}{\lVert \mathbf{W}_{\mathrm{out}} \rVert~\lVert \mathbf{X} \rVert }=\frac{\lVert\mathbf{Z}\rVert}{\lVert \mathbf{W}_{\mathrm{out}} \rVert~\lVert \mathbf{X} \rVert }
+$$
+
+where the norm is the Frobenius norm. 
+
+This correlation is large for networks where the top PCs are more strongly correlated with the output weights. Thus this measures how dominated the network is by activity which is orthogonal to the readout.
+
+Then the norm of the outputs can be expressed as a function of the correlation and the norms of the weights and activities:
+
+$$
+\lVert \mathbf{Z} \rVert =\rho \lVert \mathbf{W}_{\mathrm{out}} \rVert \lVert \mathbf{X} \rVert 
+$$
+
+We can also express this relationship locally in time, assuming one-dimensional outputs and (for the correlation to be valid) that both $\mathbf{w}_{\mathrm{out}}$ and $\mathbf{x}(t)$ are centered *in coordinates*:
+
+$$
+\rho(t)=\frac{\mathbf{w}_{\mathrm{out}}^{\top}\mathbf{x}(t)}{\lVert \mathbf{w}_{\mathrm{out}} \rVert~\lVert \mathbf{x}(t) \rVert  }
+$$
+
+such that the network’s outputs can be expressed as a function of the local correlation:
+
+$$
+\mathbf{z}(t)=\rho(t)\lVert \mathbf{w}_{\mathrm{out}} \rVert ~\lVert \mathbf{x}(t) \rVert 
+$$
+
+Because $\lVert \mathbf{x}(t) \rVert$ cannot be small for an RNN, then by controlling the size of $\lVert \mathbf{w}_{\mathrm{out}}  \rVert$, the magnitude of the correlation $\rho$ must compensate to ensure appropriately-sized outputs. Thus the choice of readout weights influences whether the network’s dynamics are dominated by output-orthogonal activity or not. 
+
+### Methods
+
+#### Part 1
+
+- [ ] For networks with trained readout weights, compute the correlation for different networks; see if the correlation/norm of the readout weights depends on the std of disturbances during training
+- [ ] Try fixing the readout weights to different norms instead of training them, and see how this affects the robustness measures
+
+#### Part 2
+
+- [ ] Try fixing the readout weights to different norms instead of training them, and see how this affects the network dynamics
+
+## Fixed points
+
+- Interpolating the goals-goals and inits-goals manifoldsacross context inputs
+
+## Training networks with contextual inputs
+
+- [ ] Some loss plots
+
+## Aligned trajectories

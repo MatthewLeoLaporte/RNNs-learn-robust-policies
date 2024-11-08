@@ -1,5 +1,4 @@
 
-from collections import namedtuple
 from collections.abc import Callable
 from typing import Literal, Optional
 
@@ -8,7 +7,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 
-from feedbax import get_ensemble, tree_unzip, make_named_dict_subclass
+from feedbax import get_ensemble, tree_unzip
 from feedbax.intervene import (
     CurlField, 
     CurlFieldParams, 
@@ -20,16 +19,8 @@ from feedbax.task import SimpleReaches, TrialSpecDependency
 from feedbax.xabdeef.models import point_mass_nn
 from feedbax.xabdeef.losses import simple_reach_loss
 
-
-INTERVENOR_LABEL = "DisturbanceField"
-DISTURBANCE_CLASSES = {
-    'curl': CurlField,
-    'random': FixedField,
-}
-
-
-TaskModelPair = namedtuple("TaskModelPair", ["task", "model"])
-TrainStdDict = make_named_dict_subclass('TrainStdDict')
+from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL, DISTURBANCE_CLASSES
+from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainStdDict
 
 
 def get_field_amplitude(intervenor_params):

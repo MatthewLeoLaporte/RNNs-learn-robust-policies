@@ -12,6 +12,9 @@ from feedbax.train import filter_spec_leaves
 from feedbax.xabdeef.models import point_mass_nn
 from feedbax.xabdeef.losses import simple_reach_loss
 
+from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL, DISTURBANCE_CLASSES
+from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainStdDict
+
 
 def setup_models(
     *,
@@ -67,7 +70,7 @@ def setup_models(
         disturbance_stds,    
     ))
     
-    return dict(zip(disturbance_stds, models))
+    return TrainStdDict(zip(disturbance_stds, models))
 
 
 def setup_model_parameter_histories(

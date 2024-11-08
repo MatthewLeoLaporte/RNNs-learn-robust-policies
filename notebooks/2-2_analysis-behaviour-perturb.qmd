@@ -23,6 +23,7 @@ os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 ```
 
 ```{python}
+from collections import namedtuple
 from functools import partial
 from typing import Literal, Optional
 from pathlib import Path
@@ -42,7 +43,6 @@ from feedbax import (
     is_module, 
     is_type,
     load, 
-    make_named_dict_subclass,
     tree_set_scalar,
     tree_stack,
     tree_struct_bytes,
@@ -59,7 +59,7 @@ from feedbax.intervene import (
 )
 from feedbax.misc import git_commit_id, attr_str_tree_to_where_func
 import feedbax.plotly as fbp
-from feedbax.task import SimpleReaches
+from feedbax.task import SimpleReaches, TrialSpecDependency
 from feedbax.xabdeef.losses import simple_reach_loss
 
 from rnns_learn_robust_motor_policies.colors import (
@@ -68,7 +68,10 @@ from rnns_learn_robust_motor_policies.colors import (
     get_colors_dicts,
 )
 from rnns_learn_robust_motor_policies.misc import lohi, load_from_json
-from rnns_learn_robust_motor_policies.part2_setup import setup_models, TrainStdDict
+from rnns_learn_robust_motor_policies.part2_setup import (
+    INTERVENOR_LABEL, 
+    setup_models, 
+)
 from rnns_learn_robust_motor_policies.plot_utils import (
     add_context_annotation,
     add_endpoint_traces,
@@ -86,12 +89,18 @@ from rnns_learn_robust_motor_policies.setup_utils import (
 from rnns_learn_robust_motor_policies.state_utils import (
     get_forward_lateral_vel, 
     get_lateral_distance,
+    project_onto_direction,
     vmap_eval_ensemble,
 )
 from rnns_learn_robust_motor_policies.tree_utils import (
     pp,
     subdict, 
     swap_model_trainables, 
+)
+from rnns_learn_robust_motor_policies.types import (
+    TrainStdDict, 
+    ContextInputDict,
+    PertAmpDict,
 )
 ```
 
@@ -155,6 +164,7 @@ See further below for parameter-based loading of models, as well as the code tha
 
 ```{python}
 MODELS_DIR = Path('../models')
+MODEL_FILE_LABEL = "trained_models_best_params"
 
 if not MODELS_DIR.exists():
     raise FileNotFoundError(f"Models directory not found: {MODELS_DIR.absolute()}")
@@ -166,16 +176,6 @@ if not MODELS_DIR.exists():
 SEED = 5566
 key = jr.PRNGKey(SEED)
 key_init, key_train, key_eval = jr.split(key, 3)
-```
-
-### Data structures
-
-Our PyTrees will contain levels corresponding to training conditions (standard deviation of disturbance amplitude during training) and evaluation conditions (disturbance amplitudes during analysis).
-
-Here, define some trivial subclasses of `dict` that can be identified by name, when manipulating these levels in the trees.
-
-```{python}
-PertAmpDict = make_named_dict_subclass('PertAmpDict')
 ```
 
 ## Load and adjust trained models
@@ -218,8 +218,6 @@ The default filename is the one that sorts last. If the user does not select a f
 
 ```{python}
 # model_file_label = "trained_models_best_params"
-model_file_label = "trained_models"
-
 if not load_from_parameters:
     if fc.selected is None:
         models_filepath = f"{fc.default_path}/{fc.default_filename}"
@@ -227,7 +225,7 @@ if not load_from_parameters:
         models_filepath = fc.selected
 else: 
     models_filepath = str(find_unique_filepath(
-        MODELS_DIR, f"{TRAIN_PREFIX}__{suffix_load}__{model_file_label}"
+        MODELS_DIR, f"{TRAIN_PREFIX}__{suffix_load}__{MODEL_FILE_LABEL}"
     ))
     if models_filepath is None:
         raise FileNotFoundError(f"No models found with file label: {suffix_load}")
@@ -238,10 +236,10 @@ trained_models_load: dict[float, eqx.Module] = load(
 ```
 
 ```{python}
-hyperparameters_filepath = models_filepath.replace(f'{model_file_label}.eqx', 'hyperparameters.json')
+hyperparameters_filepath = models_filepath.replace(f'{MODEL_FILE_LABEL}.eqx', 'hyperparameters.json')
 hyperparameters = load_from_json(hyperparameters_filepath)
-# extras_filepath = models_filepath.replace(f'{model_file_label}.eqx', 'extras.json')
-# extras = load_from_json(extras_filepath)
+extras_filepath = models_filepath.replace(f'{MODEL_FILE_LABEL}.eqx', 'extras.json')
+extras = load_from_json(extras_filepath)
 
 disturbance_train_stds_load = hyperparameters['disturbance_stds']
 n_replicates = hyperparameters['n_replicates']
@@ -275,39 +273,40 @@ In other words: we are interested in the kind of performance that is feasible wi
 :::
 
 ```{python}
-exclude_underperformers = False
+exclude_underperformers = True
 ```
 
 ```{python}
-# TODO
-# TODO: Use `TrainStdDict` from the start in `1-1`/`part1_setup`, and then `tree_map` over `TrainStdDict` 
-# leaves in `part1_post_training`, which can then just be `post_training`
-# TODO
+included_replicates = {
+    variant_label: TrainStdDict({
+        float(k): jnp.array(v) for k,v in d.items()
+    })
+    for variant_label, d in extras['included_replicates'].items()
+}
 
-# included_replicates = TrainStdDict({
-#     float(k): jnp.array(v) for k,v in extras['included_replicates'].items()
-# })
-# best_replicate = TrainStdDict({
-#     # JSON stores keys as strings, so cast them back to floats
-#     float(k): v for k,v in extras['best_replicate_by_loss'].items()
-# })
+best_replicate = {
+    variant_label: TrainStdDict({
+        float(k): jnp.array(v) for k,v in d.items()
+    })
+    for variant_label, d in extras['best_replicate_by_loss'].items()
+}
 
-# def take_replicate_or_best(tree: TrainStdDict, i_replicate=None, replicate_axis=1):
-#     if i_replicate is None:
-#         map_func = lambda tree: TrainStdDict({
-#             train_std: tree_take(subtree, best_replicate[train_std], replicate_axis)
-#             for train_std, subtree in tree.items()
-#         })
-#     else:
-#         map_func = lambda tree: tree_take_multi(tree, [i_replicate], [replicate_axis])
+def take_replicate_or_best(tree: TrainStdDict, i_replicate=None, replicate_axis=1):
+    if i_replicate is None:
+        map_func = lambda tree: TrainStdDict({
+            train_std: tree_take(subtree, best_replicate[train_std], replicate_axis)
+            for train_std, subtree in tree.items()
+        })
+    else:
+        map_func = lambda tree: tree_take_multi(tree, [i_replicate], [replicate_axis])
         
-#     return jt.map(map_func, tree, is_leaf=is_type(TrainStdDict))
+    return jt.map(map_func, tree, is_leaf=is_type(TrainStdDict))
 ```
 
 Which replicates are included?
 
 ```{python}
-# eqx.tree_pprint(included_replicates, short_arrays=False)
+eqx.tree_pprint(included_replicates, short_arrays=False)
 ```
 
 Set the indices corresponding to the excluded replicates to NaN in each of the model arrays. This ensures that the shapes of the arrays remain consistent. NaN results will be ignored at plotting time. 
@@ -466,14 +465,13 @@ task_base, models = schedule_intervenor(
 ### Set up variants with different context inputs
 
 ```{python}
-context_inputs = [0, 2, 4, 6, 8]
+# context_inputs = [0, 2, 4, 6, 8]
+context_inputs = [-4, -2, -1, -0.5, 0, 0.5, 1, 2, 4]
 
 def get_context_input_func(x):
     return lambda trial_spec, key: (
         jnp.full_like(trial_spec.intervene[INTERVENOR_LABEL].active, x, dtype=float)
     )
-
-ContextInputDict = make_named_dict_subclass('ContextInputDict')
 
 tasks = ContextInputDict({
     context_input: eqx.tree_at(
@@ -600,11 +598,6 @@ all_states_small = evaluate_all_states(tasks_small, n_evals_small)
 
 ```{python}
 Responses = namedtuple('Responses', ('pos', 'vel', 'force'))
-
-# class Responses(eqx.Module):
-#     pos: Any
-#     vel: Any
-#     force: Any
 
 aligned_var_labels = Responses('Position', 'Velocity', 'Control force')
 where_vars_to_align = lambda states, pos_endpoints: Responses(

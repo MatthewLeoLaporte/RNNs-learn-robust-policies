@@ -50,7 +50,6 @@ from feedbax import (
     is_module, 
     is_type,
     load, 
-    make_named_dict_subclass,
     tree_set_scalar,
     tree_stack,
     tree_struct_bytes,
@@ -103,7 +102,7 @@ from rnns_learn_robust_motor_policies.tree_utils import (
     subdict, 
     swap_model_trainables, 
 )
-
+from rnns_learn_robust_motor_policies.types import PertAmpDict, TrainStdDict
 ```
 
 ```{python}
@@ -168,7 +167,7 @@ noise_stds = dict(
 
 See further below for parameter-based loading of models, as well as the code that modifies the models prior to analysis.
 
-### Directories
+### Directories and filenames
 
 ```{python}
 MODELS_DIR = Path('../models')
@@ -177,23 +176,23 @@ if not MODELS_DIR.exists():
     raise FileNotFoundError(f"Models directory not found: {MODELS_DIR.absolute()}")
 ```
 
+Strings with which the saved model and hyperparameter files were labeled.
+
+:::{note}
+Note that "best_params" refers to the output of `post_training.py` run over the models trained by notebook 1-1.
+:::
+
+```{python}
+MODEL_FILE_LABEL = "trained_models_best_params"
+HYPERPARAMS_FILE_LABEL = "hyperparameters"
+```
+
 ### RNG setup
 
 ```{python}
 SEED = 5566
 key = jr.PRNGKey(SEED)
 key_init, key_train, key_eval = jr.split(key, 3)
-```
-
-### Data structures
-
-Our PyTrees will contain levels corresponding to training conditions (standard deviation of disturbance amplitude during training) and evaluation conditions (disturbance amplitudes during analysis).
-
-Here, define some trivial subclasses of `dict` that can be identified by name, when manipulating these levels in the trees.
-
-```{python}
-TrainStdDict = make_named_dict_subclass('TrainStdDict')
-PertAmpDict = make_named_dict_subclass('PertAmpDict')
 ```
 
 ## Define base task
@@ -250,7 +249,7 @@ We provide a couple of options, here: either we load trained models based on the
 load_from_parameters = True
 ```
 
-Note that when we load from parameters, this assumes that models have been trained with those parameters. Otherwise, an error will be raised as the respectively-named file will not be found.
+Note that when we load from parameters, this assumes that models are available, having been trained with those parameters. Otherwise, an error will be raised as the respectively-named file will not be found.
 
 #### By noise and delay hyperparameters
 
@@ -279,27 +278,30 @@ The default filename is the one that sorts last. If the user does not select a f
 ### Load the specified model and associated parameters and metadata
 
 ```{python}
-model_file_label = "trained_models_best_params"
-
 if not load_from_parameters:
     if fc.selected is None:
         models_filepath = f"{fc.default_path}/{fc.default_filename}"
     else:
         models_filepath = fc.selected
 else: 
-    models_filepath = str(find_unique_filepath(MODELS_DIR, f"1-1__{suffix_load}__{model_file_label}"))
+    models_filepath = str(find_unique_filepath(
+        MODELS_DIR, f"1-1__{suffix_load}__{MODEL_FILE_LABEL}"
+    ))
     if models_filepath is None:
         raise FileNotFoundError(f"No models found with file label: {suffix_load}")
 
-trained_models_load: dict[float, eqx.Module] = TrainStdDict(load(
+trained_models_load: dict[float, eqx.Module] = load(
     MODELS_DIR / models_filepath, setup_models,
-))
+)
 ```
 
 ```{python}
-hyperparameters_filepath = models_filepath.replace(f'{model_file_label}.eqx', 'hyperparameters.json')
+hyperparameters_filepath = models_filepath.replace(
+    f'{MODEL_FILE_LABEL}.eqx', 
+    f'{HYPERPARAMS_FILE_LABEL}.json',
+)
 hyperparameters = load_from_json(hyperparameters_filepath)
-extras_filepath = models_filepath.replace(f'{model_file_label}.eqx', 'extras.json')
+extras_filepath = models_filepath.replace(f'{MODEL_FILE_LABEL}.eqx', 'extras.json')
 extras = load_from_json(extras_filepath)
 
 disturbance_train_stds_load = hyperparameters['disturbance_stds']
@@ -759,7 +761,7 @@ else:
             add_context_annotation(
                 fig,
                 train_condition_strs=[
-                    f"{disturbance_type_train} with amplitude ~ \U0001d4dd(0,{disturbance_train_std})"
+                    f"{disturbance_type_train} with amplitude ~ \U0001d4dd(0,{disturbance_train_std ** 2:.2f})"
                 ],
                 perturbations={
                     f"{disturbance_type}": (disturbance_amplitude, None, None)
@@ -823,7 +825,7 @@ for disturbance_amplitude in tqdm(figs):
         add_context_annotation(
             fig,
             train_condition_strs=[
-                f"{disturbance_type_train} with amplitude ~ \U0001d4dd(0,{disturbance_train_std})"
+                f"{disturbance_type_train} with amplitude ~ \U0001d4dd(0,{disturbance_train_std ** 2:.2f})"
             ],
             perturbations={
                 f"{disturbance_type}": (disturbance_amplitude, None, None)
@@ -878,7 +880,7 @@ for disturbance_amplitude in tqdm(figs):
         add_context_annotation(
             fig,
             train_condition_strs=[
-                f"{disturbance_type_train} with amplitude ~ \U0001d4dd(0,{disturbance_train_std})"
+                f"{disturbance_type_train} with amplitude ~ \U0001d4dd(0,{disturbance_train_std ** 2:.2f})"
             ],
             perturbations={
                 f"{disturbance_type}": (disturbance_amplitude, None, None)
@@ -972,7 +974,7 @@ for disturbance_amplitude in tqdm(figs):
         add_context_annotation(
             fig,
             train_condition_strs=[
-                f"{disturbance_type_train} with amplitude ~ \U0001d4dd(0,{disturbance_train_std})"
+                f"{disturbance_type_train} with amplitude ~ \U0001d4dd(0,{disturbance_train_std ** 2:.2f})"
             ],
             perturbations={
                 f"{disturbance_type}": (disturbance_amplitude, None, None)
@@ -1031,7 +1033,7 @@ for disturbance_train_std, fig in tqdm(figs.items()):
     add_context_annotation(
         fig,
         train_condition_strs=[
-            f"{disturbance_type_train} fields with amplitude ~ \U0001d4dd(0,{disturbance_train_std})"
+            f"{disturbance_type_train} fields with amplitude ~ \U0001d4dd(0,{disturbance_train_std ** 2:.2f})"
         ],
         n=min(n_dist, n_curves_max),
     )

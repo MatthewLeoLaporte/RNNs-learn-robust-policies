@@ -1,48 +1,25 @@
 ---
 created: 2024-10-04T11:27
-updated: 2024-11-06T13:25
+updated: 2024-11-07T23:11
 ---
 - [x] [[#Part 1 results review and synthesis|Review part 1 results]]
 - [ ] **Clean up this file**
-- [ ] Normal distribution is notated $\mathcal{N}(\mu,\sigma^{2})$, not $\mathcal{N}(\mu,\sigma)$ – fix context annotations
+- [x] Normal distribution is notated $\mathcal{N}(\mu,\sigma^{2})$, not $\mathcal{N}(\mu,\sigma)$ – fix context annotations
 - [ ] **Try a learning rate schedule when training part 2**
 - [ ] **Move part 1 training to a script + a yaml file defining which hyperparameters to train** — or otherwise we’ll have to use batch quarto render 
 - [x] Move post-training analysis (best replicates, excludes, loss plots, etc) to a script so that we can run it easily without needing to re-train models
 - [ ] **Exclude models based on 1) # stds above the *best* replicate, and possibly 2) behavioural measures rather than total loss.** It looks like max net control force or end position error might be good indicators. 
 - [ ] Schedule a [[02 Questions#Steve|meeting]] with Steve. For one, ask about sensory perturbations in human tasks – do they see oscillations (i.e. going from straight to “loopy”, like we see in the control vs. robust networks)
 ## Part 1 results review and synthesis
-
-Review the results so far and make a summary of the ones that should appear as main/supplementary figures in paper. 
-
-- [x] re-run batch quarto render for both 1-2a and 1-2b, for all noise and delay conditions, as well as for both curl and random training disturbances. Maybe reduce to 3 (lo-mid-high) disturbance levels. 
-- [ ] ~~Probably, make 2-3 files: 1) results that will almost certainly appear in the paper, 2) (maybe) results that may or may not be supplementary, 3) results that will be supplementary if they are included at all.~~ Need to contemplate, and discuss this with Gunnar first. There are too many potential results and I need to decide which ones are most worth showing.
-
-
 ### Important notes
 
 - There are 3 train and 3 test perturbation conditions (control, curl, random) such that for each noise+delay condition we can do 3x3 train-test comparisons
 - There are 3 delay conditions (0, 2, 4 steps); these do not vary between 
 - There are 3 noise conditions (0, 0.04, 0.1)
 
-### Additional analyses/notebooks
-
-#### Comparison of delay conditions
-
-How much does delay degrade learned performance? 
-
-- [ ] Full 3x3 (control, curl, random) test-train comparison for the zero-noise condition
-	- first option: train condition on x axis, eval condition in legend, and zero vs. 4 step in splits
-
-#### Comparison of noise conditions
-
-How does addition of system noise affect major performance measures (endpoint error, max control?) for different train-test conditions?
-
-#### Interaction of noise and delay
-
-e.g. does training on delay increase sensitivity to added noise?
-
 ### TODO
 
+- [ ] Serialise `included_replicates` and `best_replicate` etc. in `post_training.py`, avoiding the need to cast the keys/values back to floats/arrays in a structure-dependent way, locally in each analysis notebook
 - [ ] The context annotations are cut off for the velocity/force profile plots in 1-2b
 - [ ] Fix x axis tick labels for random constant field train stds, for “performance_measures/compare_train_conditions”
 - [ ] Reduce width of “performance_measures/compare_train_conditions” in 1-2a
@@ -105,30 +82,11 @@ Currently based on standard deviations away from the mean best loss.
 
 Currently just plotting a sample of individual curves; but this can be messy.
 
-### Local disturbances
-
-- [ ] **Difference between early vs. late perturbations to see if response is the same at different points during the reach**. Just a couple of examples 
-
-e.g. only apply the force field on a certain part of the reach
-
-This might help to make conclusions about the “types” of robustness, and the nature of the network policies. 
-
-However, I am not sure yet how to think about this. Worth discussing.
-
 ### Velocity peaks 
 
 Max forward velocity – quantify number/amplitude of peaks? 
 
-## Enforce rotational invariance of the learned strategy
 
-This is motivated by the slightly different responses of the network when a feedback perturbation is in different directions. Is it possible to train the network so that its response in the x direction is just like a rotated version of its response in the y direction?
-
-Some ideas:
-
-- Provide the RNN inputs in a polar representation
-- Make the RNN output the force vector in a polar representation, by forcing their trigonometric conversion to x/y 
-- Add an explicit term to loss function; e.g. on each batch, evaluate on a big center-out set, and penalize for the difference between the control vectors when they are all rotated to lie in the same reach direction
-- Modify the network architecture to enforce symmetry. I’m not sure exactly how to do this.
 ## Motivation and questions
 
 What are the emergent properties of a system that learns to be robust? 

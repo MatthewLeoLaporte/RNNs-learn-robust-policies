@@ -61,7 +61,6 @@ os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
 
 ```{python}
-from collections import namedtuple
 import json
 from pathlib import Path
 from typing import Any, Literal, Optional
@@ -102,7 +101,6 @@ from feedbax.xabdeef.models import point_mass_nn
 from rnns_learn_robust_motor_policies.misc import write_to_json
 from rnns_learn_robust_motor_policies.part2_setup import (
     INTERVENOR_LABEL,
-    TaskModelPair,
     setup_task_model_pairs, 
     setup_models,
 )
@@ -110,6 +108,10 @@ from rnns_learn_robust_motor_policies.plot_utils import get_savefig_func
 from rnns_learn_robust_motor_policies.setup_utils import filename_join as join
 from rnns_learn_robust_motor_policies.state_utils import project_onto_direction
 from rnns_learn_robust_motor_policies.tree_utils import pp
+from rnns_learn_robust_motor_policies.types import TaskModelPair
+from rnns_learn_robust_motor_policies.train_setup import (
+    iterations_to_save_model_parameters,
+)
 ```
 
 Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
@@ -138,6 +140,7 @@ disturbance_type: Literal['curl', 'random'] = 'curl'
 feedback_delay_steps = 0
 feedback_noise_std = 0.0
 motor_noise_std = 0.0
+p_perturbed = 0.1
 hidden_size = 50
 n_replicates = 5  # TODO
 dt = 0.05
@@ -152,7 +155,7 @@ suffix = '_'.join([
 ])
 ```
 
-### Directories setup
+### Directories and filenames setup
 
 ```{python}
 FIGS_DIR = Path(f'../figures/{NB_ID}/{suffix}')
@@ -160,6 +163,14 @@ MODELS_DIR = Path('../models')
 
 for d in (FIGS_DIR, MODELS_DIR):
     d.mkdir(parents=True, exist_ok=True)
+```
+
+Define the strings used to construct the filenames for serialised models and training histories.
+
+```{python}
+MODEL_FILE_LABEL = "trained_models"
+TRAIN_HISTORIES_FILE_LABEL = "train_histories"
+HYPERPARAMS_FILE_LABEL = "hyperparameters"
 ```
 
 ### Plotting setup
@@ -224,17 +235,15 @@ We need to define:
 
 Some of these (e.g. the form of the context input, `CONTEXT_INPUT_FUNCS`) are defined once and for all in the project module `part2_setup.py`.
 
-
-
 ```{python}
 # Define the probability that a trial will be disturbed for those training methods where the 
 # disturbance is not always active
-p_perturbed = 0.5
+p_perturbed = p_perturbed  # Defined with the hyperparameters earlier
 
 # Define the disturbance amplitudes to train, depending on disturbance type
 # NOTE: Only one of these disturbance types is trained per notebook run; see the parameters cell above
 disturbance_stds = {
-    'curl': [0.8],
+    'curl': [1.6],
     'random': [0.1],
 }
 ```
@@ -261,7 +270,7 @@ task_model_pairs = setup_task_model_pairs(
 
 ```{python}
 learning_rate = 0.01
-n_batches = 10000
+n_batches = 50
 batch_size = 250
 
 where_train = lambda model: (
@@ -269,12 +278,7 @@ where_train = lambda model: (
     model.step.net.readout, 
 )
 
-# Define the training iterations on which to retain the model weights:
-# Every iteration until iteration 10, then every 10 until 100, every 100 until 1000, etc.
-save_model_parameters = jnp.concatenate([jnp.array([0])] + [
-    jnp.arange(10**i, 10**(i+1), 10**i)
-    for i in range(0, int(np.log10(n_batches)))
-])
+save_model_parameters = iterations_to_save_model_parameters(n_batches)
 ```
 
 ```{python}
@@ -287,7 +291,6 @@ trainer = TaskTrainer(
 ```
 
 ## Train the task-model pairs
-
 
 ```{python}
 def train_pair(pair):
@@ -314,26 +317,20 @@ trained_models, train_histories = tree_unzip(tree_map_tqdm(
 
 ## Save the models with their parameters on the final iteration
 
-**TODO** write setup function so we can deserialize the models
-**TODO** add new hyperparameters (`p_perturbed` etc.) to JSON
-
-```{python}
-model_file_label = "trained_models"
-train_histories_file_label = "train_histories"
-```
-
 ```{python}
 # datestr = get_datestr()
 
 model_basename = join([
     NB_ID,
     suffix,
-    model_file_label,
+    MODEL_FILE_LABEL,
 ])
 ```
 
 ```{python}
 training_hyperparameters = dict(
+    nb_id=NB_ID,
+    suffix=suffix,
     learning_rate=learning_rate,
     n_batches=n_batches,
     batch_size=batch_size,
@@ -369,7 +366,7 @@ save(
 
 write_to_json(
     model_hyperparameters | training_hyperparameters,
-    str(MODELS_DIR / model_basename.replace(model_file_label, 'hyperparameters')) + '.json',
+    str(MODELS_DIR / model_basename.replace(MODEL_FILE_LABEL, HYPERPARAMS_FILE_LABEL)) + '.json',
 )
 ```
 
@@ -381,8 +378,8 @@ In later analyses we may be interested in the history of the losses or model par
 
 ```{python}
 train_histories_basename = model_basename.replace(
-    model_file_label, 
-    train_histories_file_label,
+    MODEL_FILE_LABEL, 
+    TRAIN_HISTORIES_FILE_LABEL,
 )
 
 save(
