@@ -1,6 +1,6 @@
 ---
 created: 2024-09-24T10:14
-updated: 2024-11-07T17:21
+updated: 2024-11-08T11:01
 ---
 ## Training networks on different disturbance levels
 
@@ -747,6 +747,8 @@ How much does delay degrade learned performance?
 
 How does addition of system noise affect major performance measures (endpoint error, max control?) for different train-test conditions?
 
+Does noise induce robustness?
+
 ### Comparison of noise+delay interactions (TODO?)
 
 e.g. does training on delay increase sensitivity to added noise?
@@ -849,6 +851,24 @@ The effect is clearly different than for curl fields, however the increase in ve
 
 The overall conclusion seems to be that training on perturbations induces higher control gains, and that this effect is stronger on perturbations to velocity than position feedback.
 
+## Commentary
+
+- In the presence of a constant random field, the network must output a constant non-zero force to remain stationary at the goal. The models are able to do this, regardless of whether they were trained on random fields; however, the control models do a ~straight reach to a position that is rotated away from the goal, almost like the first (naive) trial of a visuomotor rotation task,
+- The forward velocity profiles are *identical* in the presence and absence of a random field, for all models, regardless of what perturbation the model was trained on 
+- However, there is a difference in certain related measures (max net force?) between the model trained in the presence of random fields, versus not.
+- Training on random fields initially leads to a little “hook” correction at the end of the reach, in addition to a reduction in the slope of deviation during the rest of the reach. At higher train std, a smoother curvature of the solution is achieved.
+- Compensation for random fields is much less sensitive to delays, versus curl fields. This makes sense since there isn’t feedback between control forces and orthogonal velocities. 
+- Likewise, networks trained on curl fields + delays tend to be worse at all tasks, presumably because it was harder for them to learn any coherent policy to reach the goal.
+
+When we switch the disturbance type during testing:
+
+- Training on curl reduces deviations for random fields, but does not totally eliminate endpoint error
+- Training on random fields reduces deviations in the presence of modest curls, but also leads to oscillations around the goal for larger curls
+
+How can we interpret this?
+
+- Should we train on a combination of the two? 
+
 ## Additional potential analyses
 
 ### Early vs. late perturbations during reaching
@@ -857,7 +877,12 @@ Difference between early vs. late perturbations *during reaching* to see if resp
 
 .g. given that the maximal forward force output happens in the first couple of timesteps, and is invariant to the disturbance magnitude, does that mean that a disturbance that is only active at the very beginning has a different influence on the response? 
 
+
+
 ### Low priority
+#### Velocity peaks 
+
+Max forward velocity – quantify number/amplitude of peaks? 
 #### Enforce rotational invariance of the learned strategy
 
 This is motivated by the slightly different responses of the network when a feedback perturbation is in different directions. Is it possible to train the network so that its response in the x direction is just like a rotated version of its response in the y direction?

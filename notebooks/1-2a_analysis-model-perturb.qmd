@@ -171,6 +171,8 @@ See further below for parameter-based loading of models, as well as the code tha
 
 ```{python}
 MODELS_DIR = Path('../models')
+# FIGS_BASE_DIR = Path('/mnt/storage/tmp/figures')
+FIGS_BASE_DIR = Path('../figures')
 
 if not MODELS_DIR.exists():
     raise FileNotFoundError(f"Models directory not found: {MODELS_DIR.absolute()}")
@@ -255,6 +257,7 @@ Note that when we load from parameters, this assumes that models are available, 
 
 ```{python}
 suffix_load = '_'.join([
+    f"alpha-{alpha}",
     f"{disturbance_type_load}",
     f"noise-{feedback_noise_std_load}-{motor_noise_std_load}",
     f"delay-{feedback_delay_steps_load}",
@@ -388,13 +391,7 @@ else:
 Depending on how training goes, we might want to leave out some of the training conditions (i.e. training disturbance stds) from the analysis.
 
 ```{python}
-disturbance_train_stds = disturbance_train_stds_load[:-1]  
-
-# TODO
-# TODO: Remove this after the next round of training!
-# TODO
-disturbance_train_stds.pop(1)
-# TODO
+disturbance_train_stds = disturbance_train_stds_load
 
 trained_models = subdict(trained_models, disturbance_train_stds)
 ```
@@ -438,14 +435,14 @@ The hierarchy of figure directories depends on the hyperparameters of the traine
 ```{python}
 suffix = f"{disturbance_type}_noise-{noise_stds['feedback']}-{noise_stds['motor']}_delay-{feedback_delay_steps}"
 
-FIGS_DIR = Path(f'/mnt/storage/tmp/figures/{NB_ID}/train__{suffix_train}/{suffix}')
+figs_dir = FIGS_BASE_DIR / f"{NB_ID}/train__{suffix_train}/{suffix}"
 
-for d in (FIGS_DIR,):
+for d in (figs_dir,):
     d.mkdir(parents=True, exist_ok=True)
 ```
 
 ```{python}
-savefig = get_savefig_func(FIGS_DIR)
+savefig = get_savefig_func(figs_dir)
 ```
 
 ## Set up evaluation tasks with different disturbance amplitudes

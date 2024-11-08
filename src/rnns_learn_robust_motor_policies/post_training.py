@@ -179,22 +179,24 @@ def save_best_models(
 
 def get_loss_history_figures(train_histories, disturbance_type, n_replicates):
     # TODO: these plots are large/sluggish for `n_steps` >> 1e3. Can probably downsample; start with every 1 to 1000, then every 10 to 10000.
+    
+    def get_fig(history, disturbance_std):
+        label = f"{n_replicates}-reps"
+        
+        p1, _ = fbplt.loss_history(history.loss)
+        # p2, _ = fbplt.loss_mean_history(history.loss)
+        p3 = fbp.loss_history(history.loss)
+        
+        return {
+            join([label, 'replicates']): p1, 
+            label: p3,
+        }
+    
     def get_variant_figs(variant_histories, variant_label):
-        for disturbance_std, history in variant_histories.items():
-            label = join([
-                f"{disturbance_type}",
-                f"std-{disturbance_std}",
-                f"replicates-{n_replicates}",
-            ])
-            
-            p1, _ = fbplt.loss_history(history.loss)
-            # p2, _ = fbplt.loss_mean_history(history.loss)
-            p3 = fbp.loss_history(history.loss)
-            
-            return {
-                join([label, 'replicates']): p1, 
-                label: p3,
-            }
+        return {
+            f"{disturbance_type}__std-{disturbance_std}": get_fig(history, disturbance_std)
+            for disturbance_std, history in variant_histories.items()
+        }
     
     return jt.map(
         get_variant_figs, 

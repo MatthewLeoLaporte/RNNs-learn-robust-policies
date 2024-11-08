@@ -184,9 +184,15 @@ See further below for parameter-based loading of models, as well as the code tha
 
 ```{python}
 MODELS_DIR = Path('../models')
+FIGS_BASE_DIR = Path('/mnt/storage/tmp/figures')
     
 if not MODELS_DIR.exists():
     raise FileNotFoundError(f"Models directory not found: {MODELS_DIR.absolute()}")
+```
+
+```{python}
+MODEL_FILE_LABEL = "trained_models_best_params"
+HYPERPARAMS_FILE_LABEL = "hyperparameters"
 ```
 
 ### RNG setup
@@ -247,15 +253,13 @@ The default filename is the one that sorts last. If the user does not select a f
 ### Load the specified model
 
 ```{python}
-model_file_label = "trained_models_best_params"
-
 if not load_from_parameters:
     if fc.selected is None:
         models_filepath = f"{fc.default_path}/{fc.default_filename}"
     else:
         models_filepath = fc.selected
 else: 
-    models_filepath = str(find_unique_filepath(MODELS_DIR, f"1-1__{suffix_load}__{model_file_label}"))
+    models_filepath = str(find_unique_filepath(MODELS_DIR, f"1-1__{suffix_load}__{MODEL_FILE_LABEL}"))
     if models_filepath is None:
         raise FileNotFoundError(f"No models found with file label: {suffix_load}")
 
@@ -265,9 +269,9 @@ trained_models_load: dict[float, eqx.Module] = load(
 ```
 
 ```{python}
-hyperparameters_filepath = models_filepath.replace(f'{model_file_label}.eqx', 'hyperparameters.json')
+hyperparameters_filepath = models_filepath.replace(f'{MODEL_FILE_LABEL}.eqx', '{HYPERPARAMS_FILE_LABEL}.json')
 hyperparameters = load_from_json(hyperparameters_filepath)
-extras_filepath = models_filepath.replace(f'{model_file_label}.eqx', 'extras.json')
+extras_filepath = models_filepath.replace(f'{MODEL_FILE_LABEL}.eqx', 'extras.json')
 extras = load_from_json(extras_filepath)
 
 disturbance_type_train = hyperparameters['disturbance_type']
@@ -669,13 +673,13 @@ models = all_models_imp[analysis_variant]
 ```{python}
 suffix = f"imp-steps-{impulse_start_step}-to-{impulse_end_step}_noise-{noise_stds['feedback']}-{noise_stds['motor']}_delay-{feedback_delay_steps}"
 
-FIGS_DIR = Path(f'/mnt/storage/tmp/figures/{NB_ID}/train__{suffix_train}/{suffix}')
+figs_dir = FIGS_BASE_DIR / "/{NB_ID}/train__{suffix_train}/{suffix}"
 
-FIGS_DIR.mkdir(parents=True, exist_ok=True)
+figs_dir.mkdir(parents=True, exist_ok=True)
 ```
 
 ```{python}
-savefig = get_savefig_func(FIGS_DIR)
+savefig = get_savefig_func(figs_dir)
 ```
 
 ### Define colorscales
@@ -970,6 +974,7 @@ def get_all_profiles(all_plot, var_label, disturbance_stds=None, colors=None):
             },
             train_condition_strs=[f"{disturbance_type_train} force fields"],
             n=n,
+            y=0.95,
         )
     
     return figs

@@ -83,6 +83,7 @@ from rnns_learn_robust_motor_policies.tree_utils import pp
 from rnns_learn_robust_motor_policies.types import TaskModelPair
 from rnns_learn_robust_motor_policies.train_setup import (
     iterations_to_save_model_parameters,
+    make_delayed_cosine_schedule,
 )
 ```
 
@@ -114,18 +115,20 @@ These are parameters that can be [varied](https://quarto.org/docs/computations/p
 ```{python}
 #| tags: [parameters]
 
-disturbance_type: Literal['curl', 'random'] = 'random'  
+disturbance_type: Literal['curl', 'random'] = 'curl'  
 feedback_delay_steps = 0
 feedback_noise_std = 0.0
 motor_noise_std = 0.0
-hidden_size = 25
-n_replicates = 10
+hidden_size = 50
+n_replicates = 5
+cosine_annealing_alpha = 0.001
 dt = 0.05
 ```
 
 ```{python}
 suffix = '_'.join([
     # f"{hidden_size}-units",
+    f"alpha-{cosine_annealing_alpha}",
     f"{disturbance_type}",
     f"noise-{feedback_noise_std}-{motor_noise_std}",
     f"delay-{feedback_delay_steps}",
@@ -203,8 +206,8 @@ Schedule force fields in the training trials.
 
 ```{python}
 if disturbance_type == 'curl':
-    disturbance_stds = [0, 0.4, 0.8, 1.6, 2.4]
-    # disturbance_stds = [0, 0.4, 1.2]
+    # disturbance_stds = [0, 0.4, 0.8, 1.6, 2.4]
+    disturbance_stds = [0, 0.8, 1.6]
    
     def disturbance(curl_std):
         return CurlField.with_params(
@@ -248,8 +251,11 @@ task_model_pairs = {
 ### Training hyperparameters and optimizer
 
 ```{python}
-learning_rate = 0.01
-n_batches = 50
+learning_rate_0 = 0.01
+constant_lr_iterations = 10  # Number of initial training iterations to hold lr constant
+alpha = cosine_annealing_alpha  # Max learning rate factor decrease during cosine annealing (see notebook hyperparameters)
+
+n_batches = 10000
 batch_size = 250
 
 where_train = lambda model: (
@@ -261,9 +267,16 @@ save_model_parameters = iterations_to_save_model_parameters(n_batches)
 ```
 
 ```{python}
+schedule = make_delayed_cosine_schedule(
+    learning_rate_0, 
+    constant_lr_iterations, 
+    n_batches, 
+    alpha,
+) 
+
 trainer = TaskTrainer(
     optimizer=optax.inject_hyperparams(optax.adam)(
-        learning_rate=learning_rate
+        learning_rate=schedule
     ),
     checkpointing=True,
 )
@@ -314,7 +327,9 @@ model_basename = join([
 training_hyperparameters = dict(
     nb_id=NB_ID,
     suffix=suffix,
-    learning_rate=learning_rate,
+    learning_rate_0=learning_rate_0,
+    constant_lr_iterations=constant_lr_iterations,
+    cosine_annealing_alpha=cosine_annealing_alpha,
     n_batches=n_batches,
     batch_size=batch_size,
     save_model_parameters=save_model_parameters.tolist(),

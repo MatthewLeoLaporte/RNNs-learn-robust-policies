@@ -1,10 +1,17 @@
 ---
 created: 2024-11-07T11:45
-updated: 2024-11-07T13:14
+updated: 2024-11-08T11:38
 ---
 
 ## Unit perturbations
 
+- Change in unit gains with value of context input
+
+## Fixed points
+
+- Interpolating the goals-goals and inits-goals manifolds across context inputs
+- Do fixed points change location in state space?
+- Do attractors steepen with increasing context input?
 
 ## Alignment of unit activities and output weights
 
@@ -49,12 +56,5 @@ Because $\lVert \mathbf{x}(t) \rVert$ cannot be small for an RNN, then by contro
 
 - [ ] Try fixing the readout weights to different norms instead of training them, and see how this affects the network dynamics
 
-## Fixed points
 
-- Interpolating the goals-goals and inits-goals manifoldsacross context inputs
 
-## Training networks with contextual inputs
-
-- [ ] Some loss plots
-
-## Aligned trajectories
