@@ -1,17 +1,31 @@
 ---
 created: 2024-11-07T11:45
-updated: 2024-11-08T11:38
+updated: 2024-11-08T23:51
 ---
 
-## Unit perturbations
+## Unit perturbations and tuning
 
 - Change in unit gains with value of context input
+### Feedback gains
+
+How do the individual units change their responses to a feedback impulse when the context input changes?
+
+What happens if we send sensory feedback to only a subset of network units?
+
+- Do more-robust networks have stronger weights between these units, and the rest of the network? 
+- Does increasing the context input, increase the effective gains between these units and the rest of the network? For example, if we perturb these units individually, and we also ensure that there is no direct readout from them, then any effect on the output must be through other units in the network.
+
+### Robustness
+
+How robust are hidden trajectories to unit perturbations? 
 
 ## Fixed points
 
 - Interpolating the goals-goals and inits-goals manifolds across context inputs
 - Do fixed points change location in state space?
 - Do attractors steepen with increasing context input?
+
+
 
 ## Alignment of unit activities and output weights
 
@@ -56,5 +70,10 @@ Because $\lVert \mathbf{x}(t) \rVert$ cannot be small for an RNN, then by contro
 
 - [ ] Try fixing the readout weights to different norms instead of training them, and see how this affects the network dynamics
 
+## Effective dimensionality
 
+e.g. as measured by number of PCs needed to reconstruct X% of the output.
+
+- Does training on perturbations (vs. not) affect the dimensionality?
+- Does the context input?
 

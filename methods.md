@@ -1,6 +1,6 @@
 ---
 created: 2024-11-08T10:03
-updated: 2024-11-08T15:13
+updated: 2024-11-09T00:02
 ---
 
 ## Models
@@ -54,6 +54,12 @@ It may be necessary to do one or more of the following to get optimal models:
 ### Hyperparameters
 
 Try training at different network sizes etc.
+
+### Hardware and cost
+
+Titan Xp
+
+Training takes about 10 min per ensemble of 10 models; i.e. about 4 h for 30 models
 
 ## Analysis
 

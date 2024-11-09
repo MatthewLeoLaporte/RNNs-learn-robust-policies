@@ -1,6 +1,6 @@
 ---
 created: 2024-09-24T10:14
-updated: 2024-11-08T11:01
+updated: 2024-11-09T00:06
 ---
 ## Training networks on different disturbance levels
 
@@ -463,6 +463,9 @@ And the next-weakest training condition:
 ##### Comparison of random constant field training conditions
 ![[random-field-0.4 6.png]]
 
+### Comparison of noise levels (TODO)
+
+### Comparison of delays (TODO)
 ## Velocity profiles
 ### No noise, no delay
 #### No perturbation
@@ -877,12 +880,19 @@ Difference between early vs. late perturbations *during reaching* to see if resp
 
 .g. given that the maximal forward force output happens in the first couple of timesteps, and is invariant to the disturbance magnitude, does that mean that a disturbance that is only active at the very beginning has a different influence on the response? 
 
-
-
 ### Low priority
-#### Velocity peaks 
+#### Muscle model and co-contraction
 
-Max forward velocity – quantify number/amplitude of peaks? 
+ i.e. network outputs four non-negative activation signals, to two pairs of agonist-antagonist muscles pulling on the point mass
+ 
+- Does this improve robustness, e.g. in the presence of system delays?
+
+Possible extension: add a simple version of a $\gamma$-motor system and see how its tuning changes when trained on perturbations
+#### Frequency-domain analysis
+
+e.g. more-robust networks tend to have fewer oscillations (e.g. fewer velocity peaks)
+
+A simple analysis would be to count these peaks; a more principled analysis is probably to do a Fourier decomposition and look at the spectra. More robust networks should 
 #### Enforce rotational invariance of the learned strategy
 
 This is motivated by the slightly different responses of the network when a feedback perturbation is in different directions. Is it possible to train the network so that its response in the x direction is just like a rotated version of its response in the y direction?

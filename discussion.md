@@ -1,6 +1,6 @@
 ---
 created: 2024-11-08T10:50
-updated: 2024-11-08T11:23
+updated: 2024-11-08T23:39
 ---
 
 ## Questions 
@@ -13,6 +13,13 @@ What is the difference between the “general” robustness of an H-infinity con
 
 - We expect some things to be similar (e.g. higher max forward force)
 - But some things are different; and this is due to there being differences in what is actually modelable about the disturbance
+
+Can we separate the aspect of the disturbance that is modelable from the aspect that is not? Or if that
+
+Is robustness an all-or-nothing phenomena? No. 
+
+- We can tune the robustness of an H-infinity controller by adjusting the bound $\gamma$.
+- We can induce more robustness in RNNs by training on uncertain dynamics.
 
 ## Results
 

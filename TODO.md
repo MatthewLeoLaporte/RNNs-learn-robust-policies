@@ -1,11 +1,8 @@
 ---
 created: 2024-10-04T11:27
-updated: 2024-11-08T19:56
+updated: 2024-11-08T19:57
 ---
 
-- [x] Try an AI-driven IDE
-	- Unfortunately, Zed doesn’t work with Quarto yet
-	- Cursor is a fork of vscode, so it looks and behaves very similarly except for the AI features which I haven’t tried yet
 - [ ] Move part 1 training to a script + a yaml file defining which hyperparameters to train — or otherwise we’ll have to use batch quarto render 
 - [ ] **Exclude models based on 1) # stds above the *best* replicate, and possibly 2) behavioural measures rather than total loss.** It looks like max net control force or end position error might be good indicators. 
 ## Workflow
@@ -24,8 +21,6 @@ It might also make sense to automatically save evaluated states to disk, and to 
 ## Formatting
 
 - [ ] The context annotations are cut off for the velocity/force profile plots in 1-2b
-- [x] Fix x axis tick labels for random constant field train stds, for “performance_measures/compare_train_conditions”
-- [x] Violin figures could be much smaller overall
 - [ ] Show trial, replicate, condition info in hoverinfo of individual *aligned* trajectories
 - [ ] ~~Plot std bounds (or similar) for aligned 2D trajectories; plotting all the individual trials is too expensive once they are aligned. I’m not sure how to plot filled areas between fully 2D curves; instead it might make sense to use a [KDE](https://plotly.com/python/2d-histogram-contour/) with a single contour.~~ It’s hard to plot multiple KDEs on the same subplot in different colors. It would make more sense to plot confidence bounds, but this is also tricky. Leaving it be for now; instead I will downsample the curves if they exceed a specified quantity.
 
