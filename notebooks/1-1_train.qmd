@@ -74,8 +74,9 @@ from feedbax.train import TaskTrainer
 from feedbax.xabdeef.losses import simple_reach_loss
 from feedbax.xabdeef.models import point_mass_nn
 
-
+from rnns_learn_robust_motor_policies.constants import MASS, WORKSPACE
 from rnns_learn_robust_motor_policies.misc import write_to_json
+from rnns_learn_robust_motor_policies.part1_setup import setup_task_model_pairs
 from rnns_learn_robust_motor_policies.plot_utils import get_savefig_func
 from rnns_learn_robust_motor_policies.setup_utils import filename_join as join
 from rnns_learn_robust_motor_policies.tree_utils import pp
@@ -114,8 +115,9 @@ feedback_noise_std = 0.0
 motor_noise_std = 0.0
 hidden_size = 50
 n_replicates = 5
-cosine_annealing_alpha = 0.01
+n_steps = 100
 dt = 0.05
+cosine_annealing_alpha = 0.01
 ```
 
 ```{python}
@@ -162,92 +164,34 @@ key = jr.PRNGKey(SEED)
 key_init, key_train, key_eval = jr.split(key, 3)
 ```
 
-## Base training task setup
+## Create model-task pairings for different disturbance conditions
 
 ```{python}
-n_steps = 100
-workspace = ((-1., -1.),
-             (1., 1.))
+disturbance_stds = {
+    'curl': [0, 0.8, 1.6], # [0, 0.4, 0.8, 1.6, 2.4],
+    'random': [0, 0.01, 0.1, 1.0, 2.0],
+}
 
-task_train = SimpleReaches(
-    loss_func=simple_reach_loss(),
-    workspace=workspace, 
-    n_steps=n_steps,
-    eval_grid_n=2,
-    eval_n_directions=8,
-    eval_reach_length=0.5,    
-)
-```
+if not disturbance_type in ['curl', 'random']:
+    raise ValueError(f"Unknown disturbance type: {disturbance_type}")
 
-## Model setup
-
-```{python}
-mass = 1.0
-
-models = get_ensemble(
-    point_mass_nn,
-    task_train,
-    n_ensemble=n_replicates,
+task_model_pairs = setup_task_model_pairs(
+    n_replicates=n_replicates,
     dt=dt,
-    mass=mass,
-    hidden_size=hidden_size, 
+    hidden_size=hidden_size,
     n_steps=n_steps,
     feedback_delay_steps=feedback_delay_steps,
     feedback_noise_std=feedback_noise_std,
     motor_noise_std=motor_noise_std,
-    key=key_init,
+    disturbance_type=disturbance_type,
+    disturbance_stds=disturbance_stds[disturbance_type],
+    p_perturbed=p_perturbed,
+    key=key_init,    
 )
 ```
 
+
 ## Training setup
-
-### Create model-task pairings for different disturbance conditions
-
-Schedule force fields in the training trials.
-
-```{python}
-if disturbance_type == 'curl':
-    # disturbance_stds = [0, 0.4, 0.8, 1.6, 2.4]
-    disturbance_stds = [0, 0.8, 1.6]
-   
-    def disturbance(curl_std):
-        return CurlField.with_params(
-            scale=curl_std,
-            amplitude=lambda trial_spec, *, key: jr.normal(key, (1,)),
-        )
-
-elif disturbance_type == 'random':
-    disturbance_stds = [0, 0.01, 0.1, 1.0, 2.0]
-    # disturbance_stds = [0, 0.01, 1.0]
-    
-    # Uniform in angle, Gaussian in amplitude, constant over trial
-    def disturbance(field_std):
-        def vector_with_gaussian_length(trial_spec, *, key):
-            key1, key2 = jr.split(key)
-            
-            angle = jr.uniform(key1, (), minval=-jnp.pi, maxval=jnp.pi)
-            length = jr.normal(key2, ())
-        
-            return jnp.array([jnp.cos(angle), jnp.sin(angle)]) * length
-            
-        return FixedField.with_params(
-            scale=field_std,
-            field=vector_with_gaussian_length,
-        )
-else:
-    raise ValueError(f"Unknown disturbance type: {disturbance_type}")
-
-
-task_model_pairs = {
-    disturbance_std: TaskModelPair(*schedule_intervenor(
-        task_train, models,
-        lambda model: model.step.mechanics,
-        disturbance(disturbance_std),
-        default_active=False,
-    ))
-    for disturbance_std in disturbance_stds
-}
-```
 
 ### Training hyperparameters and optimizer
 
@@ -349,7 +293,6 @@ model_hyperparameters = dict(
     motor_noise_std=motor_noise_std,
     dt=dt,
     n_steps=n_steps,
-    mass=mass,
     disturbance_type=disturbance_type,
     disturbance_stds=disturbance_stds,
 )

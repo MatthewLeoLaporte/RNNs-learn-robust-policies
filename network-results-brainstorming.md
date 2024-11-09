@@ -1,7 +1,10 @@
 ---
 created: 2024-11-07T11:45
-updated: 2024-11-08T23:51
+updated: 2024-11-09T11:12
 ---
+## Eigenspectra
+
+Part 1 and part 2; easy enough.
 
 ## Unit perturbations and tuning
 

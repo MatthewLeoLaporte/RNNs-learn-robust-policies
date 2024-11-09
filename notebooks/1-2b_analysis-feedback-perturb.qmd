@@ -77,8 +77,8 @@ from rnns_learn_robust_motor_policies.misc import (
     load_from_json,
 )
 from rnns_learn_robust_motor_policies.part1_setup import (
-    setup_models, 
     setup_model_parameter_histories,
+    setup_task_model_pairs,
 )
 from rnns_learn_robust_motor_policies.plot_utils import (
     add_context_annotation,
@@ -89,6 +89,7 @@ from rnns_learn_robust_motor_policies.plot_utils import (
     figs_flatten_with_paths,
     figleaves,
 )
+from rnns_learn_robust_motor_policies.post_training import setup_replicate_info
 from rnns_learn_robust_motor_policies.state_utils import (
     get_forward_lateral_vel, 
     get_lateral_distance,
@@ -105,6 +106,7 @@ from rnns_learn_robust_motor_policies.setup_utils import (
     filename_join as join,
     set_model_noise,
     find_unique_filepath,
+    setup_models_only,
 )
 from rnns_learn_robust_motor_policies.colors import(
     COLORSCALES,
@@ -193,6 +195,7 @@ if not MODELS_DIR.exists():
 ```{python}
 MODEL_FILE_LABEL = "trained_models_best_params"
 HYPERPARAMS_FILE_LABEL = "hyperparameters"
+REPLICATE_INFO_FILE_LABEL = "replicate_info"
 ```
 
 ### RNG setup
@@ -264,15 +267,15 @@ else:
         raise FileNotFoundError(f"No models found with file label: {suffix_load}")
 
 trained_models_load: dict[float, eqx.Module] = load(
-    MODELS_DIR / models_filepath, setup_models,
+    MODELS_DIR / models_filepath, partial(setup_models_only, setup_task_model_pairs),
 )
 ```
 
 ```{python}
 hyperparameters_filepath = models_filepath.replace(f'{MODEL_FILE_LABEL}.eqx', '{HYPERPARAMS_FILE_LABEL}.json')
 hyperparameters = load_from_json(hyperparameters_filepath)
-extras_filepath = models_filepath.replace(f'{MODEL_FILE_LABEL}.eqx', 'extras.json')
-extras = load_from_json(extras_filepath)
+replicate_info_filepath = models_filepath.replace(f'{MODEL_FILE_LABEL}.eqx', '{REPLICATE_INFO_FILE_LABEL}.json')
+replicate_info = load(replicate_info_filepath, setup_replicate_info)
 
 disturbance_type_train = hyperparameters['disturbance_type']
 disturbance_train_stds_load = hyperparameters['disturbance_stds']
@@ -303,13 +306,8 @@ exclude_underperformers = True
 ```
 
 ```{python}
-included_replicates = TrainStdDict({
-    float(k): jnp.array(v) for k,v in extras['included_replicates'].items()
-})
-best_replicate = TrainStdDict({
-    # JSON stores keys as strings, so cast them back to floats
-    float(k): v for k,v in extras['best_replicate_by_loss'].items()
-})
+included_replicates = replicate_info['included_replicates']
+best_replicate = replicate_info['best_replicate_by_loss']
 
 def take_replicate_or_best(tree: TrainStdDict, i_replicate=None, replicate_axis=1):
     if i_replicate is None:

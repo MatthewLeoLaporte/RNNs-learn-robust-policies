@@ -1,6 +1,6 @@
 ---
 created: 2024-11-09T00:06
-updated: 2024-11-09T00:38
+updated: 2024-11-09T11:08
 ---
 What can we demonstrate formally to support our results?
 
@@ -51,6 +51,16 @@ Can we formalize how different types/frequencies of disturbance should affect lo
 **Perhaps if we consider a local linearization of the network, and given that the point mass and the force fields are also linear, we then have a closed-loop system whose transfer function could be analyzed.** 
 
 ## How to proceed
+
+Local linearization around fixed points (i.e. steady state, stabilization task)
+
+Derive linear transfer function and analyze stability and frequency responses at fixed points
+
+Some kind of logic going from disturbances → loss gradients → policies → behaviour? 
+
+- But presumably the network cannot be assumed to be at fixed points throughout learning; there may not even be fixed points at the start.
+
+## Collaboration
 
 - I would like to derive some results myself
 - However I am not under illusions about my ability to generate mathematical proofs, which is pretty weak

@@ -4,10 +4,13 @@ import json
 import subprocess
 
 import equinox as eqx
+import jax.numpy as jnp 
+import jax.random as jr 
 import jax.tree as jt
 from jaxtyping import Array
 
 from feedbax._tree import apply_to_filtered_leaves
+from feedbax.intervene import CurlFieldParams, FixedFieldParams
 
 from rnns_learn_robust_motor_policies.tree_utils import subdict
 
@@ -82,3 +85,21 @@ def write_to_json(tree, file_path):
 
     with open(file_path, 'w') as jsonf:
         json.dump(serializable, jsonf, indent=4)
+        
+        
+def get_field_amplitude(intervenor_params):
+    if isinstance(intervenor_params, FixedFieldParams):
+        return jnp.linalg.norm(intervenor_params.field, axis=-1)
+    elif isinstance(intervenor_params, CurlFieldParams):
+        return jnp.abs(intervenor_params.amplitude)
+    else:
+        raise ValueError(f"Unknown intervenor parameters type: {type(intervenor_params)}")
+
+
+def vector_with_gaussian_length(trial_spec, key):
+    key1, key2 = jr.split(key)
+    
+    angle = jr.uniform(key1, (), minval=-jnp.pi, maxval=jnp.pi)
+    length = jr.normal(key2, ())
+
+    return length * jnp.array([jnp.cos(angle), jnp.sin(angle)]) 

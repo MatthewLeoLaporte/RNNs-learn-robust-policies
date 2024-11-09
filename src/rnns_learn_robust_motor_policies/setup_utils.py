@@ -16,7 +16,7 @@ from feedbax import is_type, is_module
 from feedbax.misc import attr_str_tree_to_where_func
 from feedbax.noise import Multiplicative, Normal
 from feedbax.train import TaskTrainerHistory, init_task_trainer_history
-from feedbax._tree import tree_zip_named
+from feedbax._tree import tree_zip_named, tree_unzip
 from feedbax.xabdeef.losses import simple_reach_loss
 
 
@@ -220,3 +220,17 @@ def setup_train_histories(
     #     )
     #     for train_std, model in models_tree.items()
     # }
+    
+
+def setup_models_only(task_model_pair_setup_func, **kwargs):
+    """Given a function that returns task-model pairs, just get the models."""
+    task_model_pairs = task_model_pair_setup_func(**kwargs)
+    _, models = tree_unzip(task_model_pairs)
+    return models    
+
+
+def setup_tasks_only(task_model_pair_setup_func, **kwargs):
+    """Given a function that returns task-model pairs, just get the tasks."""
+    task_model_pairs = task_model_pair_setup_func(**kwargs)
+    tasks, _ = tree_unzip(task_model_pairs)
+    return tasks

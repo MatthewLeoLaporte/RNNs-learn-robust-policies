@@ -8,37 +8,19 @@ import jax.random as jr
 import jax.tree as jt
 
 from feedbax import get_ensemble, tree_unzip
-from feedbax.intervene import (
-    CurlField, 
-    CurlFieldParams, 
-    FixedField, 
-    FixedFieldParams,
-    schedule_intervenor,
-)
+from feedbax.intervene import schedule_intervenor
 from feedbax.task import SimpleReaches, TrialSpecDependency
 from feedbax.xabdeef.models import point_mass_nn
 from feedbax.xabdeef.losses import simple_reach_loss
 
-from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL, DISTURBANCE_CLASSES
+from rnns_learn_robust_motor_policies.misc import vector_with_gaussian_length, get_field_amplitude
+from rnns_learn_robust_motor_policies.constants import (
+    DISTURBANCE_CLASSES,
+    INTERVENOR_LABEL, 
+    MASS, 
+    WORKSPACE,
+)
 from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainStdDict
-
-
-def get_field_amplitude(intervenor_params):
-    if isinstance(intervenor_params, FixedFieldParams):
-        return jnp.linalg.norm(intervenor_params.field, axis=-1)
-    elif isinstance(intervenor_params, CurlFieldParams):
-        return jnp.abs(intervenor_params.amplitude)
-    else:
-        raise ValueError(f"Unknown intervenor parameters type: {type(intervenor_params)}")
-
-
-def vector_with_gaussian_length(trial_spec, key):
-    key1, key2 = jr.split(key)
-    
-    angle = jr.uniform(key1, (), minval=-jnp.pi, maxval=jnp.pi)
-    length = jr.normal(key2, ())
-
-    return length * jnp.array([jnp.cos(angle), jnp.sin(angle)]) 
 
 
 disturbance_params = {
@@ -77,10 +59,10 @@ def setup_task_model_pairs(
     *,
     n_replicates,
     dt,
-    mass,
+    mass,  # TODO: Remove 
     hidden_size,
     n_steps,
-    workspace,
+    workspace,  # TODO: Remove 
     feedback_delay_steps,
     feedback_noise_std,
     motor_noise_std,
@@ -92,7 +74,7 @@ def setup_task_model_pairs(
     """Returns a skeleton PyTree for reloading trained models."""
     task_base = SimpleReaches(
         loss_func=simple_reach_loss(),
-        workspace=workspace, 
+        workspace=WORKSPACE, 
         n_steps=n_steps,
         eval_grid_n=2,
         eval_n_directions=8,
@@ -105,7 +87,7 @@ def setup_task_model_pairs(
         n_extra_inputs=1,  # Contextual input
         n_ensemble=n_replicates,
         dt=dt,
-        mass=mass,
+        mass=MASS,
         hidden_size=hidden_size, 
         n_steps=n_steps,
         feedback_delay_steps=feedback_delay_steps,
@@ -151,8 +133,14 @@ def setup_task_model_pairs(
     return task_model_pairs
 
 
-
 def setup_models(**kwargs):
     task_model_pairs = setup_task_model_pairs(**kwargs)
     _, models = tree_unzip(task_model_pairs)
     return models
+
+
+def setup_tasks(**kwargs):
+    """Returns a skeleton PyTree for reloading trained models."""
+    task_model_pairs = setup_task_model_pairs(**kwargs)
+    tasks, _ = tree_unzip(task_model_pairs)
+    return tasks

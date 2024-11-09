@@ -76,9 +76,10 @@ from rnns_learn_robust_motor_policies.colors import (
 )
 from rnns_learn_robust_motor_policies.misc import lohi, load_from_json
 from rnns_learn_robust_motor_policies.part1_setup import (
-    setup_models, 
     setup_model_parameter_histories,
+    setup_task_model_pairs,
 )
+from rnns_learn_robust_motor_policies.post_training import setup_replicate_info
 from rnns_learn_robust_motor_policies.plot_utils import (
     add_context_annotation,
     add_endpoint_traces,
@@ -91,6 +92,7 @@ from rnns_learn_robust_motor_policies.setup_utils import (
     find_unique_filepath,
     set_model_noise,
     setup_train_histories,
+    setup_models_only,
 )
 from rnns_learn_robust_motor_policies.state_utils import (
     get_forward_lateral_vel, 
@@ -187,6 +189,7 @@ Note that "best_params" refers to the output of `post_training.py` run over the 
 ```{python}
 MODEL_FILE_LABEL = "trained_models_best_params"
 HYPERPARAMS_FILE_LABEL = "hyperparameters"
+REPLICATE_INFO_FILE_LABEL = "replicate_info"
 ```
 
 ### RNG setup
@@ -239,7 +242,7 @@ task_base = SimpleReaches(
 
 We need to define the base task now so that we can load the training histories (particularly, the losses) in a moment. The actual task variants we'll evaluate on -- large and small, and across a range of disturbance amplitudes -- will be defined after the trained models are loaded.
 
-**TODO**: We can probably move this back down to where the rest of the task setup is done, if we no longer need to load the entire training histories but only the stuff in the "extras" file.
+**TODO**: We can probably move this back down to where the rest of the task setup is done
 
 ## Load and adjust trained models
 
@@ -248,7 +251,7 @@ We need to define the base task now so that we can load the training histories (
 We provide a couple of options, here: either we load trained models based on their hyperparameters as specified [above](#Hyperparameters), or we allow the user to select a file. We control which method to use by toggling the following variable:
 
 ```{python}
-load_from_parameters = True
+load_from_parameters = False
 ```
 
 Note that when we load from parameters, this assumes that models are available, having been trained with those parameters. Otherwise, an error will be raised as the respectively-named file will not be found.
@@ -271,8 +274,12 @@ if load_from_parameters and 'None' in suffix_load:
 Maybe the user wants to browse and select a trained model file. In that case we can display a file chooser.
 
 ```{python}
+MODEL_FILE_LABEL = "trained_models"
+# filter_pattern = "1-1_*trained_models*"
+filter_pattern = f"1-1_*{MODEL_FILE_LABEL}*"
+
 if not load_from_parameters:
-    fc = display_model_filechooser(MODELS_DIR, filter_pattern='1-1_*trained_models*')
+    fc = display_model_filechooser(MODELS_DIR, filter_pattern=filter_pattern)
 ```
 
 The default filename is the one that sorts last. If the user does not select a file or if the following cell is run before they do, then the default file will be loaded.
@@ -293,7 +300,7 @@ else:
         raise FileNotFoundError(f"No models found with file label: {suffix_load}")
 
 trained_models_load: dict[float, eqx.Module] = load(
-    MODELS_DIR / models_filepath, setup_models,
+    MODELS_DIR / models_filepath, partial(setup_models_only, setup_task_model_pairs),
 )
 ```
 
@@ -303,8 +310,10 @@ hyperparameters_filepath = models_filepath.replace(
     f'{HYPERPARAMS_FILE_LABEL}.json',
 )
 hyperparameters = load_from_json(hyperparameters_filepath)
-extras_filepath = models_filepath.replace(f'{MODEL_FILE_LABEL}.eqx', 'extras.json')
-extras = load_from_json(extras_filepath)
+replicate_info_filepath = models_filepath.replace(f'{MODEL_FILE_LABEL}.eqx', '{REPLICATE_INFO_FILE_LABEL}.json')
+replicate_info_filepath = load(
+    replicate_info_filepath, setup_replicate_info,
+)
 
 disturbance_train_stds_load = hyperparameters['disturbance_stds']
 n_replicates = hyperparameters['n_replicates']
@@ -342,13 +351,8 @@ exclude_underperformers = True
 ```
 
 ```{python}
-included_replicates = TrainStdDict({
-    float(k): jnp.array(v) for k,v in extras['included_replicates'].items()
-})
-best_replicate = TrainStdDict({
-    # JSON stores keys as strings, so cast them back to floats
-    float(k): v for k,v in extras['best_replicate_by_loss'].items()
-})
+included_replicates = replicate_info['included_replicates']
+best_replicate = replicate_info['best_replicate_by_loss']
 
 def take_replicate_or_best(tree: TrainStdDict, i_replicate=None, replicate_axis=1):
     if i_replicate is None:

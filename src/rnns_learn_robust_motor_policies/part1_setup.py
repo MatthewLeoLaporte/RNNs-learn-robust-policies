@@ -2,6 +2,7 @@ from operator import attrgetter
 from typing import Literal
 import equinox as eqx
 import jax.numpy as jnp
+import jax.random as jr
 import jax.tree as jt
 
 from feedbax import get_ensemble, is_module, tree_unzip
@@ -12,15 +13,27 @@ from feedbax.train import filter_spec_leaves
 from feedbax.xabdeef.models import point_mass_nn
 from feedbax.xabdeef.losses import simple_reach_loss
 
-from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL, DISTURBANCE_CLASSES
+from rnns_learn_robust_motor_policies.constants import (
+    DISTURBANCE_CLASSES, 
+    INTERVENOR_LABEL, 
+    MASS,
+    WORKSPACE,
+)
+from rnns_learn_robust_motor_policies.misc import vector_with_gaussian_length
 from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainStdDict
 
 
-def setup_models(
+disturbance_params = {
+    'curl': dict(amplitude=lambda trial_spec, key: jr.normal(key, (1,))),
+    'random': dict(field=vector_with_gaussian_length),
+}
+
+
+def setup_task_model_pairs(
     *,
     n_replicates,
     dt,
-    mass,
+    mass, # TODO: Remove 
     hidden_size,
     n_steps,
     feedback_delay_steps,
@@ -30,19 +43,21 @@ def setup_models(
     disturbance_stds,
     key,
 ):
-    """Returns a skeleton PyTree for reloading trained models."""
-    task_train_dummy = SimpleReaches(
-        loss_func=simple_reach_loss(), 
+    task_base = SimpleReaches(
+        loss_func=simple_reach_loss(),
+        workspace=WORKSPACE, 
         n_steps=n_steps,
-        workspace=((0, 0), (0, 0)),
+        eval_grid_n=2,
+        eval_n_directions=8,
+        eval_reach_length=0.5,    
     )
     
     models = get_ensemble(
         point_mass_nn,
-        task_train_dummy,
+        task_base,
         n_ensemble=n_replicates,
         dt=dt,
-        mass=mass,
+        mass=MASS,
         hidden_size=hidden_size, 
         n_steps=n_steps,
         feedback_delay_steps=feedback_delay_steps,
@@ -51,26 +66,25 @@ def setup_models(
         key=key,
     )
     
-    if disturbance_type == 'curl':        
-        disturbance = CurlField.with_params(amplitude=jnp.array(1).item())    
-            
-    elif disturbance_type == 'random':
-        disturbance = FixedField.with_params(
-            scale=1,
-            field=jnp.array([1.0, 0.0]),  # to the right
-        ) 
-    
-    _, models = tree_unzip(jt.map(
-        lambda field_std: schedule_intervenor(
-            task_train_dummy, models,
+    def disturbance(field_std, active=True):
+        return DISTURBANCE_CLASSES[disturbance_type].with_params(
+            scale=field_std,
+            active=active,
+            **disturbance_params[disturbance_type],
+        )
+        
+    task_model_pairs = jt.map(
+        lambda field_std: TaskModelPair(*schedule_intervenor(
+            task_base, models,
             lambda model: model.step.mechanics,
-            disturbance,
+            disturbance(field_std),
+            label=INTERVENOR_LABEL,
             default_active=False,
-        ),
-        disturbance_stds,    
-    ))
+        )),
+         TrainStdDict(zip(disturbance_stds, disturbance_stds)),  
+    )
     
-    return TrainStdDict(zip(disturbance_stds, models))
+    return task_model_pairs
 
 
 def setup_model_parameter_histories(

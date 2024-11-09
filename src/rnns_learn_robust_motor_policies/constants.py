@@ -9,3 +9,6 @@ DISTURBANCE_CLASSES = {
     'curl': CurlField,
     'random': FixedField,
 }
+MASS = 1.0
+WORKSPACE = ((-1., -1.),
+             (1., 1.))

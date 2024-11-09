@@ -8,6 +8,7 @@ from typing import Any
 
 import equinox as eqx
 import jax.numpy as jnp
+import jax.random as jr
 import jax.tree as jt
 from jaxtyping import Array, Int, Bool, Float, PyTree
 import numpy as np
@@ -34,11 +35,20 @@ from feedbax._tree import tree_labels
 
 from rnns_learn_robust_motor_policies.misc import load_from_json, write_to_json
 from rnns_learn_robust_motor_policies.plot_utils import get_savefig_func
-from rnns_learn_robust_motor_policies.setup_utils import filename_join as join
-from rnns_learn_robust_motor_policies.part1_setup import setup_models as setup_models_p1
+from rnns_learn_robust_motor_policies.part1_setup import (
+    setup_task_model_pairs as setup_task_model_pairs_p1
+)
+from rnns_learn_robust_motor_policies.part2_setup import (
+    setup_task_model_pairs as setup_task_model_pairs_p2
+)
 from rnns_learn_robust_motor_policies.part2_setup import TrainStdDict
-from rnns_learn_robust_motor_policies.part2_setup import setup_models as setup_models_p2
-from rnns_learn_robust_motor_policies.setup_utils import setup_train_histories
+from rnns_learn_robust_motor_policies.setup_utils import (
+    setup_train_histories,
+    setup_models_only,
+    setup_tasks_only,
+    filename_join as join,
+)
+from rnns_learn_robust_motor_policies.state_utils import vmap_eval_ensemble
 
 
 logging.basicConfig(
@@ -50,9 +60,12 @@ logger = logging.getLogger('rich')
 
 
 SETUP_FUNCS = {
-    '1-1': setup_models_p1,
-    '2-1': setup_models_p2,
+    '1-1': setup_task_model_pairs_p1,
+    '2-1': setup_task_model_pairs_p2,
 }
+
+# Number of trials to evaluate when deciding which replicates to exclude
+N_TRIALS_VAL = 5
 
 
 def find_model_paths(directory: str, filename_pattern: str) -> list[str]:
@@ -64,10 +77,10 @@ def find_model_paths(directory: str, filename_pattern: str) -> list[str]:
     ]
 
 
-def load_data(path: str, setup_func: Callable):
+def load_data(path: str, nb_id: str):
     """Loads models, hyperparameters and training histories from files."""
     models, model_hyperparameters = load_with_hyperparameters(
-        path, setup_func,
+        path, partial(setup_models_only, SETUP_FUNCS[nb_id]),
     )
     train_histories = load(
         path.replace('trained_models', 'train_histories'),
@@ -76,6 +89,7 @@ def load_data(path: str, setup_func: Callable):
     hyperparameters = load_from_json(
         path.replace('trained_models.eqx', 'hyperparameters.json')
     )
+    
     return models, model_hyperparameters, train_histories, hyperparameters
 
 
@@ -93,7 +107,7 @@ def get_best_iterations_and_losses(
         train_histories, 
         is_leaf=is_module,
     )
-    
+        
     best_saved_iterations = jt.map(
         lambda idx: save_model_parameters[idx].tolist(), 
         best_save_idx, 
@@ -110,7 +124,7 @@ def get_best_iterations_and_losses(
     return best_save_idx, best_saved_iterations, losses_at_best_saved_iteration
 
 
-def compute_replicate_info(
+def rate_replicates(
     losses_at_best_saved_iteration: PyTree[Float[Array, "replicate"]], 
     n_std_exclude: float = 2.0,
 ) -> tuple[PyTree[int], PyTree[Array]]:
@@ -171,7 +185,7 @@ def save_best_models(
     )
     
     save(
-        path.replace(filename_pattern, filename_pattern.replace('.eqx', '_best_params.eqx')),
+        path.replace('.eqx', '_best_params.eqx'),
         models_with_best_parameters,
         hyperparameters=model_hyperparameters,
     )
@@ -327,24 +341,21 @@ def save_training_figures(
             is_leaf=is_type(go.Figure),
         )
         logger.info(f"Saved figure set to {figs_dir}/{fig_subdir}")
-    
 
-def process_model_file(path: str, n_std_exclude: float, filename_pattern: str, figs_base_dir: str, nb_id) -> None:
-    """Processes a single model file, computing and saving replicate info and best parameters."""
-    models, model_hyperparameters, train_histories, hyperparameters = load_data(path, SETUP_FUNCS[nb_id])
-    
-    where_train = attr_str_tree_to_where_func(hyperparameters['where_train_strs'])
-    disturbance_type = hyperparameters['disturbance_type']
-    suffix = hyperparameters['suffix']
-    n_replicates = hyperparameters['n_replicates']        
-    save_model_parameters = jnp.array(hyperparameters['save_model_parameters'])
-    
+
+def compute_replicate_info(
+    train_histories, 
+    save_model_parameters, 
+    n_replicates, 
+    n_std_exclude,
+    all_states,
+):
     best_save_idx, best_saved_iterations, losses_at_best_saved_iteration = \
         get_best_iterations_and_losses(
             train_histories, save_model_parameters, n_replicates
         )
     
-    best_replicate, included_replicates = compute_replicate_info(
+    best_replicate, included_replicates = rate_replicates(
         losses_at_best_saved_iteration, n_std_exclude
     )
     
@@ -354,21 +365,75 @@ def process_model_file(path: str, n_std_exclude: float, filename_pattern: str, f
         is_leaf=is_module,
     )
     
-    write_to_json(
-        dict(
-            best_saved_iteration_by_replicate=best_saved_iterations,
-            losses_at_best_saved_iteration=losses_at_best_saved_iteration,
-            losses_at_final_saved_iteration=losses_at_final_saved_iteration,
-            best_replicate_by_loss=best_replicate,
-            included_replicates=included_replicates,    
+    return dict(
+        best_save_idx=best_save_idx,
+        best_saved_iteration_by_replicate=best_saved_iterations,
+        losses_at_best_saved_iteration=losses_at_best_saved_iteration,
+        losses_at_final_saved_iteration=losses_at_final_saved_iteration,
+        best_replicate_by_loss=best_replicate,
+        included_replicates=included_replicates,    
+    )   
+    
+    
+def setup_replicate_info(models, disturbance_stds, n_replicates):
+    """Returns a skeleton PyTree for loading the replicate info"""
+    
+    values_per_model = dict(
+        best_save_idx=jnp.zeros(n_replicates, dtype=int),
+        best_saved_iteration_by_replicate=[0] * n_replicates,
+        losses_at_best_saved_iteration=jnp.zeros(n_replicates, dtype=float),
+        losses_at_final_saved_iteration=jnp.zeros(n_replicates, dtype=float),
+        best_replicate_by_loss=0,
+        included_replicates=jnp.ones(n_replicates, dtype=bool),   
+    )   
+    
+    # For each piece of replicate info, we need a PyTree with the same structure as the model PyTree
+    return {
+        info_label: jt.map(
+            lambda model: value_per_model,
+            models,
+            is_leaf=is_module,
+        )
+        for info_label, value_per_model in values_per_model.items()
+    }
+
+
+def process_model_file(path: str, n_std_exclude: float, filename_pattern: str, figs_base_dir: str, nb_id) -> None:
+    """Processes a single model file, computing and saving replicate info and best parameters."""
+    models, model_hyperparameters, train_histories, hyperparameters = load_data(path, nb_id)
+    
+    where_train = attr_str_tree_to_where_func(hyperparameters['where_train_strs'])
+    disturbance_type = hyperparameters['disturbance_type']
+    suffix = hyperparameters['suffix']
+    n_replicates = hyperparameters['n_replicates']        
+    save_model_parameters = jnp.array(hyperparameters['save_model_parameters'])
+    
+    # Evaluate each model on its respective validation task
+    tasks = setup_tasks_only(SETUP_FUNCS[nb_id], key=jr.PRNGKey(0), **model_hyperparameters)
+    all_states = jt.map(
+        lambda model, task: vmap_eval_ensemble(model, task, N_TRIALS_VAL, jr.PRNGKey(0)),
+        models, tasks,
+        is_leaf=is_module,
+    )
+    # TODO: Include replicates based on endpoint error versus best replicate
+    
+    replicate_info = compute_replicate_info(
+        train_histories, save_model_parameters, n_replicates, n_std_exclude, all_states
+    )
+    
+    save(
+        path.replace('trained_models', 'replicate_info'),
+        replicate_info,
+        hyperparameters=dict(
+            disturbance_stds=hyperparameters['disturbance_stds'],
+            n_replicates=n_replicates,
         ),
-        path.replace('trained_models.eqx', 'extras.json'),
     )
     
     save_best_models(
         models, 
         train_histories, 
-        best_save_idx, 
+        replicate_info['best_save_idx'], 
         n_replicates, 
         where_train, 
         path, 
@@ -383,8 +448,8 @@ def process_model_file(path: str, n_std_exclude: float, filename_pattern: str, f
         train_histories, 
         disturbance_type, 
         n_replicates, 
-        losses_at_best_saved_iteration, 
-        losses_at_final_saved_iteration,
+        replicate_info['losses_at_best_saved_iteration'], 
+        replicate_info['losses_at_final_saved_iteration'],
     )
     
     
