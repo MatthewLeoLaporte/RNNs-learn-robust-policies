@@ -1,6 +1,6 @@
 ---
 created: 2024-11-08T10:03
-updated: 2024-11-08T12:12
+updated: 2024-11-08T15:13
 ---
 
 ## Models
@@ -8,6 +8,8 @@ updated: 2024-11-08T12:12
 ### Networks
 
 ### Biomechanics
+
+- [ ] **Velocity damping**
 
 ### Feedback
 
@@ -42,11 +44,12 @@ Summarize the tasks, but perhaps describe them in more detail in [[#Training]] a
 
 It may be necessary to do one or more of the following to get optimal models:
 
-- [ ] Introduce perturbations after initial training period without them
+- [ ] **Introduce perturbations after initial training period without them**
 - [x] Learning rate schedule
 - ~~Batch size schedule (increase later in training)~~ This is essentially equivalent to a learning rate schedule.
 - [ ] Gradient clipping
-- [ ] Use `optax.adamw` for weight decay regularization
+- [x] Try `optax.adamw` for [[2024-11-08#Weight decay|weight decay regularization]]
+	- Doesn’t make much of a difference
 
 ### Hyperparameters
 

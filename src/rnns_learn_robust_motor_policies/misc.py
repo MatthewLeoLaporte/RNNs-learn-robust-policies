@@ -1,4 +1,5 @@
 from collections.abc import Iterable, Iterator, Mapping, Sequence
+from datetime import datetime
 import json
 import subprocess
 
@@ -15,6 +16,10 @@ def dict_str(d, value_format='.2f'):
     """A string representation of a dict that is more filename-friendly than `str` or `repr`."""
     format_string = f"{{k}}-{{v:{value_format}}}"
     return '-'.join(format_string.format(k=k, v=v) for k, v in d.items())
+
+
+def get_datetime_str():
+    return datetime.now().strftime("%Y%m%d-%Hh%M")
 
 
 def get_gpu_memory(gpu_idx=0):

@@ -326,6 +326,7 @@ def save_training_figures(
             tree_labels(figs, is_leaf=is_type(go.Figure)),
             is_leaf=is_type(go.Figure),
         )
+        logger.info(f"Saved figure set to {figs_dir}/{fig_subdir}")
     
 
 def process_model_file(path: str, n_std_exclude: float, filename_pattern: str, figs_base_dir: str, nb_id) -> None:

@@ -135,9 +135,9 @@ We may want to specify 1) which trained models to load, by their parameters, and
 #| tags: [parameters]
 
 # Specify which trained models to load 
-disturbance_type_load: Literal['curl', 'random'] = 'curl'
-feedback_noise_std_load = 0.04
-motor_noise_std_load = 0.04
+disturbance_type_load: Literal['curl', 'random'] = 'random'
+feedback_noise_std_load = 0.0
+motor_noise_std_load = 0.0
 feedback_delay_steps_load = 0
 
 # Specify model parameters to use for analysis (None -> use training value)
@@ -172,7 +172,7 @@ See further below for parameter-based loading of models, as well as the code tha
 ```{python}
 MODELS_DIR = Path('../models')
 # FIGS_BASE_DIR = Path('/mnt/storage/tmp/figures')
-FIGS_BASE_DIR = Path('../figures')
+FIGS_BASE_DIR = Path('/mnt/storage/tmp/figures')
 
 if not MODELS_DIR.exists():
     raise FileNotFoundError(f"Models directory not found: {MODELS_DIR.absolute()}")
@@ -257,7 +257,6 @@ Note that when we load from parameters, this assumes that models are available, 
 
 ```{python}
 suffix_load = '_'.join([
-    f"alpha-{alpha}",
     f"{disturbance_type_load}",
     f"noise-{feedback_noise_std_load}-{motor_noise_std_load}",
     f"delay-{feedback_delay_steps_load}",
@@ -366,7 +365,8 @@ def take_replicate_or_best(tree: TrainStdDict, i_replicate=None, replicate_axis=
 Which replicates are included?
 
 ```{python}
-eqx.tree_pprint(included_replicates, short_arrays=False)
+print("Replicates included in analysis for each training condition:")
+eqx.tree_pprint(jt.map(lambda x: jnp.where(x)[0], included_replicates), short_arrays=False)
 ```
 
 Set the indices corresponding to the excluded replicates to NaN in each of the model arrays. This ensures that the shapes of the arrays remain consistent. NaN results will be ignored at plotting time. 
@@ -1352,20 +1352,20 @@ Collect measures into PyTree
 all_measure_funcs, measure_handles = tree_unzip(OrderedDict({
     # "Max speed": (get_max_speed, "speed-max"),
     "Max forward velocity": (get_max_forward_vel, "vel-forward-max"),
-    "Max lateral velocity (left)": (
+    "Max lateral velocity<br>(left)": (
         partial(get_max_lateral_vel, mul=1.), 
         "vel-lateral-left-max",
     ),
-    "Max lateral velocity (right)": (
+    "Max lateral velocity<br>(right)": (
         partial(get_max_lateral_vel, mul=-1.), 
         "vel-lateral-right-max",
     ),
-    "Max lateral distance (% reach length)": (
+    "Max lateral distance<br>(% reach length)": (
         partial(get_max_lateral_distance, eval_reach_length=eval_reach_length), 
         "dist-lateral-max",
     ),
     "Sum lateral distance": (get_sum_lateral_distance, "dist-lateral-sum"),
-    "End position error (% reach length)": (
+    "End position error<br>(% reach length)": (
         partial(end_position_error, last_n_steps=last_n_steps, eval_reach_length=eval_reach_length), 
         "error-end-pos",
     ),
@@ -1383,7 +1383,7 @@ all_measure_funcs, measure_handles = tree_unzip(OrderedDict({
         partial(get_sum_parallel_force), 
         "force-forward-sum",
     ),
-    "Max lateral (counter pert.) force": (
+    "Max lateral force<br>(counter pert.)": (
         partial(get_max_lateral_force, mul=-1.), 
         "force-counterfield-lateral-max",
     ),
@@ -1421,111 +1421,6 @@ box_measures = get_all_measures(box_measure_funcs, aligned_vars)
 # all_measures_small = get_all_measures(all_measure_funcs, all_states_small)
 ```
 
-### For each evaluation condition, plot measure distributions by training condition
-
-:::{note}
-Skip this, since better summary plots immediately follow
-:::
-
-```{python}
-fig_subdir = "performance_measures/compare_train_conditions"
-```
-
-One plot per evaluation condition (disturbance amplitude); one violin per training condition (disturbance std).
-
-Distributions are aggregated over all replicates and trials. 
-
-```{python}
-def get_violins_across_train_conditions(data, measure_name, disturbance_amplitude, annotation_kws=None):
-    n_dist = np.prod(jt.leaves(data)[0].shape)
-    
-    fig = go.Figure(
-        data=[
-            go.Violin(
-                y=data[disturbance_train_std].flatten(),
-                name=disturbance_train_std,
-                legendgroup=disturbance_train_std,
-                box_visible=False,
-                meanline_visible=True,
-                line_color=disturbance_train_stds_colors_dark[disturbance_train_std],
-                showlegend=False,
-                opacity=1,
-                spanmode='hard',
-            )
-            for i, disturbance_train_std in enumerate(data)
-        ],
-        
-        layout=dict(
-            # title=(f"Response to amplitude {disturbance_amplitude} field <br>N = {n_dist}"),
-            width=900,
-            height=400,
-            xaxis_title="Train field std.",
-            yaxis_title=measure_name,
-            xaxis_range=[-0.5, len(data) - 0.5],
-            xaxis_tickvals=list(data.keys()),
-            yaxis_range=[0, None],
-            # violinmode='overlay',
-            violingap=0,
-            margin_t=75,
-            legend_tracegroupgap=1,
-        )
-    )
-    
-    if annotation_kws is None:
-        annotation_kws = dict()
-    
-    add_context_annotation(
-        fig, 
-        perturbations={
-            f"{disturbance_type} field": (disturbance_amplitude, None, None)
-        },
-        train_condition_strs=[
-            f"{disturbance_type_train} fields",
-        ],
-        n=n_dist, 
-        **annotation_kws,
-    )
-    
-    return fig
-
-
-def get_one_measure_plot_per_eval_condition(plot_func, all_measures, **kwargs):
-    return {
-        measure_name: {
-            disturbance_amplitude: plot_func(
-                measure[disturbance_amplitude], measure_name, disturbance_amplitude, **kwargs
-            )
-            for disturbance_amplitude in measure
-        }
-        for measure_name, measure in all_measures.items()
-    }
-    
-
-# figs = get_one_measure_plot_per_eval_condition(
-#     get_violins_across_train_conditions, 
-#     all_measures,
-# )
-```
-
-```{python}
-# for measure_name, measure_handle in tqdm(measure_handles.items()):
-#     for disturbance_amplitude, fig in figs[measure_name].items():
-#         savefig(
-#             fig, 
-#             join([
-#                 f"{measure_handle}",
-#                 f"{disturbance_type}-field-{disturbance_amplitude}",
-#             ]),
-#             subdir=fig_subdir,
-#         )
-```
-
-```{python}
-# for measure_name in all_measures:
-#     figs[measure_name][disturbance_amplitudes[0]].show()
-#     figs[measure_name][disturbance_amplitudes[-1]].show()
-```
-
 ### Plot measure distributions by training condition, across evaluation conditions
 
 ```{python}
@@ -1537,7 +1432,7 @@ One plot per evaluation condition (disturbance amplitude); one violin per traini
 Distributions are aggregated over all replicates and trials. 
 
 ```{python}
-def get_violins_across_train_conditions(measure_data, measure_name, annotation_kws=None):
+def get_violins_across_train_conditions(measure_data, measure_name, annotation_kws=None, layout_kws=None):
     example_traindict = jt.leaves(measure_data, is_leaf=is_type(TrainStdDict))[0]
     n_train_std = len(example_traindict)
     n_dist = np.prod(jt.leaves(measure_data)[0].shape)
@@ -1545,21 +1440,31 @@ def get_violins_across_train_conditions(measure_data, measure_name, annotation_k
     fig = go.Figure(
         layout=dict(
             # title=(f"Response to amplitude {disturbance_amplitude} field <br>N = {n_dist}"),
-            width=900,
-            height=400,
-            legend_title="Field<br>amplitude",
-            yaxis_title=measure_name,
-            xaxis_title="Train field std.",
-            xaxis_type='category',
-            xaxis_range=[-0.75, n_train_std - 0.25],
-            xaxis_tickvals=np.arange(n_train_std),
-            xaxis_ticktext=[f'{std:.1f}' for std in example_traindict.keys()],
-            xaxis_tickformat='.1',
-            yaxis_range=[0, None],
+            width=500,
+            height=300,
+            legend=dict(
+                title="Field<br>amplitude",
+                title_font_size=12,
+                tracegroupgap=1,
+            ),
+            yaxis=dict(
+                title=measure_name,
+                titlefont_size=12,
+                range=[0, None],
+            ),
+            xaxis=dict(
+                title="Train field std.",
+                titlefont_size=12,
+                type='category',
+                range=[-0.75, n_train_std - 0.25],
+                # tickmode='array',
+                tickvals=np.arange(n_train_std),
+                ticktext=[f'{std:.2g}' for std in example_traindict],
+            ),
             violinmode='overlay',
             violingap=0,
             violingroupgap=0,
-            margin_t=75,
+            margin_t=60,
         )
     )
     
@@ -1567,8 +1472,8 @@ def get_violins_across_train_conditions(measure_data, measure_name, annotation_k
         measure_data_i = measure_data[disturbance_amplitude]
         
         xs = jnp.stack([
-            jnp.full_like(data, disturbance_train_std)
-            for disturbance_train_std, data in measure_data_i.items()
+            jnp.full_like(data, j)
+            for j, data in enumerate(measure_data_i.values())
         ]).flatten()
         
         fig.add_trace(
@@ -1583,8 +1488,13 @@ def get_violins_across_train_conditions(measure_data, measure_name, annotation_k
                 # showlegend=False,
                 opacity=1,
                 spanmode='hard',
+                scalemode='width',
+                # width=1.5,
             )
         )
+        
+    if layout_kws is not None:
+        fig.update_layout(**layout_kws)
         
     if annotation_kws is None:
         annotation_kws = dict()
@@ -1599,6 +1509,7 @@ def get_violins_across_train_conditions(measure_data, measure_name, annotation_k
         ],
         n=n_dist, 
         **annotation_kws,
+        y=1,
     )
     
     return fig
@@ -1788,7 +1699,7 @@ def get_measure_replicate_comparisons(data, measure_name, disturbance_amplitude,
         yaxis_range=[0, None],
         violinmode='overlay',
         violingap=0,
-        # title=(f"Response to amplitude {disturbance_amplitude} {disturbance_type} field <br>N = {n_dist}"),
+        violingroupgap=0,
     )
     
     if annotation_kws is None:
@@ -1848,52 +1759,12 @@ box_measures_lohi = {
 ```
 
 ```{python}
-def get_lohi_summary_violins(measure_data, measure_name, annotation_kws=None):
-    n_dist = np.prod(jt.leaves(measure_data)[0].shape)
-
-    fig = go.Figure(
-        data=jt.leaves([
-            [
-                go.Violin(
-                    x=jnp.full((n_dist,), disturbance_train_std),
-                    y=data.flatten(),
-                    name=disturbance_amplitude,
-                    legendgroup=disturbance_amplitude,
-                    box_visible=False,
-                    meanline_visible=True,
-                    line_color=disturbance_amplitudes_colors_dark[disturbance_amplitude],
-                    showlegend=(j == 0),
-                    spanmode='hard',
-                )
-                for j, (disturbance_train_std, data) 
-                in enumerate(measure_data[disturbance_amplitude].items())
-            ]
-            for i, disturbance_amplitude in enumerate(measure_data)
-        ]),
-        layout=dict(
-            width=500,
-            height=400,
-            xaxis_title="Train disturbance std.",
-            yaxis_title=measure_name,
-            # xaxis_range=[-0.5, len(measure_data) - 0.5],
-            # xaxis_ticktext=list(measure_data.keys()),
-            yaxis_range=[0, None],
-            legend_title="Disturbance amplitude",
-            # violinmode='overlay',
-            violingap=0,
+figs = {
+    measure_name: get_violins_across_train_conditions(
+        measure, measure_name, layout_kws=dict(
+            width=300, height=300, 
         )
     )
-    
-    if annotation_kws is None:
-        annotation_kws = dict()
-    
-    add_context_annotation(fig, n=n_dist, **annotation_kws)
-    
-    return fig
-
-
-figs = {
-    measure_name: get_lohi_summary_violins(measure, measure_name)
     for measure_name, measure in all_measures_lohi.items()
 }
 ```

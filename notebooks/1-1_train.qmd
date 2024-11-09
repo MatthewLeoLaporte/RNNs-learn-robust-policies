@@ -34,7 +34,6 @@ os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
 ```{python}
 from collections import OrderedDict
-from datetime import datetime
 import json
 from pathlib import Path
 from typing import Literal
@@ -102,12 +101,6 @@ Unique ID for notebook, for naming outputs.
 NB_ID = "1-1"
 ```
 
-Datetime string generator, for timestamping saved files.
-
-```{python}
-get_datestr = lambda: datetime.now().strftime("%Y%m%d-%Hh%M")
-```
-
 ### Hyperparameters
 
 These are parameters that can be [varied](https://quarto.org/docs/computations/parameters.html) through the command line interface to Quarto. 
@@ -121,28 +114,36 @@ feedback_noise_std = 0.0
 motor_noise_std = 0.0
 hidden_size = 50
 n_replicates = 5
-cosine_annealing_alpha = 0.001
+cosine_annealing_alpha = 0.01
 dt = 0.05
 ```
 
 ```{python}
 suffix = '_'.join([
     # f"{hidden_size}-units",
-    f"alpha-{cosine_annealing_alpha}",
+    # f"alpha-{cosine_annealing_alpha}",
     f"{disturbance_type}",
     f"noise-{feedback_noise_std}-{motor_noise_std}",
     f"delay-{feedback_delay_steps}",
 ])
 ```
 
-### Directories setup
+### Directories and filenames setup
 
 ```{python}
-FIGS_DIR = Path(f'../figures/{NB_ID}/{suffix}')
+FIGS_BASE_DIR = Path('/mnt/storage/tmp/figures')
 MODELS_DIR = Path('../models')
 
-for d in (FIGS_DIR, MODELS_DIR):
+figs_dir = FIGS_BASE_DIR / f'{NB_ID}/{suffix}'
+
+for d in (figs_dir, MODELS_DIR):
     d.mkdir(parents=True, exist_ok=True)
+```
+
+```{python}
+MODEL_FILE_LABEL = "trained_models"
+TRAIN_HISTORIES_FILE_LABEL = "train_histories"
+HYPERPARAMS_FILE_LABEL = "hyperparameters"
 ```
 
 ### Plotting setup
@@ -150,7 +151,7 @@ for d in (FIGS_DIR, MODELS_DIR):
 Get function to save figures to figure directory.
 
 ```{python}
-savefig = get_savefig_func(FIGS_DIR)
+savefig = get_savefig_func(figs_dir)
 ```
 
 ### RNG setup
@@ -254,9 +255,15 @@ task_model_pairs = {
 learning_rate_0 = 0.01
 constant_lr_iterations = 10  # Number of initial training iterations to hold lr constant
 alpha = cosine_annealing_alpha  # Max learning rate factor decrease during cosine annealing (see notebook hyperparameters)
+weight_decay = 0
 
 n_batches = 10000
 batch_size = 250
+
+optimizer_class = partial(
+    optax.adamw,
+    weight_decay=weight_decay,
+)
 
 where_train = lambda model: (
     model.step.net.hidden,
@@ -275,8 +282,8 @@ schedule = make_delayed_cosine_schedule(
 ) 
 
 trainer = TaskTrainer(
-    optimizer=optax.inject_hyperparams(optax.adam)(
-        learning_rate=schedule
+    optimizer=optax.inject_hyperparams(optimizer_class)(
+        learning_rate=schedule,
     ),
     checkpointing=True,
 )
@@ -309,17 +316,12 @@ trained_models, train_histories = tree_unzip(tree_map_tqdm(
 ## Save the models with their parameters on the final iteration
 
 ```{python}
-model_file_label = "trained_models"
-train_histories_file_label = "train_histories"
-```
-
-```{python}
 # datestr = get_datestr()
 
 model_basename = join([
     NB_ID,
     suffix,
-    model_file_label,
+    MODEL_FILE_LABEL,
 ])
 ```
 
@@ -330,6 +332,7 @@ training_hyperparameters = dict(
     learning_rate_0=learning_rate_0,
     constant_lr_iterations=constant_lr_iterations,
     cosine_annealing_alpha=cosine_annealing_alpha,
+    weight_decay=weight_decay,
     n_batches=n_batches,
     batch_size=batch_size,
     save_model_parameters=save_model_parameters.tolist(),
@@ -361,7 +364,7 @@ save(
 
 write_to_json(
     model_hyperparameters | training_hyperparameters,
-    str(MODELS_DIR / model_basename.replace(model_file_label, 'hyperparameters')) + '.json',
+    str(MODELS_DIR / model_basename.replace(MODEL_FILE_LABEL, HYPERPARAMS_FILE_LABEL)) + '.json',
 )
 ```
 
@@ -373,8 +376,8 @@ In later analyses we may be interested in the history of the losses or model par
 
 ```{python}
 train_histories_basename = model_basename.replace(
-    model_file_label, 
-    train_histories_file_label,
+    MODEL_FILE_LABEL, 
+    TRAIN_HISTORIES_FILE_LABEL,
 )
 
 save(

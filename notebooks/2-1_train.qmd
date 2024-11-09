@@ -111,6 +111,7 @@ from rnns_learn_robust_motor_policies.tree_utils import pp
 from rnns_learn_robust_motor_policies.types import TaskModelPair
 from rnns_learn_robust_motor_policies.train_setup import (
     iterations_to_save_model_parameters,
+    make_delayed_cosine_schedule,
 )
 ```
 
@@ -144,6 +145,7 @@ p_perturbed = 0.1
 hidden_size = 50
 n_replicates = 5  # TODO
 dt = 0.05
+cosine_annealing_alpha = 0.01
 mass = 1.0
 ```
 
@@ -158,10 +160,12 @@ suffix = '_'.join([
 ### Directories and filenames setup
 
 ```{python}
-FIGS_DIR = Path(f'../figures/{NB_ID}/{suffix}')
+FIGS_BASE_DIR = Path('/mnt/storage/tmp/figures')
 MODELS_DIR = Path('../models')
 
-for d in (FIGS_DIR, MODELS_DIR):
+figs_dir = FIGS_BASE_DIR / f'{NB_ID}/{suffix}'
+
+for d in (figs_dir, MODELS_DIR):
     d.mkdir(parents=True, exist_ok=True)
 ```
 
@@ -178,7 +182,7 @@ HYPERPARAMS_FILE_LABEL = "hyperparameters"
 Get function to save figures to figure directory.
 
 ```{python}
-savefig = get_savefig_func(FIGS_DIR)
+savefig = get_savefig_func(figs_dir)
 ```
 
 ### RNG setup
@@ -269,9 +273,18 @@ task_model_pairs = setup_task_model_pairs(
 ## Training setup
 
 ```{python}
-learning_rate = 0.01
+learning_rate_0 = 0.01
+constant_lr_iterations = 10  # Number of initial training iterations to hold lr constant
+alpha = cosine_annealing_alpha  # Max learning rate factor decrease during cosine annealing (see notebook hyperparameters)
+weight_decay = 0
+
 n_batches = 50
 batch_size = 250
+
+optimizer_class = partial(
+    optax.adam,
+    weight_decay=weight_decay,
+)
 
 where_train = lambda model: (
     model.step.net.hidden,
@@ -282,9 +295,16 @@ save_model_parameters = iterations_to_save_model_parameters(n_batches)
 ```
 
 ```{python}
+schedule = make_delayed_cosine_schedule(
+    learning_rate_0, 
+    constant_lr_iterations, 
+    n_batches, 
+    alpha,
+) 
+
 trainer = TaskTrainer(
-    optimizer=optax.inject_hyperparams(optax.adam)(
-        learning_rate=learning_rate
+    optimizer=optax.inject_hyperparams(optimizer_class)(
+        learning_rate=schedule
     ),
     checkpointing=True,
 )
@@ -306,7 +326,6 @@ def train_pair(pair):
         # disable_tqdm=True,
         key=key_train,
     )
-
 
 trained_models, train_histories = tree_unzip(tree_map_tqdm(
     train_pair, 
@@ -331,7 +350,10 @@ model_basename = join([
 training_hyperparameters = dict(
     nb_id=NB_ID,
     suffix=suffix,
-    learning_rate=learning_rate,
+    learning_rate_0=learning_rate_0,
+    constant_lr_iterations=constant_lr_iterations,
+    cosine_annealing_alpha=cosine_annealing_alpha,
+    weight_decay=weight_decay,
     n_batches=n_batches,
     batch_size=batch_size,
     save_model_parameters=save_model_parameters.tolist(),
