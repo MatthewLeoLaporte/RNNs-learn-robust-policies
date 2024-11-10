@@ -26,6 +26,7 @@ from feedbax import (
     save, 
     tree_stack, 
     tree_take_multi,
+    tree_unzip,
 )
 from feedbax.misc import attr_str_tree_to_where_func
 import feedbax.plot as fbplt
@@ -48,11 +49,15 @@ from rnns_learn_robust_motor_policies.setup_utils import (
     setup_tasks_only,
     filename_join as join,
 )
-from rnns_learn_robust_motor_policies.state_utils import vmap_eval_ensemble
+from rnns_learn_robust_motor_policies.state_utils import (
+    get_aligned_vars,
+    get_pos_endpoints,
+    vmap_eval_ensemble,
+)
 
 
 logging.basicConfig(
-    format='(%(module)-20s) %(message)s', 
+    format='(%(name)-20s) %(message)s', 
     level=logging.INFO, 
     handlers=[RichHandler(level="NOTSET")],
 )
@@ -124,29 +129,49 @@ def get_best_iterations_and_losses(
     return best_save_idx, best_saved_iterations, losses_at_best_saved_iteration
 
 
-def rate_replicates(
-    losses_at_best_saved_iteration: PyTree[Float[Array, "replicate"]], 
-    n_std_exclude: float = 2.0,
-) -> tuple[PyTree[int], PyTree[Array]]:
-    """Identifies best replicates and which replicates to include based on loss distribution."""
-    best_replicate = jt.map(
-        lambda best_losses: jnp.argmin(best_losses).item(), 
-        losses_at_best_saved_iteration,
+def get_best_and_included(measure, n_std_exclude=2):
+    best_idx = jnp.argmin(measure).item()
+    bound = (measure[best_idx] + n_std_exclude * measure.std()).item()
+    included = measure < bound
+    return best_idx, included
+
+
+def end_position_error(pos, eval_reach_length=1, last_n_steps=10):
+    # Since the data is aligned, the goal is always at the same position
+    goal_pos = jnp.array([eval_reach_length, 0])
+    error = jnp.mean(jnp.linalg.norm(pos[..., -last_n_steps:, :] - goal_pos, axis=-1), axis=-1)
+    return error
+
+
+def get_measures_to_rate(models, tasks):
+    all_states = jt.map(
+        lambda model, task: vmap_eval_ensemble(model, task, N_TRIALS_VAL, jr.PRNGKey(0)),
+        models, tasks,
         is_leaf=is_module,
     )
-    
-    exclusion_bound = jt.map(
-        lambda losses: (losses.mean() + n_std_exclude * losses.std()).item(),
-        losses_at_best_saved_iteration,
+    # Assume all the tasks have the same reach endpoints and reach length
+    example_task = jt.leaves(tasks, is_leaf=is_module)[0]
+    pos_endpoints = get_pos_endpoints(example_task.validation_trials)
+    aligned_pos = get_aligned_vars(
+        all_states,
+        lambda states, endpoints: states.mechanics.effector.pos - pos_endpoints[0][..., None, :],
+        pos_endpoints,
+    )
+    end_pos_errors = jt.map(
+        partial(end_position_error, eval_reach_length=example_task.eval_reach_length), 
+        aligned_pos,
+    )
+    mean_end_pos_errors = jt.map(
+        lambda x: jnp.mean(x, axis=(0, -1)),  # eval & condition, but not replicate
+        end_pos_errors,
     )
     
-    included_replicates = jt.map(
-        lambda losses, bound: losses < bound,
-        losses_at_best_saved_iteration, 
-        exclusion_bound,
+    return dict(
+        end_pos_error=mean_end_pos_errors,
     )
     
-    return best_replicate, included_replicates
+
+MEASURES_TO_RATE = ('end_pos_error',)
 
 
 def save_best_models(
@@ -344,20 +369,28 @@ def save_training_figures(
 
 
 def compute_replicate_info(
+    models,
+    tasks,
     train_histories, 
     save_model_parameters, 
     n_replicates, 
     n_std_exclude,
-    all_states,
 ):
     best_save_idx, best_saved_iterations, losses_at_best_saved_iteration = \
         get_best_iterations_and_losses(
             train_histories, save_model_parameters, n_replicates
         )
     
-    best_replicate, included_replicates = rate_replicates(
-        losses_at_best_saved_iteration, n_std_exclude
+    # Rate the best total loss, but also some other measures
+    measures = dict(
+        best_total_loss=losses_at_best_saved_iteration,
+        **get_measures_to_rate(models, tasks),
     )
+    
+    best_replicates, included_replicates = tree_unzip(jt.map(
+        partial(get_best_and_included, n_std_exclude=n_std_exclude),
+        measures,
+    ))
     
     losses_at_final_saved_iteration = jt.map(
         lambda history: history.loss.total[-1],
@@ -370,32 +403,48 @@ def compute_replicate_info(
         best_saved_iteration_by_replicate=best_saved_iterations,
         losses_at_best_saved_iteration=losses_at_best_saved_iteration,
         losses_at_final_saved_iteration=losses_at_final_saved_iteration,
-        best_replicate_by_loss=best_replicate,
-        included_replicates=included_replicates,    
+        best_replicates=best_replicates,
+        included_replicates=included_replicates,
     )   
     
     
-def setup_replicate_info(models, disturbance_stds, n_replicates):
+def setup_replicate_info(models, disturbance_stds, n_replicates, *, key):
     """Returns a skeleton PyTree for loading the replicate info"""
     
-    values_per_model = dict(
-        best_save_idx=jnp.zeros(n_replicates, dtype=int),
-        best_saved_iteration_by_replicate=[0] * n_replicates,
-        losses_at_best_saved_iteration=jnp.zeros(n_replicates, dtype=float),
-        losses_at_final_saved_iteration=jnp.zeros(n_replicates, dtype=float),
-        best_replicate_by_loss=0,
-        included_replicates=jnp.ones(n_replicates, dtype=bool),   
-    )   
-    
-    # For each piece of replicate info, we need a PyTree with the same structure as the model PyTree
-    return {
-        info_label: jt.map(
-            lambda model: value_per_model,
+    def models_tree_with_value(value):
+        return jt.map(
+            lambda _: value,
             models,
             is_leaf=is_module,
         )
-        for info_label, value_per_model in values_per_model.items()
-    }
+        
+    def get_measure_dict(value): 
+        return dict.fromkeys(
+            ("best_total_loss",) + MEASURES_TO_RATE,
+            models_tree_with_value(value),
+        )
+    
+    # For each piece of replicate info, we need a PyTree with the same structure as the model PyTree
+    return {
+        info_label: models_tree_with_value(value)
+        for info_label, value in dict(
+            best_save_idx=jnp.zeros(n_replicates, dtype=int),
+            best_saved_iteration_by_replicate=[0] * n_replicates,
+            losses_at_best_saved_iteration=jnp.zeros(n_replicates, dtype=float),
+            losses_at_final_saved_iteration=jnp.zeros(n_replicates, dtype=float),
+        ).items()
+    } | dict(
+        best_replicates=get_measure_dict(0),
+        included_replicates=get_measure_dict(jnp.ones(n_replicates, dtype=bool)),
+    )
+    
+
+    
+    aaa 
+    
+    eqx.tree_pprint(aaa)
+    
+    return aaa
 
 
 def process_model_file(path: str, n_std_exclude: float, filename_pattern: str, figs_base_dir: str, nb_id) -> None:
@@ -410,15 +459,14 @@ def process_model_file(path: str, n_std_exclude: float, filename_pattern: str, f
     
     # Evaluate each model on its respective validation task
     tasks = setup_tasks_only(SETUP_FUNCS[nb_id], key=jr.PRNGKey(0), **model_hyperparameters)
-    all_states = jt.map(
-        lambda model, task: vmap_eval_ensemble(model, task, N_TRIALS_VAL, jr.PRNGKey(0)),
-        models, tasks,
-        is_leaf=is_module,
-    )
-    # TODO: Include replicates based on endpoint error versus best replicate
     
     replicate_info = compute_replicate_info(
-        train_histories, save_model_parameters, n_replicates, n_std_exclude, all_states
+        models,
+        tasks,
+        train_histories, 
+        save_model_parameters, 
+        n_replicates, 
+        n_std_exclude, 
     )
     
     save(
@@ -458,7 +506,7 @@ if __name__ == '__main__':
     parser.add_argument("--model_dir", default="./models/", help="Directory to search for files")
     parser.add_argument("--figs_base_dir", default="./figures/", help="Base directory for saving figures")
     parser.add_argument("--filename_pattern", default="trained_models.eqx", help="Pattern to match in filenames")
-    parser.add_argument("--n_std_exclude", default=1, type=float, help="Percentile loss for replicate exclusion")
+    parser.add_argument("--n_std_exclude", default=2, type=float, help="Mark replicates this many stds above the best as to-be-excluded")
     args = parser.parse_args()
     
     model_paths = find_model_paths(args.model_dir, args.filename_pattern)

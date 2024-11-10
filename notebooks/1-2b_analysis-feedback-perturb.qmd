@@ -274,8 +274,10 @@ trained_models_load: dict[float, eqx.Module] = load(
 ```{python}
 hyperparameters_filepath = models_filepath.replace(f'{MODEL_FILE_LABEL}.eqx', '{HYPERPARAMS_FILE_LABEL}.json')
 hyperparameters = load_from_json(hyperparameters_filepath)
-replicate_info_filepath = models_filepath.replace(f'{MODEL_FILE_LABEL}.eqx', '{REPLICATE_INFO_FILE_LABEL}.json')
-replicate_info = load(replicate_info_filepath, setup_replicate_info)
+replicate_info_filepath = models_filepath.replace(f'{MODEL_FILE_LABEL}', f'{REPLICATE_INFO_FILE_LABEL}')
+replicate_info = load(
+    replicate_info_filepath, partial(setup_replicate_info, trained_models_load),
+)
 
 disturbance_type_train = hyperparameters['disturbance_type']
 disturbance_train_stds_load = hyperparameters['disturbance_stds']
@@ -306,8 +308,10 @@ exclude_underperformers = True
 ```
 
 ```{python}
-included_replicates = replicate_info['included_replicates']
-best_replicate = replicate_info['best_replicate_by_loss']
+measure_to_exclude_by = 'best_total_loss'
+
+included_replicates = replicate_info['included_replicates'][measure_to_exclude_by]
+best_replicate = replicate_info['best_replicates'][measure_to_exclude_by]
 
 def take_replicate_or_best(tree: TrainStdDict, i_replicate=None, replicate_axis=1):
     if i_replicate is None:

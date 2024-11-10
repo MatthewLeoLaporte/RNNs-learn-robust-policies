@@ -55,6 +55,14 @@ SCALE_FUNCS = {
 }
 
 
+def disturbance(disturbance_type, field_std, scale_func, active):
+    return DISTURBANCE_CLASSES[disturbance_type].with_params(
+        scale=scale_func(field_std),
+        active=active,
+        **disturbance_params[disturbance_type],
+    )
+
+
 def setup_task_model_pairs(
     *,
     n_replicates,
@@ -95,13 +103,6 @@ def setup_task_model_pairs(
         motor_noise_std=motor_noise_std,
         key=key,
     )
-    
-    def disturbance(field_std, scale_func, active):
-        return DISTURBANCE_CLASSES[disturbance_type].with_params(
-            scale=scale_func(field_std),
-            active=active,
-            **disturbance_params[disturbance_type],
-        )
         
     tasks = {
         method_label: eqx.tree_at(
@@ -118,9 +119,10 @@ def setup_task_model_pairs(
                 task, models_base,
                 lambda model: model.step.mechanics,
                 disturbance(
+                    disturbance_type,
                     disturbance_std, 
                     SCALE_FUNCS[method_label], 
-                    disturbance_active[method_label](p_perturbed),
+                    disturbance_active[method_label](p_perturbed[method_label]),
                 ),
                 label=INTERVENOR_LABEL,
                 default_active=False,

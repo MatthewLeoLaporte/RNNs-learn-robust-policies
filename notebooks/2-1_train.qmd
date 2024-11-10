@@ -141,7 +141,12 @@ disturbance_type: Literal['curl', 'random'] = 'curl'
 feedback_delay_steps = 0
 feedback_noise_std = 0.0
 motor_noise_std = 0.0
-p_perturbed = 0.1
+p_perturbed = {
+    'active': 0.2,
+    # The rest don't do anything atm, even if they're <1
+    'amplitude': 1,  
+    'std': 1,  
+}
 hidden_size = 50
 n_replicates = 5  # TODO
 n_steps = 100

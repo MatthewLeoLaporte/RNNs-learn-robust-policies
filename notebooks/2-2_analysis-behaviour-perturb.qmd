@@ -89,8 +89,10 @@ from rnns_learn_robust_motor_policies.setup_utils import (
     setup_train_histories,
 )
 from rnns_learn_robust_motor_policies.state_utils import (
+    get_aligned_vars,
     get_forward_lateral_vel, 
     get_lateral_distance,
+    get_pos_endpoints,
     project_onto_direction,
     vmap_eval_ensemble,
 )
@@ -246,8 +248,10 @@ trained_models_load: dict[float, eqx.Module] = load(
 ```{python}
 hyperparameters_filepath = models_filepath.replace(f'{MODEL_FILE_LABEL}.eqx', '{HYPERPARAMS_FILE_LABEL}.json')
 hyperparameters = load_from_json(hyperparameters_filepath)
-replicate_info_filepath = models_filepath.replace(f'{MODEL_FILE_LABEL}.eqx', '{REPLICATE_INFO_FILE_LABEL}.json')
-replicate_info = load_from_json(replicate_info_filepath, setup_replicate_info)
+replicate_info_filepath = models_filepath.replace(f'{MODEL_FILE_LABEL}', f'{REPLICATE_INFO_FILE_LABEL}')
+replicate_info = load(
+    replicate_info_filepath, partial(setup_replicate_info, trained_models_load),
+)
 
 disturbance_train_stds_load = hyperparameters['disturbance_stds']
 n_replicates = hyperparameters['n_replicates']
@@ -285,8 +289,10 @@ exclude_underperformers = True
 ```
 
 ```{python}
-included_replicates = replicate_info['included_replicates']
-best_replicate = replicate_info['best_replicate_by_loss']
+measure_to_exclude_by = 'best_total_loss'
+
+included_replicates = replicate_info['included_replicates'][measure_to_exclude_by]
+best_replicate = replicate_info['best_replicates'][measure_to_exclude_by]
 
 def take_replicate_or_best(tree: TrainStdDict, i_replicate=None, replicate_axis=1):
     if i_replicate is None:
@@ -508,12 +514,6 @@ tasks_small = jt.map(
 trial_specs = task_base.validation_trials
 trial_specs_small = jt.leaves(tasks_small, is_leaf=is_module)[0].validation_trials
 
-def get_pos_endpoints(trial_specs):
-    return jnp.stack([
-        trial_specs.inits['mechanics.effector'].pos, 
-        jnp.take(trial_specs.targets['mechanics.effector.pos'].value, -1, axis=-2),
-    ], axis=0)
-
 pos_endpoints = get_pos_endpoints(trial_specs)
 pos_endpoints_small = get_pos_endpoints(trial_specs_small)
 
@@ -606,18 +606,6 @@ where_vars_to_align = lambda states, pos_endpoints: Responses(
 ```
 
 ```{python}
-def get_aligned_vars(all_states, where, endpoints): 
-    directions = endpoints[1] - endpoints[0]
-    
-    return jt.map(
-        lambda states: jt.map(
-            lambda var: project_onto_direction(var, directions),
-            where(states, endpoints),
-        ),
-        all_states,
-        is_leaf=is_module,
-    )
-    
 aligned_vars = get_aligned_vars(all_states, where_vars_to_align, pos_endpoints)
 aligned_vars_small = get_aligned_vars(all_states_small, where_vars_to_align, pos_endpoints_small)
 ```

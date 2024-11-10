@@ -95,8 +95,10 @@ from rnns_learn_robust_motor_policies.setup_utils import (
     setup_models_only,
 )
 from rnns_learn_robust_motor_policies.state_utils import (
+    get_aligned_vars,
     get_forward_lateral_vel, 
     get_lateral_distance,
+    get_pos_endpoints,
     vmap_eval_ensemble,
 )
 from rnns_learn_robust_motor_policies.tree_utils import (
@@ -310,9 +312,9 @@ hyperparameters_filepath = models_filepath.replace(
     f'{HYPERPARAMS_FILE_LABEL}.json',
 )
 hyperparameters = load_from_json(hyperparameters_filepath)
-replicate_info_filepath = models_filepath.replace(f'{MODEL_FILE_LABEL}.eqx', '{REPLICATE_INFO_FILE_LABEL}.json')
-replicate_info_filepath = load(
-    replicate_info_filepath, setup_replicate_info,
+replicate_info_filepath = models_filepath.replace(f'{MODEL_FILE_LABEL}', f'{REPLICATE_INFO_FILE_LABEL}')
+replicate_info = load(
+    replicate_info_filepath, partial(setup_replicate_info, trained_models_load),
 )
 
 disturbance_train_stds_load = hyperparameters['disturbance_stds']
@@ -351,8 +353,10 @@ exclude_underperformers = True
 ```
 
 ```{python}
-included_replicates = replicate_info['included_replicates']
-best_replicate = replicate_info['best_replicate_by_loss']
+measure_to_exclude_by = 'best_total_loss'
+
+included_replicates = replicate_info['included_replicates'][measure_to_exclude_by]
+best_replicate = replicate_info['best_replicates'][measure_to_exclude_by]
 
 def take_replicate_or_best(tree: TrainStdDict, i_replicate=None, replicate_axis=1):
     if i_replicate is None:
@@ -376,6 +380,8 @@ eqx.tree_pprint(jt.map(lambda x: jnp.where(x)[0], included_replicates), short_ar
 Set the indices corresponding to the excluded replicates to NaN in each of the model arrays. This ensures that the shapes of the arrays remain consistent. NaN results will be ignored at plotting time. 
 
 ```{python}
+trained_models_all_replicates = trained_models_load
+
 if exclude_underperformers:
     trained_models = jt.map(
         lambda models, included: tree_set_scalar(models, jnp.nan, jnp.where(~included)[0]),
@@ -537,12 +543,6 @@ And for convenience:
 trial_specs = task_base.validation_trials
 trial_specs_small = jt.leaves(tasks_small, is_leaf=is_module)[0].validation_trials
 
-def get_pos_endpoints(trial_specs):
-    return jnp.stack([
-        trial_specs.inits['mechanics.effector'].pos, 
-        jnp.take(trial_specs.targets['mechanics.effector.pos'].value, -1, axis=-2),
-    ], axis=0)
-
 pos_endpoints = get_pos_endpoints(trial_specs)
 pos_endpoints_small = get_pos_endpoints(trial_specs_small)
 
@@ -657,19 +657,7 @@ where_vars_to_align = lambda states, pos_endpoints: Responses(
 )
 ```
 
-```{python}
-def get_aligned_vars(all_states, where, endpoints): 
-    directions = endpoints[1] - endpoints[0]
-    
-    return jt.map(
-        lambda states: jt.map(
-            lambda var: project_onto_direction(var, directions),
-            where(states, endpoints),
-        ),
-        all_states,
-        is_leaf=is_module,
-    )
-    
+```{python}   
 aligned_vars = get_aligned_vars(all_states, where_vars_to_align, pos_endpoints)
 aligned_vars_small = get_aligned_vars(all_states_small, where_vars_to_align, pos_endpoints_small)
 ```
@@ -1654,6 +1642,8 @@ Omitting these figures since the low-high summary figures below will include thi
 
 ### Comparison of zero vs. high train disturbance std, for different replicates
 
+**TODO**: Show all replicates, even the excluded ones, but maybe color them differently.
+
 Compare the smallest (zero) and largest training disturbance stds. For the plots above, this would mean keeping just the leftmost and the rightmost violins. However, those plots were aggregated over replicates and trials. Now we would like to examine the variance across model replicates. Thus, for each measure, we will generate one plot for each evaluation condition (disturbance amplitude) as before, but now each containing `n_replicates` *split* violins, where the left half corresponds to the zero training disturbance std, and the right half to the largest training disturbance std.
 
 ```{python}
@@ -1664,14 +1654,15 @@ fig_subdir = "performance_measures/compare_replicates_lowhigh_train_conditions"
 labels = lohi(disturbance_train_stds)
 colors = lohi(disturbance_train_stds_colors_dark)
 
+replicates_all_lohi_included = jt.reduce(jnp.logical_and, lohi(included_replicates))
+
 def get_measure_replicate_comparisons(data, measure_name, disturbance_amplitude, annotation_kws=None):
     n_dist = np.prod(jt.leaves(data)[0].shape)
     
     data = jnp.stack(list(data.values()))
     
-    # TODO: Exclude replicates which were excluded from analysis for either training condition
-    # replicates_any_nan = jnp.any(jnp.isnan(data), axis=-2)
-    # data = jnp.take(data, jnp.where(replicates_any_nan)[0], axis=-2)
+    # Exclude replicates which were excluded from analysis for either training condition
+    data = jnp.take(data, replicates_all_lohi_included, axis=-2)
 
     fig = go.Figure()
     # x axis: replicates

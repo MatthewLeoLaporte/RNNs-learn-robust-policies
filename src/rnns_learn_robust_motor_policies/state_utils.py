@@ -3,9 +3,10 @@
 import equinox as eqx
 import jax.numpy as jnp 
 import jax.random as jr
+import jax.tree as jt
 from jaxtyping import Array, Float
 
-from feedbax import is_type
+from feedbax import is_type, is_module
 from feedbax.intervene import AbstractIntervenor
 from feedbax._tree import tree_infer_batch_size
 
@@ -116,3 +117,27 @@ def vmap_eval_ensemble(models, task, n_trials: int, key):
     return eqx.filter_vmap(_get_eval_ensemble(models, task))(
         jr.split(key, n_trials)
     )
+    
+    
+def get_aligned_vars(all_states, where_vars, endpoints): 
+    """Get variables from state PyTree, and project them onto respective reach directions for their trials."""
+    directions = endpoints[1] - endpoints[0]
+    
+    return jt.map(
+        lambda states: jt.map(
+            lambda var: project_onto_direction(var, directions),
+            where_vars(states, endpoints),
+        ),
+        all_states,
+        is_leaf=is_module,
+    )
+    
+    
+def get_pos_endpoints(trial_specs):
+    """Given a set of `SimpleReaches` trial specifications, return the stacked start and end positions."""
+    return jnp.stack([
+        trial_specs.inits['mechanics.effector'].pos, 
+        jnp.take(trial_specs.targets['mechanics.effector.pos'].value, -1, axis=-2),
+    ], 
+    axis=0,
+)

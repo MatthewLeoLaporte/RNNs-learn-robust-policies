@@ -72,7 +72,7 @@ def setup_task_model_pairs(
             active=active,
             **disturbance_params[disturbance_type],
         )
-        
+    
     task_model_pairs = jt.map(
         lambda field_std: TaskModelPair(*schedule_intervenor(
             task_base, models,
@@ -81,7 +81,7 @@ def setup_task_model_pairs(
             label=INTERVENOR_LABEL,
             default_active=False,
         )),
-         TrainStdDict(zip(disturbance_stds, disturbance_stds)),  
+        TrainStdDict(zip(disturbance_stds, disturbance_stds)),  
     )
     
     return task_model_pairs
