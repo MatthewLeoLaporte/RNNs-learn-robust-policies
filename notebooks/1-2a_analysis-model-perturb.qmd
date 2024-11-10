@@ -22,6 +22,7 @@ In this notebook we begin our analysis of the models trained in the presence of 
 ```
 
 ```{python}
+
 import os
 
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"

@@ -1,0 +1,41 @@
+notebooks:
+  1-1:  
+    train_notebook_id: null
+    
+    default_parameters:
+      disturbance_type: curl
+      feedback_noise_std: 0.0
+      motor_noise_std: 0.0
+      feedback_delay_steps: 0
+    
+    parameter_combinations:
+      disturbance_type: [curl, random]
+      feedback_noise_std: [0.0, 0.1]
+      motor_noise_std: [0.0, 0.1]
+      feedback_delay_steps: [0, 1, 2]
+
+  1-2a:
+    train_notebook_id: "1-1"
+    
+    default_parameters:
+      disturbance_type: disturbance_type_load
+      feedback_noise_std: feedback_noise_std_load
+      motor_noise_std: motor_noise_std_load
+    
+    rules:
+      - condition: {disturbance_type_load: curl}
+        parameters: {disturbance_type: [curl, random]}
+      
+      - condition: {disturbance_type_load: random}
+        parameters: {disturbance_type: [random, curl]}
+  
+  1-2b:
+    train_notebook_id: "1-1"
+    
+    default_parameters:
+      feedback_noise_std: null
+      motor_noise_std: null
+    
+    rules:
+      - condition: {feedback_noise_std_load: 0.0, motor_noise_std_load: 0.0}
+        parameters: {feedback_noise_std: 0.1, motor_noise_std: 0.1}

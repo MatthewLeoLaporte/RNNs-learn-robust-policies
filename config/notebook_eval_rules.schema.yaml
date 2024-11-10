@@ -1,0 +1,64 @@
+$schema: http://json-schema.org/draft-07/schema#
+title: Notebook Evaluation Rules
+type: object
+
+definitions:
+  parameter_value:
+    oneOf:
+      - type: number
+      - type: string
+      - type: "null"
+      - type: array
+        items:
+          oneOf:
+            - type: number
+            - type: string
+
+properties:
+  notebooks:
+    type: object
+    patternProperties:
+      "^[0-9]+-[0-9][a-z]?$":
+        type: object
+        required: [train_notebook_id, default_parameters, parameter_combinations]
+        properties:
+          train_notebook_id:
+            oneOf:
+              - type: string
+                pattern: "^[0-9]+-[0-9][a-z]?$"
+              - type: "null"
+
+          default_parameters:
+            type: object
+            additionalProperties:
+              $ref: "#/definitions/parameter_value"
+
+          parameter_combinations:
+            type: object
+            additionalProperties:
+              oneOf:
+                - $ref: "#/definitions/parameter_value"
+                - type: array
+                  items:
+                    $ref: "#/definitions/parameter_value"
+
+          rules:
+            type: array
+            items:
+              type: object
+              required: [condition, parameters]
+              properties:
+                condition:
+                  type: object
+                  minProperties: 1
+                  additionalProperties:
+                    $ref: "#/definitions/parameter_value"
+                parameters:
+                  type: object
+                  minProperties: 1
+                  additionalProperties:
+                    $ref: "#/definitions/parameter_value"
+        additionalProperties: false
+    additionalProperties: false
+required: [notebooks]
+additionalProperties: false

@@ -1,16 +1,13 @@
 ---
 created: 2024-10-04T11:27
-updated: 2024-11-10T13:28
+updated: 2024-11-10T15:08
 ---
 
 - [ ] Move part 1 training to a script + a yaml file defining which hyperparameters to train — or otherwise we’ll have to use batch quarto render 
 - [ ] Retrain part 1 models… again
 	- Make sure to get rid of `MASS` from `setup_task_model_pairs` first
-- [x] **Exclude models based on 1) # stds above the *best* replicate, and possibly 2) behavioural measures rather than total loss.** It looks like max net control force or end position error might be good indicators. 
-## Workflow
 
-- [x] Exclude from the replicate-comparison violins, any replicates which *for either the zero or the highest training condition* were excluded from analysis.
-- [x] Serialise `included_replicates` and `best_replicate` etc. in `post_training.py`, avoiding the need to cast the keys/values back to floats/arrays in a structure-dependent way, locally in each analysis notebook
+## Workflow
 
 ### Database
 
