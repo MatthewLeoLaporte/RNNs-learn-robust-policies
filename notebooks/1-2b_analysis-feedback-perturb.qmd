@@ -70,6 +70,20 @@ from feedbax.task import SimpleReaches
 
 from feedbax.xabdeef.losses import simple_reach_loss
 
+from rnns_learn_robust_motor_policies import (
+    FIGS_BASE_DIR, 
+    MODELS_DIR, 
+    PROJECT_SEED,
+    HYPERPARAMS_FILE_LABEL,
+    BEST_MODEL_FILE_LABEL,
+    REPLICATE_INFO_FILE_LABEL,
+)
+from rnns_learn_robust_motor_policies.colors import(
+    COLORSCALES,
+    get_colors_dicts,
+    get_colors_dicts_from_discrete,
+)
+from rnns_learn_robust_motor_policies.constants import WORKSPACE
 from rnns_learn_robust_motor_policies.misc import (
     dict_str, 
     lohi, 
@@ -107,11 +121,6 @@ from rnns_learn_robust_motor_policies.setup_utils import (
     set_model_noise,
     find_unique_filepath,
     setup_models_only,
-)
-from rnns_learn_robust_motor_policies.colors import(
-    COLORSCALES,
-    get_colors_dicts,
-    get_colors_dicts_from_discrete,
 )
 from rnns_learn_robust_motor_policies.types import {
     ImpulseAmpTuple, 
@@ -184,25 +193,15 @@ See further below for parameter-based loading of models, as well as the code tha
 
 ### Directories setup
 
-```{python}
-MODELS_DIR = Path('../models')
-FIGS_BASE_DIR = Path('/mnt/storage/tmp/figures')
-    
+```{python}   
 if not MODELS_DIR.exists():
     raise FileNotFoundError(f"Models directory not found: {MODELS_DIR.absolute()}")
-```
-
-```{python}
-MODEL_FILE_LABEL = "trained_models_best_params"
-HYPERPARAMS_FILE_LABEL = "hyperparameters"
-REPLICATE_INFO_FILE_LABEL = "replicate_info"
 ```
 
 ### RNG setup
 
 ```{python}
-SEED = 5566
-key = jr.PRNGKey(SEED)
+key = jr.PRNGKey(PROJECT_SEED)
 key_init, key_train, key_eval = jr.split(key, 3)
 ```
 
@@ -262,7 +261,7 @@ if not load_from_parameters:
     else:
         models_filepath = fc.selected
 else: 
-    models_filepath = str(find_unique_filepath(MODELS_DIR, f"1-1__{suffix_load}__{MODEL_FILE_LABEL}"))
+    models_filepath = str(find_unique_filepath(MODELS_DIR, f"1-1__{suffix_load}__{BEST_MODEL_FILE_LABEL}"))
     if models_filepath is None:
         raise FileNotFoundError(f"No models found with file label: {suffix_load}")
 
@@ -272,9 +271,9 @@ trained_models_load: dict[float, eqx.Module] = load(
 ```
 
 ```{python}
-hyperparameters_filepath = models_filepath.replace(f'{MODEL_FILE_LABEL}.eqx', '{HYPERPARAMS_FILE_LABEL}.json')
+hyperparameters_filepath = models_filepath.replace(f'{BEST_MODEL_FILE_LABEL}.eqx', '{HYPERPARAMS_FILE_LABEL}.json')
 hyperparameters = load_from_json(hyperparameters_filepath)
-replicate_info_filepath = models_filepath.replace(f'{MODEL_FILE_LABEL}', f'{REPLICATE_INFO_FILE_LABEL}')
+replicate_info_filepath = models_filepath.replace(f'{BEST_MODEL_FILE_LABEL}', f'{REPLICATE_INFO_FILE_LABEL}')
 replicate_info = load(
     replicate_info_filepath, partial(setup_replicate_info, trained_models_load),
 )
@@ -282,6 +281,7 @@ replicate_info = load(
 disturbance_type_train = hyperparameters['disturbance_type']
 disturbance_train_stds_load = hyperparameters['disturbance_stds']
 n_replicates = hyperparameters['n_replicates']
+n_steps = hyperparameters['n_steps']
 
 # We'll use this for creating figure subdirectories according to the training conditions
 suffix_train = models_filepath.split('__')[1]
@@ -387,10 +387,6 @@ any_system_noise = any(jt.leaves(noise_stds))
 ### Setup the base task
 
 ```{python}
-n_steps = 100
-workspace = ((-1., -1.),
-             (1., 1.))
-
 # Steady state trials at different grid positions
 eval_grid_n = 5
 eval_n_directions = 1
@@ -399,7 +395,7 @@ eval_reach_length = 0.0
 # Define the base task
 task = SimpleReaches(
     loss_func=simple_reach_loss(),
-    workspace=workspace, 
+    workspace=WORKSPACE, 
     n_steps=n_steps,
     eval_grid_n=eval_grid_n,
     eval_n_directions=eval_n_directions,

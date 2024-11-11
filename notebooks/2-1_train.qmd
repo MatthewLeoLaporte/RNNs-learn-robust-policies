@@ -61,6 +61,7 @@ os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
 
 ```{python}
+from functools import partial
 import json
 from pathlib import Path
 from typing import Any, Literal, Optional
@@ -98,7 +99,7 @@ from feedbax.train import TaskTrainer
 from feedbax.xabdeef.losses import simple_reach_loss
 from feedbax.xabdeef.models import point_mass_nn
 
-from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL, MASS, WORKSPACE
+from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL
 from rnns_learn_robust_motor_policies.misc import write_to_json
 from rnns_learn_robust_motor_policies.part2_setup import (
     setup_task_model_pairs, 
@@ -130,6 +131,11 @@ Unique ID for notebook, for naming outputs.
 NB_ID = "2-1"
 ```
 
+```{python}
+jax.config.update("jax_disable_jit", True)
+jax.config.update("jax_debug_nans", True)
+```
+
 ### Hyperparameters
 
 These are parameters that can be [varied](https://quarto.org/docs/computations/parameters.html) through the command line interface to Quarto. 
@@ -142,13 +148,13 @@ feedback_delay_steps = 0
 feedback_noise_std = 0.0
 motor_noise_std = 0.0
 p_perturbed = {
-    'active': 0.2,
+    'active': 0.5,
     # The rest don't do anything atm, even if they're <1
-    'amplitude': 1,  
-    'std': 1,  
+    'amplitude': 0.5,  
+    'std': 0.5,  
 }
 hidden_size = 50
-n_replicates = 5  # TODO
+n_replicates = 1  # TODO
 n_steps = 100
 dt = 0.05
 cosine_annealing_alpha = 0.01
@@ -219,7 +225,7 @@ p_perturbed = p_perturbed  # Defined with the hyperparameters earlier
 # NOTE: Only one of these disturbance types is trained per notebook run; see the parameters cell above
 disturbance_stds = {
     'curl': [1.6],
-    'random': [0.1],
+    'random': [0.4],
 }
 ```
 
@@ -227,10 +233,8 @@ disturbance_stds = {
 task_model_pairs = setup_task_model_pairs(
     n_replicates=n_replicates,
     dt=dt,
-    mass=MASS,
     hidden_size=hidden_size,
     n_steps=n_steps,
-    workspace=WORKSPACE,
     feedback_delay_steps=feedback_delay_steps,
     feedback_noise_std=feedback_noise_std,
     motor_noise_std=motor_noise_std,
@@ -249,11 +253,11 @@ constant_lr_iterations = 10  # Number of initial training iterations to hold lr 
 alpha = cosine_annealing_alpha  # Max learning rate factor decrease during cosine annealing (see notebook hyperparameters)
 weight_decay = 0
 
-n_batches = 50
+n_batches = 5000
 batch_size = 250
 
 optimizer_class = partial(
-    optax.adam,
+    optax.adamw,
     weight_decay=weight_decay,
 )
 
@@ -300,7 +304,7 @@ def train_pair(pair):
 
 trained_models, train_histories = tree_unzip(tree_map_tqdm(
     train_pair, 
-    task_model_pairs,
+    task_model_pairs['std'],
     is_leaf=is_type(TaskModelPair),
 ))
 ```
@@ -342,8 +346,6 @@ model_hyperparameters = dict(
     motor_noise_std=motor_noise_std,
     dt=dt,
     n_steps=n_steps,
-    workspace=WORKSPACE,
-    mass=MASS,
     disturbance_type=disturbance_type,
     disturbance_stds=disturbance_stds[disturbance_type],
     p_perturbed=p_perturbed,

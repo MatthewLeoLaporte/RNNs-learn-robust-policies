@@ -8,6 +8,7 @@ _freeze
 # project-specific
 render_params.yaml
 render_params_all.yaml
+config/paths.yaml
 
 # Markdown copies of example notebooks
 # (They are meant to make search-replace easier)

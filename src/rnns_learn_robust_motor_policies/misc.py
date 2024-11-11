@@ -73,6 +73,12 @@ def lomidhi(x: Sequence | Mapping):
         return lomidhi(x.tolist())
 
 
+def load_yaml(path: Path) -> dict:
+    """Load a YAML file."""
+    with open(path, 'r') as f:
+        return yaml.safe_load(f)
+
+
 def load_from_json(path):
     with open(path, 'r') as jsonf:
         return json.load(jsonf)

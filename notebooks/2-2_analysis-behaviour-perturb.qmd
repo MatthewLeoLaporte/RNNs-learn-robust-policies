@@ -62,12 +62,20 @@ import feedbax.plotly as fbp
 from feedbax.task import SimpleReaches, TrialSpecDependency
 from feedbax.xabdeef.losses import simple_reach_loss
 
+from rnns_learn_robust_motor_policies import (
+    FIGS_BASE_DIR, 
+    MODELS_DIR, 
+    PROJECT_SEED,
+    HYPERPARAMS_FILE_LABEL,
+    BEST_MODEL_FILE_LABEL,
+    REPLICATE_INFO_FILE_LABEL,
+)
 from rnns_learn_robust_motor_policies.colors import (
     COLORSCALES, 
     MEAN_LIGHTEN_FACTOR,
     get_colors_dicts,
 )
-from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL
+from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL, WORKSPACE
 from rnns_learn_robust_motor_policies.misc import lohi, load_from_json
 from rnns_learn_robust_motor_policies.part2_setup import (
     setup_task_model_pairs, 
@@ -93,6 +101,7 @@ from rnns_learn_robust_motor_policies.state_utils import (
     get_forward_lateral_vel, 
     get_lateral_distance,
     get_pos_endpoints,
+    orthogonal_field,
     project_onto_direction,
     vmap_eval_ensemble,
 )
@@ -121,6 +130,8 @@ Unique ID for notebook, for naming outputs.
 
 ```{python}
 NB_ID = "2-2"
+
+# TODO: This is clear in the eval_rules file; probably don't need to specify here again
 TRAIN_PREFIX = "2-1"  # Notebook the models were trained in
 ```
 
@@ -167,24 +178,14 @@ See further below for parameter-based loading of models, as well as the code tha
 ### Directories
 
 ```{python}
-MODELS_DIR = Path('../models')
-FIGS_BASE_DIR = Path('/mnt/storage/tmp/figures')
-
 if not MODELS_DIR.exists():
     raise FileNotFoundError(f"Models directory not found: {MODELS_DIR.absolute()}")
-```
-
-```{python}
-MODEL_FILE_LABEL = "trained_models_best_params"
-HYPERPARAMS_FILE_LABEL = "hyperparameters"
-REPLICATE_INFO_FILE_LABEL = "replicate_info"
 ```
 
 ### RNG setup
 
 ```{python}
-SEED = 5566
-key = jr.PRNGKey(SEED)
+key = jr.PRNGKey(PROJECT_SEED)
 key_init, key_train, key_eval = jr.split(key, 3)
 ```
 
@@ -235,7 +236,7 @@ if not load_from_parameters:
         models_filepath = fc.selected
 else: 
     models_filepath = str(find_unique_filepath(
-        MODELS_DIR, f"{TRAIN_PREFIX}__{suffix_load}__{MODEL_FILE_LABEL}"
+        MODELS_DIR, f"{TRAIN_PREFIX}__{suffix_load}__{BEST_MODEL_FILE_LABEL}"
     ))
     if models_filepath is None:
         raise FileNotFoundError(f"No models found with file label: {suffix_load}")
@@ -246,15 +247,16 @@ trained_models_load: dict[float, eqx.Module] = load(
 ```
 
 ```{python}
-hyperparameters_filepath = models_filepath.replace(f'{MODEL_FILE_LABEL}.eqx', '{HYPERPARAMS_FILE_LABEL}.json')
+hyperparameters_filepath = models_filepath.replace(f'{BEST_MODEL_FILE_LABEL}.eqx', '{HYPERPARAMS_FILE_LABEL}.json')
 hyperparameters = load_from_json(hyperparameters_filepath)
-replicate_info_filepath = models_filepath.replace(f'{MODEL_FILE_LABEL}', f'{REPLICATE_INFO_FILE_LABEL}')
+replicate_info_filepath = models_filepath.replace(f'{BEST_MODEL_FILE_LABEL}', f'{REPLICATE_INFO_FILE_LABEL}')
 replicate_info = load(
     replicate_info_filepath, partial(setup_replicate_info, trained_models_load),
 )
 
 disturbance_train_stds_load = hyperparameters['disturbance_stds']
 n_replicates = hyperparameters['n_replicates']
+n_steps = hyperparameters['n_steps']
 
 # We'll use this for creating figure subdirectories according to the training conditions
 suffix_train = models_filepath.split('__')[1]
@@ -409,14 +411,7 @@ if disturbance_type == 'curl':
         return CurlField.with_params(amplitude=amplitude)    
         
 elif disturbance_type == 'random':   
-    def disturbance(field_std):
-        def orthogonal_field(trial_spec, *, key):
-            init_pos = trial_spec.inits['mechanics.effector'].pos
-            goal_pos = jnp.take(trial_spec.targets['mechanics.effector.pos'].value, -1, axis=-2)
-            direction_vec = goal_pos - init_pos
-            direction_vec = direction_vec / jnp.linalg.norm(direction_vec)
-            return jnp.array([-direction_vec[1], direction_vec[0]])
-            
+    def disturbance(field_std):            
         return FixedField.with_params(
             scale=field_std,
             field=orthogonal_field,  
@@ -431,12 +426,6 @@ else:
 See notebook 1-2a for some explanation of the parameter choices here.
 
 ```{python}
-n_steps = 100
-workspace = ((-1., -1.),
-             (1., 1.))
-             
-# TODO: Define this centrally
-
 eval_grid_n = 2
 eval_n_directions = 24
 eval_reach_length = 0.5
@@ -451,7 +440,7 @@ n_conditions_small = eval_grid_n_small ** 2 * eval_n_directions_small
 task_base, models = schedule_intervenor(
     SimpleReaches(
         loss_func=simple_reach_loss(),
-        workspace=workspace, 
+        workspace=WORKSPACE, 
         n_steps=n_steps,
         eval_grid_n=eval_grid_n,
         eval_n_directions=eval_n_directions,

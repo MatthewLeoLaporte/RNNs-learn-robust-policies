@@ -99,6 +99,24 @@ def get_lateral_distance(
     return lateral_dist
 
 
+def orthogonal_field(trial_spec, *, key):
+    init_pos = trial_spec.inits['mechanics.effector'].pos
+    goal_pos = jnp.take(trial_spec.targets['mechanics.effector.pos'].value, -1, axis=-2)
+    direction_vec = goal_pos - init_pos
+    direction_vec = direction_vec / jnp.linalg.norm(direction_vec)
+    return jnp.array([-direction_vec[1], direction_vec[0]])
+
+
+def get_pos_endpoints(trial_specs):
+    """Given a set of `SimpleReaches` trial specifications, return the stacked start and end positions."""
+    return jnp.stack([
+        trial_specs.inits['mechanics.effector'].pos, 
+        jnp.take(trial_specs.targets['mechanics.effector.pos'].value, -1, axis=-2),
+    ], 
+    axis=0,
+)
+
+
 def _get_eval_ensemble(models, task):
     def eval_ensemble(key):
         return task.eval_ensemble(
@@ -133,11 +151,3 @@ def get_aligned_vars(all_states, where_vars, endpoints):
     )
     
     
-def get_pos_endpoints(trial_specs):
-    """Given a set of `SimpleReaches` trial specifications, return the stacked start and end positions."""
-    return jnp.stack([
-        trial_specs.inits['mechanics.effector'].pos, 
-        jnp.take(trial_specs.targets['mechanics.effector.pos'].value, -1, axis=-2),
-    ], 
-    axis=0,
-)

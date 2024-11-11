@@ -24,7 +24,7 @@ from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainStdDict
 
 
 disturbance_params = {
-    'curl': dict(amplitude=lambda trial_spec, key: jr.normal(key, (1,))),
+    'curl': dict(amplitude=lambda trial_spec, key: jr.normal(key, ())),
     'random': dict(field=vector_with_gaussian_length),
 }
 
@@ -32,8 +32,8 @@ disturbance_params = {
 # Define whether the disturbance is active on each trial
 disturbance_active: dict[str, Callable] = {
     "active": lambda p: lambda trial_spec, key: jr.bernoulli(key, p=p),
-    "amplitude": lambda p: True,  # All trials perturbed
-    "std": lambda p: True,  # All trials perturbed
+    "amplitude": lambda p: lambda trial_spec, key: jr.bernoulli(key, p=p),  
+    "std": lambda p: lambda trial_spec, key: jr.bernoulli(key, p=p),  
 }
 
 
@@ -50,7 +50,7 @@ SCALE_FUNCS = {
     "active": lambda field_std: field_std,
     "amplitude": lambda field_std: field_std,
     "std": lambda field_std: (
-        lambda trial_spec, key: field_std * jnp.abs(jr.normal(key, (1,)))
+        lambda trial_spec, key: field_std * jnp.abs(jr.normal(key, ()))
     ),
 }
 
@@ -67,10 +67,8 @@ def setup_task_model_pairs(
     *,
     n_replicates,
     dt,
-    mass,  # TODO: Remove 
     hidden_size,
     n_steps,
-    workspace,  # TODO: Remove 
     feedback_delay_steps,
     feedback_noise_std,
     motor_noise_std,
