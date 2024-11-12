@@ -6,7 +6,7 @@ import jax.random as jr
 import jax.tree as jt
 
 from feedbax import get_ensemble, is_module, tree_unzip
-from feedbax.intervene import CurlField, FixedField, schedule_intervenor
+from feedbax.intervene import schedule_intervenor
 from feedbax.misc import attr_str_tree_to_where_func
 from feedbax.task import SimpleReaches
 from feedbax.train import filter_spec_leaves

@@ -671,7 +671,7 @@ models = all_models_imp[analysis_variant]
 ```{python}
 suffix = f"imp-steps-{impulse_start_step}-to-{impulse_end_step}_noise-{noise_stds['feedback']}-{noise_stds['motor']}_delay-{feedback_delay_steps}"
 
-figs_dir = FIGS_BASE_DIR / "/{NB_ID}/train__{suffix_train}/{suffix}"
+figs_dir = FIGS_BASE_DIR / "{NB_ID}/train__{suffix_train}/{suffix}"
 
 figs_dir.mkdir(parents=True, exist_ok=True)
 ```

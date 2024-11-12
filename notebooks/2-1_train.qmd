@@ -99,6 +99,13 @@ from feedbax.train import TaskTrainer
 from feedbax.xabdeef.losses import simple_reach_loss
 from feedbax.xabdeef.models import point_mass_nn
 
+from rnns_learn_robust_motor_policies import (
+    FIGS_BASE_DIR,
+    MODELS_DIR, 
+    MODEL_FILE_LABEL,
+    HYPERPARAMS_FILE_LABEL,
+    TRAIN_HISTORIES_FILE_LABEL,
+)
 from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL
 from rnns_learn_robust_motor_policies.misc import write_to_json
 from rnns_learn_robust_motor_policies.part2_setup import (
@@ -132,8 +139,8 @@ NB_ID = "2-1"
 ```
 
 ```{python}
-jax.config.update("jax_disable_jit", True)
-jax.config.update("jax_debug_nans", True)
+# jax.config.update("jax_disable_jit", True)
+# jax.config.update("jax_debug_nans", True)
 ```
 
 ### Hyperparameters
@@ -143,18 +150,18 @@ These are parameters that can be [varied](https://quarto.org/docs/computations/p
 ```{python}
 #| tags: [parameters]
 
-disturbance_type: Literal['curl', 'random'] = 'curl'  
+disturbance_type: Literal['curl', 'random'] = 'random'  
 feedback_delay_steps = 0
 feedback_noise_std = 0.0
 motor_noise_std = 0.0
 p_perturbed = {
-    'active': 0.5,
+    'active': 0.25,
     # The rest don't do anything atm, even if they're <1
-    'amplitude': 0.5,  
-    'std': 0.5,  
+    'amplitude': 1.0,  
+    'std': 0.25,  
 }
 hidden_size = 50
-n_replicates = 1  # TODO
+n_replicates = 5  # TODO
 n_steps = 100
 dt = 0.05
 cosine_annealing_alpha = 0.01
@@ -171,21 +178,10 @@ suffix = '_'.join([
 ### Directories and filenames setup
 
 ```{python}
-FIGS_BASE_DIR = Path('/mnt/storage/tmp/figures')
-MODELS_DIR = Path('../models')
-
 figs_dir = FIGS_BASE_DIR / f'{NB_ID}/{suffix}'
 
 for d in (figs_dir, MODELS_DIR):
     d.mkdir(parents=True, exist_ok=True)
-```
-
-Define the strings used to construct the filenames for serialised models and training histories.
-
-```{python}
-MODEL_FILE_LABEL = "trained_models"
-TRAIN_HISTORIES_FILE_LABEL = "train_histories"
-HYPERPARAMS_FILE_LABEL = "hyperparameters"
 ```
 
 ### Plotting setup
@@ -304,7 +300,7 @@ def train_pair(pair):
 
 trained_models, train_histories = tree_unzip(tree_map_tqdm(
     train_pair, 
-    task_model_pairs['std'],
+    task_model_pairs,
     is_leaf=is_type(TaskModelPair),
 ))
 ```

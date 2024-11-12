@@ -143,13 +143,13 @@ We may want to specify 1) which trained models to load, by their parameters, and
 #| tags: [parameters]
 
 # Specify which trained models to load 
-disturbance_type_load: Literal['curl', 'random'] = 'curl'
+disturbance_type_load: Literal['curl', 'random'] = 'random'
 feedback_noise_std_load = 0.0
 motor_noise_std_load = 0.0
 feedback_delay_steps_load = 0
 
 # Specify model parameters to use for analysis (None -> use training value)
-disturbance_type: Optional[Literal['curl', 'random']] = None
+disturbance_type: Optional[Literal['curl', 'random']] = 'curl'
 feedback_noise_std: Optional[float] = None
 motor_noise_std: Optional[float] = None
 ```
@@ -247,7 +247,7 @@ trained_models_load: dict[float, eqx.Module] = load(
 ```
 
 ```{python}
-hyperparameters_filepath = models_filepath.replace(f'{BEST_MODEL_FILE_LABEL}.eqx', '{HYPERPARAMS_FILE_LABEL}.json')
+hyperparameters_filepath = models_filepath.replace(f'{BEST_MODEL_FILE_LABEL}.eqx', f'{HYPERPARAMS_FILE_LABEL}.json')
 hyperparameters = load_from_json(hyperparameters_filepath)
 replicate_info_filepath = models_filepath.replace(f'{BEST_MODEL_FILE_LABEL}', f'{REPLICATE_INFO_FILE_LABEL}')
 replicate_info = load(
@@ -384,7 +384,7 @@ The hierarchy of figure directories depends on the hyperparameters of the traine
 ```{python}
 suffix = f"{disturbance_type}_noise-{noise_stds['feedback']}-{noise_stds['motor']}_delay-{feedback_delay_steps}"
 
-figs_dir = FIGS_BASE_DIR / f"/{NB_ID}/train__{suffix_train}/{suffix}"
+figs_dir = FIGS_BASE_DIR / f"{NB_ID}/train__{suffix_train}/{suffix}"
 
 for d in (figs_dir,):
     d.mkdir(parents=True, exist_ok=True)
@@ -634,6 +634,10 @@ plot_condition_trajectories = partial(
 ### Comparison across context inputs
 
 ```{python}
+fig_subdir = "aligned_to_reach_condition/compare_context_inputs"
+```
+
+```{python}
 plot_vars_stacked = jt.map(
     lambda d: tree_stack(d.values()),
     aligned_vars_small,
@@ -662,17 +666,20 @@ figs = jt.map(
 
 
 ```{python}
+amplitude = disturbance_amplitude[disturbance_type]
+
 for path, fig in tqdm(figs_flatten_with_paths(figs)):
     training_method = path[0].key
-    disturbance_amplitude = path[1].key
+    disturbance_train_std = path[1].key
     
     add_context_annotation(
         fig,
         perturbations={
-            f"{disturbance_type}": (disturbance_amplitude, None, None)
+            f"{disturbance_type}": (amplitude, None, None)
         },
         train_condition_strs=[
-            f"{disturbance_type_train} fields",
+            f"{disturbance_type_train} fields with std {disturbance_train_std}",
+            "the {training_method.upper()} context condition",
         ],        
         # TODO: The number of replicates (`n_replicates_included`) may vary with the disturbance train std!
         # n=min(n_evals_small * n_replicates, n_curves_max),
@@ -680,11 +687,12 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
     
     add_endpoint_traces(fig, pos_endpoints_small_aligned, xaxis='x1', yaxis='y1')
 
-    # savefig(
-    #     fig, 
-    #     join([
-    #         f"{disturbance_type}-field-{disturbance_amplitude}",
-    #     ]),
-    #     subdir=fig_subdir,
-    # )  
+    savefig(
+        fig, 
+        join([
+            f"{training_method}",
+            f"{disturbance_type}-field-{amplitude}",
+        ]),
+        subdir=fig_subdir,
+    )  
 ```

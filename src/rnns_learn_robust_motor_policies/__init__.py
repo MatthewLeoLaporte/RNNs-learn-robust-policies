@@ -12,7 +12,7 @@ PROJECT_SEED = 5566
 # Directory configuration
 REPO_ROOT = Path(__file__).parent.parent.parent
 CONFIG_DIR = REPO_ROOT / 'config'
-paths = load_yaml(CONFIG_DIR / 'paths.yaml')['paths']
+paths = load_yaml(CONFIG_DIR / 'paths.yml')['paths']
 (MODELS_DIR, FIGS_BASE_DIR) = [
     Path(paths[label])
     for label in ('models_dir', 'figs_base_dir')
@@ -24,6 +24,7 @@ MODEL_FILE_LABEL = "trained_models"
 BEST_MODEL_FILE_LABEL = f"{MODEL_FILE_LABEL}_best_params"
 HYPERPARAMS_FILE_LABEL = "hyperparameters"
 REPLICATE_INFO_FILE_LABEL = "replicate_info"
+TRAIN_HISTORIES_FILE_LABEL = "train_histories"
 
 
 # Set the default Plotly theme

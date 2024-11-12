@@ -75,6 +75,13 @@ from feedbax.train import TaskTrainer
 from feedbax.xabdeef.losses import simple_reach_loss
 from feedbax.xabdeef.models import point_mass_nn
 
+from rnns_learn_robust_motor_policies import (
+    FIGS_BASE_DIR,
+    MODELS_DIR,
+    MODEL_FILE_LABEL,
+    HYPERPARAMS_FILE_LABEL,
+    TRAIN_HISTORIES_FILE_LABEL,
+)
 from rnns_learn_robust_motor_policies.constants import MASS, WORKSPACE
 from rnns_learn_robust_motor_policies.misc import write_to_json
 from rnns_learn_robust_motor_policies.part1_setup import setup_task_model_pairs
@@ -134,19 +141,10 @@ suffix = '_'.join([
 ### Directories and filenames setup
 
 ```{python}
-FIGS_BASE_DIR = Path('/mnt/storage/tmp/figures')
-MODELS_DIR = Path('../models')
-
 figs_dir = FIGS_BASE_DIR / f'{NB_ID}/{suffix}'
 
 for d in (figs_dir, MODELS_DIR):
     d.mkdir(parents=True, exist_ok=True)
-```
-
-```{python}
-MODEL_FILE_LABEL = "trained_models"
-TRAIN_HISTORIES_FILE_LABEL = "train_histories"
-HYPERPARAMS_FILE_LABEL = "hyperparameters"
 ```
 
 ### Plotting setup

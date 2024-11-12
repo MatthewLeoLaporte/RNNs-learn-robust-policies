@@ -1,10 +1,12 @@
 ---
 created: 2024-11-07T11:45
-updated: 2024-11-09T11:12
+updated: 2024-11-11T13:53
 ---
 ## Eigenspectra
 
-Part 1 and part 2; easy enough.
+Part 1 and part 2; easy enough. 
+
+Use the Jacobians around fixed points, since the weight matrix will not reflect the influence of the context input.
 
 ## Unit perturbations and tuning
 
@@ -16,7 +18,13 @@ How do the individual units change their responses to a feedback impulse when th
 What happens if we send sensory feedback to only a subset of network units?
 
 - Do more-robust networks have stronger weights between these units, and the rest of the network? 
-- Does increasing the context input, increase the effective gains between these units and the rest of the network? For example, if we perturb these units individually, and we also ensure that there is no direct readout from them, then any effect on the output must be through other units in the network.
+- Does increasing the context input, increase the effective gains between these units and the rest of the network? 
+
+If we perturb these units individually, and we also ensure that there is no direct readout from them, then any effect on the output must be through other units in the network.
+
+### Directional tuning 
+
+Perturb a single unit while reaching in N different directions → compare with the unperturbed-unit reaches → recover the unit’s tuning with respect to movement direction
 
 ### Robustness
 
@@ -27,8 +35,6 @@ How robust are hidden trajectories to unit perturbations?
 - Interpolating the goals-goals and inits-goals manifolds across context inputs
 - Do fixed points change location in state space?
 - Do attractors steepen with increasing context input?
-
-
 
 ## Alignment of unit activities and output weights
 
