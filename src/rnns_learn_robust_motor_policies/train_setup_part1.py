@@ -20,6 +20,7 @@ from rnns_learn_robust_motor_policies.constants import (
     WORKSPACE,
 )
 from rnns_learn_robust_motor_policies.misc import vector_with_gaussian_length
+from rnns_learn_robust_motor_policies.setup_utils import get_base_task
 from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainStdDict
 
 
@@ -33,7 +34,6 @@ def setup_task_model_pairs(
     *,
     n_replicates,
     dt,
-    mass, # TODO: Remove 
     hidden_size,
     n_steps,
     feedback_delay_steps,
@@ -43,14 +43,7 @@ def setup_task_model_pairs(
     disturbance_stds,
     key,
 ):
-    task_base = SimpleReaches(
-        loss_func=simple_reach_loss(),
-        workspace=WORKSPACE, 
-        n_steps=n_steps,
-        eval_grid_n=2,
-        eval_n_directions=8,
-        eval_reach_length=0.5,    
-    )
+    task_base = get_base_task(n_steps)
     
     models = get_ensemble(
         point_mass_nn,

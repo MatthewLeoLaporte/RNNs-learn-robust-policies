@@ -76,15 +76,15 @@ from feedbax.xabdeef.losses import simple_reach_loss
 from feedbax.xabdeef.models import point_mass_nn
 
 from rnns_learn_robust_motor_policies import (
+    PROJECT_SEED,
     FIGS_BASE_DIR,
     MODELS_DIR,
     MODEL_FILE_LABEL,
     HYPERPARAMS_FILE_LABEL,
     TRAIN_HISTORIES_FILE_LABEL,
 )
-from rnns_learn_robust_motor_policies.constants import MASS, WORKSPACE
 from rnns_learn_robust_motor_policies.misc import write_to_json
-from rnns_learn_robust_motor_policies.part1_setup import setup_task_model_pairs
+from rnns_learn_robust_motor_policies.train_setup_part1 import setup_task_model_pairs
 from rnns_learn_robust_motor_policies.plot_utils import get_savefig_func
 from rnns_learn_robust_motor_policies.setup_utils import filename_join as join
 from rnns_learn_robust_motor_policies.tree_utils import pp
@@ -158,8 +158,7 @@ savefig = get_savefig_func(figs_dir)
 ### RNG setup
 
 ```{python}
-SEED = 5566
-key = jr.PRNGKey(SEED)
+key = jr.PRNGKey(PROJECT_SEED)
 key_init, key_train, key_eval = jr.split(key, 3)
 ```
 
@@ -177,7 +176,6 @@ if not disturbance_type in ['curl', 'random']:
 task_model_pairs = setup_task_model_pairs(
     n_replicates=n_replicates,
     dt=dt,
-    mass=MASS,
     hidden_size=hidden_size,
     n_steps=n_steps,
     feedback_delay_steps=feedback_delay_steps,
@@ -200,7 +198,7 @@ constant_lr_iterations = 10  # Number of initial training iterations to hold lr 
 alpha = cosine_annealing_alpha  # Max learning rate factor decrease during cosine annealing (see notebook hyperparameters)
 weight_decay = 0
 
-n_batches = 1000
+n_batches = 5000
 batch_size = 250
 
 optimizer_class = partial(
@@ -290,7 +288,6 @@ model_hyperparameters = dict(
     feedback_delay_steps=feedback_delay_steps,
     feedback_noise_std=feedback_noise_std,
     motor_noise_std=motor_noise_std,
-    mass=MASS,
     dt=dt,
     n_steps=n_steps,
     disturbance_type=disturbance_type,
@@ -311,7 +308,7 @@ write_to_json(
 )
 ```
 
-To reload our models in later notebooks, we will need a function that regenerates a skeleton PyTree with the same structure as `saved_models`, given the stored `model_hyperparameters`. See the function `setup_models` in `src/rnns_learn_robust_motor_policies/part1_setup.py`.
+To reload our models in later notebooks, we will need a function that regenerates a skeleton PyTree with the same structure as `saved_models`, given the stored `model_hyperparameters`. See the function `setup_models` in `src/rnns_learn_robust_motor_policies/train_setup_part1.py`.
 
 ### Save training histories
 

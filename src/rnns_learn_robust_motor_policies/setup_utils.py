@@ -15,9 +15,25 @@ import jax.tree as jt
 from feedbax import is_type, is_module
 from feedbax.misc import attr_str_tree_to_where_func
 from feedbax.noise import Multiplicative, Normal
+from feedbax.task import SimpleReaches
 from feedbax.train import TaskTrainerHistory, init_task_trainer_history
 from feedbax._tree import tree_zip_named, tree_unzip
 from feedbax.xabdeef.losses import simple_reach_loss
+
+from rnns_learn_robust_motor_policies.constants import (
+    TASK_EVAL_PARAMS,
+    N_STEPS,
+    WORKSPACE,
+)
+
+
+def get_base_task(n_steps: int = N_STEPS) -> SimpleReaches:
+    return SimpleReaches(
+        loss_func=simple_reach_loss(),
+        workspace=WORKSPACE, 
+        n_steps=n_steps,
+        **TASK_EVAL_PARAMS['full'], 
+    )
 
 
 def get_latest_matching_file(directory: str, pattern: str) -> Optional[str]:
@@ -234,3 +250,16 @@ def setup_tasks_only(task_model_pair_setup_func, **kwargs):
     task_model_pairs = task_model_pair_setup_func(**kwargs)
     tasks, _ = tree_unzip(task_model_pairs)
     return tasks
+
+
+def convert_tasks_to_small(tasks):
+    """Given a PyTree of tasks, return a matching PyTree where each task uses the small set of validation trials."""
+    return jt.map(
+        lambda task: eqx.tree_at(
+            lambda task: tuple(getattr(task, k) for k in TASK_EVAL_PARAMS['small']),
+            task, 
+            tuple(TASK_EVAL_PARAMS['small'].values()),
+        ),
+        tasks,
+        is_leaf=is_module,
+    )

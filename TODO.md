@@ -1,12 +1,13 @@
 ---
 created: 2024-10-04T11:27
-updated: 2024-11-11T15:41
+updated: 2024-11-12T17:08
 ---
 
 - [ ] **Finish setting up database**
 - [ ] **Debug NaN in ‘std’ variant** 
-- [ ] **Eigendecomposition of steady-state Jacobians (part 2)**
-- [ ] **Readout magnitude and PC-output correlation (part 1)**
+- [ ] **Eigendecomposition of steady-state Jacobians**
+- [x] Readout magnitude
+- [x] Activity-output correlation 
 - [ ] Move part 1 training to a script + a yaml file defining which hyperparameters to train — or otherwise we’ll have to use batch quarto render 
 - [ ] Retrain part 1 models… again
 	- Make sure to get rid of `MASS` from `setup_task_model_pairs` first

@@ -36,13 +36,6 @@ from feedbax._tree import tree_labels
 
 from rnns_learn_robust_motor_policies.misc import load_from_json, write_to_json
 from rnns_learn_robust_motor_policies.plot_utils import get_savefig_func
-from rnns_learn_robust_motor_policies.part1_setup import (
-    setup_task_model_pairs as setup_task_model_pairs_p1
-)
-from rnns_learn_robust_motor_policies.part2_setup import (
-    setup_task_model_pairs as setup_task_model_pairs_p2
-)
-from rnns_learn_robust_motor_policies.part2_setup import TrainStdDict
 from rnns_learn_robust_motor_policies.setup_utils import (
     setup_train_histories,
     setup_models_only,
@@ -54,6 +47,13 @@ from rnns_learn_robust_motor_policies.state_utils import (
     get_pos_endpoints,
     vmap_eval_ensemble,
 )
+from rnns_learn_robust_motor_policies.train_setup_part1 import (
+    setup_task_model_pairs as setup_task_model_pairs_p1
+)
+from rnns_learn_robust_motor_policies.train_setup_part2 import (
+    setup_task_model_pairs as setup_task_model_pairs_p2
+)
+from rnns_learn_robust_motor_policies.types import TrainStdDict
 
 
 logging.basicConfig(
@@ -398,6 +398,12 @@ def compute_replicate_info(
         is_leaf=is_module,
     )
     
+    readout_norm = jt.map(
+        lambda model: jnp.linalg.norm(model.step.net.readout.weight, axis=(-2, -1), ord='fro'),
+        models,
+        is_leaf=is_module,        
+    )
+    
     return dict(
         best_save_idx=best_save_idx,
         best_saved_iteration_by_replicate=best_saved_iterations,
@@ -405,6 +411,7 @@ def compute_replicate_info(
         losses_at_final_saved_iteration=losses_at_final_saved_iteration,
         best_replicates=best_replicates,
         included_replicates=included_replicates,
+        readout_norm=readout_norm,
     )   
     
     
@@ -432,19 +439,13 @@ def setup_replicate_info(models, disturbance_stds, n_replicates, *, key):
             best_saved_iteration_by_replicate=[0] * n_replicates,
             losses_at_best_saved_iteration=jnp.zeros(n_replicates, dtype=float),
             losses_at_final_saved_iteration=jnp.zeros(n_replicates, dtype=float),
+            readout_norm=jnp.zeros(n_replicates, dtype=float),
         ).items()
     } | dict(
         best_replicates=get_measure_dict(0),
         included_replicates=get_measure_dict(jnp.ones(n_replicates, dtype=bool)),
     )
     
-
-    
-    aaa 
-    
-    eqx.tree_pprint(aaa)
-    
-    return aaa
 
 
 def process_model_file(path: str, n_std_exclude: float, filename_pattern: str, figs_base_dir: str, nb_id) -> None:

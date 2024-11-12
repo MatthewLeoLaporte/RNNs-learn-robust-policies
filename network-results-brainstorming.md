@@ -1,13 +1,7 @@
 ---
 created: 2024-11-07T11:45
-updated: 2024-11-11T13:53
+updated: 2024-11-12T15:55
 ---
-## Eigenspectra
-
-Part 1 and part 2; easy enough. 
-
-Use the Jacobians around fixed points, since the weight matrix will not reflect the influence of the context input.
-
 ## Unit perturbations and tuning
 
 - Change in unit gains with value of context input
@@ -35,6 +29,18 @@ How robust are hidden trajectories to unit perturbations?
 - Interpolating the goals-goals and inits-goals manifolds across context inputs
 - Do fixed points change location in state space?
 - Do attractors steepen with increasing context input?
+
+### Linearization
+
+Compute the Jacobians.
+
+- Vmap over reach conditions and context inputs – though figures will only be over context inputs
+
+#### Eigenspectra of Jacobians
+
+#### Frequency response
+
+If we can express the entire system (RNN+plant) as a linear system, we can get a representation in the frequency domain.
 
 ## Alignment of unit activities and output weights
 

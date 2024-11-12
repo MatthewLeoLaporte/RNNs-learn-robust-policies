@@ -1,6 +1,6 @@
 ---
 created: 2024-11-08T10:03
-updated: 2024-11-09T00:02
+updated: 2024-11-12T10:42
 ---
 
 ## Models
@@ -18,6 +18,18 @@ updated: 2024-11-09T00:02
 Summarize the tasks, but perhaps describe them in more detail in [[#Training]] and [[#Analysis]].
 
 - Simple (not delayed) reaching 
+
+### From notebook 1-2a
+
+We will generally evaluate on a $2\times2$ grid of center-out reach sets (i.e. 4 sets total), with 24 reach directions per set. This is to ensure good coverage and a larger set of conditions/trials on which to perform statistics.
+
+In the case of visualization of center-out sets, we'll use a smaller version of the task with only a single set of 7 reaches (using an odd number helps with visualization).
+
+For 4 sets of 24 center-out reaches (i.e. 96 reach conditions), with 10 replicates and 5 evaluations (i.e. 50 trials) per reach condition, and 100 timesteps, evaluating each task variant leads to approximately 1.5 GB of states. If we run out memory, it may be necessary to:
+
+- reduce the number of evaluation reaches (e.g. `n_evals` or `eval_n_directions`);
+- wait to evaluate until we have decided on a subset of trials to plot; i.e. define a function to evaluate subsets of data as needed;
+- evaluate on CPU (assuming we have more RAM available).
 
 ## Training
 

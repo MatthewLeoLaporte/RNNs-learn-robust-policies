@@ -20,6 +20,7 @@ from rnns_learn_robust_motor_policies.constants import (
     MASS, 
     WORKSPACE,
 )
+from rnns_learn_robust_motor_policies.setup_utils import get_base_task
 from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainStdDict
 
 
@@ -78,14 +79,7 @@ def setup_task_model_pairs(
     key,
 ):
     """Returns a skeleton PyTree for reloading trained models."""
-    task_base = SimpleReaches(
-        loss_func=simple_reach_loss(),
-        workspace=WORKSPACE, 
-        n_steps=n_steps,
-        eval_grid_n=2,
-        eval_n_directions=8,
-        eval_reach_length=0.5,    
-    )
+    task_base = get_base_task(n_steps)
     
     models_base = get_ensemble(
         point_mass_nn,
@@ -131,16 +125,3 @@ def setup_task_model_pairs(
     }
     
     return task_model_pairs
-
-
-def setup_models(**kwargs):
-    task_model_pairs = setup_task_model_pairs(**kwargs)
-    _, models = tree_unzip(task_model_pairs)
-    return models
-
-
-def setup_tasks(**kwargs):
-    """Returns a skeleton PyTree for reloading trained models."""
-    task_model_pairs = setup_task_model_pairs(**kwargs)
-    tasks, _ = tree_unzip(task_model_pairs)
-    return tasks

@@ -108,7 +108,7 @@ from rnns_learn_robust_motor_policies import (
 )
 from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL
 from rnns_learn_robust_motor_policies.misc import write_to_json
-from rnns_learn_robust_motor_policies.part2_setup import (
+from rnns_learn_robust_motor_policies.train_setup_part2 import (
     setup_task_model_pairs, 
     setup_models,
 )
@@ -210,7 +210,7 @@ We need to define:
 4. The form of the context input to the neural network; 
 5. Finally, the task-model pairs that will be trained on each disturbance amplitude, for each training variant.
 
-Some of these (e.g. the form of the context input, `CONTEXT_INPUT_FUNCS`) are defined once and for all in the project module `part2_setup.py`.
+Some of these (e.g. the form of the context input, `CONTEXT_INPUT_FUNCS`) are defined once and for all in the project module `train_setup_part2.py`.
 
 ```{python}
 # Define the probability that a trial will be disturbed for those training methods where the 
@@ -361,7 +361,7 @@ write_to_json(
 )
 ```
 
-To reload our models in later notebooks, we will need a function that regenerates a skeleton PyTree with the same structure as `saved_models`, given the stored `model_hyperparameters`. See the function `setup_models` in `src/rnns_learn_robust_motor_policies/part1_setup.py`.
+To reload our models in later notebooks, we will need a function that regenerates a skeleton PyTree with the same structure as `saved_models`, given the stored `model_hyperparameters`. See the function `setup_models` in `src/rnns_learn_robust_motor_policies/train_setup_part1.py`.
 
 ### Save training histories
 

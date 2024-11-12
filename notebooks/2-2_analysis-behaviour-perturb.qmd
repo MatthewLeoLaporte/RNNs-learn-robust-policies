@@ -77,7 +77,7 @@ from rnns_learn_robust_motor_policies.colors import (
 )
 from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL, WORKSPACE
 from rnns_learn_robust_motor_policies.misc import lohi, load_from_json
-from rnns_learn_robust_motor_policies.part2_setup import (
+from rnns_learn_robust_motor_policies.train_setup_part2 import (
     setup_task_model_pairs, 
 )
 from rnns_learn_robust_motor_policies.plot_utils import (
@@ -92,6 +92,7 @@ from rnns_learn_robust_motor_policies.setup_utils import (
     display_model_filechooser,
     filename_join as join,
     find_unique_filepath,
+    convert_tasks_to_small,
     set_model_noise,
     setup_models_only,
     setup_train_histories,
@@ -132,7 +133,7 @@ Unique ID for notebook, for naming outputs.
 NB_ID = "2-2"
 
 # TODO: This is clear in the eval_rules file; probably don't need to specify here again
-TRAIN_PREFIX = "2-1"  # Notebook the models were trained in
+TRAIN_NB_ID = "2-1"  # Notebook the models were trained in
 ```
 
 ### Hyperparameters
@@ -220,7 +221,7 @@ Maybe the user wants to browse and select a trained model file. In that case we 
 
 ```{python}
 if not load_from_parameters:
-    fc = display_model_filechooser(MODELS_DIR, filter_pattern=f'{TRAIN_PREFIX}_*trained_models*')
+    fc = display_model_filechooser(MODELS_DIR, filter_pattern=f'{TRAIN_NB_ID}_*trained_models*')
 ```
 
 The default filename is the one that sorts last. If the user does not select a file or if the following cell is run before they do, then the default file will be loaded.
@@ -236,7 +237,7 @@ if not load_from_parameters:
         models_filepath = fc.selected
 else: 
     models_filepath = str(find_unique_filepath(
-        MODELS_DIR, f"{TRAIN_PREFIX}__{suffix_load}__{BEST_MODEL_FILE_LABEL}"
+        MODELS_DIR, f"{TRAIN_NB_ID}__{suffix_load}__{BEST_MODEL_FILE_LABEL}"
     ))
     if models_filepath is None:
         raise FileNotFoundError(f"No models found with file label: {suffix_load}")
@@ -475,26 +476,10 @@ tasks = ContextInputDict({
 })
 ```
 
-### Make smaller versions of the tasks for visualization.
+Make smaller versions of the tasks for visualization.
 
 ```{python}
-tasks_small = jt.map(
-    lambda task: eqx.tree_at(
-        lambda task: (
-            task.eval_grid_n,
-            task.eval_n_directions,
-            task.eval_reach_length,
-        ),
-        task, 
-        (
-            eval_grid_n_small, 
-            eval_n_directions_small, 
-            eval_reach_length_small,
-        ),
-    ),
-    tasks,
-    is_leaf=is_module,
-)
+tasks_small = convert_tasks_to_small(tasks)
 ``` 
 
 ### Assign some things for convenient reference

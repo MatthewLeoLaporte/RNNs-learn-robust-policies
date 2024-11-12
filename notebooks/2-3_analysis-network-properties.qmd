@@ -1,0 +1,393 @@
+---
+jupyter: python3
+format:
+  html:
+    toc: true 
+execute:
+  echo: false
+---
+
+# Analysis of network properties
+
+Here are some basic analyses of network weights and activities. 
+
+1. Eigendecomposition of the Jacobian matrix at the goal steady-state.
+2. Norm of the readout weights in different training conditions.
+3. Correlation between top PCs and the network output -- this should be related to 2.
+
+## Environment setup
+
+Unique ID for notebook, for naming outputs.
+
+```{python}
+NB_ID = "2-3"
+
+TRAIN_NB_ID = "2-1"
+```
+
+```{python}
+%load_ext autoreload
+%autoreload 2
+```
+
+```{python}
+import os
+
+os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
+```
+
+```{python}
+from collections import OrderedDict, namedtuple
+from functools import partial
+from itertools import zip_longest
+from pathlib import Path
+from operator import itemgetter
+from typing import Literal, Optional
+
+import equinox as eqx
+import jax
+import jax.numpy as jnp
+import jax.random as jr
+import jax.tree as jt
+import matplotlib.pyplot as plt
+import numpy as np
+import plotly.colors as plc
+import plotly.graph_objects as go
+from tqdm.auto import tqdm
+
+from feedbax import (
+    is_module, 
+    is_type,
+    load, 
+    tree_set_scalar,
+    tree_stack,
+    tree_struct_bytes,
+    tree_take, 
+    tree_take_multi,
+    tree_unzip,
+)
+from feedbax.channel import toggle_channel_noise
+from feedbax.intervene import (
+    CurlField, 
+    FixedField, 
+    add_intervenors, 
+    schedule_intervenor,
+)
+from feedbax.misc import git_commit_id, attr_str_tree_to_where_func
+import feedbax.plotly as fbp
+from feedbax.task import SimpleReaches
+from feedbax.xabdeef.losses import simple_reach_loss
+
+from rnns_learn_robust_motor_policies import (
+    FIGS_BASE_DIR, 
+    MODELS_DIR, 
+    PROJECT_SEED,
+    HYPERPARAMS_FILE_LABEL,
+    BEST_MODEL_FILE_LABEL,
+    MODEL_FILE_LABEL,
+    REPLICATE_INFO_FILE_LABEL,
+)
+from rnns_learn_robust_motor_policies.colors import (
+    COLORSCALES, 
+    MEAN_LIGHTEN_FACTOR,
+    get_colors_dicts,
+)
+from rnns_learn_robust_motor_policies.misc import lohi, load_from_json
+from rnns_learn_robust_motor_policies.train_setup_part2 import setup_task_model_pairs
+from rnns_learn_robust_motor_policies.post_training import setup_replicate_info
+from rnns_learn_robust_motor_policies.plot_utils import (
+    add_context_annotation,
+    add_endpoint_traces,
+    figleaves,
+    get_savefig_func,
+)
+from rnns_learn_robust_motor_policies.setup_utils import (
+    display_model_filechooser,
+    filename_join as join,
+    find_unique_filepath,
+    get_base_task,
+    set_model_noise,
+    setup_train_histories,
+    setup_models_only,
+)
+from rnns_learn_robust_motor_policies.state_utils import (
+    get_aligned_vars,
+    get_forward_lateral_vel, 
+    get_lateral_distance,
+    get_pos_endpoints,
+    orthogonal_field,
+    vmap_eval_ensemble,
+)
+from rnns_learn_robust_motor_policies.tree_utils import (
+    pp,
+    subdict, 
+    swap_model_trainables, 
+)
+from rnns_learn_robust_motor_policies.types import PertAmpDict, TrainStdDict
+```
+
+Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
+
+```{python}
+for mod in (jax, eqx): 
+    print(f"{mod.__name__} version: {mod.__version__}")
+    
+print(f"feedbax commit: {git_commit_id()}\n")
+```
+
+### Hyperparameters
+
+```{python}
+#| tags: [parameters]
+
+# Specify which trained models to load 
+disturbance_type_load: Literal['curl', 'random'] = 'random'
+feedback_noise_std_load = 0.0
+motor_noise_std_load = 0.0
+feedback_delay_steps_load = 0
+
+# Specify model parameters to use for analysis (None -> use training value)
+disturbance_type: Optional[Literal['curl', 'random']] = None
+feedback_noise_std: Optional[float] = None
+motor_noise_std: Optional[float] = None
+```
+
+```{python}
+feedback_noise_std_load = float(feedback_noise_std_load)
+motor_noise_std_load = float(motor_noise_std_load)
+feedback_delay_steps_load = int(feedback_delay_steps_load)
+if feedback_noise_std is not None:
+    feedback_noise_std = float(feedback_noise_std)
+if motor_noise_std is not None:
+    motor_noise_std = float(motor_noise_std)
+```
+
+```{python}
+noise_stds = dict(
+    feedback=feedback_noise_std,
+    motor=motor_noise_std,
+)
+```
+
+### Directories and filenames
+
+```{python}
+if not MODELS_DIR.exists():
+    raise FileNotFoundError(f"Models directory not found: {MODELS_DIR.absolute()}")
+```
+
+### RNG setup
+
+```{python}
+key = jr.PRNGKey(PROJECT_SEED)
+key_init, key_train, key_eval = jr.split(key, 3)
+```
+
+## Load and adjust trained models
+
+```{python}
+load_from_parameters = True
+```
+
+```{python}
+suffix_load = '_'.join([
+    f"{disturbance_type_load}",
+    f"noise-{feedback_noise_std_load}-{motor_noise_std_load}",
+    f"delay-{feedback_delay_steps_load}",
+])
+
+if load_from_parameters and 'None' in suffix_load:
+    raise ValueError("If loading from parameters, all parameters must be specified.")
+```
+
+```{python}
+# filter_pattern = "1-1_*trained_models*"
+filter_pattern = f"{TRAIN_NB_ID}_*{MODEL_FILE_LABEL}*"
+
+if not load_from_parameters:
+    fc = display_model_filechooser(MODELS_DIR, filter_pattern=filter_pattern)
+```
+
+```{python}
+if not load_from_parameters:
+    if fc.selected is None:
+        models_filepath = f"{fc.default_path}/{fc.default_filename}"
+    else:
+        models_filepath = fc.selected
+else: 
+    models_filepath = str(find_unique_filepath(
+        MODELS_DIR, f"{TRAIN_NB_ID}__{suffix_load}__{BEST_MODEL_FILE_LABEL}"
+    ))
+    if models_filepath is None:
+        raise FileNotFoundError(f"No models found with file label: {suffix_load}")
+```
+
+```{python}
+trained_models_load: dict[float, eqx.Module] = load(
+    MODELS_DIR / models_filepath, partial(setup_models_only, setup_task_model_pairs),
+)
+```
+
+```{python}
+hyperparameters_filepath = models_filepath.replace(
+    f'{BEST_MODEL_FILE_LABEL}.eqx', 
+    f'{HYPERPARAMS_FILE_LABEL}.json',
+)
+hyperparameters = load_from_json(hyperparameters_filepath)
+replicate_info_filepath = models_filepath.replace(
+    f'{BEST_MODEL_FILE_LABEL}', 
+    f'{REPLICATE_INFO_FILE_LABEL}',
+)
+replicate_info = load(
+    replicate_info_filepath, partial(setup_replicate_info, trained_models_load),
+)
+
+disturbance_train_stds_load = hyperparameters['disturbance_stds']
+n_replicates = hyperparameters['n_replicates']
+n_steps = hyperparameters['n_steps']
+
+# We'll use this for creating figure subdirectories according to the training conditions
+suffix_train = models_filepath.split('__')[1]
+```
+
+### Modify the system noise if needed
+
+```{python}
+trained_models_load = jt.map(
+    partial(
+        set_model_noise, 
+        noise_stds=noise_stds,
+        enable_noise=True,
+    ),
+    trained_models_load,
+    is_leaf=is_module,
+)
+```
+
+### Optionally exclude replicates that perform much worse than average
+
+```{python}
+exclude_underperformers = True
+```
+
+```{python}
+measure_to_exclude_by = 'best_total_loss'
+
+included_replicates = replicate_info['included_replicates'][measure_to_exclude_by]
+best_replicate = replicate_info['best_replicates'][measure_to_exclude_by]
+
+def take_replicate_or_best(tree: TrainStdDict, i_replicate=None, replicate_axis=1):
+    if i_replicate is None:
+        map_func = lambda tree: TrainStdDict({
+            train_std: tree_take(subtree, best_replicate[train_std], replicate_axis)
+            for train_std, subtree in tree.items()
+        })
+    else:
+        map_func = lambda tree: tree_take_multi(tree, [i_replicate], [replicate_axis])
+        
+    return jt.map(map_func, tree, is_leaf=is_type(TrainStdDict))
+```
+
+```{python}
+trained_models_all_replicates = trained_models_load
+
+# Set model weights to NaN if excluded
+if exclude_underperformers:
+    trained_models = jt.map(
+        lambda models, included: tree_set_scalar(models, jnp.nan, jnp.where(~included)[0]),
+        trained_models_load, included_replicates,
+        is_leaf=is_module,
+    )
+    n_replicates_included = jt.map(lambda x: jnp.sum(x).item(), included_replicates)
+else:
+    trained_models = trained_models_load
+    n_replicates_included = dict.fromkeys(trained_models.keys(), n_replicates)
+```
+
+### Sort out the training and testing hyperparameters
+
+The following will never vary between training and analysis.
+
+```{python}
+feedback_delay_steps = hyperparameters['feedback_delay_steps']
+```
+
+The following may change for the analysis, but we may want to refer to the training values.
+
+```{python}
+disturbance_type_train = hyperparameters['disturbance_type']
+noise_stds_train = dict(
+    feedback=hyperparameters['feedback_noise_std'],
+    motor=hyperparameters['motor_noise_std'],
+)
+```
+
+If we didn't alter the disturbance type or noise levels for the analysis, we can infer they'll be the same as the ones used during training.
+
+```{python}
+if disturbance_type is None:
+    disturbance_type = disturbance_type_train
+
+noise_stds = {
+    k: v if v is not None else noise_stds_train[k]
+    for k, v in noise_stds.items()
+} 
+
+any_system_noise = any(jt.leaves(noise_stds))
+```
+
+### Setup figure directories
+
+The hierarchy of figure directories depends on the hyperparameters of the trained model. Now that we've sorted that out, we can set up the base subdirectory for figures generated in the analyses that follow in this notebook.
+
+```{python}
+suffix = f"{disturbance_type}_noise-{noise_stds['feedback']}-{noise_stds['motor']}_delay-{feedback_delay_steps}"
+
+figs_dir = FIGS_BASE_DIR / f"{NB_ID}/train__{suffix_train}/{suffix}"
+
+for d in (figs_dir,):
+    d.mkdir(parents=True, exist_ok=True)
+```
+
+```{python}
+savefig = get_savefig_func(figs_dir)
+```
+
+## Get goal steady-state fixed points
+
+**TODO**: Vmap this calculation over the different goal positions, as well as over the values of the context input
+
+
+## Eigendecomposition of goal steady-state Jacobians
+
+**TODO**: We need a value of `h` to calculate these; i.e. we need to input the respective fixed points
+
+```{python}
+task = get_base_task()
+
+goals_pos = task.validation_trials.targets["mechanics.effector.pos"].value[:, -1]
+
+def get_rnn_func(net):
+    def rnn_func(key, pos, context, h): 
+        return net(jnp.concatenate([pos, pos, context]), h, key=key)
+    return rnn_func 
+    
+jacobian_funcs = jt.map(
+    lambda model: jax.jacobian(get_rnn_func(model.step.net)),
+    trained_models,
+    is_leaf=is_module,
+)
+
+jacobians = jt.map(
+    lambda jac_func: eqx.filter_vmap(
+        eqx.filter_vmap(
+            jac_func, 
+            # Map over context inputs
+            in_axes=(None, None, 0, None),
+        ),
+        # Map over goal positions
+        in_axes=(None, 0, None, None),
+    ),
+    jacobian_funcs,
+)
+```
