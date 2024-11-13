@@ -80,9 +80,11 @@ from rnns_learn_robust_motor_policies.misc import lohi, load_from_json
 from rnns_learn_robust_motor_policies.train_setup_part2 import (
     setup_task_model_pairs, 
 )
+from rnns_learn_robust_motor_policies.plot import (
+    add_endpoint_traces,
+)
 from rnns_learn_robust_motor_policies.plot_utils import (
     add_context_annotation,
-    add_endpoint_traces,
     figleaves,
     figs_flatten_with_paths,
     get_savefig_func,

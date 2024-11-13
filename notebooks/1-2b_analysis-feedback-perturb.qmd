@@ -94,9 +94,11 @@ from rnns_learn_robust_motor_policies.train_setup_part1 import (
     setup_model_parameter_histories,
     setup_task_model_pairs,
 )
+from rnns_learn_robust_motor_policies.plot import (
+    add_endpoint_traces,
+)
 from rnns_learn_robust_motor_policies.plot_utils import (
     add_context_annotation,
-    add_endpoint_traces,
     get_savefig_func,
     toggle_bounds_visibility,
     get_merged_context_annotation,

@@ -1,10 +1,16 @@
 from collections.abc import Callable
+from typing import Any, TypeVar, Sequence
+
 import equinox as eqx 
+import jax.tree as jt
 from jaxtyping import PyTree
 import plotly.graph_objects as go
 
 from feedbax import is_module
 from feedbax._tree import eitherf, is_type
+
+
+T = TypeVar("T")
 
 
 def swap_model_trainables(model: PyTree[..., "T"], trained: PyTree[..., "T"], where_train: Callable):
@@ -15,10 +21,20 @@ def swap_model_trainables(model: PyTree[..., "T"], trained: PyTree[..., "T"], wh
     )
     
 
-def subdict(dct, keys):
+def subdict(dct: dict[T, Any], keys: Sequence[T]):
+    """Returns the dict containing only the keys `keys`."""
     return type(dct)({k: dct[k] for k in keys})
 
 
+def subset_dict_tree_level(tree: PyTree[dict[T, Any]], keys: Sequence[T], dict_type=dict):
+    """Maps `subdict` over dicts of a given type"""
+    return jt.map(
+        lambda d: subdict(d, keys),
+        tree,
+        is_leaf=is_type(dict_type),
+    )
+
+
 def pp(tree):
-    """Helper to pretty-print PyTrees, truncating objects commonly treated as leaves during data analysis."""
+    """Pretty-prints PyTrees, truncating objects commonly treated as leaves during data analysis."""
     eqx.tree_pprint(tree, truncate_leaf=eitherf(is_module, is_type(go.Figure)))
