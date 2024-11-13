@@ -2,6 +2,15 @@
 jupyter: python3
 ---
 
+```{python}
+%load_ext autoreload
+%autoreload 2
+```
+
+```{python}
+NB_ID = "1-1"
+```
+
 # Training models for Part 1
 
 In this notebook we train several models separately from each other, to support later analyses of whether RNNs can be learn robust policies for a simple continuous control task. In particular, we train an RNN to drive a point mass from an initial position to a target position (i.e. simple reaching) in a 2D workspace. One model will be trained to do this undisturbed, while another will experience a disturbance which cannot be modeled (curl force fields of random direction and magnitude) on each trial/episode. In the latter case, two variants of the model will be trained, at two levels of average disturbance magnitude.
@@ -20,11 +29,6 @@ The training objective is to minimize a continuous cost function which penalizes
 - the activations of the network units.
 
 ## Environment setup
-
-```{python}
-%load_ext autoreload
-%autoreload 2
-```
 
 ```{python}
 import os
@@ -77,11 +81,16 @@ from feedbax.xabdeef.models import point_mass_nn
 
 from rnns_learn_robust_motor_policies import (
     PROJECT_SEED,
+    DB_DIR,
     FIGS_BASE_DIR,
     MODELS_DIR,
     MODEL_FILE_LABEL,
     HYPERPARAMS_FILE_LABEL,
     TRAIN_HISTORIES_FILE_LABEL,
+)
+from rnns_learn_robust_motor_policies.database import (
+    get_db_session,
+    save_model_and_add_record,
 )
 from rnns_learn_robust_motor_policies.misc import write_to_json
 from rnns_learn_robust_motor_policies.train_setup_part1 import setup_task_model_pairs
@@ -104,10 +113,10 @@ for mod in (jax, eqx, optax):
 print(f"feedbax commit: {git_commit_id()}\n")
 ```
 
-Unique ID for notebook, for naming outputs.
- 
+### Initialize model database connection
+
 ```{python}
-NB_ID = "1-1"
+db_session = get_db_session("models")
 ```
 
 ### Hyperparameters
@@ -230,6 +239,35 @@ trainer = TaskTrainer(
 )
 ```
 
+## tmp
+
+```{python}
+training_hyperparameters = dict(
+    learning_rate_0=learning_rate_0,
+    constant_lr_iterations=constant_lr_iterations,
+    cosine_annealing_alpha=cosine_annealing_alpha,
+    weight_decay=weight_decay,
+    n_batches=n_batches,
+    batch_size=batch_size,
+    save_model_parameters=save_model_parameters.tolist(),
+    where_train_strs=where_func_to_labels(where_train),
+)
+```
+
+```{python}
+model_hyperparameters = dict(
+    n_replicates=n_replicates,
+    hidden_size=hidden_size,
+    feedback_delay_steps=feedback_delay_steps,
+    feedback_noise_std=feedback_noise_std,
+    motor_noise_std=motor_noise_std,
+    dt=dt,
+    n_steps=n_steps,
+    disturbance_type=disturbance_type,
+    disturbance_stds=disturbance_stds[disturbance_type],
+)
+```
+
 ## Train the models
 
 ```{python}
@@ -257,19 +295,7 @@ trained_models, train_histories = tree_unzip(tree_map_tqdm(
 ## Save the models with their parameters on the final iteration
 
 ```{python}
-# datestr = get_datestr()
-
-model_basename = join([
-    NB_ID,
-    suffix,
-    MODEL_FILE_LABEL,
-])
-```
-
-```{python}
 training_hyperparameters = dict(
-    nb_id=NB_ID,
-    suffix=suffix,
     learning_rate_0=learning_rate_0,
     constant_lr_iterations=constant_lr_iterations,
     cosine_annealing_alpha=cosine_annealing_alpha,
@@ -292,6 +318,29 @@ model_hyperparameters = dict(
     n_steps=n_steps,
     disturbance_type=disturbance_type,
     disturbance_stds=disturbance_stds[disturbance_type],
+)
+```
+
+```{python}
+train_histories_hyperparameters=dict(
+    disturbance_stds=disturbance_stds,
+    n_batches=n_batches,
+    batch_size=batch_size,
+    n_replicates=n_replicates,
+    where_train_strs=where_func_to_labels(where_train),
+    save_model_parameters=save_model_parameters.tolist(),
+)
+```
+
+```{python}
+model_record = save_model_and_add_record(
+    db_session,
+    notebook_id=NB_ID,
+    model=trained_models,
+    model_hyperparameters=model_hyperparameters,
+    other_hyperparameters=training_hyperparameters,
+    train_history=train_histories,
+    train_history_hyperparameters=train_histories_hyperparameters,
 )
 ```
 

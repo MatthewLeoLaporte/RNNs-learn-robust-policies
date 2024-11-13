@@ -4,6 +4,7 @@ from functools import partial
 import logging
 import os
 from pathlib import Path
+from sqlalchemy.orm import Session
 from typing import Any
 
 import equinox as eqx
@@ -34,7 +35,14 @@ import feedbax.plotly as fbp
 from feedbax.train import TaskTrainerHistory
 from feedbax._tree import tree_labels
 
-from rnns_learn_robust_motor_policies.misc import load_from_json, write_to_json
+from rnns_learn_robust_motor_policies import FIGS_BASE_DIR
+from rnns_learn_robust_motor_policies.database import (
+    ModelRecord, 
+    MODEL_RECORD_BASE_ATTRS,
+    get_db_session, 
+    query_model_records,
+    save_model_and_add_record,
+)
 from rnns_learn_robust_motor_policies.plot_utils import get_savefig_func
 from rnns_learn_robust_motor_policies.setup_utils import (
     setup_train_histories,
@@ -73,29 +81,32 @@ SETUP_FUNCS = {
 N_TRIALS_VAL = 5
 
 
-def find_model_paths(directory: str, filename_pattern: str) -> list[str]:
-    """Returns paths to all model files matching the pattern in the directory."""
-    return [
-        str(Path(directory) / filename) 
-        for filename in os.listdir(directory)
-        if filename_pattern in filename
-    ]
-
-
-def load_data(path: str, nb_id: str):
+def load_data(model_record: ModelRecord):
     """Loads models, hyperparameters and training histories from files."""
+    # Load model and associated data
+    notebook_id = str(model_record.notebook_id)
+    model_path = str(model_record.model_path)
+    train_history_path = str(model_record.train_history_path)
+    
+    if not os.path.exists(model_path) or not os.path.exists(train_history_path):
+        logger.error(f"Model or training history file not found for {model_record.hash}")
+        return None, None, None, None
+    
     models, model_hyperparameters = load_with_hyperparameters(
-        path, partial(setup_models_only, SETUP_FUNCS[nb_id]),
+        model_path, 
+        partial(setup_models_only, SETUP_FUNCS[notebook_id]),
     )
-    train_histories = load(
-        path.replace('trained_models', 'train_histories'),
+    train_histories, train_history_hyperparameters = load_with_hyperparameters(
+        train_history_path,
         partial(setup_train_histories, models),
     )
-    hyperparameters = load_from_json(
-        path.replace('trained_models.eqx', 'hyperparameters.json')
-    )
     
-    return models, model_hyperparameters, train_histories, hyperparameters
+    return (
+        models, 
+        model_hyperparameters, 
+        train_histories, 
+        train_history_hyperparameters,
+    )
 
 
 def get_best_iterations_and_losses(
@@ -174,16 +185,13 @@ def get_measures_to_rate(models, tasks):
 MEASURES_TO_RATE = ('end_pos_error',)
 
 
-def save_best_models(
-    models: PyTree[eqx.Module],
+def get_best_models(
+    models: PyTree[eqx.Module, 'T'],
     train_histories: PyTree[TaskTrainerHistory],
     best_save_idx: PyTree[Int[Array, "replicate"]],
     n_replicates: int,
     where_train: Callable[[eqx.Module], PyTree[Array]],
-    path: str,
-    filename_pattern: str,
-    model_hyperparameters: dict[str, Any],
-) -> None:
+) -> PyTree[eqx.Module, 'T']:
     """Serializes models with the best parameters for each replicate and training condition."""
     best_saved_parameters = tree_stack([
         jt.map(
@@ -209,11 +217,7 @@ def save_best_models(
         is_leaf=is_module,
     )
     
-    save(
-        path.replace('.eqx', '_best_params.eqx'),
-        models_with_best_parameters,
-        hyperparameters=model_hyperparameters,
-    )
+    return models_with_best_parameters
 
 
 def get_loss_history_figures(train_histories, disturbance_type, n_replicates):
@@ -415,7 +419,7 @@ def compute_replicate_info(
     )   
     
     
-def setup_replicate_info(models, disturbance_stds, n_replicates, *, key):
+def setup_replicate_info(models, n_replicates, *, key):
     """Returns a skeleton PyTree for loading the replicate info"""
     
     def models_tree_with_value(value):
@@ -445,22 +449,34 @@ def setup_replicate_info(models, disturbance_stds, n_replicates, *, key):
         best_replicates=get_measure_dict(0),
         included_replicates=get_measure_dict(jnp.ones(n_replicates, dtype=bool)),
     )
-    
 
-
-def process_model_file(path: str, n_std_exclude: float, filename_pattern: str, figs_base_dir: str, nb_id) -> None:
-    """Processes a single model file, computing and saving replicate info and best parameters."""
-    models, model_hyperparameters, train_histories, hyperparameters = load_data(path, nb_id)
+def process_model_record(
+    session: Session,
+    model_record: ModelRecord,
+    n_std_exclude: float,
+    figs_base_dir: Path,
+) -> None:
+    """Process a single model record, updating it with best parameters and replicate info."""
     
-    where_train = attr_str_tree_to_where_func(hyperparameters['where_train_strs'])
-    disturbance_type = hyperparameters['disturbance_type']
-    suffix = hyperparameters['suffix']
-    n_replicates = hyperparameters['n_replicates']        
-    save_model_parameters = jnp.array(hyperparameters['save_model_parameters'])
+    notebook_id = str(model_record.notebook_id)
+    where_train = attr_str_tree_to_where_func(model_record.where_train_strs)
+    disturbance_type = str(model_record.disturbance_type)
+    n_replicates = int(model_record.n_replicates)       
+    save_model_parameters = jnp.array(model_record.save_model_parameters)
+    
+    models, model_hyperparams, train_histories, train_history_hyperparams = load_data(model_record)
+    
+    if None in (models, model_hyperparams, train_histories, train_history_hyperparams):
+        return
     
     # Evaluate each model on its respective validation task
-    tasks = setup_tasks_only(SETUP_FUNCS[nb_id], key=jr.PRNGKey(0), **model_hyperparameters)
+    tasks = setup_tasks_only(
+        SETUP_FUNCS[notebook_id], 
+        key=jr.PRNGKey(0), 
+        **model_hyperparams,
+    )
     
+    # Compute replicate info``
     replicate_info = compute_replicate_info(
         models,
         tasks,
@@ -470,28 +486,62 @@ def process_model_file(path: str, n_std_exclude: float, filename_pattern: str, f
         n_std_exclude, 
     )
     
-    save(
-        path.replace('trained_models', 'replicate_info'),
-        replicate_info,
-        hyperparameters=dict(
-            disturbance_stds=hyperparameters['disturbance_stds'],
-            n_replicates=n_replicates,
-        ),
-    )
-    
-    save_best_models(
+    # Create models with best parameters
+    best_models = get_best_models(
         models, 
         train_histories, 
         replicate_info['best_save_idx'], 
         n_replicates, 
-        where_train, 
-        path, 
-        filename_pattern, 
-        model_hyperparameters,
+        where_train,
     )
     
-    figs_dir = Path(f'{figs_base_dir}/{nb_id}/{suffix}')
+    try:
+        # Save new model file with best parameters and get new record
+        record_hyperparameters = {
+            key: getattr(model_record, key)
+            for key in model_record.__table__.columns.keys()
+            if key not in MODEL_RECORD_BASE_ATTRS
+        }
+        
+        new_record = save_model_and_add_record(
+            session,
+            str(model_record.notebook_id),
+            best_models,
+            model_hyperparams,
+            record_hyperparameters | dict(n_std_exclude=n_std_exclude),
+            train_history=train_histories,
+            train_history_hyperparameters=train_history_hyperparams,
+            replicate_info=replicate_info,
+            replicate_info_hyperparameters=dict(n_replicates=n_replicates),
+        )
+        
+        # Delete old files if their paths changed
+        paths = {
+            'model': (model_record.model_path, new_record.model_path),
+            'train_history': (model_record.train_history_path, new_record.train_history_path),
+            # Replicate info should only change if we re-run `post_training` with different parameters
+            'replicate_info': (model_record.replicate_info_path, new_record.replicate_info_path),
+        }
+        
+        for key, (old_path, new_path) in paths.items():
+            if old_path is not None and str(old_path) != str(new_path):
+                Path(str(old_path)).unlink()
+                logger.info(f"Deleted old {key} file: {old_path}")
+        
+        # Delete the old record if the hash changed
+        # (If the hash remained the same, `save_model_and_add_record` has already dealt with it)
+        if str(new_record.hash) != str(model_record.hash):    
+            session.delete(model_record)
+            session.commit()
+        
+    except Exception as e:
+        # If anything fails, rollback and restore original record
+        session.rollback()
+        logger.error(f"Failed to process model {model_record.hash}: {e}")
+        raise 
     
+    # Save training figures
+    figs_dir = figs_base_dir / f'{model_record.notebook_id}'
     save_training_figures(
         figs_dir,
         train_histories, 
@@ -501,22 +551,36 @@ def process_model_file(path: str, n_std_exclude: float, filename_pattern: str, f
         replicate_info['losses_at_final_saved_iteration'],
     )
     
+    logger.info(f"Processed model {model_record.hash}")
     
+    
+def main(n_std_exclude: float = 2.0):
+    """Process all models in database."""
+    session = get_db_session("models")
+    
+    # Get all model records
+    model_records = query_model_records(session)
+    logger.info(f"Found {len(model_records)} model records")
+    
+    with Progress() as progress:
+        task = progress.add_task("Processing...", total=len(model_records))
+        for model_record in model_records:
+            try:
+                process_model_record(
+                    session,
+                    model_record,
+                    n_std_exclude,
+                    FIGS_BASE_DIR,
+                )
+                progress.update(task, advance=1)
+            except Exception as e:
+                logger.error(f"Skipping model {model_record.hash} due to error: {e}")
+                continue
+
+
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Post-training processing of models for part 1.")
-    parser.add_argument("--model_dir", default="./models/", help="Directory to search for files")
-    parser.add_argument("--figs_base_dir", default="./figures/", help="Base directory for saving figures")
-    parser.add_argument("--filename_pattern", default="trained_models.eqx", help="Pattern to match in filenames")
+    parser = argparse.ArgumentParser(description="Post-training processing of models.")
     parser.add_argument("--n_std_exclude", default=2, type=float, help="Mark replicates this many stds above the best as to-be-excluded")
     args = parser.parse_args()
     
-    model_paths = find_model_paths(args.model_dir, args.filename_pattern)
-    logger.info(f"Found {len(model_paths)} model files")
-    
-    with Progress() as progress:
-        task = progress.add_task("Processing...", total=len(model_paths))
-        for path in model_paths:
-            nb_id = path.split('/')[-1].split('_')[0]
-            process_model_file(path, args.n_std_exclude, args.filename_pattern, args.figs_base_dir, nb_id)
-            logger.info(f"Processed {path}.")
-            progress.update(task, advance=1)
+    main(args.n_std_exclude)

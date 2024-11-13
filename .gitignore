@@ -9,6 +9,7 @@ _freeze
 render_params.yaml
 render_params_all.yaml
 config/paths.yml
+db/
 
 # Markdown copies of example notebooks
 # (They are meant to make search-replace easier)

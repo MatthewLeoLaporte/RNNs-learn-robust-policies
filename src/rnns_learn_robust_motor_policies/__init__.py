@@ -10,14 +10,18 @@ PROJECT_SEED = 5566
 
 
 # Directory configuration
+# TODO: Don't get the repo root like this if installing to `site-packages`!
+# Instead we should find a standard way to define user configuration
 REPO_ROOT = Path(__file__).parent.parent.parent
 CONFIG_DIR = REPO_ROOT / 'config'
 paths = load_yaml(CONFIG_DIR / 'paths.yml')['paths']
-(MODELS_DIR, FIGS_BASE_DIR) = [
-    Path(paths[label])
-    for label in ('models_dir', 'figs_base_dir')
+(DB_DIR, MODELS_DIR, FIGS_BASE_DIR) = [
+    path if path.is_absolute() else REPO_ROOT / path
+    for path in [
+        Path(paths[label])
+        for label in ('db_dir', 'models_dir', 'figs_base_dir')
+    ]
 ]
-
 
 # Labels for constructing and parsing file names
 MODEL_FILE_LABEL = "trained_models"
