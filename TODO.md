@@ -18,8 +18,9 @@ updated: 2024-11-13T10:32
 ### Database
 
 - [ ] Store `replicate_info` records in a separate table, and best params models in a separate file (currently we overwrite in `post_training.process_model_record`) so that we can do multiple different `post_training` runs? Maybe this is overkill
-- [ ] Record model path relative to `MODELS_DIR` only, so that if we move the `MODELS_DIR` we won’t load an incorrect path from the database
+- [ ] **Record model path relative to `MODELS_DIR` only, so that if we move the `MODELS_DIR` we won’t load an incorrect path from the database**
 - [ ] It looks like sometimes, running 1-1, if we change certain parameters (e.g. `n_batches`) then we will end up overwriting the models file (hash is the same? how can that be?) but not the train_history file. Double check that this is actually happening. If so, there’s an issue with checking and deleting previous runs, and some hyperparameters are not being accounted for when deciding to delete.
+- [ ] Automatically export CSV or something for each db table, as a backup
 
 #### Motivation
 

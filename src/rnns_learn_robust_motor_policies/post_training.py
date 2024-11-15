@@ -466,8 +466,10 @@ def process_model_record(
     
     models, model_hyperparams, train_histories, train_history_hyperparams = load_data(model_record)
     
-    if None in (models, model_hyperparams, train_histories, train_history_hyperparams):
+    if models is None:
         return
+    else:
+        assert model_hyperparams is not None
     
     # Evaluate each model on its respective validation task
     tasks = setup_tasks_only(

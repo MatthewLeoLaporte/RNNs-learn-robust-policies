@@ -1,4 +1,5 @@
 from pathlib import Path
+import time
 from typing import Literal, Optional
 import fnmatch
 import html
@@ -20,6 +21,7 @@ from feedbax.train import TaskTrainerHistory, init_task_trainer_history
 from feedbax._tree import tree_zip_named, tree_unzip
 from feedbax.xabdeef.losses import simple_reach_loss
 
+from rnns_learn_robust_motor_policies import MODELS_DIR
 from rnns_learn_robust_motor_policies.constants import (
     TASK_EVAL_PARAMS,
     N_STEPS,
@@ -68,7 +70,11 @@ def get_latest_matching_file(directory: str, pattern: str) -> Optional[str]:
     return sorted_files[0]
 
 
-def display_model_filechooser(path, filter_pattern='*trained_models.eqx',):
+def display_model_filechooser(path, filter_pattern='*.eqx',):
+    """Display a file chooser interface for the files at `path` whose names satisfy `filter_pattern`.
+    
+    The default filename is the one that sorts last.
+    """
     fc = FileChooser(path)
     fc.filter_pattern = filter_pattern
     fc.title = "Select model file:"
@@ -99,6 +105,26 @@ def display_model_filechooser(path, filter_pattern='*trained_models.eqx',):
     display(fc, params_widget)
     
     return fc
+
+
+def wait_for_value(variable, timeout: float = 3600):
+    end_time = time.monotonic() + timeout
+    while variable is None:
+        if time.monotonic() > end_time:
+            return False  # Timeout occurred
+        time.sleep(0.1)
+    return True
+
+
+def choose_model_file(filter_pattern="*.eqx", timeout: float = 3600) -> str:
+    """Displays a file chooser in the model directory until """
+    fc = display_model_filechooser(MODELS_DIR, filter_pattern=filter_pattern)
+    
+    if wait_for_value(fc, timeout=timeout):
+        assert fc.selected is not None
+        return fc.selected
+    else:
+        return f"{fc.default_path}/{fc.default_filename}"
 
 
 def find_unique_filepath(path: str | Path, search_string: str) -> Optional[Path]:
@@ -263,3 +289,5 @@ def convert_tasks_to_small(tasks):
         tasks,
         is_leaf=is_module,
     )
+    
+    

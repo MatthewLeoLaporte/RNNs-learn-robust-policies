@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, TypeVar, Sequence
 
 import equinox as eqx 

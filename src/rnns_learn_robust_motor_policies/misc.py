@@ -2,7 +2,9 @@ from collections.abc import Iterable, Iterator, Mapping, Sequence
 from datetime import datetime
 import json
 from pathlib import Path
+import platform
 import subprocess
+from types import ModuleType
 
 import equinox as eqx
 import jax.numpy as jnp 
@@ -11,6 +13,7 @@ import jax.tree as jt
 from jaxtyping import Array
 import yaml
 
+from feedbax.misc import git_commit_id
 from feedbax._tree import apply_to_filtered_leaves
 from feedbax.intervene import CurlFieldParams, FixedFieldParams
 
@@ -40,9 +43,9 @@ def get_gpu_memory(gpu_idx=0):
 
 def lohi(x: Iterable):
     """Returns a tuple containing the first and last values of a sequence, mapping, or other iterable."""
-    if isinstance(x, Mapping):
+    if isinstance(x, dict):
         # TODO: Maybe should return first and last key-value pairs?
-        return subdict(x, lohi(tuple(x.keys())))
+        return subdict(x, tuple(lohi(x.keys())))
     
     elif isinstance(x, Iterator):
         first = last = next(x)
@@ -62,17 +65,22 @@ def lohi(x: Iterable):
     return first, last
 
 
-def lomidhi(x: Sequence | Mapping):
-    if isinstance(x, Mapping):
-        return subdict(x, lomidhi(tuple(x.keys())))
+def lomidhi(x: Iterable):
+    if isinstance(x, dict):
+        keys: tuple = tuple(lomidhi(x.keys()))
+        return subdict(x, keys)
 
-    elif isinstance(x, Sequence):
+    elif isinstance(x, Iterator):
+        x = tuple(x)
         first, last = lohi(x)
         mid = x[len(x) // 2]
         return first, mid, last
 
     elif isinstance(x, Array):
         return lomidhi(x.tolist())
+    
+    else: 
+        raise ValueError(f"Unsupported type: {type(x)}")
 
 
 def load_yaml(path: Path) -> dict:
@@ -111,3 +119,18 @@ def vector_with_gaussian_length(trial_spec, key):
     length = jr.normal(key2, ())
 
     return length * jnp.array([jnp.cos(angle), jnp.sin(angle)]) 
+
+
+def print_version_info(
+    *args: ModuleType, 
+    feedbax_commit_id: bool = True,
+    python_version: bool = True,
+):
+    indent = "  "
+    print("Version info:")
+    if python_version:
+        print(f"{indent}python: {platform.python_version()}")
+    for package in args:
+        print(f"{indent}{package.__name__}: {package.__version__}")
+    if feedbax_commit_id:
+        print(f"{indent}feedbax commit: {git_commit_id()}")

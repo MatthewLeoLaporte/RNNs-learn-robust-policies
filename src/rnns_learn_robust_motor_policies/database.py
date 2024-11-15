@@ -26,66 +26,73 @@ from sqlalchemy import (
     String, 
     create_engine, 
     inspect,
+    or_,
 )
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import Session, relationship, sessionmaker
+# from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import (
+    DeclarativeBase, 
+    Mapped, 
+    Session, 
+    mapped_column, 
+    relationship, 
+    sessionmaker,
+)
 from sqlalchemy.sql.type_api import TypeEngine
 
 from feedbax import save
 
-from rnns_learn_robust_motor_policies import DB_DIR, MODELS_DIR
+from rnns_learn_robust_motor_policies import DB_DIR, MODELS_DIR, QUARTO_OUT_DIR
 
 
 MODELS_TABLE_NAME = 'models'
-EVALUATIONS_TABLE_NAME = 'notebook_evaluations'
+EVALUATIONS_TABLE_NAME = 'evaluations'
 FIGURES_TABLE_NAME = 'figures'
 
 
 logger = logging.getLogger(__name__)
 
 
-Base = declarative_base()
-
+# Base = declarative_base()
+class Base(DeclarativeBase):
+    type_annotation_map = {
+        dict[str, Any]: JSON
+    }
+    
 
 class ModelRecord(Base):
     __tablename__ = MODELS_TABLE_NAME
     
-    id = Column(Integer, primary_key=True)
-    hash = Column(String, unique=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    notebook_id = Column(String, nullable=False)  # e.g. "1-1"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    hash: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    notebook_id: Mapped[str]
     
-    # File paths
-    model_path = Column(String)
-    train_history_path = Column(String)
-    replicate_info_path = Column(String)
-    
+    # File paths - model_path being None indicates model is unavailable
+    path: Mapped[str] 
+    is_path_defunct: Mapped[bool] 
+    train_history_path: Mapped[Optional[str]] 
+    replicate_info_path: Mapped[Optional[str]] 
+
 
 MODEL_RECORD_BASE_ATTRS = ModelRecord.__table__.columns.keys()
     
     
-class NotebookEvaluationRecord(Base):
+class EvaluationRecord(Base):
     """Represents a single evaluation of a notebook."""
     __tablename__ = EVALUATIONS_TABLE_NAME
     
-    id = Column(Integer, primary_key=True)
-    hash = Column(String, unique=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    
-    # Which notebook was evaluated
-    eval_notebook_id = Column(String, nullable=False)  # e.g. "1-2a"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    hash: Mapped[str] = mapped_column(unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     
     # Reference to the model used
-    model_id = Column(Integer, ForeignKey(f'{MODELS_TABLE_NAME}.id'))
+    model_hash: Mapped[str] = mapped_column(ForeignKey(f'{MODELS_TABLE_NAME}.hash'))
+    # Which notebook was evaluated
+    notebook_id: Mapped[Optional[str]]  # e.g. "1-2a"
+    # Output directory containing rendered notebook (if such output exists)
+    output_dir: Mapped[Optional[str]]
+    
     model = relationship("ModelRecord")  
-    
-    # Parameters used for evaluation (as JSON to handle different params per notebook)
-    eval_parameters = Column(JSON)
-    
-    # Output directory containing rendered notebook
-    output_dir = Column(String)
-    
-    # Relationship to figures
     figures = relationship("FigureRecord", back_populates="evaluation")
 
 
@@ -93,17 +100,16 @@ class FigureRecord(Base):
     """Represents a figure generated during notebook evaluation."""
     __tablename__ = FIGURES_TABLE_NAME
     
-    id = Column(Integer, primary_key=True)
-    hash = Column(String, unique=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    hash: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     # Reference to the evaluation this figure belongs to
-    evaluation_id = Column(Integer, ForeignKey(f'{EVALUATIONS_TABLE_NAME}.id'))
-    evaluation = relationship("NotebookEvaluationRecord", back_populates="figures")
-    
+    evaluation_hash: Mapped[int] = mapped_column(Integer, ForeignKey(f'{EVALUATIONS_TABLE_NAME}.hash'))    
     # Figure metadata
-    identifier = Column(String)  # e.g. "center_out_sets/all_evals_single_replicate"
-    file_path = Column(String)
+    identifier: Mapped[str]  # e.g. "center_out_sets/all_evals_single_replicate"
+    file_path: Mapped[str]
+
+    evaluation = relationship("EvaluationRecord", back_populates="figures")
 
 
 TABLE_NAME_TO_MODEL = {
@@ -211,6 +217,7 @@ def query_model_records(
     session: Session,
     filters: Optional[Dict[str, Any]] = None,
     match_all: bool = True,
+    exclude_defunct: bool = True,
 ) -> list[ModelRecord]:
     """Query model records from database matching filter criteria.
     
@@ -218,29 +225,56 @@ def query_model_records(
         session: Database session
         filters: Dictionary of {column: value} pairs to filter by
         match_all: If True, return only records matching all filters (AND).
-                  If False, return records matching any filter (OR).
+            If False, return records matching any filter (OR).
+        exclude_defunct: Only return models for which model files are available.
     
     Returns:
         List of matching ModelRecord records
-    """
-    if not filters:
-        return session.query(ModelRecord).all()
-        
+    """       
     query = session.query(ModelRecord)
     
-    conditions = [
-        getattr(ModelRecord, key) == value 
-        for key, value in filters.items()
-    ]
+    if exclude_defunct: 
+        check_model_files(session)
+        query = query.filter(ModelRecord.is_path_defunct == False)
     
-    if match_all:
-        for condition in conditions:
-            query = query.filter(condition)
-    else:
-        from sqlalchemy import or_
-        query = query.filter(or_(*conditions))
+    if filters:
+        conditions = [
+            getattr(ModelRecord, key) == value 
+            for key, value in filters.items()
+        ]
         
+        if match_all:
+            for condition in conditions:
+                query = query.filter(condition)
+        else:
+            query = query.filter(or_(*conditions))
+
     return query.all()
+
+
+def check_model_files(session: Session) -> None:
+    """Check model files and update availability status."""
+    logger.info("Checking availability of model files...")
+    
+    try:
+        records = session.query(ModelRecord).all()
+        for record in records:
+            file_exists = Path(str(record.path)).exists()
+            
+            if record.is_path_defunct and file_exists:
+                record.is_path_defunct = False
+                logger.info(f"File found for defunct model record {record.hash}; restored")
+            elif not record.is_path_defunct and not file_exists:
+                record.is_path_defunct = True
+                logger.info(f"File missing for model {record.hash}; marked as defunct")
+        
+        session.commit()
+        logger.info("Finished checking model files")
+        
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Error checking model files: {e}")
+        raise e
 
 
 def get_model_record(
@@ -305,7 +339,8 @@ def save_model_and_add_record(
     model_record = ModelRecord(
         hash=model_hash,
         notebook_id=notebook_id,
-        model_path=str(model_path),
+        path=str(model_path),
+        is_path_defunct=False,  # New file is definitely not defunct
         train_history_path=str(train_history_path) if train_history_path else None,
         replicate_info_path=str(replicate_info_path) if replicate_info_path else None,
         **hyperparameters,
@@ -323,42 +358,49 @@ def save_model_and_add_record(
     return model_record
 
 
-def generate_eval_hash(model_id: Optional[int], eval_params: Dict[str, Any]) -> str:
-    """Generate hash for notebook evaluation based on model ID and parameters."""
-    eval_str = f"{model_id or 'None'}_{json.dumps(eval_params, sort_keys=True)}"
+def generate_eval_hash(model_hash: Optional[str], eval_params: Dict[str, Any]) -> str:
+    """Generate a hash for a notebook evaluation based on model hash and parameters.
+    
+    Args:
+        model_hash: Hash of the model being evaluated. None for training notebooks.
+        eval_params: Parameters used for evaluation
+    """
+    eval_str = f"{model_hash or 'None'}_{json.dumps(eval_params, sort_keys=True)}"
     return hashlib.md5(eval_str.encode()).hexdigest()
 
 
-def add_notebook_evaluation(
+def add_evaluation(
     session: Session,
-    model_id: Optional[int],  # Changed from ModelRecord to Optional[int]
-    eval_notebook_id: str,
+    model_hash: Optional[str],  # Changed from ModelRecord to Optional[int]
     eval_parameters: Dict[str, Any],
-    output_base_dir: Path,
-) -> NotebookEvaluationRecord:
+    notebook_id: Optional[str] = None,
+) -> EvaluationRecord:
     """Create new notebook evaluation record.
     
     Args:
         session: Database session
         model_id: ID of the model used (None for training notebooks)
-        eval_notebook_id: ID of the notebook being evaluated
+        notebook_id: ID of the notebook being evaluated
         eval_parameters: Parameters used for evaluation
-        output_base_dir: Base directory for outputs
     """
     # Generate hash from model_id (if any) and parameters
     eval_hash = generate_eval_hash(
-        model_id=model_id,
+        model_hash=model_hash,
         eval_params=eval_parameters
     )
     
-    output_dir = output_base_dir / eval_notebook_id / eval_hash
+    # Migrate the evaluations table so it has all the necessary columns
+    update_table_schema(session.bind, EVALUATIONS_TABLE_NAME, eval_parameters)
     
-    eval_record = NotebookEvaluationRecord(
+    output_dir = None
+    if notebook_id is not None:
+            output_dir = str(QUARTO_OUT_DIR / notebook_id / eval_hash)
+    
+    eval_record = EvaluationRecord(
         hash=eval_hash,
-        eval_notebook_id=eval_notebook_id,
-        model_id=model_id,  # Can be None
-        eval_parameters=eval_parameters,
-        output_dir=str(output_dir),
+        notebook_id=notebook_id,
+        model_hash=model_hash,  # Can be None
+        **eval_parameters,
     )
     
     session.add(eval_record)
@@ -368,7 +410,7 @@ def add_notebook_evaluation(
 
 def add_evaluation_figure(
     session: Session,
-    evaluation: NotebookEvaluationRecord,
+    evaluation: EvaluationRecord,
     figure: Any,
     identifier: str,
 ) -> FigureRecord:
@@ -387,7 +429,7 @@ def add_evaluation_figure(
     
     figure_record = FigureRecord(
         hash=figure_hash,
-        evaluation_id=evaluation.id,
+        evaluation_hash=evaluation.hash,
         identifier=identifier,
         file_path=str(figure_path),
     )
@@ -395,3 +437,14 @@ def add_evaluation_figure(
     session.add(figure_record)
     session.commit()
     return figure_record
+
+
+def use_record_params_where_none(parameters: dict[str, Any], record: Base) -> dict[str, Any]:
+    """Helper to replace `None` values in `parameters` with matching values from `record`.
+    
+    Will raise an error if `parameters` contains any keys that are not columns in the type of `record`.
+    """
+    return {
+        k: getattr(record, k) if v is None else v
+        for k, v in parameters.items()
+    }

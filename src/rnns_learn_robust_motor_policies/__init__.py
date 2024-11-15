@@ -15,13 +15,15 @@ PROJECT_SEED = 5566
 REPO_ROOT = Path(__file__).parent.parent.parent
 CONFIG_DIR = REPO_ROOT / 'config'
 paths = load_yaml(CONFIG_DIR / 'paths.yml')['paths']
-(DB_DIR, MODELS_DIR, FIGS_BASE_DIR) = [
+(DB_DIR, MODELS_DIR, FIGS_BASE_DIR, QUARTO_OUT_DIR) = [
     path if path.is_absolute() else REPO_ROOT / path
     for path in [
         Path(paths[label])
-        for label in ('db_dir', 'models_dir', 'figs_base_dir')
+        for label in ('db_dir', 'models_dir', 'figs_dir', 'quarto_outputs')
     ]
 ]
+for d in (DB_DIR, MODELS_DIR, FIGS_BASE_DIR):
+    d.mkdir(parents=True, exist_ok=True)
 
 # Labels for constructing and parsing file names
 MODEL_FILE_LABEL = "trained_models"

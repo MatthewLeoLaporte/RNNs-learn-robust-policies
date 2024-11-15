@@ -137,33 +137,6 @@ dt = 0.05
 cosine_annealing_alpha = 0.01
 ```
 
-```{python}
-suffix = '_'.join([
-    # f"{hidden_size}-units",
-    # f"alpha-{cosine_annealing_alpha}",
-    f"{disturbance_type}",
-    f"noise-{feedback_noise_std}-{motor_noise_std}",
-    f"delay-{feedback_delay_steps}",
-])
-```
-
-### Directories and filenames setup
-
-```{python}
-figs_dir = FIGS_BASE_DIR / f'{NB_ID}/{suffix}'
-
-for d in (figs_dir, MODELS_DIR):
-    d.mkdir(parents=True, exist_ok=True)
-```
-
-### Plotting setup
-
-Get function to save figures to figure directory.
-
-```{python}
-savefig = get_savefig_func(figs_dir)
-```
-
 ### RNG setup
 
 ```{python}
@@ -175,7 +148,7 @@ key_init, key_train, key_eval = jr.split(key, 3)
 
 ```{python}
 disturbance_stds = {
-    'curl': [0, 0.8, 1.6], # [0, 0.4, 0.8, 1.6, 2.4],
+    'curl': [0, 0.4, 0.8, 1.6, 2.0],
     'random': [0, 0.01, 0.1, 1.0, 2.0],
 }
 
@@ -207,7 +180,7 @@ constant_lr_iterations = 10  # Number of initial training iterations to hold lr 
 alpha = cosine_annealing_alpha  # Max learning rate factor decrease during cosine annealing (see notebook hyperparameters)
 weight_decay = 0
 
-n_batches = 5000
+n_batches = 10000
 batch_size = 250
 
 optimizer_class = partial(
@@ -341,63 +314,6 @@ model_record = save_model_and_add_record(
     other_hyperparameters=training_hyperparameters,
     train_history=train_histories,
     train_history_hyperparameters=train_histories_hyperparameters,
-)
-```
-
-```{python}
-save(
-    str(MODELS_DIR / model_basename) + '.eqx',
-    trained_models,
-    hyperparameters=model_hyperparameters,
-)
-
-write_to_json(
-    model_hyperparameters | training_hyperparameters,
-    str(MODELS_DIR / model_basename.replace(MODEL_FILE_LABEL, HYPERPARAMS_FILE_LABEL)) + '.json',
-)
-```
-
-To reload our models in later notebooks, we will need a function that regenerates a skeleton PyTree with the same structure as `saved_models`, given the stored `model_hyperparameters`. See the function `setup_models` in `src/rnns_learn_robust_motor_policies/train_setup_part1.py`.
-
-### Save training histories
-
-In later analyses we may be interested in the history of the losses or model parameters across training, so these should also be saved to disk. 
-
-```{python}
-train_histories_basename = model_basename.replace(
-    MODEL_FILE_LABEL, 
-    TRAIN_HISTORIES_FILE_LABEL,
-)
-
-save(
-    str(MODELS_DIR / train_histories_basename) + ".eqx",
-    train_histories,
-    hyperparameters=dict(
-        disturbance_stds=disturbance_stds,
-        n_batches=n_batches,
-        batch_size=batch_size,
-        n_replicates=n_replicates,
-        where_train_strs=where_func_to_labels(where_train),
-        save_model_parameters=save_model_parameters.tolist(),
-    ),
-)
-```
-
-Note that we cannot save lambda functions to disk, so we save the string representation of the `where_train` PyTree.
-
-#### Reloading parameter histories
-
-I'm including this here for reference.
-
-Because we'll generally have already loaded the trained models by the time we also want to load the train histories, our `setup_train_histories` function can use it to determine the correct PyTree structure. Thus we can avoid reconstructing the PyTree of models from scratch -- and storing all the required hyperparameters -- a second time.  
-
-```{python}
-from functools import partial
-from rnns_learn_robust_motor_policies.setup_utils import setup_train_histories
-
-model_parameter_histories_ = load(
-    str(MODELS_DIR / train_histories_basename) + ".eqx",
-    partial(setup_train_histories, trained_models),
 )
 ```
 
