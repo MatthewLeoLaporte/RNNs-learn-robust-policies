@@ -145,7 +145,7 @@ print_version_info(jax, eqx, plotly)
 ### Initialize model database connection
 
 ```{python}
-db_session = get_db_session("models")
+db_session = get_db_session()  # defaults to "DB_DIR/main.db"
 ```
 
 ### Hyperparameters
@@ -707,13 +707,6 @@ for disturbance_amplitude in tqdm(figs):
             fig_subdir,
             **parameters,
         )
-        # filename = join([
-        #         f"{eval_info.disturbance_type}-amp-{disturbance_amplitude}",
-        #         f"{model_info.disturbance_type}-train-std-{model_info.disturbance_std}",
-        #         f"rep-{i_rep}",
-        #         f"eval-{i_trial}",
-        # ])
-        # savefig(fig, filename, subdir=fig_subdir)
 ```
 
 ```{python}

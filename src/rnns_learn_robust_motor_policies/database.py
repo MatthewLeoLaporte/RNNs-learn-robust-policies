@@ -31,7 +31,7 @@ from sqlalchemy import (
     inspect,
     or_,
 )
-# from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
 from sqlalchemy.orm import (
     DeclarativeBase, 
     Mapped, 
@@ -44,7 +44,14 @@ from sqlalchemy.sql.type_api import TypeEngine
 
 from feedbax import save
 
-from rnns_learn_robust_motor_policies import DB_DIR, FIGS_BASE_DIR, MODELS_DIR, QUARTO_OUT_DIR
+from rnns_learn_robust_motor_policies import (
+    DB_DIR, 
+    FIGS_BASE_DIR, 
+    MODELS_DIR, 
+    QUARTO_OUT_DIR,
+    REPLICATE_INFO_FILE_LABEL,
+    TRAIN_HISTORY_FILE_LABEL, 
+)
 
 
 MODELS_TABLE_NAME = 'models'
@@ -73,13 +80,21 @@ class ModelRecord(Base):
     hash: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     notebook_id: Mapped[str]
-    
-    # File paths - model_path being None indicates model is unavailable
-    path: Mapped[str] 
     is_path_defunct: Mapped[bool] 
-    train_history_path: Mapped[Optional[str]] 
-    replicate_info_path: Mapped[Optional[str]] 
+    has_replicate_info: Mapped[bool]
+    
+    @hybrid_property
+    def path(self):
+        return get_hash_path(MODELS_DIR, self.hash)
 
+    @hybrid_property
+    def replicate_info_path(self):
+        return get_hash_path(MODELS_DIR, self.hash, suffix=REPLICATE_INFO_FILE_LABEL)
+    
+    @hybrid_property
+    def train_history_path(self):
+        return get_hash_path(MODELS_DIR, self.hash, suffix=TRAIN_HISTORY_FILE_LABEL)
+    
 
 MODEL_RECORD_BASE_ATTRS = ModelRecord.__table__.columns.keys()
     
@@ -96,13 +111,14 @@ class EvaluationRecord(Base):
     model_hash: Mapped[str] = mapped_column(ForeignKey(f'{MODELS_TABLE_NAME}.hash'))
     # Which notebook was evaluated
     notebook_id: Mapped[Optional[str]]  # e.g. "1-2a"
-    figure_dir: Mapped[str]
-    # Output directory containing rendered notebook (if such output exists)
-    quarto_output_dir: Mapped[Optional[str]]
     
     model = relationship("ModelRecord")  
     figures = relationship("FigureRecord", back_populates="evaluation")
 
+    @hybrid_property
+    def figure_dir(self):
+        return FIGS_BASE_DIR / self.hash
+    
 
 class FigureRecord(Base):
     """Represents a figure generated during evaluation."""
@@ -112,10 +128,12 @@ class FigureRecord(Base):
     hash: Mapped[str] = mapped_column(unique=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     evaluation_hash: Mapped[str] = mapped_column(ForeignKey(f'{EVALUATIONS_TABLE_NAME}.hash'))
+    model_hash: Mapped[str] = mapped_column(ForeignKey(f'{MODELS_TABLE_NAME}.hash'))
     identifier: Mapped[str]
     figure_type: Mapped[str]
     saved_formats: Mapped[Sequence[str]]
     
+    model = relationship("ModelRecord")
     evaluation = relationship("EvaluationRecord", back_populates="figures")
 
 
@@ -189,7 +207,7 @@ def init_db(db_path: str = "sqlite:///models.db"):
     return sessionmaker(bind=engine)()
 
 
-def get_db_session(key: str):
+def get_db_session(key: str = "main"):
     """Create a database session for the project database with the given key."""
     return init_db(f"sqlite:///{DB_DIR}/{key}.db")
 
@@ -214,7 +232,7 @@ def save_with_hash(tree: PyTree, directory: Path, hyperparameters: Optional[Dict
     save(temp_path, tree, hyperparameters=hyperparameters)
     
     file_hash = hash_file(temp_path)
-    final_path = directory / f"{file_hash}.eqx"
+    final_path = get_hash_path(directory, file_hash)
     temp_path.rename(final_path)
     
     return file_hash, final_path
@@ -326,6 +344,11 @@ def get_model_class(record_type: str | type[BaseT]) -> type[BaseT]:
     return record_type
 
 
+def get_hash_path(directory: Path, hash_: str, suffix: str = '', ext: str = '.eqx') -> Path:
+    components = [hash_, suffix]
+    return (directory / "_".join(c for c in components if c)).with_suffix(ext)
+
+
 def check_model_files(session: Session) -> None:
     """Check model files and update availability status."""
     logger.info("Checking availability of model files...")
@@ -333,14 +356,18 @@ def check_model_files(session: Session) -> None:
     try:
         records = session.query(ModelRecord).all()
         for record in records:
-            file_exists = Path(str(record.path)).exists()
+            model_file_exists = get_hash_path(MODELS_DIR, record.hash).exists()
+            replicate_info_file_exists = get_hash_path(
+                MODELS_DIR, record.hash, suffix=REPLICATE_INFO_FILE_LABEL,
+            ).exists()
             
-            if record.is_path_defunct and file_exists:
-                record.is_path_defunct = False
+            if record.is_path_defunct and model_file_exists:
                 logger.info(f"File found for defunct model record {record.hash}; restored")
-            elif not record.is_path_defunct and not file_exists:
-                record.is_path_defunct = True
+            elif not record.is_path_defunct and not model_file_exists:
                 logger.info(f"File missing for model {record.hash}; marked as defunct")
+            
+            record.is_path_defunct = not model_file_exists
+            record.has_replicate_info = replicate_info_file_exists
         
         session.commit()
         logger.info("Finished checking model files")
@@ -367,47 +394,41 @@ def save_model_and_add_record(
     # Save model and get hash-based filename
     model_hash, model_path = save_with_hash(model, MODELS_DIR, model_hyperparameters)
     
-    hyperparameters = model_hyperparameters | other_hyperparameters
-    
-    update_table_schema(session.bind, MODELS_TABLE_NAME, hyperparameters)
-    
     # Save associated files if provided
-    train_history_path = None
     if train_history is not None:
         assert train_history_hyperparameters is not None, (
             "If saving training histories, must provide hyperparameters for deserialisation!"
         )
-        # TODO: Could save with same hash as model, with suffix 
-        _, train_history_path = save_with_hash(
-            train_history, 
-            MODELS_DIR,
-            train_history_hyperparameters,
+        save(
+            get_hash_path(MODELS_DIR, model_hash, suffix=TRAIN_HISTORY_FILE_LABEL), 
+            train_history,
+            hyperparameters=train_history_hyperparameters,
         )
         
-    replicate_info_path = None
     if replicate_info is not None:
         assert replicate_info_hyperparameters is not None, (
             "If saving training histories, must provide hyperparameters for deserialisation!"
         )
-        _, replicate_info_path = save_with_hash(
+        save(
+            get_hash_path(MODELS_DIR, model_hash, suffix=REPLICATE_INFO_FILE_LABEL), 
             replicate_info,
-            MODELS_DIR,
-            replicate_info_hyperparameters,
+            hyperparameters=replicate_info_hyperparameters,
         )
+        
+    hyperparameters = model_hyperparameters | other_hyperparameters
+    update_table_schema(session.bind, MODELS_TABLE_NAME, hyperparameters)    
     
     # Create database record
     model_record = ModelRecord(
         hash=model_hash,
         notebook_id=notebook_id,
-        path=str(model_path),
-        is_path_defunct=False,  # New file is definitely not defunct
-        train_history_path=str(train_history_path) if train_history_path else None,
-        replicate_info_path=str(replicate_info_path) if replicate_info_path else None,
+        is_path_defunct=False, 
+        has_replicate_info=replicate_info is not None,
         **hyperparameters,
     )
     
     # Delete existing record with same hash, if it exists
-    existing_record = get_model_record(session, hash=model_hash)
+    existing_record = get_record(session, ModelRecord, hash=model_hash)
     if existing_record is not None:
         session.delete(existing_record)
         session.commit()
@@ -418,14 +439,22 @@ def save_model_and_add_record(
     return model_record
 
 
-def generate_eval_hash(model_hash: Optional[str], eval_params: Dict[str, Any]) -> str:
+def generate_eval_hash(
+    model_hash: Optional[str], 
+    eval_params: Dict[str, Any],
+    notebook_id: Optional[str] = None,
+) -> str:
     """Generate a hash for a notebook evaluation based on model hash and parameters.
     
     Args:
         model_hash: Hash of the model being evaluated. None for training notebooks.
         eval_params: Parameters used for evaluation
     """
-    eval_str = f"{model_hash or 'None'}_{json.dumps(eval_params, sort_keys=True)}"
+    eval_str = "_".join([
+        f"{model_hash or 'None'}",
+        f"{notebook_id or 'None'}",
+        f"{json.dumps(eval_params, sort_keys=True)}",
+    ])
     return hashlib.md5(eval_str.encode()).hexdigest()
 
 
@@ -446,7 +475,8 @@ def add_evaluation(
     # Generate hash from model_id (if any) and parameters
     eval_hash = generate_eval_hash(
         model_hash=model_hash,
-        eval_params=eval_parameters
+        eval_params=eval_parameters,
+        notebook_id=notebook_id,
     )
     
     # Migrate the evaluations table so it has all the necessary columns
@@ -458,23 +488,21 @@ def add_evaluation(
     quarto_output_dir = QUARTO_OUT_DIR / eval_hash
     quarto_output_dir.mkdir(exist_ok=True)
     
-    eval_record = EvaluationRecord(
-        hash=eval_hash,
-        model_hash=model_hash,  # Can be None
-        notebook_id=notebook_id,
-        figure_dir=str(figure_dir),
-        quarto_output_dir=str(quarto_output_dir),
-        **eval_parameters,
-    )
-    
     # Delete existing record with same hash, if it exists
-    existing_record = get_record(session, "evaluations", hash=eval_hash)
+    existing_record = get_record(session, EvaluationRecord, hash=eval_hash)
     if existing_record is not None:
-        session.delete(existing_record)
-        session.commit()
-        logger.warning(f"Replacing existing evaluation record with hash {eval_hash}")
-    
-    session.add(eval_record)
+        existing_record.created_at = datetime.utcnow()
+        logger.warning(f"Updating timestamp of existing evaluation record with hash {eval_hash}")
+        eval_record = existing_record
+    else:
+        eval_record = EvaluationRecord(
+            hash=eval_hash,
+            model_hash=model_hash,  # Can be None
+            notebook_id=notebook_id,
+            **eval_parameters,
+        )
+        session.add(eval_record)
+
     session.commit()
     return eval_record
 
@@ -552,10 +580,9 @@ def add_evaluation_figure(
         figure_type = 'plotly'
     
     # Save figure in subdirectory with same hash as evaluation
-    figure_dir = Path(str(eval_record.figure_dir))
-    figure_dir.mkdir(exist_ok=True)
+    eval_record.figure_dir.mkdir(exist_ok=True)
     
-    savefig(figure, figure_hash, figure_dir, save_formats)
+    savefig(figure, figure_hash, eval_record.figure_dir, save_formats)
     
     # Update schema with new parameters
     update_table_schema(session.bind, FIGURES_TABLE_NAME, parameters)
@@ -563,6 +590,7 @@ def add_evaluation_figure(
     figure_record = FigureRecord(
         hash=figure_hash,
         evaluation_hash=eval_record.hash,
+        model_hash=eval_record.model_hash,
         identifier=identifier,
         figure_type=figure_type,
         saved_formats=save_formats,

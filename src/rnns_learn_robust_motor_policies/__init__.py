@@ -30,7 +30,7 @@ MODEL_FILE_LABEL = "trained_models"
 BEST_MODEL_FILE_LABEL = f"{MODEL_FILE_LABEL}_best_params"
 HYPERPARAMS_FILE_LABEL = "hyperparameters"
 REPLICATE_INFO_FILE_LABEL = "replicate_info"
-TRAIN_HISTORIES_FILE_LABEL = "train_histories"
+TRAIN_HISTORY_FILE_LABEL = "train_history"
 
 
 # Set the default Plotly theme
