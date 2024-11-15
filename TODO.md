@@ -17,10 +17,19 @@ updated: 2024-11-13T10:32
 
 ### Database
 
+- [ ] Rename the database file, since everything is stored in the same one, in different tables
 - [ ] Store `replicate_info` records in a separate table, and best params models in a separate file (currently we overwrite in `post_training.process_model_record`) so that we can do multiple different `post_training` runs? Maybe this is overkill
-- [ ] **Record model path relative to `MODELS_DIR` only, so that if we move the `MODELS_DIR` we won’t load an incorrect path from the database**
+- [ ] **Record model path relative to `MODELS_DIR` only, so that if we move the `MODELS_DIR` we won’t load an incorrect path from the database**. Actually we can get rid of the path column altogether, since everything is just named according to its `hash` in `MODELS_DIR`. Similarly, the train history and replicate info paths should either be replaced with separate hashes (the current method) or we should just use the same hash (assumes only one replicate_info per trained model file) and append a label to the filename.
 - [ ] It looks like sometimes, running 1-1, if we change certain parameters (e.g. `n_batches`) then we will end up overwriting the models file (hash is the same? how can that be?) but not the train_history file. Double check that this is actually happening. If so, there’s an issue with checking and deleting previous runs, and some hyperparameters are not being accounted for when deciding to delete.
 - [ ] Automatically export CSV or something for each db table, as a backup
+
+#### Figures
+
+##### Function to obtain figures based on training + testing conditions
+
+Each figure type also has certain parameters which may vary. We may want a function that tells us which parameters are seen to vary for each figure subtype. This will help with writing more specific queries in the figure table, once we know what train+test conditions we are interested in.
+
+##### 
 
 #### Motivation
 

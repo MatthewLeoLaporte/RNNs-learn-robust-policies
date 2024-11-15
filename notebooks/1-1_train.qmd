@@ -122,12 +122,12 @@ db_session = get_db_session("models")
 ### Hyperparameters
 
 These are parameters that can be [varied](https://quarto.org/docs/computations/parameters.html) through the command line interface to Quarto. 
-
+ki
 ```{python}
 #| tags: [parameters]
 
 disturbance_type: Literal['curl', 'random'] = 'curl'  
-feedback_delay_steps = 0
+feedback_delay_steps = 2
 feedback_noise_std = 0.0
 motor_noise_std = 0.0
 hidden_size = 50

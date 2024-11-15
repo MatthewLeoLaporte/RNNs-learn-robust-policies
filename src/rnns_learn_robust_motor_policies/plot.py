@@ -64,8 +64,8 @@ def add_endpoint_traces(
         )
         for i, key in enumerate(marker_kws):
             marker_kws[key].update(
-                line_color=color_values[i].item(), 
-                color=color_values[i].item(),
+                line_color=color_values[i], 
+                color=color_values[i],
                 cmin=0,
                 cmax=1,
             )

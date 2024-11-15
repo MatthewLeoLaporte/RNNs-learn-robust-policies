@@ -4,10 +4,11 @@ Database tools for cataloguing trained models and notebook evaluations/figures.
 Written with the help of Claude 3.5 Sonnet.
 """ 
 
+from collections.abc import Sequence
 from datetime import datetime
 import logging
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, TypeVar
 import hashlib
 import json
 import uuid
@@ -15,6 +16,8 @@ import uuid
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from jaxtyping import PyTree
+import matplotlib.figure as mplf
+import plotly.graph_objects as go
 from sqlalchemy import (
     Boolean,
     Column, 
@@ -41,7 +44,7 @@ from sqlalchemy.sql.type_api import TypeEngine
 
 from feedbax import save
 
-from rnns_learn_robust_motor_policies import DB_DIR, MODELS_DIR, QUARTO_OUT_DIR
+from rnns_learn_robust_motor_policies import DB_DIR, FIGS_BASE_DIR, MODELS_DIR, QUARTO_OUT_DIR
 
 
 MODELS_TABLE_NAME = 'models'
@@ -55,9 +58,13 @@ logger = logging.getLogger(__name__)
 # Base = declarative_base()
 class Base(DeclarativeBase):
     type_annotation_map = {
-        dict[str, Any]: JSON
+        dict[str, Any]: JSON,
+        Sequence[str]: JSON,
     }
-    
+
+
+BaseT = TypeVar("BaseT", bound=Base)
+
 
 class ModelRecord(Base):
     __tablename__ = MODELS_TABLE_NAME
@@ -89,26 +96,26 @@ class EvaluationRecord(Base):
     model_hash: Mapped[str] = mapped_column(ForeignKey(f'{MODELS_TABLE_NAME}.hash'))
     # Which notebook was evaluated
     notebook_id: Mapped[Optional[str]]  # e.g. "1-2a"
+    figure_dir: Mapped[str]
     # Output directory containing rendered notebook (if such output exists)
-    output_dir: Mapped[Optional[str]]
+    quarto_output_dir: Mapped[Optional[str]]
     
     model = relationship("ModelRecord")  
     figures = relationship("FigureRecord", back_populates="evaluation")
 
 
 class FigureRecord(Base):
-    """Represents a figure generated during notebook evaluation."""
+    """Represents a figure generated during evaluation."""
     __tablename__ = FIGURES_TABLE_NAME
     
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    hash: Mapped[str] = mapped_column(String, unique=True, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    # Reference to the evaluation this figure belongs to
-    evaluation_hash: Mapped[int] = mapped_column(Integer, ForeignKey(f'{EVALUATIONS_TABLE_NAME}.hash'))    
-    # Figure metadata
-    identifier: Mapped[str]  # e.g. "center_out_sets/all_evals_single_replicate"
-    file_path: Mapped[str]
-
+    id: Mapped[int] = mapped_column(primary_key=True)
+    hash: Mapped[str] = mapped_column(unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    evaluation_hash: Mapped[str] = mapped_column(ForeignKey(f'{EVALUATIONS_TABLE_NAME}.hash'))
+    identifier: Mapped[str]
+    figure_type: Mapped[str]
+    saved_formats: Mapped[Sequence[str]]
+    
     evaluation = relationship("EvaluationRecord", back_populates="figures")
 
 
@@ -219,27 +226,36 @@ def query_model_records(
     match_all: bool = True,
     exclude_defunct: bool = True,
 ) -> list[ModelRecord]:
-    """Query model records from database matching filter criteria.
+    """Query model records from database matching filter criteria."""
+    if exclude_defunct:
+        check_model_files(session)
+        filters = filters or {}
+        filters['is_path_defunct'] = False
+        
+    return query_records(session, ModelRecord, filters, match_all)
+
+
+def query_records(
+    session: Session,
+    record_type: str | type[BaseT],
+    filters: Optional[Dict[str, Any]] = None,
+    match_all: bool = True,
+) -> list[BaseT]:
+    """Query records from database matching filter criteria.
     
     Args:
         session: Database session
+        record_type: SQLAlchemy model class or table name to query
         filters: Dictionary of {column: value} pairs to filter by
         match_all: If True, return only records matching all filters (AND).
-            If False, return records matching any filter (OR).
-        exclude_defunct: Only return models for which model files are available.
-    
-    Returns:
-        List of matching ModelRecord records
-    """       
-    query = session.query(ModelRecord)
-    
-    if exclude_defunct: 
-        check_model_files(session)
-        query = query.filter(ModelRecord.is_path_defunct == False)
+                  If False, return records matching any filter (OR).
+    """
+    model_class: type[BaseT] = get_model_class(record_type)
+    query = session.query(model_class)
     
     if filters:
         conditions = [
-            getattr(ModelRecord, key) == value 
+            getattr(model_class, key) == value 
             for key, value in filters.items()
         ]
         
@@ -248,8 +264,66 @@ def query_model_records(
                 query = query.filter(condition)
         else:
             query = query.filter(or_(*conditions))
-
+            
     return query.all()
+
+
+def get_record(
+    session: Session,
+    record_type: str | type[BaseT],
+    **filters: Any,
+) -> Optional[BaseT]:
+    """Get single record matching all filters exactly.
+    
+    Args:
+        session: Database session
+        record_type: SQLAlchemy model class or table name to query
+        **filters: Column=value pairs to filter by
+    
+    Raises:
+        ValueError: If multiple matches found or unknown table name
+    """
+    model_class: type[BaseT] = get_model_class(record_type)
+    matches = query_records(session, model_class, filters)
+    if not matches:
+        return None
+    if len(matches) > 1:
+        raise ValueError(f"Multiple {model_class.__name__}s found matching filters: {filters}")
+    return matches[0]
+
+
+def get_model_record(
+    session: Session,
+    exclude_defunct: bool = True,
+    **filters: Any,
+) -> Optional[ModelRecord]:
+    """Get single model record matching all filters exactly.
+    
+    Args:
+        session: Database session
+        exclude_defunct: If True, only consider models with accessible files
+        **filters: Column=value pairs to filter by
+    
+    Returns:
+        Matching record, or None if not found
+        
+    Raises:
+        ValueError: If multiple matches found
+    """
+    if exclude_defunct:
+        check_model_files(session)
+        filters['is_path_defunct'] = False
+        
+    return get_record(session, ModelRecord, **filters)
+
+
+def get_model_class(record_type: str | type[BaseT]) -> type[BaseT]:
+    """Convert table name to model class if needed."""
+    if isinstance(record_type, str):
+        if record_type not in TABLE_NAME_TO_MODEL:
+            raise ValueError(f"Unknown table name: {record_type}")
+        return TABLE_NAME_TO_MODEL[record_type]
+    return record_type
 
 
 def check_model_files(session: Session) -> None:
@@ -275,20 +349,6 @@ def check_model_files(session: Session) -> None:
         session.rollback()
         logger.error(f"Error checking model files: {e}")
         raise e
-
-
-def get_model_record(
-    session: Session,
-    **filters: Any
-) -> Optional[ModelRecord]:
-    """Get single model record matching all filters exactly.
-    Raises ValueError if multiple matches found."""
-    matches = query_model_records(session, filters)
-    if not matches:
-        return None
-    if len(matches) > 1:
-        raise ValueError(f"Multiple models found that match filters: {filters}")
-    return matches[0]
 
 
 def save_model_and_add_record(
@@ -351,7 +411,7 @@ def save_model_and_add_record(
     if existing_record is not None:
         session.delete(existing_record)
         session.commit()
-        logger.info(f"Replacing existing database record for model with hash {model_hash}")
+        logger.warning(f"Replacing existing model record with hash {model_hash}")
     
     session.add(model_record)
     session.commit()
@@ -392,47 +452,129 @@ def add_evaluation(
     # Migrate the evaluations table so it has all the necessary columns
     update_table_schema(session.bind, EVALUATIONS_TABLE_NAME, eval_parameters)
     
-    output_dir = None
-    if notebook_id is not None:
-            output_dir = str(QUARTO_OUT_DIR / notebook_id / eval_hash)
+    figure_dir = FIGS_BASE_DIR / eval_hash
+    figure_dir.mkdir(exist_ok=True)
+    
+    quarto_output_dir = QUARTO_OUT_DIR / eval_hash
+    quarto_output_dir.mkdir(exist_ok=True)
     
     eval_record = EvaluationRecord(
         hash=eval_hash,
-        notebook_id=notebook_id,
         model_hash=model_hash,  # Can be None
+        notebook_id=notebook_id,
+        figure_dir=str(figure_dir),
+        quarto_output_dir=str(quarto_output_dir),
         **eval_parameters,
     )
+    
+    # Delete existing record with same hash, if it exists
+    existing_record = get_record(session, "evaluations", hash=eval_hash)
+    if existing_record is not None:
+        session.delete(existing_record)
+        session.commit()
+        logger.warning(f"Replacing existing evaluation record with hash {eval_hash}")
     
     session.add(eval_record)
     session.commit()
     return eval_record
 
 
+def generate_figure_hash(eval_hash: str, identifier: str, parameters: Dict[str, Any]) -> str:
+    """Generate hash for a figure based on evaluation, identifier, and parameters."""
+    figure_str = f"{eval_hash}_{identifier}_{json.dumps(parameters, sort_keys=True)}"
+    return hashlib.md5(figure_str.encode()).hexdigest()
+
+
+def savefig(
+    fig, 
+    label, 
+    fig_dir: Path,
+    image_formats: Sequence[str],
+    transparent=True, 
+    **kwargs,
+):        
+    path = str(fig_dir / f"{label}") + ".{ext}"
+    
+    if isinstance(fig, mplf.Figure): 
+        for ext in image_formats:       
+            fig.savefig(
+                path.format(ext=ext),
+                transparent=transparent, 
+                **kwargs, 
+            )
+    
+    elif isinstance(fig, go.Figure):
+        # This will use the `orjson` package (faster) if installed
+        fig.write_json(path.format(ext='json'), engine="auto")
+
+        for ext in image_formats:
+            fig.write_image(path.format(ext=ext), scale=2, **kwargs)
+    
+
 def add_evaluation_figure(
     session: Session,
-    evaluation: EvaluationRecord,
-    figure: Any,
+    eval_record: EvaluationRecord,
+    figure: go.Figure | mplf.Figure,
     identifier: str,
+    save_formats: Optional[str | Sequence[str]] = "png",
+    **parameters: Any,
 ) -> FigureRecord:
-    """Save figure and create database record."""
+    """Save figure and create database record with dynamic parameters.
+    
+    Args:
+        session: Database session
+        eval_record: Evaluation record with which the figure is associated
+        figure: Plotly or matplotlib figure to save
+        identifier: Unique label for this type of figure
+        save_formats: The image types to save. 
+        **parameters: Additional parameters that distinguish the figure
+    """
+    # Generate hash including parameters
+    figure_hash = generate_figure_hash(eval_record.hash, identifier, parameters)
+    
+    if isinstance(save_formats, str):
+        save_formats = [save_formats]
+    elif isinstance(save_formats, Sequence):
+        save_formats = list(save_formats)
+    elif save_formats is None:
+        save_formats = []
+    
+    # We automatically assume JSON is saved iff it's a plotly figure
+    if 'json' in save_formats:
+        save_formats.remove('json')
+    
+    # Maybe the user passed an extension with a leading dot
+    save_formats = [format.strip('.') for format in save_formats]
+        
+    if isinstance(figure, mplf.Figure):
+        figure_type = 'matplotlib'
+    elif isinstance(figure, go.Figure):
+        figure_type = 'plotly'
+    
     # Save figure in subdirectory with same hash as evaluation
-    figure_dir = Path(str(evaluation.output_dir)) / "figures"
+    figure_dir = Path(str(eval_record.figure_dir))
     figure_dir.mkdir(exist_ok=True)
     
-    # Generate unique filename for this figure
-    figure_hash = hashlib.md5(f"{evaluation.hash}_{identifier}".encode()).hexdigest()
-    figure_path = figure_dir / f"{figure_hash}.png"
+    savefig(figure, figure_hash, figure_dir, save_formats)
     
-    # Save figure
-    figure.write_image(figure_path)  # For plotly
-    # figure.savefig(figure_path)  # For matplotlib
+    # Update schema with new parameters
+    update_table_schema(session.bind, FIGURES_TABLE_NAME, parameters)
     
     figure_record = FigureRecord(
         hash=figure_hash,
-        evaluation_hash=evaluation.hash,
+        evaluation_hash=eval_record.hash,
         identifier=identifier,
-        file_path=str(figure_path),
+        figure_type=figure_type,
+        saved_formats=save_formats,
+        **parameters,
     )
+
+    # Replace existing record if it exists
+    existing_record = get_record(session, FigureRecord, hash=figure_hash)
+    if existing_record is not None:
+        session.delete(existing_record)
+        session.commit()
+        logger.info(f"Replacing existing figure record with hash {figure_hash}")
     
     session.add(figure_record)
     session.commit()

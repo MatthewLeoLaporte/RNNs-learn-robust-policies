@@ -92,6 +92,7 @@ from rnns_learn_robust_motor_policies.colors import (
 from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL
 from rnns_learn_robust_motor_policies.database import (
     add_evaluation,
+    add_evaluation_figure,
     get_db_session, 
     get_model_record,
     use_record_params_where_none,
@@ -366,9 +367,9 @@ if eval_info.disturbance_type == 'curl':
         return CurlField.with_params(amplitude=amplitude)    
         
 elif eval_info.disturbance_type == 'random':    
-    def disturbance(field_std):           
+    def disturbance(amplitude):           
         return FixedField.with_params(
-            scale=field_std,
+            scale=amplitude,
             field=orthogonal_field,  
         ) 
           
@@ -381,7 +382,6 @@ task_base = get_base_task(model_info.n_steps)
 ```
 
 ```{python}
-
 # Insert the disturbance field component into each model
 models = jt.map(
     lambda models: add_intervenors(
@@ -693,13 +693,27 @@ for disturbance_amplitude in tqdm(figs):
         add_endpoint_traces(
             fig, pos_endpoints_small, xaxis='x1', yaxis='y1', colorscale='phase'
         )
-        filename = join([
-                f"{eval_info.disturbance_type}-amp-{disturbance_amplitude}",
-                f"{model_info.disturbance_type}-train-std-{disturbance_train_std}",
-                f"rep-{i_rep}",
-                f"eval-{i_trial}",
-        ])
-        savefig(fig, filename, subdir=fig_subdir)
+        
+        parameters = dict(
+            disturbance_amplitude=disturbance_amplitude,
+            model_replicate=i_rep,
+            random_trial=i_trial,
+        )
+        
+        add_evaluation_figure(
+            db_session,
+            eval_info,
+            fig,
+            fig_subdir,
+            **parameters,
+        )
+        # filename = join([
+        #         f"{eval_info.disturbance_type}-amp-{disturbance_amplitude}",
+        #         f"{model_info.disturbance_type}-train-std-{model_info.disturbance_std}",
+        #         f"rep-{i_rep}",
+        #         f"eval-{i_trial}",
+        # ])
+        # savefig(fig, filename, subdir=fig_subdir)
 ```
 
 ```{python}

@@ -22,7 +22,7 @@ paths = load_yaml(CONFIG_DIR / 'paths.yml')['paths']
         for label in ('db_dir', 'models_dir', 'figs_dir', 'quarto_outputs')
     ]
 ]
-for d in (DB_DIR, MODELS_DIR, FIGS_BASE_DIR):
+for d in (DB_DIR, MODELS_DIR, FIGS_BASE_DIR, QUARTO_OUT_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
 # Labels for constructing and parsing file names
