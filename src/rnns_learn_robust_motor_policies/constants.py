@@ -1,5 +1,7 @@
 from typing import Any
 
+import jax.numpy as jnp
+
 from feedbax.intervene import (
     CurlField, 
     FixedField, 
@@ -34,3 +36,12 @@ TASK_EVAL_PARAMS: dict[str, dict[str, Any]] = dict(
         eval_reach_length=0.5,
     ),
 )
+# Once effector positions are center-subtracted and aligned to reach direction,
+# all the effector-relative endpoints are the same and only depend on the reach length, 
+# which we have defined once and for all, above.
+POS_ENDPOINTS_ALIGNED = {
+    k: jnp.array([
+        [0., 0.], [params["eval_reach_length"], 0.]
+    ])
+    for k, params in TASK_EVAL_PARAMS.items()
+}

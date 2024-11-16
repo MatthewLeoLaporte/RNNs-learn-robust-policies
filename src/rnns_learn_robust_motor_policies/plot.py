@@ -97,8 +97,9 @@ def add_endpoint_traces(
 def get_violins_across_train_conditions(
     measure_data: PertAmpDict[float, TrainStdDict[float, Float[Array, "evals replicates conditions"]]], 
     measure_name: str, 
+    layout_kws: dict = None,
+    *,
     colors: dict[float, str],
-    layout_kws=None,
 ):
     example_traindict = jt.leaves(measure_data, is_leaf=is_type(TrainStdDict))[0]
     n_train_std = len(example_traindict)

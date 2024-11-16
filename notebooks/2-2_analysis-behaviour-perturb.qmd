@@ -7,6 +7,13 @@ execute:
   echo: false
 ---
 
+```{python}
+NB_ID = "2-2"
+
+# TODO: This is clear in the eval_rules file; probably don't need to specify here again
+TRAIN_NB_ID = "2-1"  # Notebook the models were trained in
+```
+
 # Analysis of plant perturbations
 
 ## Environment setup
@@ -35,6 +42,7 @@ import jax.random as jr
 import jax.tree as jt
 import matplotlib.pyplot as plt
 import numpy as np
+import plotly
 import plotly.colors as plc
 import plotly.graph_objects as go
 from tqdm.auto import tqdm
@@ -62,21 +70,17 @@ import feedbax.plotly as fbp
 from feedbax.task import SimpleReaches, TrialSpecDependency
 from feedbax.xabdeef.losses import simple_reach_loss
 
-from rnns_learn_robust_motor_policies import (
-    FIGS_BASE_DIR, 
-    MODELS_DIR, 
-    PROJECT_SEED,
-    HYPERPARAMS_FILE_LABEL,
-    BEST_MODEL_FILE_LABEL,
-    REPLICATE_INFO_FILE_LABEL,
-)
+from rnns_learn_robust_motor_policies import PROJECT_SEED
 from rnns_learn_robust_motor_policies.colors import (
     COLORSCALES, 
     MEAN_LIGHTEN_FACTOR,
     get_colors_dicts,
 )
 from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL, WORKSPACE
-from rnns_learn_robust_motor_policies.misc import lohi, load_from_json
+from rnns_learn_robust_motor_policies.database import (
+    get_db_session,
+)
+from rnns_learn_robust_motor_policies.misc import lohi, load_from_json, print_version_info
 from rnns_learn_robust_motor_policies.train_setup_part2 import (
     setup_task_model_pairs, 
 )
@@ -84,7 +88,6 @@ from rnns_learn_robust_motor_policies.plot import (
     add_endpoint_traces,
 )
 from rnns_learn_robust_motor_policies.plot_utils import (
-    add_context_annotation,
     figleaves,
     figs_flatten_with_paths,
     get_savefig_func,
@@ -94,6 +97,7 @@ from rnns_learn_robust_motor_policies.setup_utils import (
     display_model_filechooser,
     filename_join as join,
     find_unique_filepath,
+    get_base_task,
     convert_tasks_to_small,
     set_model_noise,
     setup_models_only,
@@ -123,19 +127,13 @@ from rnns_learn_robust_motor_policies.types import (
 Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
 
 ```{python}
-for mod in (jax, eqx): 
-    print(f"{mod.__name__} version: {mod.__version__}")
-    
-print(f"feedbax commit: {git_commit_id()}\n")
+print_version_info(jax, eqx, plotly)
 ```
 
-Unique ID for notebook, for naming outputs.
+### Initialize model database connection
 
 ```{python}
-NB_ID = "2-2"
-
-# TODO: This is clear in the eval_rules file; probably don't need to specify here again
-TRAIN_NB_ID = "2-1"  # Notebook the models were trained in
+db_session = get_db_session()
 ```
 
 ### Hyperparameters
@@ -150,6 +148,7 @@ disturbance_type_load: Literal['curl', 'random'] = 'random'
 feedback_noise_std_load = 0.0
 motor_noise_std_load = 0.0
 feedback_delay_steps_load = 0
+hidden_size = 50
 
 # Specify model parameters to use for analysis (None -> use training value)
 disturbance_type: Optional[Literal['curl', 'random']] = 'curl'
@@ -163,27 +162,14 @@ These parameters may be passed as strings from the command line in some cases, s
 feedback_noise_std_load = float(feedback_noise_std_load)
 motor_noise_std_load = float(motor_noise_std_load)
 feedback_delay_steps_load = int(feedback_delay_steps_load)
+hidden_size = int(hidden_size)
 if feedback_noise_std is not None:
     feedback_noise_std = float(feedback_noise_std)
 if motor_noise_std is not None:
     motor_noise_std = float(motor_noise_std)
 ```
 
-```{python}
-noise_stds = dict(
-    feedback=feedback_noise_std,
-    motor=motor_noise_std,
-)
-```
-
 See further below for parameter-based loading of models, as well as the code that modifies the models prior to analysis.
-
-### Directories
-
-```{python}
-if not MODELS_DIR.exists():
-    raise FileNotFoundError(f"Models directory not found: {MODELS_DIR.absolute()}")
-```
 
 ### RNG setup
 
@@ -194,89 +180,52 @@ key_init, key_train, key_eval = jr.split(key, 3)
 
 ## Load and adjust trained models
 
-### Specify file to load 
-
-We provide a couple of options, here: either we load trained models based on their hyperparameters as specified [above](#Hyperparameters), or we allow the user to select a file. We control which method to use by toggling the following variable:
-
 ```{python}
-load_from_parameters = True
-```
-
-Note that when we load from parameters, this assumes that models have been trained with those parameters. Otherwise, an error will be raised as the respectively-named file will not be found.
-
-#### By noise and delay hyperparameters
-
-```{python}
-suffix_load = '_'.join([
-    f"{disturbance_type_load}",
-    f"noise-{feedback_noise_std_load}-{motor_noise_std_load}",
-    f"delay-{feedback_delay_steps_load}",
-])
-
-if load_from_parameters and 'None' in suffix_load:
-    raise ValueError("If loading from parameters, all parameters must be specified.")
-```
-
-#### Specify file to load by user selection
-
-Maybe the user wants to browse and select a trained model file. In that case we can display a file chooser.
-
-```{python}
-if not load_from_parameters:
-    fc = display_model_filechooser(MODELS_DIR, filter_pattern=f'{TRAIN_NB_ID}_*trained_models*')
-```
-
-The default filename is the one that sorts last. If the user does not select a file or if the following cell is run before they do, then the default file will be loaded.
-
-### Load the specified model and associated parameters and metadata
-
-```{python}
-# model_file_label = "trained_models_best_params"
-if not load_from_parameters:
-    if fc.selected is None:
-        models_filepath = f"{fc.default_path}/{fc.default_filename}"
-    else:
-        models_filepath = fc.selected
-else: 
-    models_filepath = str(find_unique_filepath(
-        MODELS_DIR, f"{TRAIN_NB_ID}__{suffix_load}__{BEST_MODEL_FILE_LABEL}"
-    ))
-    if models_filepath is None:
-        raise FileNotFoundError(f"No models found with file label: {suffix_load}")
-
-trained_models_load: dict[float, eqx.Module] = load(
-    MODELS_DIR / models_filepath, partial(setup_models_only, setup_task_model_pairs),
+model_info = get_model_record(
+    db_session,
+    disturbance_type=disturbance_type_load,
+    feedback_noise_std=feedback_noise_std_load,
+    motor_noise_std=motor_noise_std_load,
+    feedback_delay_steps=feedback_delay_steps_load,
+    hidden_size=hidden_size,
 )
 ```
 
 ```{python}
-hyperparameters_filepath = models_filepath.replace(f'{BEST_MODEL_FILE_LABEL}.eqx', f'{HYPERPARAMS_FILE_LABEL}.json')
-hyperparameters = load_from_json(hyperparameters_filepath)
-replicate_info_filepath = models_filepath.replace(f'{BEST_MODEL_FILE_LABEL}', f'{REPLICATE_INFO_FILE_LABEL}')
+models_load: TrainStdDict[float, eqx.Module] = load(
+    model_info.path, partial(setup_models_only, setup_task_model_pairs),
+)
+
 replicate_info = load(
-    replicate_info_filepath, partial(setup_replicate_info, trained_models_load),
+    model_info.replicate_info_path, partial(setup_replicate_info, models_load),
 )
-
-disturbance_train_stds_load = hyperparameters['disturbance_stds']
-n_replicates = hyperparameters['n_replicates']
-n_steps = hyperparameters['n_steps']
-
-# We'll use this for creating figure subdirectories according to the training conditions
-suffix_train = models_filepath.split('__')[1]
 ```
 
 ### Modify the system noise if needed
 
 ```{python}
-trained_models_load = jt.map(
+models_base = jt.map(
     partial(
         set_model_noise, 
-        noise_stds=noise_stds,
+        noise_stds=dict(
+            feedback=feedback_noise_std,
+            motor=motor_noise_std,
+        ),
         enable_noise=True,
     ),
-    trained_models_load,
+    models_load,
     is_leaf=is_module,
 )
+```
+
+### Optionally select a subset of training conditions
+
+Depending on how training goes, we might want to leave out some of the training conditions (i.e. training disturbance stds) from the analysis.
+
+```{python}
+disturbance_train_stds = model_info.disturbance_stds
+
+models_base = subdict(models_base, disturbance_train_stds)
 ```
 
 ### Optionally exclude replicates that perform much worse than average
@@ -314,87 +263,94 @@ def take_replicate_or_best(tree: TrainStdDict, i_replicate=None, replicate_axis=
 Which replicates are included?
 
 ```{python}
-eqx.tree_pprint(included_replicates, short_arrays=False)
+print("\nReplicates included in analysis for each training condition:")
+eqx.tree_pprint(jt.map(lambda x: jnp.where(x)[0], included_replicates), short_arrays=False)
 ```
 
 Set the indices corresponding to the excluded replicates to NaN in each of the model arrays. This ensures that the shapes of the arrays remain consistent. NaN results will be ignored at plotting time. 
 
 ```{python}
+models_all_replicates = models_base
+
 if exclude_underperformers:
-    trained_models = jt.map(
+    models_base = jt.map(
         lambda models, included: tree_set_scalar(models, jnp.nan, jnp.where(~included)[0]),
-        trained_models_load, included_replicates,
+        models_base, included_replicates,
         is_leaf=is_module,
     )
     n_replicates_included = jt.map(lambda x: jnp.sum(x).item(), included_replicates)
 else:
-    trained_models = trained_models_load
-    n_replicates_included = dict.fromkeys(trained_models.keys(), n_replicates)
+    models_base = models_base
+    n_replicates_included = dict.fromkeys(models.keys(), model_info.n_replicates)
 ```
 
-**TODO**: Make an annotation that indicates "$n/N$ replicates are included" or something.
+## Sort out the evaluation parameters
 
-### Define subsets of models/training conditions
-
-Depending on how training goes, we might want to leave out some of the training conditions (i.e. training disturbance stds) from the analysis.
+We will either be evaluating on specific disturbance types and noise conditions, or if none are specified here,
+keeping the same conditions used during training.
 
 ```{python}
-# disturbance_train_stds = disturbance_train_stds_load
-
-# trained_models = jt.map(
-#     lambda train_std_dict: subdict(train_std_dict, disturbance_train_stds),
-#     trained_models,
-#     is_leaf=is_type(TrainStdDict),
-# )
+eval_parameters = use_record_params_where_none(dict(
+    disturbance_type=disturbance_type,
+    feedback_noise_std=feedback_noise_std,
+    motor_noise_std=motor_noise_std,
+), model_info)
 ```
 
-### Sort out the training and testing hyperparameters
-
-The following will never vary between training and analysis.
-
 ```{python}
-feedback_delay_steps = hyperparameters['feedback_delay_steps']
+any_system_noise = any(jt.leaves((
+    eval_parameters['feedback_noise_std'],
+    eval_parameters['motor_noise_std'],
+)))
 ```
 
-The following may change for the analysis, but we may want to refer to the training values.
+### Disturbance amplitudes
 
 ```{python}
-disturbance_type_train = hyperparameters['disturbance_type']
-noise_stds_train = dict(
-    feedback=hyperparameters['feedback_noise_std'],
-    motor=hyperparameters['motor_noise_std'],
+disturbance_amplitude = {
+    'curl': 4,
+    'random': 0.4,
+}[eval_parameters["disturbance_type"]]
+```
+
+### Context inputs 
+
+```{python}
+context_inputs = [-4, -2, -1, -0.5, 0, 0.5, 1, 2, 4]
+```
+
+### Number of evaluations per model and condition
+
+```{python}
+n_evals = dict(
+    full=5,
+    small=5,
+)
+
+if not any_system_noise:
+     n_evals = jt.map(lambda _: 1, n_evals)
+```
+
+### Full parameter dict
+
+```{python}
+eval_parameters |= dict(
+    disturbance_amplitudes=[disturbance_amplitude],
+    context_inputs=context_inputs,
+    n_evals=n_evals['full'],
+    n_evals_small=n_evals['small'],
 )
 ```
 
-If we didn't alter the disturbance type or noise levels for the analysis, we can infer they'll be the same as the ones used during training.
+## Initialize a record in the evaluations database
 
 ```{python}
-if disturbance_type is None:
-    disturbance_type = disturbance_type_train
-
-noise_stds = {
-    k: v if v is not None else noise_stds_train[k]
-    for k, v in noise_stds.items()
-} 
-
-any_system_noise = any(jt.leaves(noise_stds))
-```
-
-### Setup figure directories
-
-The hierarchy of figure directories depends on the hyperparameters of the trained model. Now that we've sorted that out, we can set up the base subdirectory for figures generated in the analyses that follow in this notebook.
-
-```{python}
-suffix = f"{disturbance_type}_noise-{noise_stds['feedback']}-{noise_stds['motor']}_delay-{feedback_delay_steps}"
-
-figs_dir = FIGS_BASE_DIR / f"{NB_ID}/train__{suffix_train}/{suffix}"
-
-for d in (figs_dir,):
-    d.mkdir(parents=True, exist_ok=True)
-```
-
-```{python}
-savefig = get_savefig_func(figs_dir)
+eval_info = add_evaluation(
+    db_session,
+    model_hash=model_info.hash,
+    eval_parameters=eval_parameters,
+    notebook_id=NB_ID,
+)
 ```
 
 ## Define tasks
@@ -404,11 +360,6 @@ savefig = get_savefig_func(figs_dir)
 ```{python}
 # Evaluate only a single amplitude, for now;
 # we want to see variation over the context input
-disturbance_amplitude = {
-    'curl': 4,
-    'random': 0.4,
-}
-
 if disturbance_type == 'curl':  
     def disturbance(amplitude):
         return CurlField.with_params(amplitude=amplitude)    
@@ -429,26 +380,9 @@ else:
 See notebook 1-2a for some explanation of the parameter choices here.
 
 ```{python}
-eval_grid_n = 2
-eval_n_directions = 24
-eval_reach_length = 0.5
-n_conditions = eval_grid_n ** 2 * eval_n_directions
-
-eval_grid_n_small = 1
-eval_n_directions_small = 7
-eval_reach_length_small = 0.5
-n_conditions_small = eval_grid_n_small ** 2 * eval_n_directions_small
-
 # Also add the intervenors to the trained models
 task_base, models = schedule_intervenor(
-    SimpleReaches(
-        loss_func=simple_reach_loss(),
-        workspace=WORKSPACE, 
-        n_steps=n_steps,
-        eval_grid_n=eval_grid_n,
-        eval_n_directions=eval_n_directions,
-        eval_reach_length=eval_reach_length,  
-    ),
+    get_base_task(model_info.n_steps),
     trained_models,
     lambda model: model.step.mechanics,
     disturbance(disturbance_amplitude[disturbance_type]),
@@ -460,15 +394,14 @@ task_base, models = schedule_intervenor(
 ### Set up variants with different context inputs
 
 ```{python}
-# context_inputs = [0, 2, 4, 6, 8]
-context_inputs = [-4, -2, -1, -0.5, 0, 0.5, 1, 2, 4]
-
 def get_context_input_func(x):
     return lambda trial_spec, key: (
         jnp.full_like(trial_spec.intervene[INTERVENOR_LABEL].active, x, dtype=float)
     )
 
-tasks = ContextInputDict({
+all_tasks = dict()
+
+all_tasks['full'] = ContextInputDict({
     context_input: eqx.tree_at(
         lambda task: task.input_dependencies,
         task_base, 
@@ -481,45 +414,27 @@ tasks = ContextInputDict({
 Make smaller versions of the tasks for visualization.
 
 ```{python}
-tasks_small = convert_tasks_to_small(tasks)
+all_tasks['small'] = convert_tasks_to_small(tasks['full'])
 ``` 
 
 ### Assign some things for convenient reference
 
 ```{python}
-trial_specs = task_base.validation_trials
-trial_specs_small = jt.leaves(tasks_small, is_leaf=is_module)[0].validation_trials
+example_task = {
+    key: jt.leaves(tasks, is_leaf=is_module)[0]
+    for key, tasks in all_tasks.items()
+}
 
-pos_endpoints = get_pos_endpoints(trial_specs)
-pos_endpoints_small = get_pos_endpoints(trial_specs_small)
+trial_specs = jt.map(lambda task: task.validation_trials, example_task, is_leaf=is_module)
 
-# Once the positions are center-subtracted and aligned to reach direction,
-# all the endpoints will be the same.
-pos_endpoints_aligned = jnp.array([
-    [0., 0.], [eval_reach_length, 0.]
-])
-pos_endpoints_small_aligned = jnp.array([
-    [0., 0.], [eval_reach_length_small, 0.]
-])
-```
-
-### Number of evaluations per model and condition
-
-We'll evaluate each condition (reach direction) several times, to see how performance varies with noise.
-
-```{python}
-n_evals = 5
-n_evals_small = 5
-
-if not any_system_noise:
-    n_evals = n_evals_small = 1
+pos_endpoints = jt.map(get_pos_endpoints, trial_specs, is_leaf=is_module)
 ```
 
 ## Setup colors for plots
 
 ```{python}
 trials_colors, trials_colors_dark = get_colors_dicts(
-    range(n_evals), COLORSCALES['trials'],
+    range(n_evals['full']), COLORSCALES['trials'],
 )
 
 # by training condition
@@ -541,7 +456,7 @@ context_input_colors, context_input_colors_dark = get_colors_dicts(
 ## Evaluate the trained models on each evaluation task
 
 ```{python}
-def evaluate_all_states(tasks, n_evals):
+def evaluate_all_states(models, tasks, n_evals):
     return jt.map( # Map over task variants
         lambda models: jt.map(  # Map over training conditions (`models` entries)
             lambda task: vmap_eval_ensemble(models, task, n_evals, key_eval),
@@ -555,16 +470,19 @@ def evaluate_all_states(tasks, n_evals):
 
 ```{python}
 all_states_bytes = (
-    tree_struct_bytes(eqx.filter_eval_shape(evaluate_all_states, tasks, n_evals)),
-    tree_struct_bytes(eqx.filter_eval_shape(evaluate_all_states, tasks_small, n_evals_small)),
+    tree_struct_bytes(eqx.filter_eval_shape(evaluate_all_states, models, all_tasks['full'], n_evals['full'])),
+    tree_struct_bytes(eqx.filter_eval_shape(evaluate_all_states, models, all_tasks['small'], n_evals['small'])),
 )
 
 print(f"{sum(all_states_bytes) / 1e9:.2f} GB of memory estimated to store all states.")
 ```
 
 ```{python}
-all_states = evaluate_all_states(tasks, n_evals)
-all_states_small = evaluate_all_states(tasks_small, n_evals_small)
+# Evaluate all task variants (full and small)
+all_states = jt.map(
+    lambda n, tasks: evaluate_all_states(models, tasks, n),
+    n_evals, all_tasks,
+)
 ```
 
 ### Project positions, velocities, and forces into reach direction
@@ -581,9 +499,15 @@ where_vars_to_align = lambda states, pos_endpoints: Responses(
 )
 ```
 
-```{python}
-aligned_vars = get_aligned_vars(all_states, where_vars_to_align, pos_endpoints)
-aligned_vars_small = get_aligned_vars(all_states_small, where_vars_to_align, pos_endpoints_small)
+```{python}   
+aligned_vars = {
+    variant: jt.map(
+        lambda all_states: get_aligned_vars(all_states, where_vars_to_align, pos_endpoints[variant]),
+        all_states[variant],
+        is_leaf=is_module,
+    )
+    for variant in all_states
+}
 ```
 
 ## Plot aligned trajectories
@@ -591,7 +515,7 @@ aligned_vars_small = get_aligned_vars(all_states_small, where_vars_to_align, pos
 i.e. for a single reach direction, compare multiple trials/replicates different training conditions; visualize how training on different disturbance strengths affects response.
 
 ```{python}
-fig_subdir = "aligned_to_reach_condition"
+plot_id = "aligned_to_reach_condition"
 ```
 
 ```{python}
@@ -621,13 +545,13 @@ plot_condition_trajectories = partial(
 ### Comparison across context inputs
 
 ```{python}
-fig_subdir = "aligned_to_reach_condition/compare_context_inputs"
+plot_id = "aligned_to_reach_condition/compare_context_inputs"
 ```
 
 ```{python}
 plot_vars_stacked = jt.map(
     lambda d: tree_stack(d.values()),
-    aligned_vars_small,
+    aligned_vars['small'],
     is_leaf=is_type(ContextInputDict),
 )
 ```
@@ -653,33 +577,31 @@ figs = jt.map(
 
 
 ```{python}
-amplitude = disturbance_amplitude[disturbance_type]
-
 for path, fig in tqdm(figs_flatten_with_paths(figs)):
     training_method = path[0].key
     disturbance_train_std = path[1].key
     
-    add_context_annotation(
-        fig,
-        perturbations={
-            f"{disturbance_type}": (amplitude, None, None)
-        },
-        train_condition_strs=[
-            f"{disturbance_type_train} fields with std {disturbance_train_std}",
-            "the {training_method.upper()} context condition",
-        ],        
+    add_endpoint_traces(fig, POS_ENDPOINTS_ALIGNED['small'], xaxis='x1', yaxis='y1')
+    
+    fig_parameters = dict(
+        training_method=training_method,
+        disturbance_type=disturbance_type,
+        disturbance_type_train=disturbance_type_train,
+        disturbance_train_std=disturbance_train_std,
+        disturbance_amplitude=disturbance_amplitude,
         # TODO: The number of replicates (`n_replicates_included`) may vary with the disturbance train std!
-        # n=min(n_evals_small * n_replicates, n_curves_max),
+        # n=min(n_evals['small'] * n_replicates, n_curves_max),
     )
     
-    add_endpoint_traces(fig, pos_endpoints_small_aligned, xaxis='x1', yaxis='y1')
-
-    savefig(
-        fig, 
-        join([
-            f"{training_method}",
-            f"{disturbance_type}-field-{amplitude}",
-        ]),
-        subdir=fig_subdir,
-    )  
+    add_evaluation_figure(
+        db_session,
+        eval_info,
+        fig,
+        plot_id,
+        **fig_parameters,
+    )
 ```
+
+## Measure distributions
+
+**TODO**

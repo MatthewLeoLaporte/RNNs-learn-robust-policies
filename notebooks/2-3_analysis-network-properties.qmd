@@ -7,6 +7,12 @@ execute:
   echo: false
 ---
 
+```{python}
+NB_ID = "2-3"
+
+TRAIN_NB_ID = "2-1"
+```
+
 # Analysis of network properties
 
 Here are some basic analyses of network weights and activities. 
@@ -16,14 +22,6 @@ Here are some basic analyses of network weights and activities.
 3. Correlation between top PCs and the network output -- this should be related to 2.
 
 ## Environment setup
-
-Unique ID for notebook, for naming outputs.
-
-```{python}
-NB_ID = "2-3"
-
-TRAIN_NB_ID = "2-1"
-```
 
 ```{python}
 %load_ext autoreload
@@ -51,6 +49,7 @@ import jax.random as jr
 import jax.tree as jt
 import matplotlib.pyplot as plt
 import numpy as np
+import plotly
 import plotly.colors as plc
 import plotly.graph_objects as go
 from tqdm.auto import tqdm
@@ -78,28 +77,22 @@ import feedbax.plotly as fbp
 from feedbax.task import SimpleReaches
 from feedbax.xabdeef.losses import simple_reach_loss
 
-from rnns_learn_robust_motor_policies import (
-    FIGS_BASE_DIR, 
-    MODELS_DIR, 
-    PROJECT_SEED,
-    HYPERPARAMS_FILE_LABEL,
-    BEST_MODEL_FILE_LABEL,
-    MODEL_FILE_LABEL,
-    REPLICATE_INFO_FILE_LABEL,
-)
+from rnns_learn_robust_motor_policies import PROJECT_SEED
 from rnns_learn_robust_motor_policies.colors import (
     COLORSCALES, 
     MEAN_LIGHTEN_FACTOR,
     get_colors_dicts,
 )
-from rnns_learn_robust_motor_policies.misc import lohi, load_from_json
+from rnns_learn_robust_motor_policies.database import (
+    get_db_session,
+)
+from rnns_learn_robust_motor_policies.misc import lohi, load_from_json, print_version_info
 from rnns_learn_robust_motor_policies.train_setup_part2 import setup_task_model_pairs
 from rnns_learn_robust_motor_policies.post_training import setup_replicate_info
 from rnns_learn_robust_motor_policies.plot import (
     add_endpoint_traces,
 )
 from rnns_learn_robust_motor_policies.plot_utils import (
-    add_context_annotation,
     figleaves,
     get_savefig_func,
 )
@@ -131,10 +124,13 @@ from rnns_learn_robust_motor_policies.types import PertAmpDict, TrainStdDict
 Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
 
 ```{python}
-for mod in (jax, eqx): 
-    print(f"{mod.__name__} version: {mod.__version__}")
-    
-print(f"feedbax commit: {git_commit_id()}\n")
+print_version_info(jax, eqx, plotly)
+```
+
+### Initialize model database connection
+
+```{python}
+db_session = get_db_session()
 ```
 
 ### Hyperparameters
@@ -146,10 +142,11 @@ print(f"feedbax commit: {git_commit_id()}\n")
 disturbance_type_load: Literal['curl', 'random'] = 'random'
 feedback_noise_std_load = 0.0
 motor_noise_std_load = 0.0
-feedback_delay_steps_load = 0
+feedback_delay_steps = 0
+hidden_size = 50
 
 # Specify model parameters to use for analysis (None -> use training value)
-disturbance_type: Optional[Literal['curl', 'random']] = None
+# disturbance_type: Optional[Literal['curl', 'random']] = None
 feedback_noise_std: Optional[float] = None
 motor_noise_std: Optional[float] = None
 ```
@@ -157,25 +154,12 @@ motor_noise_std: Optional[float] = None
 ```{python}
 feedback_noise_std_load = float(feedback_noise_std_load)
 motor_noise_std_load = float(motor_noise_std_load)
-feedback_delay_steps_load = int(feedback_delay_steps_load)
+feedback_delay_steps = int(feedback_delay_steps)
+hidden_size = int(hidden_size)
 if feedback_noise_std is not None:
     feedback_noise_std = float(feedback_noise_std)
 if motor_noise_std is not None:
     motor_noise_std = float(motor_noise_std)
-```
-
-```{python}
-noise_stds = dict(
-    feedback=feedback_noise_std,
-    motor=motor_noise_std,
-)
-```
-
-### Directories and filenames
-
-```{python}
-if not MODELS_DIR.exists():
-    raise FileNotFoundError(f"Models directory not found: {MODELS_DIR.absolute()}")
 ```
 
 ### RNG setup
@@ -188,85 +172,62 @@ key_init, key_train, key_eval = jr.split(key, 3)
 ## Load and adjust trained models
 
 ```{python}
-load_from_parameters = True
-```
-
-```{python}
-suffix_load = '_'.join([
-    f"{disturbance_type_load}",
-    f"noise-{feedback_noise_std_load}-{motor_noise_std_load}",
-    f"delay-{feedback_delay_steps_load}",
-])
-
-if load_from_parameters and 'None' in suffix_load:
-    raise ValueError("If loading from parameters, all parameters must be specified.")
-```
-
-```{python}
-# filter_pattern = "1-1_*trained_models*"
-filter_pattern = f"{TRAIN_NB_ID}_*{MODEL_FILE_LABEL}*"
-
-if not load_from_parameters:
-    fc = display_model_filechooser(MODELS_DIR, filter_pattern=filter_pattern)
-```
-
-```{python}
-if not load_from_parameters:
-    if fc.selected is None:
-        models_filepath = f"{fc.default_path}/{fc.default_filename}"
-    else:
-        models_filepath = fc.selected
-else: 
-    models_filepath = str(find_unique_filepath(
-        MODELS_DIR, f"{TRAIN_NB_ID}__{suffix_load}__{BEST_MODEL_FILE_LABEL}"
-    ))
-    if models_filepath is None:
-        raise FileNotFoundError(f"No models found with file label: {suffix_load}")
-```
-
-```{python}
-trained_models_load: dict[float, eqx.Module] = load(
-    MODELS_DIR / models_filepath, partial(setup_models_only, setup_task_model_pairs),
+model_info = get_model_record(
+    db_session,
+    disturbance_type=disturbance_type_load,
+    feedback_noise_std=feedback_noise_std_load,
+    motor_noise_std=motor_noise_std_load,
+    feedback_delay_steps=feedback_delay_steps,
+    hidden_size=hidden_size,
 )
 ```
 
 ```{python}
-hyperparameters_filepath = models_filepath.replace(
-    f'{BEST_MODEL_FILE_LABEL}.eqx', 
-    f'{HYPERPARAMS_FILE_LABEL}.json',
+models_load: TrainStdDict[float, eqx.Module] = load(
+    model_info.path, partial(setup_models_only, setup_task_model_pairs),
 )
-hyperparameters = load_from_json(hyperparameters_filepath)
-replicate_info_filepath = models_filepath.replace(
-    f'{BEST_MODEL_FILE_LABEL}', 
-    f'{REPLICATE_INFO_FILE_LABEL}',
-)
+
 replicate_info = load(
-    replicate_info_filepath, partial(setup_replicate_info, trained_models_load),
+    model_info.replicate_info_path, partial(setup_replicate_info, models_load),
 )
-
-disturbance_train_stds_load = hyperparameters['disturbance_stds']
-n_replicates = hyperparameters['n_replicates']
-n_steps = hyperparameters['n_steps']
-
-# We'll use this for creating figure subdirectories according to the training conditions
-suffix_train = models_filepath.split('__')[1]
 ```
 
 ### Modify the system noise if needed
 
 ```{python}
-trained_models_load = jt.map(
+models_base = jt.map(
     partial(
         set_model_noise, 
-        noise_stds=noise_stds,
+        noise_stds=dict(
+            feedback=feedback_noise_std,
+            motor=motor_noise_std,
+        ),
         enable_noise=True,
     ),
-    trained_models_load,
+    models_load,
     is_leaf=is_module,
 )
 ```
 
+### Optionally select a subset of training conditions
+
+Depending on how training goes, we might want to leave out some of the training conditions (i.e. training disturbance stds) from the analysis.
+
+```{python}
+disturbance_train_stds = model_info.disturbance_stds
+
+models_base = subdict(models_base, disturbance_train_stds)
+```
+
 ### Optionally exclude replicates that perform much worse than average
+
+When plotting single-replicate examples, we want to show the best replicate. Also, when lumping together replicates and plotting distributions, we want to include as many replicates as possible to show how performance may vary, but also exclude replicates whose performance is much worse than the best replicate.
+
+:::{note}
+The logic here is that systems like the brain will have much more efficient learning systems, and that we are approximating their efficiency by taking advantage of variance between model initializations. 
+
+In other words: we are interested in the kind of performance that is feasible with these kinds of networked controllers, more than the kind of performance that we should expect on average (or in the worst case) given the technical details of network initialization etc.
+:::
 
 ```{python}
 exclude_underperformers = True
@@ -290,69 +251,68 @@ def take_replicate_or_best(tree: TrainStdDict, i_replicate=None, replicate_axis=
     return jt.map(map_func, tree, is_leaf=is_type(TrainStdDict))
 ```
 
-```{python}
-trained_models_all_replicates = trained_models_load
+Which replicates are included?
 
-# Set model weights to NaN if excluded
+```{python}
+print("\nReplicates included in analysis for each training condition:")
+eqx.tree_pprint(jt.map(lambda x: jnp.where(x)[0], included_replicates), short_arrays=False)
+```
+
+Set the indices corresponding to the excluded replicates to NaN in each of the model arrays. This ensures that the shapes of the arrays remain consistent. NaN results will be ignored at plotting time. 
+
+```{python}
+models_all_replicates = models_base
+
 if exclude_underperformers:
-    trained_models = jt.map(
+    models_base = jt.map(
         lambda models, included: tree_set_scalar(models, jnp.nan, jnp.where(~included)[0]),
-        trained_models_load, included_replicates,
+        models_base, included_replicates,
         is_leaf=is_module,
     )
     n_replicates_included = jt.map(lambda x: jnp.sum(x).item(), included_replicates)
 else:
-    trained_models = trained_models_load
-    n_replicates_included = dict.fromkeys(trained_models.keys(), n_replicates)
+    models_base = models_base
+    n_replicates_included = dict.fromkeys(models.keys(), model_info.n_replicates)
 ```
 
-### Sort out the training and testing hyperparameters
+**TODO**: Make an annotation that indicates "$n/N$ replicates are included" or something.
 
-The following will never vary between training and analysis.
+## Sort out the evaluation parameters
+
+We will either be evaluating on specific disturbance types and noise conditions, or if none are specified here,
+keeping the same conditions used during training.
 
 ```{python}
-feedback_delay_steps = hyperparameters['feedback_delay_steps']
+eval_parameters = use_record_params_where_none(dict(
+    feedback_noise_std=feedback_noise_std,
+    motor_noise_std=motor_noise_std,
+), model_info)
 ```
 
-The following may change for the analysis, but we may want to refer to the training values.
+```{python}
+any_system_noise = any(jt.leaves((
+    eval_parameters['feedback_noise_std'],
+    eval_parameters['motor_noise_std'],
+)))
+```
+
+### Full parameter dict
 
 ```{python}
-disturbance_type_train = hyperparameters['disturbance_type']
-noise_stds_train = dict(
-    feedback=hyperparameters['feedback_noise_std'],
-    motor=hyperparameters['motor_noise_std'],
+eval_parameters |= dict(
+    # n_evals=n_evals['full'],
 )
 ```
 
-If we didn't alter the disturbance type or noise levels for the analysis, we can infer they'll be the same as the ones used during training.
+## Initialize a record in the evaluations database
 
 ```{python}
-if disturbance_type is None:
-    disturbance_type = disturbance_type_train
-
-noise_stds = {
-    k: v if v is not None else noise_stds_train[k]
-    for k, v in noise_stds.items()
-} 
-
-any_system_noise = any(jt.leaves(noise_stds))
-```
-
-### Setup figure directories
-
-The hierarchy of figure directories depends on the hyperparameters of the trained model. Now that we've sorted that out, we can set up the base subdirectory for figures generated in the analyses that follow in this notebook.
-
-```{python}
-suffix = f"{disturbance_type}_noise-{noise_stds['feedback']}-{noise_stds['motor']}_delay-{feedback_delay_steps}"
-
-figs_dir = FIGS_BASE_DIR / f"{NB_ID}/train__{suffix_train}/{suffix}"
-
-for d in (figs_dir,):
-    d.mkdir(parents=True, exist_ok=True)
-```
-
-```{python}
-savefig = get_savefig_func(figs_dir)
+eval_info = add_evaluation(
+    db_session,
+    model_hash=model_info.hash,
+    eval_parameters=eval_parameters,
+    notebook_id=NB_ID,
+)
 ```
 
 ## Get goal steady-state fixed points
@@ -366,7 +326,9 @@ savefig = get_savefig_func(figs_dir)
 
 ```{python}
 task = get_base_task()
+```
 
+```{python}
 goals_pos = task.validation_trials.targets["mechanics.effector.pos"].value[:, -1]
 
 def get_rnn_func(net):

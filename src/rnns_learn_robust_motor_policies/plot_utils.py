@@ -1,5 +1,6 @@
 
 from collections.abc import Sequence
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -8,9 +9,10 @@ import jax.numpy as jnp
 import jax.tree as jt
 from jaxtyping import Array, Float
 import matplotlib.figure as mplfig
+import plotly
 import plotly.colors as plc
 import plotly.graph_objects as go
-
+from IPython.display import HTML, display
 
 from feedbax import is_type
 import feedbax.plot as fbp
@@ -168,3 +170,10 @@ def toggle_bounds_visibility(fig):
     fig.for_each_trace(toggle_visibility_if_bound)
 
 
+def plotly_vscode_latex_fix():
+    """Fixes LaTeX rendering in Plotly figures in VS Code."""
+    if os.environ.get('VSCODE_PID') is not None:        
+        plotly.offline.init_notebook_mode()
+        display(HTML(
+            '<script type="text/javascript" async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-MML-AM_SVG"></script>'
+        ))

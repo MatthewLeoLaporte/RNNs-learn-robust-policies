@@ -1,7 +1,7 @@
+import os
 from pathlib import Path
 
 import plotly.io as pio
-import yaml
 
 from rnns_learn_robust_motor_policies.misc import load_yaml
 
@@ -35,3 +35,4 @@ TRAIN_HISTORY_FILE_LABEL = "train_history"
 
 # Set the default Plotly theme
 pio.templates.default = 'simple_white'
+

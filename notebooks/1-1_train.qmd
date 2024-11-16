@@ -71,31 +71,18 @@ from feedbax.intervene import (
     FixedField,
     schedule_intervenor,
 )
-from feedbax.misc import git_commit_id, where_func_to_labels
-import feedbax.plot as fbplt
-import feedbax.plotly as fbp
+from feedbax.misc import print_version_info, where_func_to_labels
 from feedbax.task import SimpleReaches
 from feedbax.train import TaskTrainer
 from feedbax.xabdeef.losses import simple_reach_loss
 from feedbax.xabdeef.models import point_mass_nn
 
-from rnns_learn_robust_motor_policies import (
-    PROJECT_SEED,
-    DB_DIR,
-    FIGS_BASE_DIR,
-    MODELS_DIR,
-    MODEL_FILE_LABEL,
-    HYPERPARAMS_FILE_LABEL,
-    TRAIN_HISTORIES_FILE_LABEL,
-)
+from rnns_learn_robust_motor_policies import PROJECT_SEED
 from rnns_learn_robust_motor_policies.database import (
     get_db_session,
     save_model_and_add_record,
 )
-from rnns_learn_robust_motor_policies.misc import write_to_json
 from rnns_learn_robust_motor_policies.train_setup_part1 import setup_task_model_pairs
-from rnns_learn_robust_motor_policies.plot_utils import get_savefig_func
-from rnns_learn_robust_motor_policies.setup_utils import filename_join as join
 from rnns_learn_robust_motor_policies.tree_utils import pp
 from rnns_learn_robust_motor_policies.types import TaskModelPair
 from rnns_learn_robust_motor_policies.train_setup import (
@@ -107,10 +94,7 @@ from rnns_learn_robust_motor_policies.train_setup import (
 Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
 
 ```{python}
-for mod in (jax, eqx, optax): 
-    print(f"{mod.__name__} version: {mod.__version__}")
-    
-print(f"feedbax commit: {git_commit_id()}\n")
+print_version_info(jax, eqx, optax)
 ```
 
 ### Initialize model database connection
@@ -126,10 +110,10 @@ These are parameters that can be [varied](https://quarto.org/docs/computations/p
 ```{python}
 #| tags: [parameters]
 
-disturbance_type: Literal['curl', 'random'] = 'curl'  
+disturbance_type: Literal['curl', 'random'] = 'random'  
 feedback_delay_steps = 0
-feedback_noise_std = 0.1
-motor_noise_std = 0.1
+feedback_noise_std = 0.0
+motor_noise_std = 0.0
 hidden_size = 50
 n_replicates = 5
 n_steps = 100

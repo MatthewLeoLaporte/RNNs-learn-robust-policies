@@ -60,9 +60,11 @@ FIGURES_TABLE_NAME = 'figures'
 
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.WARNING)
+# Prevent alembic from polluting the console with routine migration logs
+logging.getLogger('alembic.runtime.migration').setLevel(logging.WARNING)
 
 
-# Base = declarative_base()
 class Base(DeclarativeBase):
     type_annotation_map = {
         dict[str, Any]: JSON,
@@ -89,7 +91,10 @@ class ModelRecord(Base):
 
     @hybrid_property
     def replicate_info_path(self):
-        return get_hash_path(MODELS_DIR, self.hash, suffix=REPLICATE_INFO_FILE_LABEL)
+        if self.has_replicate_info:
+            return get_hash_path(MODELS_DIR, self.hash, suffix=REPLICATE_INFO_FILE_LABEL)
+        else: 
+            return None
     
     @hybrid_property
     def train_history_path(self):
@@ -432,7 +437,7 @@ def save_model_and_add_record(
     if existing_record is not None:
         session.delete(existing_record)
         session.commit()
-        logger.warning(f"Replacing existing model record with hash {model_hash}")
+        logger.debug(f"Replacing existing model record with hash {model_hash}")
     
     session.add(model_record)
     session.commit()
@@ -492,7 +497,7 @@ def add_evaluation(
     existing_record = get_record(session, EvaluationRecord, hash=eval_hash)
     if existing_record is not None:
         existing_record.created_at = datetime.utcnow()
-        logger.warning(f"Updating timestamp of existing evaluation record with hash {eval_hash}")
+        logger.debug(f"Updating timestamp of existing evaluation record with hash {eval_hash}")
         eval_record = existing_record
     else:
         eval_record = EvaluationRecord(
@@ -602,7 +607,7 @@ def add_evaluation_figure(
     if existing_record is not None:
         session.delete(existing_record)
         session.commit()
-        logger.info(f"Replacing existing figure record with hash {figure_hash}")
+        logger.debug(f"Replacing existing figure record with hash {figure_hash}")
     
     session.add(figure_record)
     session.commit()
