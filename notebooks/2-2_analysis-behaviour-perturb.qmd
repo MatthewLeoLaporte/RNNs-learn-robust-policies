@@ -349,7 +349,7 @@ eval_info = add_evaluation(
     db_session,
     model_hash=model_info.hash,
     eval_parameters=eval_parameters,
-    notebook_id=NB_ID,
+    origin=NB_ID,
 )
 ```
 

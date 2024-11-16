@@ -82,7 +82,7 @@ class ModelRecord(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     hash: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    notebook_id: Mapped[str]
+    origin: Mapped[str]
     is_path_defunct: Mapped[bool] 
     has_replicate_info: Mapped[bool]
     
@@ -106,19 +106,18 @@ MODEL_RECORD_BASE_ATTRS = ModelRecord.__table__.columns.keys()
     
     
 class EvaluationRecord(Base):
-    """Represents a single evaluation of a notebook."""
+    """Represents a single evaluation."""
     __tablename__ = EVALUATIONS_TABLE_NAME
     
     id: Mapped[int] = mapped_column(primary_key=True)
     hash: Mapped[str] = mapped_column(unique=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    origin: Mapped[Optional[str]]
+    model_hash: Mapped[Optional[str]] = mapped_column(ForeignKey(f'{MODELS_TABLE_NAME}.hash'))
+    archived: Mapped[bool] = mapped_column(default=False)
+    archived_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     
-    # Reference to the model used
-    model_hash: Mapped[str] = mapped_column(ForeignKey(f'{MODELS_TABLE_NAME}.hash'))
-    # Which notebook was evaluated
-    notebook_id: Mapped[Optional[str]]  # e.g. "1-2a"
-    
-    model = relationship("ModelRecord")  
+    model = relationship("ModelRecord")
     figures = relationship("FigureRecord", back_populates="evaluation")
 
     @hybrid_property
@@ -138,9 +137,11 @@ class FigureRecord(Base):
     identifier: Mapped[str]
     figure_type: Mapped[str]
     saved_formats: Mapped[Sequence[str]]
+    archived: Mapped[bool] = mapped_column(default=False)
+    archived_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     
-    model = relationship("ModelRecord")
     evaluation = relationship("EvaluationRecord", back_populates="figures")
+    model = relationship("ModelRecord")
 
 
 TABLE_NAME_TO_MODEL = {
@@ -387,7 +388,7 @@ def check_model_files(session: Session) -> None:
 
 def save_model_and_add_record(
     session: Session,
-    notebook_id: str,
+    origin: str,
     model: Any,
     model_hyperparameters: Dict[str, Any],
     other_hyperparameters: Dict[str, Any],
@@ -439,7 +440,7 @@ def save_model_and_add_record(
     # Create database record
     model_record = ModelRecord(
         hash=model_hash,
-        notebook_id=notebook_id,
+        origin=origin,
         is_path_defunct=False, 
         has_replicate_info=replicate_info is not None,
         **hyperparameters,
@@ -460,7 +461,7 @@ def save_model_and_add_record(
 def generate_eval_hash(
     model_hash: Optional[str], 
     eval_params: Dict[str, Any],
-    notebook_id: Optional[str] = None,
+    origin: Optional[str] = None,
 ) -> str:
     """Generate a hash for a notebook evaluation based on model hash and parameters.
     
@@ -470,7 +471,7 @@ def generate_eval_hash(
     """
     eval_str = "_".join([
         f"{model_hash or 'None'}",
-        f"{notebook_id or 'None'}",
+        f"{origin or 'None'}",
         f"{json.dumps(eval_params, sort_keys=True)}",
     ])
     return hashlib.md5(eval_str.encode()).hexdigest()
@@ -480,14 +481,14 @@ def add_evaluation(
     session: Session,
     model_hash: Optional[str],  # Changed from ModelRecord to Optional[int]
     eval_parameters: Dict[str, Any],
-    notebook_id: Optional[str] = None,
+    origin: Optional[str] = None,
 ) -> EvaluationRecord:
     """Create new notebook evaluation record.
     
     Args:
         session: Database session
         model_id: ID of the model used (None for training notebooks)
-        notebook_id: ID of the notebook being evaluated
+        origin: ID of the notebook being evaluated
         eval_parameters: Parameters used for evaluation
     """
     eval_parameters = arrays_to_lists(eval_parameters)
@@ -496,7 +497,7 @@ def add_evaluation(
     eval_hash = generate_eval_hash(
         model_hash=model_hash,
         eval_params=eval_parameters,
-        notebook_id=notebook_id,
+        origin=origin,
     )
     
     # Migrate the evaluations table so it has all the necessary columns
@@ -518,7 +519,7 @@ def add_evaluation(
         eval_record = EvaluationRecord(
             hash=eval_hash,
             model_hash=model_hash,  # Can be None
-            notebook_id=notebook_id,
+            origin=origin,
             **eval_parameters,
         )
         session.add(eval_record)
@@ -640,3 +641,70 @@ def use_record_params_where_none(parameters: dict[str, Any], record: Base) -> di
         k: getattr(record, k) if v is None else v
         for k, v in parameters.items()
     }
+    
+
+def archive_orphaned_records(session: Session) -> None:
+    """Mark records as archived if their model references no longer exist."""
+    logger.info("Checking for orphaned records...")
+    
+    try:
+        # Get all existing model hashes
+        model_hashes = {r.hash for r in session.query(ModelRecord).all()}
+        
+        # Find and archive orphaned evaluation records
+        orphaned_evals = (
+            session.query(EvaluationRecord)
+            .filter(
+                EvaluationRecord.model_hash.isnot(None),  # Skip training evals
+                ~EvaluationRecord.model_hash.in_(model_hashes),
+                EvaluationRecord.archived == False
+            )
+            .all()
+        )
+        
+        if orphaned_evals:
+            now = datetime.utcnow()
+            for record in orphaned_evals:
+                logger.warning(
+                    f"Archiving evaluation {record.hash} - referenced model "
+                    f"{record.model_hash} no longer exists"
+                )
+                record.archived = True
+                record.archived_at = now
+                
+                # Also archive associated figures
+                for figure in record.figures:
+                    if not figure.archived:
+                        figure.archived = True
+                        figure.archived_at = now
+                        
+            session.commit()
+        
+        # Find and archive orphaned figure records
+        orphaned_figures = (
+            session.query(FigureRecord)
+            .filter(
+                ~FigureRecord.model_hash.in_(model_hashes),
+                FigureRecord.archived == False
+            )
+            .all()
+        )
+        
+        if orphaned_figures:
+            now = datetime.utcnow()
+            for record in orphaned_figures:
+                logger.warning(
+                    f"Archiving figure {record.hash} - referenced model "
+                    f"{record.model_hash} no longer exists"
+                )
+                record.archived = True
+                record.archived_at = now
+            session.commit()
+            
+        if not (orphaned_evals or orphaned_figures):
+            logger.info("No orphaned records found")
+            
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Error archiving orphaned records: {e}")
+        raise

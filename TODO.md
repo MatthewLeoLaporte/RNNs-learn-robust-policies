@@ -17,9 +17,10 @@ updated: 2024-11-13T10:32
 
 ### Database
 
-- [ ] Don’t re-do post-processing for models which already have replicate info, unless the user forces
+- [x] Don’t re-do post-processing for models which already have replicate info, unless the user forces
+- [x] ~~**don’t just delete orphaned records, but move them to other tables which lack the foreign key relationship – so we still have access to the info if it becomes relevant, but it won’t lead to foreign key issues**~~ Not separate tables, though
 - [ ] Include `disturbance_type_train` and `disturbance_type` in figure records, even though this is redundant with the models table
-- [ ] Rename `EvaluationRecord.notebook_id` to `.origin` or something
+- [x] Rename `EvaluationRecord.notebook_id` to `.origin` or something
 - [ ] ~~Store `replicate_info` records in a separate table, and best params models in a separate file (currently we overwrite in `post_training.process_model_record`) so that we can do multiple different `post_training` runs? Maybe this is overkill~~
 - [ ] It looks like sometimes, running 1-1, if we change certain parameters (e.g. `n_batches`) then we will end up overwriting the models file (hash is the same? how can that be?) but not the train_history file. Double check that this is actually happening. If so, there’s an issue with checking and deleting previous runs, and some hyperparameters are not being accounted for when deciding to delete.
 - [ ] Automatically export CSV or something for each db table, as a backup

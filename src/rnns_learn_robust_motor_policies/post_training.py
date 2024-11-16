@@ -79,7 +79,7 @@ N_TRIALS_VAL = 5
 def load_data(model_record: ModelRecord):
     """Loads models, hyperparameters and training histories from files."""
     # Load model and associated data
-    notebook_id = str(model_record.notebook_id)
+    origin = str(model_record.origin)
     
     if not model_record.path.exists() or not model_record.train_history_path.exists():
         logger.error(f"Model or training history file not found for {model_record.hash}")
@@ -87,7 +87,7 @@ def load_data(model_record: ModelRecord):
     
     models, model_hyperparameters = load_with_hyperparameters(
         model_record.path, 
-        partial(setup_models_only, SETUP_FUNCS[notebook_id]),
+        partial(setup_models_only, SETUP_FUNCS[origin]),
     )
     train_histories, train_history_hyperparameters = load_with_hyperparameters(
         model_record.train_history_path,
@@ -457,7 +457,7 @@ def process_model_record(
         logger.info(f"Model {model_record.hash} already has replicate info and `process_all` is false; skipping")
         return
     
-    notebook_id = str(model_record.notebook_id)
+    origin = str(model_record.origin)
     # TODO: Either ignore the typing here, or make these columns explicit in `ModelRecord`
     where_train = attr_str_tree_to_where_func(model_record.where_train_strs)
     disturbance_type = str(model_record.disturbance_type)
@@ -473,7 +473,7 @@ def process_model_record(
     
     # Evaluate each model on its respective validation task
     tasks = setup_tasks_only(
-        SETUP_FUNCS[notebook_id], 
+        SETUP_FUNCS[origin], 
         key=jr.PRNGKey(0), 
         **model_hyperparams,
     )
@@ -507,7 +507,7 @@ def process_model_record(
         
         new_record = save_model_and_add_record(
             session,
-            str(model_record.notebook_id),
+            str(model_record.origin),
             best_models,
             model_hyperparams,
             record_hyperparameters | dict(n_std_exclude=n_std_exclude),
@@ -552,7 +552,7 @@ def process_model_record(
             n_evals=N_TRIALS_VAL,
             # n_std_exclude=n_std_exclude,  # Not relevant to the figures that are generated?
         ),
-        notebook_id="post_training",
+        origin="post_training",
     )
     
     # Save training figures

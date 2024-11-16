@@ -292,7 +292,7 @@ train_histories_hyperparameters=dict(
 ```{python}
 model_record = save_model_and_add_record(
     db_session,
-    notebook_id=NB_ID,
+    origin=NB_ID,
     model=trained_models,
     model_hyperparameters=model_hyperparameters,
     other_hyperparameters=training_hyperparameters,

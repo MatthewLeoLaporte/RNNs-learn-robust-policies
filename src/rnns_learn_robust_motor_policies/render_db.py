@@ -59,8 +59,8 @@ def load_eval_configs(
     configs = {}
     for notebook_id, notebook_config in config_dict["notebooks"].items():
         configs[notebook_id] = NotebookEvalConfig(
-            notebook_id=notebook_id,
-            train_notebook_id=notebook_config["train_notebook_id"],
+            origin=notebook_id,
+            train_origin=notebook_config["train_notebook_id"],
             rules=[
                 EvalRule(**rule_dict)
                 for rule_dict in notebook_config.get("rules", [])
