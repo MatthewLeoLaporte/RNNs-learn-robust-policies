@@ -449,8 +449,13 @@ def process_model_record(
     session: Session,
     model_record: ModelRecord,
     n_std_exclude: float,
+    process_all: bool = True,
 ) -> None:
     """Process a single model record, updating it with best parameters and replicate info."""
+    
+    if model_record.has_replicate_info and not process_all:
+        logger.info(f"Model {model_record.hash} already has replicate info and `process_all` is false; skipping")
+        return
     
     notebook_id = str(model_record.notebook_id)
     # TODO: Either ignore the typing here, or make these columns explicit in `ModelRecord`
@@ -563,7 +568,7 @@ def process_model_record(
     logger.info(f"Processed model {model_record.hash}")
     
     
-def main(n_std_exclude: float = 2.0):
+def main(n_std_exclude: float = 2.0, process_all: bool = False):
     """Process all models in database."""
     session = get_db_session()
     
@@ -579,6 +584,7 @@ def main(n_std_exclude: float = 2.0):
                     session,
                     model_record,
                     n_std_exclude,
+                    process_all,
                 )
                 progress.update(task, advance=1)
             except Exception as e:
@@ -589,6 +595,7 @@ def main(n_std_exclude: float = 2.0):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Post-training processing of models.")
     parser.add_argument("--n_std_exclude", default=2, type=float, help="Mark replicates this many stds above the best as to-be-excluded")
+    parser.add_argument("--process_all", action="store_true", help="Reprocess all models, even if they already have replicate info")
     args = parser.parse_args()
     
-    main(args.n_std_exclude)
+    main(args.n_std_exclude, args.process_all)

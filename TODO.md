@@ -4,6 +4,7 @@ updated: 2024-11-13T10:32
 ---
 
 - [x] **Finish setting up database**
+- [ ] Open `.qmd` files as .py and remove unnecessary imports
 - [ ] **Debug NaN in ‘std’ variant** 
 - [ ] **Goal steady-state fixed points**
 - [ ] **Eigendecomposition of steady-state Jacobians**
@@ -16,6 +17,7 @@ updated: 2024-11-13T10:32
 
 ### Database
 
+- [ ] Don’t re-do post-processing for models which already have replicate info, unless the user forces
 - [ ] Include `disturbance_type_train` and `disturbance_type` in figure records, even though this is redundant with the models table
 - [ ] Rename `EvaluationRecord.notebook_id` to `.origin` or something
 - [ ] ~~Store `replicate_info` records in a separate table, and best params models in a separate file (currently we overwrite in `post_training.process_model_record`) so that we can do multiple different `post_training` runs? Maybe this is overkill~~

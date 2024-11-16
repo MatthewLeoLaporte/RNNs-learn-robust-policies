@@ -43,6 +43,7 @@ from sqlalchemy.orm import (
 from sqlalchemy.sql.type_api import TypeEngine
 
 from feedbax import save
+from feedbax._io import arrays_to_lists
 
 from rnns_learn_robust_motor_policies import (
     DB_DIR, 
@@ -215,6 +216,7 @@ def init_db(db_path: str = "sqlite:///models.db"):
 def get_db_session(key: str = "main"):
     """Create a database session for the project database with the given key."""
     return init_db(f"sqlite:///{DB_DIR}/{key}.db")
+    
 
 
 def hash_file(path: Path) -> str:
@@ -395,6 +397,17 @@ def save_model_and_add_record(
     replicate_info_hyperparameters: Optional[Dict[str, Any]] = None,
 ) -> ModelRecord:
     """Save model files with hash-based names and add database record."""
+    (
+        model_hyperparameters, 
+        train_history_hyperparameters, 
+        replicate_info_hyperparameters,
+    ) = arrays_to_lists(
+        (
+            model_hyperparameters, 
+            train_history_hyperparameters, 
+            replicate_info_hyperparameters,
+        )
+    )
     
     # Save model and get hash-based filename
     model_hash, model_path = save_with_hash(model, MODELS_DIR, model_hyperparameters)
@@ -477,6 +490,8 @@ def add_evaluation(
         notebook_id: ID of the notebook being evaluated
         eval_parameters: Parameters used for evaluation
     """
+    eval_parameters = arrays_to_lists(eval_parameters)
+    
     # Generate hash from model_id (if any) and parameters
     eval_hash = generate_eval_hash(
         model_hash=model_hash,
@@ -562,6 +577,8 @@ def add_evaluation_figure(
         save_formats: The image types to save. 
         **parameters: Additional parameters that distinguish the figure
     """
+    parameters = arrays_to_lists(parameters)
+    
     # Generate hash including parameters
     figure_hash = generate_figure_hash(eval_record.hash, identifier, parameters)
     
