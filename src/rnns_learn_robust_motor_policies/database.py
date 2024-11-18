@@ -15,8 +15,10 @@ import uuid
 
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+import jax.tree as jt
 from jaxtyping import PyTree
 import matplotlib.figure as mplf
+import plotly
 import plotly.graph_objects as go
 from sqlalchemy import (
     Boolean,
@@ -42,8 +44,14 @@ from sqlalchemy.orm import (
 )
 from sqlalchemy.sql.type_api import TypeEngine
 
-from feedbax import save
+from feedbax import is_type, save, tree_zip
 from feedbax._io import arrays_to_lists
+from feedbax._tree import (
+    everyf,
+    is_not_type,
+    make_named_dict_subclass,
+    make_named_tuple_subclass,
+)
 
 from rnns_learn_robust_motor_policies import (
     DB_DIR, 
@@ -722,3 +730,111 @@ def archive_orphaned_records(session: Session) -> None:
         session.rollback()
         logger.error(f"Error archiving orphaned records: {e}")
         raise
+
+
+RecordDict = make_named_dict_subclass("RecordDict")
+ColumnTuple = make_named_tuple_subclass("ColumnTuple")
+
+
+def record_to_dict(record: Base) -> dict[str, Any]:
+    """Converts an SQLAlchemy record to a dict."""
+    return RecordDict({
+        col.key: getattr(record, col.key) 
+        for col in inspect(record).mapper.column_attrs
+    })
+
+
+def _value_if_unique(x: tuple):
+    # Assume that all members of the tuple are the same type, since they come from the same column
+    if isinstance(x[0], list):
+        x = tuple(map(tuple, x))  # type: ignore
+    if len(set(x)) == 1:
+        return x[0]
+    else:
+        return x
+    
+    
+# TODO: Use a DataFrame instead
+def records_to_dict(records: list[Base], collapse_constant: bool = True) -> dict[str, Any]:
+    """Zips multiple records into a single dict."""
+    records_dict = tree_zip(
+        *[record_to_dict(r) for r in records], 
+        is_leaf=everyf(is_type(dict, list), is_not_type(RecordDict)),
+        zip_cls=ColumnTuple,
+    )
+    if collapse_constant:
+        records_dict = jt.map(
+            lambda x: _value_if_unique(x),
+            records_dict,
+            is_leaf=is_type(ColumnTuple),
+        )
+    return records_dict
+        
+
+    
+def retrieve_figures(
+    session: Session,
+    model_parameters: Optional[dict] = None,
+    evaluation_parameters: Optional[dict] = None,
+    exclude_archived: bool = True,
+    **figure_parameters
+) -> tuple[list[go.Figure], list[tuple[FigureRecord, EvaluationRecord, ModelRecord]]]:
+    """Retrieve figures matching the given parameters.
+    
+    Parameters can contain tuples to match multiple values (OR condition).
+    
+    Args:
+        session: Database session
+        model_parameters: Parameters to match in models table
+        evaluation_parameters: Parameters to match in evaluations table
+        exclude_archived: If True, exclude archived figures
+        **figure_parameters: Parameters to match in figures table
+        
+    Returns:
+        Tuple of (list of plotly figures, list of record tuples)
+        Each record tuple contains (figure_record, evaluation_record, model_record)
+    """
+    # Start with base query joining all three tables
+    query = (
+        session.query(FigureRecord, EvaluationRecord, ModelRecord)
+        .join(EvaluationRecord, FigureRecord.evaluation_hash == EvaluationRecord.hash)
+        .join(ModelRecord, FigureRecord.model_hash == ModelRecord.hash)
+    )
+    
+    if exclude_archived:
+        query = query.filter(FigureRecord.archived == False)
+
+    def add_filters(query, model, parameters):
+        for param, value in parameters.items(): 
+            if isinstance(value, tuple):
+                query = query.filter(getattr(model, param).in_(value))
+            else:
+                query = query.filter(getattr(model, param) == value)
+        return query
+
+    # Add figure parameter filters
+    query = add_filters(query, FigureRecord, figure_parameters)
+            
+    # Add model parameter filters
+    if model_parameters:
+        query = add_filters(query, ModelRecord, model_parameters)
+    
+    # Add evaluation parameter filters
+    if evaluation_parameters:
+        query = add_filters(query, EvaluationRecord, evaluation_parameters)
+    
+    figures = []
+    records = []
+    for record_tuple in query.all():
+        figure_record, _, _ = record_tuple
+        json_path = FIGS_BASE_DIR / figure_record.evaluation_hash / f"{figure_record.hash}.json"
+        if json_path.exists():
+            try:
+                figures.append(plotly.io.read_json(json_path))
+                records.append(record_tuple)
+            except Exception as e:
+                logger.warning(f"Failed to load figure {figure_record.hash}: {e}")
+                
+    # TODO: Report # of figures, associated with # of evaluations
+    
+    return figures, records

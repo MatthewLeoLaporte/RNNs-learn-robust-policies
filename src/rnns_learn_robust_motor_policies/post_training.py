@@ -348,7 +348,7 @@ def save_training_figures(
             fig_parameters |= dict(variant_label=variant_label)
         
         if train_std:
-            fig_parameters |= dict(train_std=float(train_std))
+            fig_parameters |= dict(disturbance_train_std=float(train_std))
         
         add_evaluation_figure(
             db_session,
