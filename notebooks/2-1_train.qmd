@@ -66,8 +66,6 @@ os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
 ```{python}
 from functools import partial
-import json
-from pathlib import Path
 from typing import Any, Literal, Optional
 
 import equinox as eqx
@@ -75,47 +73,27 @@ import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
-import matplotlib.pyplot as plt
 import numpy as np
 import optax 
-from tqdm.auto import tqdm
 
 from feedbax import (
-    get_ensemble,
-    load,
-    save,
     is_module,
     is_type,
     tree_unzip,
     tree_map_tqdm,
 )
-from feedbax.intervene import (
-    CurlField, 
-    CurlFieldParams,
-    FixedField,
-    FixedFieldParams,
-    schedule_intervenor,
-)
-from feedbax.misc import git_commit_id, where_func_to_labels
-from feedbax.task import TrialSpecDependency
-from feedbax.task import SimpleReaches
+from feedbax.misc import where_func_to_labels
 from feedbax.train import TaskTrainer
-from feedbax.xabdeef.losses import simple_reach_loss
-from feedbax.xabdeef.models import point_mass_nn
 
 from rnns_learn_robust_motor_policies import PROJECT_SEED
-from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL
 from rnns_learn_robust_motor_policies.database import (
     get_db_session,
+    save_model_and_add_record,
 )
-from rnns_learn_robust_motor_policies.misc import print_version_info, write_to_json
+from rnns_learn_robust_motor_policies.misc import print_version_info
 from rnns_learn_robust_motor_policies.train_setup_part2 import (
     setup_task_model_pairs, 
-    setup_models,
 )
-from rnns_learn_robust_motor_policies.plot_utils import get_savefig_func
-from rnns_learn_robust_motor_policies.setup_utils import filename_join as join
-from rnns_learn_robust_motor_policies.state_utils import project_onto_direction
 from rnns_learn_robust_motor_policies.tree_utils import pp
 from rnns_learn_robust_motor_policies.types import TaskModelPair
 from rnns_learn_robust_motor_policies.train_setup import (

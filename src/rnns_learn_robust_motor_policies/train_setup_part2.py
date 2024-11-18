@@ -77,6 +77,7 @@ def setup_task_model_pairs(
     disturbance_stds,
     p_perturbed,
     key,
+    **kwargs,
 ):
     """Returns a skeleton PyTree for reloading trained models."""
     task_base = get_base_task(n_steps)

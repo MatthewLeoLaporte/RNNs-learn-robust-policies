@@ -9,7 +9,7 @@ import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
-from jaxtyping import Array, Int, PyTree
+from jaxtyping import Array, Int, PyTree, Shaped
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -25,12 +25,10 @@ from feedbax import (
     tree_unzip,
 )
 from feedbax.misc import attr_str_tree_to_where_func
-import feedbax.plot as fbplt
 import feedbax.plotly as fbp 
 from feedbax.train import TaskTrainerHistory
 from feedbax._tree import tree_labels
 
-from rnns_learn_robust_motor_policies import FIGS_BASE_DIR
 from rnns_learn_robust_motor_policies.database import (
     ModelRecord, 
     MODEL_RECORD_BASE_ATTRS,
@@ -67,10 +65,12 @@ logging.basicConfig(
 logger = logging.getLogger('rich')
 
 
+# The setup/deserialisation depends on where/how the model was trained
 SETUP_FUNCS = {
     '1-1': setup_task_model_pairs_p1,
     '2-1': setup_task_model_pairs_p2,
 }
+
 
 # Number of trials to evaluate when deciding which replicates to exclude
 N_TRIALS_VAL = 5
@@ -83,7 +83,7 @@ def load_data(model_record: ModelRecord):
     
     if not model_record.path.exists() or not model_record.train_history_path.exists():
         logger.error(f"Model or training history file not found for {model_record.hash}")
-        return None, None, None, None
+        return
     
     models, model_hyperparameters = load_with_hyperparameters(
         model_record.path, 
@@ -213,11 +213,14 @@ def get_best_models(
     return models_with_best_parameters
 
 
-def get_replicate_loss_distribution_figure(losses_at_iteration, label=""):
+def get_replicate_distribution_figure(
+    measure: TrainStdDict[float, Shaped[Array, 'replicates']], 
+    yaxis_title="",
+) -> go.Figure:
     
-    n_replicates = len(jt.leaves(losses_at_iteration)[0])
+    n_replicates = len(jt.leaves(measure)[0])
     
-    df = pd.DataFrame(losses_at_iteration).reset_index().melt(id_vars='index')
+    df = pd.DataFrame(measure).reset_index().melt(id_vars='index')
     df["index"] = df["index"].astype(str)
 
     fig = go.Figure()
@@ -227,8 +230,6 @@ def get_replicate_loss_distribution_figure(losses_at_iteration, label=""):
         x='variable',
         y='value',
         color="index",
-        labels=dict(x="Train disturbance std.", y=f"{label} batch total loss"),
-        title=f"{label} total loss across training by disturbance std.",
         color_discrete_sequence=px.colors.qualitative.Plotly,
         # stripmode='overlay',
     )
@@ -238,15 +239,11 @@ def get_replicate_loss_distribution_figure(losses_at_iteration, label=""):
         marker_symbol='circle-open',
         marker_line_width=3,
     )
-    
-    # strips.for_each_trace(
-    #     lambda trace: trace.update(x=list(trace.x))
-    # )
 
     violins = [
         go.Violin(
             x=[disturbance_std] * n_replicates,
-            y=losses,
+            y=data,
             # box_visible=True,
             line_color='black',
             meanline_visible=True,
@@ -256,7 +253,7 @@ def get_replicate_loss_distribution_figure(losses_at_iteration, label=""):
             showlegend=False,   
             spanmode='hard',  
         )
-        for disturbance_std, losses in losses_at_iteration.items()
+        for disturbance_std, data in measure.items()
     ]
     
     fig.add_traces(violins)
@@ -267,7 +264,7 @@ def get_replicate_loss_distribution_figure(losses_at_iteration, label=""):
         width=800,
         height=500,
         xaxis_title="Train disturbance std.",
-        yaxis_title=f"{label} total loss",
+        yaxis_title=yaxis_title,
         # xaxis_range=[-0.5, len(disturbance_stds) + 0.5],
         # xaxis_tickvals=np.linspace(0,1.2,4),
         # yaxis_type='log',
@@ -283,42 +280,61 @@ def get_replicate_loss_distribution_figure(losses_at_iteration, label=""):
     return fig
 
 
-def get_train_history_figures(histories_by_train_std):
-    return TrainStdDict({
-        train_std: fbp.loss_history(history.loss)
-        for train_std, history in histories_by_train_std.items()
-    })
+def get_train_history_figures(
+    histories_by_train_std: PyTree[TaskTrainerHistory, 'T']
+) -> PyTree[go.Figure, 'T']:
+    return jt.map(
+        lambda history: fbp.loss_history(history.loss),
+        histories_by_train_std,
+        is_leaf=is_type(TaskTrainerHistory),
+    )
+
+
+class FigFuncSpec(eqx.Module):
+    func: Callable[..., go.Figure | TrainStdDict[float, go.Figure]]
+    args: tuple[PyTree, ...]
 
 
 def save_training_figures(
     db_session,
     eval_info,
     train_histories, 
-    n_replicates,
-    losses_at_best_saved_iteration,
-    losses_at_final_saved_iteration,
+    replicate_info,
 ):
     # Specify the figure-generating functions and their arguments
-    fig_specs = dict(
-        loss_history=dict(
+    fig_specs: dict[str, FigFuncSpec] = dict(
+        loss_history=FigFuncSpec(
             func=get_train_history_figures,
             args=(train_histories,),
         ),
-        loss_dist_over_replicates_best=dict(
-            func=partial(get_replicate_loss_distribution_figure, label="Best"),
-            args=(losses_at_best_saved_iteration,),
+        loss_dist_over_replicates_best=FigFuncSpec(
+            func=partial(
+                get_replicate_distribution_figure, 
+                yaxis_title=f"Best batch total loss",
+            ),
+            args=(replicate_info['losses_at_best_saved_iteration'],),
         ),
-        loss_dist_over_replicates_final=dict(
-            func=partial(get_replicate_loss_distribution_figure, label="Total"),
-            args=(losses_at_final_saved_iteration,),
+        loss_dist_over_replicates_final=FigFuncSpec(
+            func=partial(
+                get_replicate_distribution_figure, 
+                yaxis_title=f"Final batch total loss",
+            ),
+            args=(replicate_info['losses_at_final_saved_iteration'],),
+        ),
+        readout_norm=FigFuncSpec(
+            func=partial(
+                get_replicate_distribution_figure, 
+                yaxis_title=f"Frobenius norm of readout weights",
+            ),
+            args=(replicate_info['readout_norm'],), 
         ),
     )
     
-    # Map all of them at the TrainStdDict level
+    # Evaluate all of them at the TrainStdDict level
     all_figs = {
         fig_label: jt.map(
-            fig_spec['func'],
-            *fig_spec['args'],
+            fig_spec.func,
+            *fig_spec.args,
             is_leaf=is_type(TrainStdDict),
         )
         for fig_label, fig_spec in fig_specs.items()
@@ -454,7 +470,7 @@ def process_model_record(
     """Process a single model record, updating it with best parameters and replicate info."""
     
     if model_record.has_replicate_info and not process_all:
-        logger.info(f"Model {model_record.hash} already has replicate info and `process_all` is false; skipping")
+        logger.info(f"Model {model_record.hash} already has replicate info and process_all is false; skipping")
         return
     
     origin = str(model_record.origin)
@@ -464,12 +480,12 @@ def process_model_record(
     n_replicates = int(model_record.n_replicates)       
     save_model_parameters = jnp.array(model_record.save_model_parameters)
     
-    models, model_hyperparams, train_histories, train_history_hyperparams = load_data(model_record)
+    all_data = load_data(model_record)
     
-    if models is None:
+    if all_data is None:
         return
     else:
-        assert model_hyperparams is not None
+        models, model_hyperparams, train_histories, train_history_hyperparams = all_data
     
     # Evaluate each model on its respective validation task
     tasks = setup_tasks_only(
@@ -560,9 +576,7 @@ def process_model_record(
         db_session,
         eval_info,
         train_histories, 
-        n_replicates, 
-        replicate_info['losses_at_best_saved_iteration'], 
-        replicate_info['losses_at_final_saved_iteration'],
+        replicate_info,
     )
     
     logger.info(f"Processed model {model_record.hash}")

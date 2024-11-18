@@ -42,6 +42,7 @@ def setup_task_model_pairs(
     disturbance_type: Literal['random', 'curl'],
     disturbance_stds,
     key,
+    **kwargs,
 ):
     task_base = get_base_task(n_steps)
     

@@ -31,7 +31,7 @@ from sqlalchemy import (
     inspect,
     or_,
 )
-from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import (
     DeclarativeBase, 
     Mapped, 
@@ -70,6 +70,7 @@ class Base(DeclarativeBase):
     type_annotation_map = {
         dict[str, Any]: JSON,
         Sequence[str]: JSON,
+        Sequence[int]: JSON,
     }
 
 
@@ -85,6 +86,13 @@ class ModelRecord(Base):
     origin: Mapped[str]
     is_path_defunct: Mapped[bool] 
     has_replicate_info: Mapped[bool]
+    
+    # Explicitly define some parameter columns to avoid typing issues, though our dynamic column 
+    # migration would handle whatever parameters the user happens to pass, without this.
+    disturbance_type: Mapped[str]
+    where_train_strs: Mapped[Sequence[str]]
+    n_replicates: Mapped[int]
+    save_model_parameters: Mapped[Sequence[int]]
     
     @hybrid_property
     def path(self):
@@ -108,6 +116,9 @@ MODEL_RECORD_BASE_ATTRS = ModelRecord.__table__.columns.keys()
 class EvaluationRecord(Base):
     """Represents a single evaluation."""
     __tablename__ = EVALUATIONS_TABLE_NAME
+
+    model = relationship("ModelRecord")
+    figures = relationship("FigureRecord", back_populates="evaluation")
     
     id: Mapped[int] = mapped_column(primary_key=True)
     hash: Mapped[str] = mapped_column(unique=True, nullable=False)
@@ -117,9 +128,6 @@ class EvaluationRecord(Base):
     archived: Mapped[bool] = mapped_column(default=False)
     archived_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     
-    model = relationship("ModelRecord")
-    figures = relationship("FigureRecord", back_populates="evaluation")
-
     @hybrid_property
     def figure_dir(self):
         return FIGS_BASE_DIR / self.hash
@@ -128,20 +136,25 @@ class EvaluationRecord(Base):
 class FigureRecord(Base):
     """Represents a figure generated during evaluation."""
     __tablename__ = FIGURES_TABLE_NAME
+
+    evaluation = relationship("EvaluationRecord", back_populates="figures")
+    model = relationship("ModelRecord")
     
     id: Mapped[int] = mapped_column(primary_key=True)
     hash: Mapped[str] = mapped_column(unique=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     evaluation_hash: Mapped[str] = mapped_column(ForeignKey(f'{EVALUATIONS_TABLE_NAME}.hash'))
-    model_hash: Mapped[str] = mapped_column(ForeignKey(f'{MODELS_TABLE_NAME}.hash'))
     identifier: Mapped[str]
     figure_type: Mapped[str]
     saved_formats: Mapped[Sequence[str]]
     archived: Mapped[bool] = mapped_column(default=False)
     archived_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     
-    evaluation = relationship("EvaluationRecord", back_populates="figures")
-    model = relationship("ModelRecord")
+    # This is redundant because it can be inferred from `evaluation_hash`, but we include it for convenience
+    model_hash: Mapped[str] = mapped_column(ForeignKey(f'{MODELS_TABLE_NAME}.hash'))
+    
+    # These are also redundant, and can be inferred from `model_hash` and `evaluation_hash`
+    disturbance_type: Mapped[str]  
 
 
 TABLE_NAME_TO_MODEL = {
@@ -410,8 +423,10 @@ def save_model_and_add_record(
         )
     )
     
+    hyperparameters = model_hyperparameters | other_hyperparameters
+    
     # Save model and get hash-based filename
-    model_hash, model_path = save_with_hash(model, MODELS_DIR, model_hyperparameters)
+    model_hash, model_path = save_with_hash(model, MODELS_DIR, hyperparameters)
     
     # Save associated files if provided
     if train_history is not None:
@@ -434,7 +449,6 @@ def save_model_and_add_record(
             hyperparameters=replicate_info_hyperparameters,
         )
         
-    hyperparameters = model_hyperparameters | other_hyperparameters
     update_table_schema(session.bind, MODELS_TABLE_NAME, hyperparameters)    
     
     # Create database record

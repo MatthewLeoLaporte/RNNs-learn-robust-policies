@@ -35,9 +35,6 @@ os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 ```{python}
 from collections import OrderedDict, namedtuple
 from functools import partial
-from itertools import zip_longest
-from pathlib import Path
-from operator import itemgetter
 from typing import Any, Literal, Optional
 
 import equinox as eqx
@@ -45,10 +42,8 @@ import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
-import matplotlib.pyplot as plt
 import numpy as np
 import plotly
-import plotly.colors as plc
 import plotly.graph_objects as go
 from tqdm.auto import tqdm
 
@@ -63,17 +58,13 @@ from feedbax import (
     tree_take_multi,
     tree_unzip,
 )
-from feedbax.channel import toggle_channel_noise
 from feedbax.intervene import (
     CurlField, 
     FixedField, 
     add_intervenors, 
     schedule_intervenor,
 )
-from feedbax.misc import attr_str_tree_to_where_func
 import feedbax.plotly as fbp
-from feedbax.task import SimpleReaches
-from feedbax.xabdeef.losses import simple_reach_loss
 
 from rnns_learn_robust_motor_policies import PROJECT_SEED
 from rnns_learn_robust_motor_policies.colors import (
@@ -93,7 +84,7 @@ from rnns_learn_robust_motor_policies.database import (
     use_record_params_where_none,
 )
 from rnns_learn_robust_motor_policies.measures import output_corr
-from rnns_learn_robust_motor_policies.misc import lohi, load_from_json, print_version_info
+from rnns_learn_robust_motor_policies.misc import lohi, print_version_info
 from rnns_learn_robust_motor_policies.train_setup_part1 import setup_task_model_pairs
 from rnns_learn_robust_motor_policies.post_training import setup_replicate_info
 from rnns_learn_robust_motor_policies.plot import (
@@ -103,29 +94,21 @@ from rnns_learn_robust_motor_policies.plot import (
 )
 from rnns_learn_robust_motor_policies.plot_utils import figleaves
 from rnns_learn_robust_motor_policies.setup_utils import (
-    display_model_filechooser,
-    filename_join as join,
-    find_unique_filepath,
     get_base_task,
     convert_tasks_to_small,
     set_model_noise,
-    setup_train_histories,
     setup_models_only,
 )
 from rnns_learn_robust_motor_policies.state_utils import (
     get_aligned_vars,
-    get_forward_lateral_vel, 
-    get_lateral_distance,
     get_pos_endpoints,
     orthogonal_field,
-    project_onto_direction,
     vmap_eval_ensemble,
 )
 from rnns_learn_robust_motor_policies.tree_utils import (
     pp,
     subdict, 
     subset_dict_tree_level,
-    swap_model_trainables, 
 )
 from rnns_learn_robust_motor_policies.types import PertAmpDict, TrainStdDict
 ```
@@ -154,7 +137,8 @@ disturbance_type_load: Literal['curl', 'random'] = 'curl'
 feedback_noise_std_load = 0.0
 motor_noise_std_load = 0.0
 feedback_delay_steps_load = 0
-hidden_size = 50
+hidden_size = 100
+where_train_strs = ["step.net.hidden"]
 
 # Specify model parameters to use for analysis (None -> use training value)
 disturbance_type: Optional[Literal['curl', 'random']] = None
@@ -194,6 +178,7 @@ model_info = get_model_record(
     motor_noise_std=motor_noise_std_load,
     feedback_delay_steps=feedback_delay_steps_load,
     hidden_size=hidden_size,
+    where_train_strs=where_train_strs,
 )
 ```
 
@@ -473,7 +458,7 @@ all_states_bytes = (
     tree_struct_bytes(eqx.filter_eval_shape(evaluate_all_states, models, all_tasks['small'], n_evals['small'])),
 )
 
-print(f"{sum(all_states_bytes) / 1e9:.2f} GB of memory estimated to store all states.")
+print(f"\n{sum(all_states_bytes) / 1e9:.2f} GB of memory estimated to store all states.")
 ```
 
 Now actually evaluate the states:
@@ -1304,7 +1289,7 @@ figs = get_one_measure_plot_per_eval_condition(
     get_measure_replicate_comparisons, 
     all_measures_subset_disturbance_train_stds,
     lohi(disturbance_train_stds_colors_dark),
-    included_replicates=replicates_all_lohi_included,
+    included_replicates=np.where(replicates_all_lohi_included)[0],
 )
 ```
 
@@ -1513,4 +1498,6 @@ add_evaluation_figure(
     plot_id,
     **fig_parameters,
 )
+
+fig.show()
 ```

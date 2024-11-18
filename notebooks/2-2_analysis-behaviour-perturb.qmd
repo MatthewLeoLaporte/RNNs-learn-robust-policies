@@ -33,17 +33,14 @@ os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 from collections import namedtuple
 from functools import partial
 from typing import Literal, Optional
-from pathlib import Path
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
-import matplotlib.pyplot as plt
 import numpy as np
 import plotly
-import plotly.colors as plc
 import plotly.graph_objects as go
 from tqdm.auto import tqdm
 
@@ -56,19 +53,14 @@ from feedbax import (
     tree_struct_bytes,
     tree_take, 
     tree_take_multi,
-    tree_unzip,
 )
-from feedbax.channel import toggle_channel_noise
 from feedbax.intervene import (
     CurlField, 
     FixedField, 
-    add_intervenors, 
     schedule_intervenor,
 )
-from feedbax.misc import git_commit_id, attr_str_tree_to_where_func
 import feedbax.plotly as fbp
-from feedbax.task import SimpleReaches, TrialSpecDependency
-from feedbax.xabdeef.losses import simple_reach_loss
+from feedbax.task import TrialSpecDependency
 
 from rnns_learn_robust_motor_policies import PROJECT_SEED
 from rnns_learn_robust_motor_policies.colors import (
@@ -76,11 +68,11 @@ from rnns_learn_robust_motor_policies.colors import (
     MEAN_LIGHTEN_FACTOR,
     get_colors_dicts,
 )
-from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL, WORKSPACE
+from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL
 from rnns_learn_robust_motor_policies.database import (
     get_db_session,
 )
-from rnns_learn_robust_motor_policies.misc import lohi, load_from_json, print_version_info
+from rnns_learn_robust_motor_policies.misc import print_version_info
 from rnns_learn_robust_motor_policies.train_setup_part2 import (
     setup_task_model_pairs, 
 )
@@ -90,32 +82,23 @@ from rnns_learn_robust_motor_policies.plot import (
 from rnns_learn_robust_motor_policies.plot_utils import (
     figleaves,
     figs_flatten_with_paths,
-    get_savefig_func,
 )
 from rnns_learn_robust_motor_policies.post_training import setup_replicate_info
 from rnns_learn_robust_motor_policies.setup_utils import (
-    display_model_filechooser,
-    filename_join as join,
-    find_unique_filepath,
     get_base_task,
     convert_tasks_to_small,
     set_model_noise,
     setup_models_only,
-    setup_train_histories,
 )
 from rnns_learn_robust_motor_policies.state_utils import (
     get_aligned_vars,
-    get_forward_lateral_vel, 
-    get_lateral_distance,
     get_pos_endpoints,
     orthogonal_field,
-    project_onto_direction,
     vmap_eval_ensemble,
 )
 from rnns_learn_robust_motor_policies.tree_utils import (
     pp,
     subdict, 
-    swap_model_trainables, 
 )
 from rnns_learn_robust_motor_policies.types import (
     TrainStdDict, 
@@ -605,3 +588,7 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
 ## Measure distributions
 
 **TODO**
+
+## Output correlation
+
+Note that the readout is fixed, so any change in null vs. potent activity is entirely driven in the recurrent connections by the context input.

@@ -35,11 +35,7 @@ os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 ```
 
 ```{python}
-from collections import OrderedDict, namedtuple
 from functools import partial
-from itertools import zip_longest
-from pathlib import Path
-from operator import itemgetter
 from typing import Literal, Optional
 
 import equinox as eqx
@@ -47,12 +43,9 @@ import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
-import matplotlib.pyplot as plt
 import numpy as np
 import plotly
-import plotly.colors as plc
 import plotly.graph_objects as go
-from tqdm.auto import tqdm
 
 from feedbax import (
     is_module, 
@@ -65,17 +58,6 @@ from feedbax import (
     tree_take_multi,
     tree_unzip,
 )
-from feedbax.channel import toggle_channel_noise
-from feedbax.intervene import (
-    CurlField, 
-    FixedField, 
-    add_intervenors, 
-    schedule_intervenor,
-)
-from feedbax.misc import git_commit_id, attr_str_tree_to_where_func
-import feedbax.plotly as fbp
-from feedbax.task import SimpleReaches
-from feedbax.xabdeef.losses import simple_reach_loss
 
 from rnns_learn_robust_motor_policies import PROJECT_SEED
 from rnns_learn_robust_motor_policies.colors import (
@@ -86,37 +68,21 @@ from rnns_learn_robust_motor_policies.colors import (
 from rnns_learn_robust_motor_policies.database import (
     get_db_session,
 )
-from rnns_learn_robust_motor_policies.misc import lohi, load_from_json, print_version_info
+from rnns_learn_robust_motor_policies.misc import print_version_info
 from rnns_learn_robust_motor_policies.train_setup_part2 import setup_task_model_pairs
 from rnns_learn_robust_motor_policies.post_training import setup_replicate_info
-from rnns_learn_robust_motor_policies.plot import (
-    add_endpoint_traces,
-)
-from rnns_learn_robust_motor_policies.plot_utils import (
-    figleaves,
-    get_savefig_func,
-)
+from rnns_learn_robust_motor_policies.plot_utils import figleaves
 from rnns_learn_robust_motor_policies.setup_utils import (
-    display_model_filechooser,
-    filename_join as join,
-    find_unique_filepath,
     get_base_task,
     set_model_noise,
-    setup_train_histories,
     setup_models_only,
 )
 from rnns_learn_robust_motor_policies.state_utils import (
-    get_aligned_vars,
-    get_forward_lateral_vel, 
-    get_lateral_distance,
-    get_pos_endpoints,
-    orthogonal_field,
     vmap_eval_ensemble,
 )
 from rnns_learn_robust_motor_policies.tree_utils import (
     pp,
     subdict, 
-    swap_model_trainables, 
 )
 from rnns_learn_robust_motor_policies.types import PertAmpDict, TrainStdDict
 ```
@@ -314,6 +280,16 @@ eval_info = add_evaluation(
     origin=NB_ID,
 )
 ```
+
+## Distributions of model weights
+
+Input-hidden, hidden-hidden, and hidden-output
+
+Violins.
+
+### By training condition
+
+### By replicate (sanity check)
 
 ## Get goal steady-state fixed points
 
