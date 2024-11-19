@@ -1,0 +1,130 @@
+
+```{python}
+%load_ext autoreload
+%autoreload 2
+
+from rnns_learn_robust_motor_policies.database import (
+    get_db_session,
+    records_to_dict,
+    retrieve_figures,
+)
+
+import plotly 
+import plotly.graph_objects as go
+```
+
+
+```{python}
+db_session = get_db_session()
+```
+
+```{python}
+disturbance_type_train = 'curl'
+disturbance_type = 'curl'
+```
+
+## Post-training figures 
+
+Readout norms
+
+```{python}
+figs, records = retrieve_figures(
+    db_session,
+    model_parameters=dict(
+        disturbance_type=disturbance_type_train, 
+        hidden_size=100, 
+        # feedback_noise_std=(0, 0.1),
+        readout_norm_value = 0.75,
+    ), 
+    identifier="readout_norm", 
+)
+d = [records_to_dict(r) for r in zip(*records)]
+```
+
+Loss history
+
+```{python}
+figs, records = retrieve_figures(
+    db_session,
+    model_parameters=dict(
+        disturbance_type=disturbance_type_train, 
+        hidden_size=100, 
+        # feedback_noise_std=(0, 0.1),
+        readout_norm_value = 0.75,
+    ), 
+    identifier="loss_history", 
+)
+d = [records_to_dict(r) for r in zip(*records)]
+```
+
+## Evaluation figures
+
+```{python}
+figs, records = retrieve_figures(
+    db_session,
+    model_parameters=dict(
+        # disturbance_type=disturbance_type_train, 
+        # hidden_size=100, 
+        # feedback_noise_std=(0, 0.1)
+    ), 
+    evaluation_parameters=dict(
+        # disturbance_type=disturbance_type,
+    ), 
+    identifier="center_out_sets/single_eval_single_replicate", 
+    disturbance_train_std=(0, 1.6),
+    disturbance_amplitude=4,
+)
+d = [records_to_dict(r) for r in zip(*records)]
+```
+
+Hidden sizes
+
+```{python}
+figs, records = retrieve_figures(
+    db_session,
+    model_parameters=dict(
+        disturbance_type=disturbance_type_train, 
+        hidden_size=(2, 3, 4, 5, 10, 25, 50, 100), 
+        feedback_noise_std=0,
+    ), 
+    evaluation_parameters=dict(
+        disturbance_type=disturbance_type,
+    ), 
+    identifier="center_out_sets/single_eval_single_replicate", 
+    disturbance_train_std=(0, 1.6),
+    disturbance_amplitude=4,
+)
+d = [records_to_dict(r) for r in zip(*records)]
+```
+
+
+
+Output correlations
+
+```{python}
+figs, records = retrieve_figures(
+    db_session,
+    model_parameters=dict(
+        disturbance_type=disturbance_type_train, 
+        hidden_size=100, 
+        feedback_noise_std=(0, 0.1)
+    ), 
+    evaluation_parameters=dict(
+        disturbance_type=disturbance_type,
+    ), 
+    measure_name="output_correlation",
+)
+d = [records_to_dict(r) for r in zip(*records)]
+```
+
+
+```{python}
+from sqlalchemy import select, func
+
+from rnns_learn_robust_motor_policies.database import Base
+
+# Assuming you have a session and metadata
+for table in Base.metadata.tables.values():
+    count = db_session.execute(select(func.count()).select_from(table)).scalar()
+    print(f"Table {table.name}: {count} records")
+```

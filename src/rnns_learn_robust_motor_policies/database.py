@@ -69,7 +69,7 @@ FIGURES_TABLE_NAME = 'figures'
 
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
+logger.setLevel(logging.DEBUG)
 # Prevent alembic from polluting the console with routine migration logs
 logging.getLogger('alembic.runtime.migration').setLevel(logging.WARNING)
 
@@ -92,7 +92,8 @@ class ModelRecord(Base):
     hash: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     origin: Mapped[str]
-    is_path_defunct: Mapped[bool] 
+    is_path_defunct: Mapped[bool] = mapped_column(default=False)
+    postprocessed: Mapped[bool] = mapped_column(default=False)
     has_replicate_info: Mapped[bool]
     
     # Explicitly define some parameter columns to avoid typing issues, though our dynamic column 
@@ -118,7 +119,9 @@ class ModelRecord(Base):
         return get_hash_path(MODELS_DIR, self.hash, suffix=TRAIN_HISTORY_FILE_LABEL)
     
 
-MODEL_RECORD_BASE_ATTRS = ModelRecord.__table__.columns.keys()
+MODEL_RECORD_BASE_ATTRS = [
+    'id', 'hash', 'created_at', 'origin', 'is_path_defunct', 'has_replicate_info'
+]
     
     
 class EvaluationRecord(Base):
@@ -274,9 +277,11 @@ def query_model_records(
     exclude_defunct: bool = True,
 ) -> list[ModelRecord]:
     """Query model records from database matching filter criteria."""
+    if filters is None:
+        filters = {}
+        
     if exclude_defunct:
         check_model_files(session)
-        filters = filters or {}
         filters['is_path_defunct'] = False
         
     return query_records(session, ModelRecord, filters, match_all)

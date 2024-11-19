@@ -7,11 +7,18 @@ updated: 2024-11-13T10:32
 - [ ] **Goal steady-state fixed points**
 - [ ] **Eigendecomposition of steady-state Jacobians**
 - [ ] Move part 1 training to a script + a yaml file defining which hyperparameters to train — or otherwise we’ll have to use batch quarto render 
+- [ ] Try -1 and 1 for the “active” trianing variant, not 0 and 1
+
+## Model loss terms
+
+- [ ] Construct `history.loss_validation` from `task.loss_func` only, when a custom loss is passed to `TaskTrainer`; thus we don’t need to associate model loss terms with the task instance, but can pass the customized loss directly to `TaskTrainer` as I wanted
+- [ ] That also means we don’t need to know about the custom loss alterations when calling `get_task_model_pairs`. However, we still need a deserialisation function for `TaskTrainerHistories`… maybe `TaskTrainer` should generally be able to return this?
 
 ## Workflow
 
 ### Database
 
+- [ ] Maybe: Give post-training models their own table, with a reference to the `model_hash` they originated from; then in `post_training`, optionally skip post-training of models when there is already a record with matching `model_hash` and post-training hyperparameters.
 - [ ] Automatically export CSV or something for each db table, as a backup
 
 #### Figures

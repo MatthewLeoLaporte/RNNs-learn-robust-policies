@@ -30,16 +30,18 @@ from feedbax.train import TaskTrainerHistory
 from feedbax._tree import tree_labels
 
 from rnns_learn_robust_motor_policies.database import (
+    Base,
     ModelRecord, 
     MODEL_RECORD_BASE_ATTRS,
     add_evaluation,
     add_evaluation_figure,
     get_db_session, 
     query_model_records,
+    record_to_dict,
     save_model_and_add_record,
 )
 from rnns_learn_robust_motor_policies.setup_utils import (
-    setup_train_histories,
+    # setup_train_histories,
     setup_models_only,
     setup_tasks_only,
 )
@@ -49,7 +51,8 @@ from rnns_learn_robust_motor_policies.state_utils import (
     vmap_eval_ensemble,
 )
 from rnns_learn_robust_motor_policies.train_setup_part1 import (
-    setup_task_model_pairs as setup_task_model_pairs_p1
+    setup_task_model_pairs as setup_task_model_pairs_p1,
+    setup_train_histories,
 )
 from rnns_learn_robust_motor_policies.train_setup_part2 import (
     setup_task_model_pairs as setup_task_model_pairs_p2
@@ -89,10 +92,13 @@ def load_data(model_record: ModelRecord):
         model_record.path, 
         partial(setup_models_only, SETUP_FUNCS[origin]),
     )
+    logger.debug(f"Loaded model hyperparameters: {model_hyperparameters}")
+    
     train_histories, train_history_hyperparameters = load_with_hyperparameters(
         model_record.train_history_path,
         partial(setup_train_histories, models),
     )
+    logger.debug(f"Loaded train history hyperparameters: {train_history_hyperparameters}")
     
     return (
         models, 
@@ -467,10 +473,10 @@ def process_model_record(
     n_std_exclude: float,
     process_all: bool = True,
 ) -> None:
-    """Process a single model record, updating it with best parameters and replicate info."""
+    """Process a single model record, adding a new record with best parameters and replicate info."""
     
-    if model_record.has_replicate_info and not process_all:
-        logger.info(f"Model {model_record.hash} already has replicate info and process_all is false; skipping")
+    if model_record.has_replicate_info or (model_record.postprocessed and not process_all):
+        logger.info(f"Model {model_record.hash} has been processed previously and process_all is false; skipping")
         return
     
     origin = str(model_record.origin)
@@ -533,36 +539,15 @@ def process_model_record(
             replicate_info_hyperparameters=dict(n_replicates=n_replicates),
         )
         
-        # Delete old files if their paths changed
-        paths = {
-            'model': (model_record.path, new_record.path),
-            'train_history': (model_record.train_history_path, new_record.train_history_path),
-            # Replicate info should only change if we re-run `post_training` with different parameters
-            'replicate_info': (model_record.replicate_info_path, new_record.replicate_info_path),
-        }
-        
-        for key, (old_path, new_path) in paths.items():
-            if old_path is not None and str(old_path) != str(new_path):
-                Path(str(old_path)).unlink()
-                logger.info(f"Deleted old {key} file: {old_path}")
-        
-        # Delete the old record if the hash changed
-        # (If the hash remained the same, `save_model_and_add_record` has already dealt with it)
-        if str(new_record.hash) != str(model_record.hash):    
-            session.delete(model_record)
-            session.commit()
-        
     except Exception as e:
         # If anything fails, rollback and restore original record
         session.rollback()
         logger.error(f"Failed to process model {model_record.hash}: {e}")
         raise 
     
-    db_session = get_db_session()
-    
     #? Do we really need to make one of these, here? Or should training figures have their own table? 
     eval_info = add_evaluation(
-        db_session,
+        session,
         model_hash=model_record.hash,
         eval_parameters=dict(
             n_evals=N_TRIALS_VAL,
@@ -573,12 +558,14 @@ def process_model_record(
     
     # Save training figures
     save_training_figures(
-        db_session,
+        session,
         eval_info,
         train_histories, 
         replicate_info,
     )
     
+    model_record.postprocessed = int(True)
+    session.commit()
     logger.info(f"Processed model {model_record.hash}")
     
     

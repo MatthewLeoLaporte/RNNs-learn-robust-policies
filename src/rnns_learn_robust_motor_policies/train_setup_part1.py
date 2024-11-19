@@ -7,9 +7,10 @@ import jax.tree as jt
 
 from feedbax import get_ensemble, is_module, tree_unzip
 from feedbax.intervene import schedule_intervenor
+from feedbax.loss import ModelLoss
 from feedbax.misc import attr_str_tree_to_where_func
 from feedbax.task import SimpleReaches
-from feedbax.train import filter_spec_leaves
+from feedbax.train import filter_spec_leaves, TaskTrainerHistory, init_task_trainer_history
 from feedbax.xabdeef.models import point_mass_nn
 from feedbax.xabdeef.losses import simple_reach_loss
 
@@ -30,6 +31,13 @@ disturbance_params = {
 }
 
 
+readout_norm_func = lambda weights: jnp.linalg.norm(weights, axis=(-2, -1), ord='fro')
+get_readout_norm_loss = lambda value: ModelLoss(
+    "readout_norm",
+    lambda model: (readout_norm_func(model.step.net.readout.weight) - value) ** 2
+)
+
+
 def setup_task_model_pairs(
     *,
     n_replicates,
@@ -41,10 +49,17 @@ def setup_task_model_pairs(
     motor_noise_std,
     disturbance_type: Literal['random', 'curl'],
     disturbance_stds,
+    readout_norm_value,
+    readout_norm_loss_weight,
     key,
     **kwargs,
 ):
-    task_base = get_base_task(n_steps)
+    loss_func = simple_reach_loss() + readout_norm_loss_weight * get_readout_norm_loss(readout_norm_value)
+    
+    task_base = get_base_task(
+        n_steps=n_steps,
+        loss_func=loss_func,
+    )
     
     models = get_ensemble(
         point_mass_nn,
@@ -79,6 +94,51 @@ def setup_task_model_pairs(
     )
     
     return task_model_pairs
+
+
+def setup_train_histories(
+    models_tree,
+    disturbance_stds,
+    n_batches,
+    batch_size,
+    n_replicates,
+    *,
+    where_train_strs,
+    save_model_parameters,
+    readout_norm_value,
+    readout_norm_loss_weight,
+    key,
+) -> dict[float, TaskTrainerHistory]:
+    """Returns a skeleton PyTree for the training histories (losses, parameter history, etc.)
+    
+    Note that `init_task_trainer_history` depends on `task` to infer:
+    
+    1) The number and name of loss function terms;
+    2) The structure of trial specs, in case `save_trial_specs is not None`.
+    
+    Here, neither of these are a concern since 1) we are always using the same 
+    loss function for each set of saved/loaded models in this project, 2) `save_trial_specs is None`.
+    """   
+    where_train = attr_str_tree_to_where_func(where_train_strs)
+    loss_func = simple_reach_loss() + readout_norm_loss_weight * get_readout_norm_loss(readout_norm_value)
+    
+    return jt.map(
+        lambda models: init_task_trainer_history(
+            loss_func,
+            n_batches,
+            n_replicates,
+            ensembled=True,
+            ensemble_random_trials=False,
+            save_model_parameters=jnp.array(save_model_parameters),
+            save_trial_specs=None,
+            batch_size=batch_size,
+            model=models,
+            where_train=where_train,  
+        ),
+        models_tree,
+        is_leaf=is_module,
+    )
+
 
 
 def setup_model_parameter_histories(

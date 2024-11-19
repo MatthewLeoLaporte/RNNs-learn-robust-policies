@@ -138,8 +138,10 @@ feedback_noise_std_load = 0.0
 motor_noise_std_load = 0.0
 feedback_delay_steps_load = 0
 hidden_size = 100
-where_train_strs = ["step.net.hidden"]
-
+where_train_strs = ["step.net.hidden", "step.net.readout"]
+readout_norm_loss_weight = 0.1
+readout_norm_value = 2.0
+    
 # Specify model parameters to use for analysis (None -> use training value)
 disturbance_type: Optional[Literal['curl', 'random']] = None
 feedback_noise_std: Optional[float] = None
@@ -179,6 +181,9 @@ model_info = get_model_record(
     feedback_delay_steps=feedback_delay_steps_load,
     hidden_size=hidden_size,
     where_train_strs=where_train_strs,
+    has_replicate_info=1,
+    readout_norm_loss_weight=readout_norm_loss_weight,
+    readout_norm_value=readout_norm_value,
 )
 ```
 

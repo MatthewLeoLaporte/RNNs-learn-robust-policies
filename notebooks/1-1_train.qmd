@@ -53,6 +53,7 @@ from feedbax import (
     tree_map_tqdm,
     tree_unzip,
 )
+from feedbax.loss import ModelLoss
 from feedbax.misc import where_func_to_labels
 from feedbax.train import TaskTrainer
 
@@ -91,14 +92,24 @@ These are parameters that can be [varied](https://quarto.org/docs/computations/p
 #| tags: [parameters]
 
 disturbance_type: Literal['curl', 'random'] = 'random'  
-feedback_delay_steps = 0
+feedback_delay_steps = 4
 feedback_noise_std = 0.0
 motor_noise_std = 0.0
 hidden_size = 100
 n_replicates = 5
 n_steps = 100
 dt = 0.05
-cosine_annealing_alpha = 0.01
+
+n_batches = 10000
+batch_size = 250
+learning_rate_0 = 0.01
+constant_lr_iterations = 10  # Number of initial training iterations to hold lr constant
+cosine_annealing_alpha = 0.01  # Max learning rate factor decrease during cosine annealing 
+weight_decay = 0
+
+# Force the Frobenius norm of the readout weight matrix to be close (squared error) to this value
+readout_norm_value = 2.0
+readout_norm_loss_weight = 0.01
 ```
 
 ### RNG setup
@@ -112,8 +123,8 @@ key_init, key_train, key_eval = jr.split(key, 3)
 
 ```{python}
 disturbance_stds = {
-    'curl': [0, 0.4, 0.8, 1.6, 1.8, 2.0],
-    'random': [0, 0.01, 0.1, 1.0, 2.0],
+    'curl': [0, 0.6, 1.2, 1.8],
+    'random': [0, 0.025, 0.25, 2.5],
 }
 
 if not disturbance_type in ['curl', 'random']:
@@ -129,6 +140,8 @@ task_model_pairs = setup_task_model_pairs(
     motor_noise_std=motor_noise_std,
     disturbance_type=disturbance_type,
     disturbance_stds=disturbance_stds[disturbance_type],
+    readout_norm_loss_weight=readout_norm_loss_weight,
+    readout_norm_value=readout_norm_value,
     key=key_init,    
 )
 ```
@@ -139,14 +152,6 @@ task_model_pairs = setup_task_model_pairs(
 ### Training hyperparameters and optimizer
 
 ```{python}
-learning_rate_0 = 0.01
-constant_lr_iterations = 10  # Number of initial training iterations to hold lr constant
-alpha = cosine_annealing_alpha  # Max learning rate factor decrease during cosine annealing (see notebook hyperparameters)
-weight_decay = 0
-
-n_batches = 10000
-batch_size = 250
-
 optimizer_class = partial(
     optax.adamw,
     weight_decay=weight_decay,
@@ -154,7 +159,7 @@ optimizer_class = partial(
 
 where_train = lambda model: (
     model.step.net.hidden,
-    # model.step.net.readout, 
+    model.step.net.readout, 
 )
 
 save_model_parameters = iterations_to_save_model_parameters(n_batches)
@@ -165,7 +170,7 @@ schedule = make_delayed_cosine_schedule(
     learning_rate_0, 
     constant_lr_iterations, 
     n_batches, 
-    alpha,
+    cosine_annealing_alpha,
 ) 
 
 trainer = TaskTrainer(
@@ -179,7 +184,7 @@ trainer = TaskTrainer(
 ## Train the models
 
 ```{python}
-def train_pair(pair):
+def train_pair(pair):   
     return trainer(
         pair.task, 
         pair.model,
@@ -226,6 +231,8 @@ model_hyperparameters = dict(
     n_steps=n_steps,
     disturbance_type=disturbance_type,
     disturbance_stds=disturbance_stds[disturbance_type],
+    readout_norm_loss_weight=readout_norm_loss_weight,
+    readout_norm_value=readout_norm_value,
 )
 ```
 
@@ -237,6 +244,8 @@ train_histories_hyperparameters=dict(
     n_replicates=n_replicates,
     where_train_strs=where_func_to_labels(where_train),
     save_model_parameters=save_model_parameters.tolist(),
+    readout_norm_loss_weight=readout_norm_loss_weight,
+    readout_norm_value=readout_norm_value,
 )
 ```
 
