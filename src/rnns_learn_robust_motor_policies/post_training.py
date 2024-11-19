@@ -41,7 +41,7 @@ from rnns_learn_robust_motor_policies.database import (
     save_model_and_add_record,
 )
 from rnns_learn_robust_motor_policies.setup_utils import (
-    # setup_train_histories,
+    setup_train_histories,
     setup_models_only,
     setup_tasks_only,
 )
@@ -52,7 +52,7 @@ from rnns_learn_robust_motor_policies.state_utils import (
 )
 from rnns_learn_robust_motor_policies.train_setup_part1 import (
     setup_task_model_pairs as setup_task_model_pairs_p1,
-    setup_train_histories,
+    # setup_train_histories,
 )
 from rnns_learn_robust_motor_policies.train_setup_part2 import (
     setup_task_model_pairs as setup_task_model_pairs_p2
@@ -396,6 +396,7 @@ def compute_replicate_info(
     save_model_parameters, 
     n_replicates, 
     n_std_exclude,
+    where_train,
 ):
     best_save_idx, best_saved_iterations, losses_at_best_saved_iteration = \
         get_best_iterations_and_losses(
@@ -419,13 +420,22 @@ def compute_replicate_info(
         is_leaf=is_module,
     )
     
+    # Create models with best parameters
+    best_models = get_best_models(
+        models, 
+        train_histories, 
+        best_save_idx, 
+        n_replicates, 
+        where_train,
+    )
+    
     readout_norm = jt.map(
         lambda model: jnp.linalg.norm(model.step.net.readout.weight, axis=(-2, -1), ord='fro'),
-        models,
+        best_models,
         is_leaf=is_module,        
     )
     
-    return dict(
+    replicate_info = dict(
         best_save_idx=best_save_idx,
         best_saved_iteration_by_replicate=best_saved_iterations,
         losses_at_best_saved_iteration=losses_at_best_saved_iteration,
@@ -434,6 +444,8 @@ def compute_replicate_info(
         included_replicates=included_replicates,
         readout_norm=readout_norm,
     )   
+    
+    return replicate_info, best_models
     
     
 def setup_replicate_info(models, n_replicates, *, key):
@@ -501,21 +513,13 @@ def process_model_record(
     )
     
     # Compute replicate info``
-    replicate_info = compute_replicate_info(
+    replicate_info, best_models = compute_replicate_info(
         models,
         tasks,
         train_histories, 
         save_model_parameters, 
         n_replicates, 
         n_std_exclude, 
-    )
-    
-    # Create models with best parameters
-    best_models = get_best_models(
-        models, 
-        train_histories, 
-        replicate_info['best_save_idx'], 
-        n_replicates, 
         where_train,
     )
     

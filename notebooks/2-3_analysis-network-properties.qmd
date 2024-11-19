@@ -105,14 +105,14 @@ db_session = get_db_session()
 #| tags: [parameters]
 
 # Specify which trained models to load 
-disturbance_type_load: Literal['curl', 'random'] = 'random'
+disturbance_type_load: Literal['curl', 'constant'] = 'constant'
 feedback_noise_std_load = 0.0
 motor_noise_std_load = 0.0
 feedback_delay_steps = 0
 hidden_size = 50
 
 # Specify model parameters to use for analysis (None -> use training value)
-# disturbance_type: Optional[Literal['curl', 'random']] = None
+# disturbance_type: Optional[Literal['curl', 'constant']] = None
 feedback_noise_std: Optional[float] = None
 motor_noise_std: Optional[float] = None
 ```

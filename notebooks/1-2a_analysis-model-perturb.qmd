@@ -133,17 +133,17 @@ We may want to specify 1) which trained models to load, by their parameters, and
 #| tags: [parameters]
 
 # Specify which trained models to load 
-disturbance_type_load: Literal['curl', 'random'] = 'curl'
+disturbance_type_load: Literal['curl', 'constant'] = 'constant'
 feedback_noise_std_load = 0.0
 motor_noise_std_load = 0.0
 feedback_delay_steps_load = 0
 hidden_size = 100
 where_train_strs = ["step.net.hidden", "step.net.readout"]
-readout_norm_loss_weight = 0.1
+readout_norm_loss_weight = 0.01
 readout_norm_value = 2.0
     
 # Specify model parameters to use for analysis (None -> use training value)
-disturbance_type: Optional[Literal['curl', 'random']] = None
+disturbance_type: Optional[Literal['curl', 'constant']] = None
 feedback_noise_std: Optional[float] = None
 motor_noise_std: Optional[float] = None
 ```
@@ -181,9 +181,9 @@ model_info = get_model_record(
     feedback_delay_steps=feedback_delay_steps_load,
     hidden_size=hidden_size,
     where_train_strs=where_train_strs,
-    has_replicate_info=1,
     readout_norm_loss_weight=readout_norm_loss_weight,
     readout_norm_value=readout_norm_value,
+    has_replicate_info=1,
 )
 ```
 
@@ -212,16 +212,6 @@ models_base = jt.map(
     models_load,
     is_leaf=is_module,
 )
-```
-
-### Optionally select a subset of training conditions
-
-Depending on how training goes, we might want to leave out some of the training conditions (i.e. training disturbance stds) from the analysis.
-
-```{python}
-disturbance_train_stds = model_info.disturbance_stds
-
-models_base = subdict(models_base, disturbance_train_stds)
 ```
 
 ### Optionally exclude replicates that perform much worse than average
@@ -282,6 +272,16 @@ else:
 
 **TODO**: Make an annotation that indicates "$n/N$ replicates are included" or something.
 
+### Optionally select a subset of training conditions
+
+Depending on how training goes, we might want to leave out some of the training conditions (i.e. training disturbance stds) from the analysis.
+
+```{python}
+disturbance_train_stds = model_info.disturbance_stds
+
+models_base = subdict(models_base, disturbance_train_stds)
+```
+
 ## Sort out the evaluation parameters
 
 We will either be evaluating on specific disturbance types and noise conditions, or if none are specified here,
@@ -309,7 +309,7 @@ We do have to specify the magnitudes of the disturbance that we want to evaluate
 ```{python}
 disturbance_amplitudes = {
     'curl': [0.0, 0.5, 1.0, 2.0, 4.0],
-    'random': [0.0, 0.05, 0.1, 0.2, 0.4],
+    'constant': [0.0, 0.05, 0.1, 0.2, 0.4],
 }[eval_parameters['disturbance_type']]
 ```
 
@@ -357,7 +357,7 @@ if eval_info.disturbance_type == 'curl':
     def disturbance(amplitude):
         return CurlField.with_params(amplitude=amplitude)    
         
-elif eval_info.disturbance_type == 'random':    
+elif eval_info.disturbance_type == 'constant':    
     def disturbance(amplitude):           
         return FixedField.with_params(
             scale=amplitude,
@@ -969,6 +969,7 @@ figs = {
             legend_title="Train<br>field std.",
             mode='std', # or 'curves'
             n_std_plot=1,
+            hline=dict(y=0, line_color="grey"),
             colors=list(disturbance_train_stds_colors_dark.values()),
             # stride_curves=500,
             # curves_kws=dict(opacity=0.7),
@@ -986,7 +987,6 @@ figs = {
 for disturbance_amplitude in tqdm(disturbance_amplitudes):
     for i, label in enumerate(("Forward", "Lateral")):
         fig = figs[disturbance_amplitude][label]
-        fig.add_hline(y=0, line_color="grey", layer="below")
 
         fig_parameters = dict(
             disturbance_amplitude=disturbance_amplitude,

@@ -11,7 +11,7 @@ from feedbax.intervene import (
 INTERVENOR_LABEL = "DisturbanceField"
 DISTURBANCE_CLASSES = {
     'curl': CurlField,
-    'random': FixedField,
+    'constant': FixedField,
 }
 
 

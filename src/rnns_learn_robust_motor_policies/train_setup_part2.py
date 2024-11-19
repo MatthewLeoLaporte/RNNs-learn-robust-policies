@@ -24,9 +24,29 @@ from rnns_learn_robust_motor_policies.setup_utils import get_base_task
 from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainStdDict
 
 
+# Separate this def by training method so that we can multiply by `field_std` in the "std" case,
+# without it affecting the context input. That is, in all three cases `field_std` is a factor of 
+# the actual field strength, but in `"active"` and `"amplitude"` it is multiplied by the 
+# `scale` parameter, which is not seen by the network in those cases; and in `"std"` it is
+# multiplied by the `field` parameter, which is not seen by the network in that case. 
+# (See the definition of `SCALE_FUNCS` below.)
 disturbance_params = {
-    'curl': dict(amplitude=lambda trial_spec, key: jr.normal(key, ())),
-    'random': dict(field=vector_with_gaussian_length),
+    "active": lambda field_std: {
+        'curl': dict(amplitude=lambda trial_spec, key: jr.normal(key, ())),
+        'constant': dict(field=vector_with_gaussian_length),
+    },
+    "amplitude": lambda field_std: {
+        'curl': dict(amplitude=lambda trial_spec, key: jr.normal(key, ())),
+        'constant': dict(field=vector_with_gaussian_length),
+    },
+    "std": lambda field_std: {
+        'curl': dict(
+            amplitude=lambda trial_spec, key: field_std * jr.normal(key, ())
+        ),
+        'constant': dict(
+            field=lambda trial_spec, key: field_std * vector_with_gaussian_length(trial_spec, key)
+        ),
+    },
 }
 
 
@@ -46,21 +66,26 @@ CONTEXT_INPUT_FUNCS = {
 }
 
 
-"""Either scale the field strength by a constant std, or sample the std for each trial"""
+"""Either scale the field strength by a constant std, or sample the std for each trial.
+
+Note that in the `"std"` case the actual field amplitude is still scaled by `field_std`, 
+but this is done in `disturbance_params` so that the magnitude of the context input 
+is the same on average between the `"amplitude"` and `"std"` methods.
+"""
 SCALE_FUNCS = {
     "active": lambda field_std: field_std,
     "amplitude": lambda field_std: field_std,
     "std": lambda field_std: (
-        lambda trial_spec, key: field_std * jnp.abs(jr.normal(key, ()))
+        lambda trial_spec, key: jnp.abs(jr.normal(key, ()))
     ),
 }
 
 
-def disturbance(disturbance_type, field_std, scale_func, active):
+def disturbance(disturbance_type, field_std, p_perturbed, method):
     return DISTURBANCE_CLASSES[disturbance_type].with_params(
-        scale=scale_func(field_std),
-        active=active,
-        **disturbance_params[disturbance_type],
+        scale=SCALE_FUNCS[method](field_std),
+        active=disturbance_active[method](p_perturbed[method]),
+        **disturbance_params[method](field_std)[disturbance_type],
     )
 
 
@@ -73,7 +98,7 @@ def setup_task_model_pairs(
     feedback_delay_steps,
     feedback_noise_std,
     motor_noise_std,
-    disturbance_type: Literal['random', 'curl'],
+    disturbance_type: Literal['constant', 'curl'],
     disturbance_stds,
     p_perturbed,
     key,
@@ -114,8 +139,8 @@ def setup_task_model_pairs(
                 disturbance(
                     disturbance_type,
                     disturbance_std, 
-                    SCALE_FUNCS[method_label], 
-                    disturbance_active[method_label](p_perturbed[method_label]),
+                    p_perturbed,
+                    method_label,
                 ),
                 label=INTERVENOR_LABEL,
                 default_active=False,

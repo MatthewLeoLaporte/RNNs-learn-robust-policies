@@ -121,7 +121,7 @@ These are parameters that can be [varied](https://quarto.org/docs/computations/p
 ```{python}
 #| tags: [parameters]
 
-disturbance_type: Literal['curl', 'random'] = 'random'  
+disturbance_type: Literal['curl', 'constant'] = 'constant'  
 feedback_delay_steps = 0
 feedback_noise_std = 0.0
 motor_noise_std = 0.0
@@ -129,13 +129,19 @@ p_perturbed = {
     'active': 0.25,
     # The rest don't do anything atm, even if they're <1
     'amplitude': 1.0,  
-    'std': 0.25,  
+    'std': 1.0,  
 }
 hidden_size = 50
 n_replicates = 5  # TODO
 n_steps = 100
 dt = 0.05
-cosine_annealing_alpha = 0.01
+
+n_batches = 500  # training iterations
+batch_size = 250
+learning_rate_0 = 0.01
+constant_lr_iterations = 10  # Number of initial training iterations to hold lr constant
+cosine_annealing_alpha = 0.01  # Max learning rate factor decrease during cosine annealing
+weight_decay = 0
 ```
 
 ### RNG setup
@@ -166,7 +172,7 @@ p_perturbed = p_perturbed  # Defined with the hyperparameters earlier
 # NOTE: Only one of these disturbance types is trained per notebook run; see the parameters cell above
 disturbance_stds = {
     'curl': [1.6],
-    'random': [0.4],
+    'constant': [0.4],
 }
 ```
 
@@ -189,14 +195,6 @@ task_model_pairs = setup_task_model_pairs(
 ## Training setup
 
 ```{python}
-learning_rate_0 = 0.01
-constant_lr_iterations = 10  # Number of initial training iterations to hold lr constant
-alpha = cosine_annealing_alpha  # Max learning rate factor decrease during cosine annealing (see notebook hyperparameters)
-weight_decay = 0
-
-n_batches = 5000
-batch_size = 250
-
 optimizer_class = partial(
     optax.adamw,
     weight_decay=weight_decay,
@@ -215,7 +213,7 @@ schedule = make_delayed_cosine_schedule(
     learning_rate_0, 
     constant_lr_iterations, 
     n_batches, 
-    alpha,
+    cosine_annealing_alpha,
 ) 
 
 trainer = TaskTrainer(

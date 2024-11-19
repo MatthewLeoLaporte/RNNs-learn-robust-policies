@@ -135,14 +135,17 @@ We may want to specify 1) which trained models to load, by their parameters, and
 #| tags: [parameters]
 
 # Specify which trained models to load 
-disturbance_type_load: Literal['curl', 'random'] = 'curl'
+disturbance_type_load: Literal['curl', 'constant'] = 'curl'
 feedback_noise_std_load = 0.0
 motor_noise_std_load = 0.0
 feedback_delay_steps_load = 0
-hidden_size = 50
+hidden_size = 100
+where_train_strs = ["step.net.hidden", "step.net.readout"]
+readout_norm_loss_weight = 0.01
+readout_norm_value = 2.0
 
 # Specify model parameters to use for analysis (None -> use training value)
-# disturbance_type: Optional[Literal['curl', 'random']] = None
+# disturbance_type: Optional[Literal['curl', 'constant']] = None
 feedback_noise_std: Optional[float] = None
 motor_noise_std: Optional[float] = None
 ```
@@ -187,6 +190,10 @@ model_info = get_model_record(
     motor_noise_std=motor_noise_std_load,
     feedback_delay_steps=feedback_delay_steps_load,
     hidden_size=hidden_size,
+    where_train_strs=where_train_strs,
+    readout_norm_loss_weight=readout_norm_loss_weight,
+    readout_norm_value=readout_norm_value,
+    has_replicate_info=1,
 )
 ```
 
@@ -215,17 +222,6 @@ models_base = jt.map(
     models_load,
     is_leaf=is_module,
 )
-```
-
-### Optionally select a subset of training conditions
-
-Depending on how training goes, we might want to leave out some of the training conditions (i.e. training disturbance stds) from the analysis.
-
-```{python}
-# exclude the highest disturbance std (2.0), since the policy started to be unstable
-disturbance_train_stds = model_info.disturbance_stds[:-1]
-
-models_base = subdict(models_base, disturbance_train_stds)
 ```
 
 
@@ -261,7 +257,7 @@ eqx.tree_pprint(included_replicates, short_arrays=False)
 Set the indices corresponding to the excluded replicates to NaN in each of the model arrays. This ensures that the shapes of the arrays remain consistent. NaN results will be ignored at plotting time. 
 
 ```{python}
-models_all_replicates = models_base
+models_all = models_base
 
 if exclude_underperformers:
     models_base = jt.map(
@@ -273,6 +269,17 @@ if exclude_underperformers:
 else:
     models_base = models_base
     n_replicates_included = dict.fromkeys(models.keys(), model_info.n_replicates)
+```
+
+### Optionally select a subset of training conditions
+
+Depending on how training goes, we might want to leave out some of the training conditions (i.e. training disturbance stds) from the analysis.
+
+```{python}
+# exclude the highest disturbance std (2.0), since the policy started to be unstable
+disturbance_train_stds = model_info.disturbance_stds#[:-1]
+
+models_base = subdict(models_base, disturbance_train_stds)
 ```
 
 ## Sort out the evaluation parameters
@@ -1485,7 +1492,8 @@ def get_violins_comparing_amplitudes(measure_data, measure_name, pert_var, annot
     if annotation_kws is None:
         annotation_kws = dict()    
         
-    plot_disturbance_train_stds = [disturbance_train_stds[0], disturbance_train_stds[-2], disturbance_train_stds[-1]]
+    # plot_disturbance_train_stds = [disturbance_train_stds[0], disturbance_train_stds[-2], disturbance_train_stds[-1]]
+    plot_disturbance_train_stds = disturbance_train_stds
     
     fig = go.Figure()
     

@@ -68,9 +68,16 @@ from rnns_learn_robust_motor_policies.colors import (
     MEAN_LIGHTEN_FACTOR,
     get_colors_dicts,
 )
-from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL
+from rnns_learn_robust_motor_policies.constants import (
+    INTERVENOR_LABEL,
+    POS_ENDPOINTS_ALIGNED,
+)
 from rnns_learn_robust_motor_policies.database import (
     get_db_session,
+    get_model_record,
+    add_evaluation,
+    add_evaluation_figure,
+    use_record_params_where_none,
 )
 from rnns_learn_robust_motor_policies.misc import print_version_info
 from rnns_learn_robust_motor_policies.train_setup_part2 import (
@@ -127,14 +134,14 @@ We may want to specify 1) which trained models to load, by their parameters, and
 #| tags: [parameters]
 
 # Specify which trained models to load 
-disturbance_type_load: Literal['curl', 'random'] = 'random'
+disturbance_type_load: Literal['curl', 'constant'] = 'constant'
 feedback_noise_std_load = 0.0
 motor_noise_std_load = 0.0
 feedback_delay_steps_load = 0
 hidden_size = 50
 
 # Specify model parameters to use for analysis (None -> use training value)
-disturbance_type: Optional[Literal['curl', 'random']] = 'curl'
+disturbance_type: Optional[Literal['curl', 'constant']] = 'curl'
 feedback_noise_std: Optional[float] = None
 motor_noise_std: Optional[float] = None
 ```
@@ -171,6 +178,9 @@ model_info = get_model_record(
     motor_noise_std=motor_noise_std_load,
     feedback_delay_steps=feedback_delay_steps_load,
     hidden_size=hidden_size,
+    n_batches=500,
+    origin='2-1',
+    has_replicate_info=True,
 )
 ```
 
@@ -199,16 +209,6 @@ models_base = jt.map(
     models_load,
     is_leaf=is_module,
 )
-```
-
-### Optionally select a subset of training conditions
-
-Depending on how training goes, we might want to leave out some of the training conditions (i.e. training disturbance stds) from the analysis.
-
-```{python}
-disturbance_train_stds = model_info.disturbance_stds
-
-models_base = subdict(models_base, disturbance_train_stds)
 ```
 
 ### Optionally exclude replicates that perform much worse than average
@@ -267,6 +267,20 @@ else:
     n_replicates_included = dict.fromkeys(models.keys(), model_info.n_replicates)
 ```
 
+### Optionally select a subset of training conditions
+
+Depending on how training goes, we might want to leave out some of the training conditions (i.e. training disturbance stds) from the analysis.
+
+```{python}
+disturbance_train_stds = model_info.disturbance_stds
+
+models_base = jt.map(
+    lambda train_std_dict: subdict(train_std_dict, disturbance_train_stds),
+    models_base,
+    is_leaf=is_type(TrainStdDict),
+)
+```
+
 ## Sort out the evaluation parameters
 
 We will either be evaluating on specific disturbance types and noise conditions, or if none are specified here,
@@ -292,7 +306,7 @@ any_system_noise = any(jt.leaves((
 ```{python}
 disturbance_amplitude = {
     'curl': 4,
-    'random': 0.4,
+    'constant': 0.4,
 }[eval_parameters["disturbance_type"]]
 ```
 
@@ -347,7 +361,7 @@ if disturbance_type == 'curl':
     def disturbance(amplitude):
         return CurlField.with_params(amplitude=amplitude)    
         
-elif disturbance_type == 'random':   
+elif disturbance_type == 'constant':   
     def disturbance(field_std):            
         return FixedField.with_params(
             scale=field_std,
@@ -366,9 +380,9 @@ See notebook 1-2a for some explanation of the parameter choices here.
 # Also add the intervenors to the trained models
 task_base, models = schedule_intervenor(
     get_base_task(model_info.n_steps),
-    trained_models,
+    models_base,
     lambda model: model.step.mechanics,
-    disturbance(disturbance_amplitude[disturbance_type]),
+    disturbance(disturbance_amplitude),
     label=INTERVENOR_LABEL,
     default_active=False,
 )
@@ -397,7 +411,7 @@ all_tasks['full'] = ContextInputDict({
 Make smaller versions of the tasks for visualization.
 
 ```{python}
-all_tasks['small'] = convert_tasks_to_small(tasks['full'])
+all_tasks['small'] = convert_tasks_to_small(all_tasks['full'])
 ``` 
 
 ### Assign some things for convenient reference
@@ -569,7 +583,7 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
     fig_parameters = dict(
         training_method=training_method,
         disturbance_type=disturbance_type,
-        disturbance_type_train=disturbance_type_train,
+        disturbance_type_train=disturbance_type_load,
         disturbance_train_std=disturbance_train_std,
         disturbance_amplitude=disturbance_amplitude,
         # TODO: The number of replicates (`n_replicates_included`) may vary with the disturbance train std!

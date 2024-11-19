@@ -63,7 +63,10 @@ from rnns_learn_robust_motor_policies.database import (
     save_model_and_add_record,
 )
 from rnns_learn_robust_motor_policies.misc import print_version_info
-from rnns_learn_robust_motor_policies.train_setup_part1 import setup_task_model_pairs
+from rnns_learn_robust_motor_policies.train_setup_part1 import (
+    get_readout_norm_loss,
+    setup_task_model_pairs,
+)
 from rnns_learn_robust_motor_policies.tree_utils import pp
 from rnns_learn_robust_motor_policies.types import TaskModelPair
 from rnns_learn_robust_motor_policies.train_setup import (
@@ -91,11 +94,11 @@ These are parameters that can be [varied](https://quarto.org/docs/computations/p
 ```{python}
 #| tags: [parameters]
 
-disturbance_type: Literal['curl', 'random'] = 'random'  
-feedback_delay_steps = 4
+disturbance_type: Literal['curl', 'constant'] = 'curl'  
+feedback_delay_steps = 0
 feedback_noise_std = 0.0
 motor_noise_std = 0.0
-hidden_size = 100
+hidden_size = 5
 n_replicates = 5
 n_steps = 100
 dt = 0.05
@@ -124,10 +127,10 @@ key_init, key_train, key_eval = jr.split(key, 3)
 ```{python}
 disturbance_stds = {
     'curl': [0, 0.6, 1.2, 1.8],
-    'random': [0, 0.025, 0.25, 2.5],
+    'constant': [0, 0.025, 0.25, 2.5],
 }
 
-if not disturbance_type in ['curl', 'random']:
+if not disturbance_type in ['curl', 'constant']:
     raise ValueError(f"Unknown disturbance type: {disturbance_type}")
 
 task_model_pairs = setup_task_model_pairs(
@@ -140,6 +143,7 @@ task_model_pairs = setup_task_model_pairs(
     motor_noise_std=motor_noise_std,
     disturbance_type=disturbance_type,
     disturbance_stds=disturbance_stds[disturbance_type],
+    # TODO: Remove this on next training round
     readout_norm_loss_weight=readout_norm_loss_weight,
     readout_norm_value=readout_norm_value,
     key=key_init,    
@@ -181,6 +185,10 @@ trainer = TaskTrainer(
 )
 ```
 
+```{python}
+loss_func = simple_reach_loss() + readout_norm_loss_weight * get_readout_norm_loss(readout_norm_value)
+```
+
 ## Train the models
 
 ```{python}
@@ -188,6 +196,7 @@ def train_pair(pair):
     return trainer(
         pair.task, 
         pair.model,
+        loss_func=loss_func,
         ensembled=True,
         n_batches=n_batches, 
         batch_size=batch_size, 

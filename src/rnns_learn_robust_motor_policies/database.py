@@ -165,7 +165,7 @@ class FigureRecord(Base):
     model_hash: Mapped[str] = mapped_column(ForeignKey(f'{MODELS_TABLE_NAME}.hash'))
     
     # These are also redundant, and can be inferred from `model_hash` and `evaluation_hash`
-    disturbance_type: Mapped[str]  
+    disturbance_type: Mapped[str] = mapped_column(nullable=True)
 
 
 TABLE_NAME_TO_MODEL = {

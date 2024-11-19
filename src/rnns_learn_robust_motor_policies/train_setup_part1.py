@@ -27,7 +27,7 @@ from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainStdDict
 
 disturbance_params = {
     'curl': dict(amplitude=lambda trial_spec, key: jr.normal(key, (1,))),
-    'random': dict(field=vector_with_gaussian_length),
+    'constant': dict(field=vector_with_gaussian_length),
 }
 
 
@@ -47,7 +47,7 @@ def setup_task_model_pairs(
     feedback_delay_steps,
     feedback_noise_std,
     motor_noise_std,
-    disturbance_type: Literal['random', 'curl'],
+    disturbance_type: Literal['constant', 'curl'],
     disturbance_stds,
     readout_norm_value,
     readout_norm_loss_weight,
@@ -58,7 +58,6 @@ def setup_task_model_pairs(
     
     task_base = get_base_task(
         n_steps=n_steps,
-        loss_func=loss_func,
     )
     
     models = get_ensemble(
@@ -94,51 +93,6 @@ def setup_task_model_pairs(
     )
     
     return task_model_pairs
-
-
-def setup_train_histories(
-    models_tree,
-    disturbance_stds,
-    n_batches,
-    batch_size,
-    n_replicates,
-    *,
-    where_train_strs,
-    save_model_parameters,
-    readout_norm_value,
-    readout_norm_loss_weight,
-    key,
-) -> dict[float, TaskTrainerHistory]:
-    """Returns a skeleton PyTree for the training histories (losses, parameter history, etc.)
-    
-    Note that `init_task_trainer_history` depends on `task` to infer:
-    
-    1) The number and name of loss function terms;
-    2) The structure of trial specs, in case `save_trial_specs is not None`.
-    
-    Here, neither of these are a concern since 1) we are always using the same 
-    loss function for each set of saved/loaded models in this project, 2) `save_trial_specs is None`.
-    """   
-    where_train = attr_str_tree_to_where_func(where_train_strs)
-    loss_func = simple_reach_loss() + readout_norm_loss_weight * get_readout_norm_loss(readout_norm_value)
-    
-    return jt.map(
-        lambda models: init_task_trainer_history(
-            loss_func,
-            n_batches,
-            n_replicates,
-            ensembled=True,
-            ensemble_random_trials=False,
-            save_model_parameters=jnp.array(save_model_parameters),
-            save_trial_specs=None,
-            batch_size=batch_size,
-            model=models,
-            where_train=where_train,  
-        ),
-        models_tree,
-        is_leaf=is_module,
-    )
-
 
 
 def setup_model_parameter_histories(

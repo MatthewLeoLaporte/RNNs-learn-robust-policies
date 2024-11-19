@@ -34,7 +34,7 @@ figs, records = retrieve_figures(
         disturbance_type=disturbance_type_train, 
         hidden_size=100, 
         # feedback_noise_std=(0, 0.1),
-        readout_norm_value = 0.75,
+        readout_norm_value=2,
     ), 
     identifier="readout_norm", 
 )
@@ -47,14 +47,19 @@ Loss history
 figs, records = retrieve_figures(
     db_session,
     model_parameters=dict(
-        disturbance_type=disturbance_type_train, 
-        hidden_size=100, 
+        # disturbance_type=disturbance_type_train, 
+        disturbance_type='constant',
+        # hidden_size=100, 
+        origin="2-1",
+        n_batches=500,
         # feedback_noise_std=(0, 0.1),
-        readout_norm_value = 0.75,
+        # readout_norm_value = 2,
     ), 
+    variant_label='amplitude',
     identifier="loss_history", 
+    # disturbance_train_std=1.2,
 )
-d = [records_to_dict(r) for r in zip(*records)]
+# d = [records_to_dict(r) for r in zip(*records)]
 ```
 
 ## Evaluation figures
