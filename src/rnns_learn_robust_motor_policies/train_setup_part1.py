@@ -1,24 +1,19 @@
-from operator import attrgetter
 from typing import Literal
 import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 
-from feedbax import get_ensemble, is_module, tree_unzip
+from feedbax import get_ensemble, is_module
 from feedbax.intervene import schedule_intervenor
-from feedbax.loss import ModelLoss
 from feedbax.misc import attr_str_tree_to_where_func
-from feedbax.task import SimpleReaches
-from feedbax.train import filter_spec_leaves, TaskTrainerHistory, init_task_trainer_history
+from feedbax.train import filter_spec_leaves
 from feedbax.xabdeef.models import point_mass_nn
-from feedbax.xabdeef.losses import simple_reach_loss
 
 from rnns_learn_robust_motor_policies.constants import (
     DISTURBANCE_CLASSES, 
     INTERVENOR_LABEL, 
     MASS,
-    WORKSPACE,
 )
 from rnns_learn_robust_motor_policies.misc import vector_with_gaussian_length
 from rnns_learn_robust_motor_policies.setup_utils import get_base_task
@@ -29,13 +24,6 @@ disturbance_params = {
     'curl': dict(amplitude=lambda trial_spec, key: jr.normal(key, (1,))),
     'constant': dict(field=vector_with_gaussian_length),
 }
-
-
-readout_norm_func = lambda weights: jnp.linalg.norm(weights, axis=(-2, -1), ord='fro')
-get_readout_norm_loss = lambda value: ModelLoss(
-    "readout_norm",
-    lambda model: (readout_norm_func(model.step.net.readout.weight) - value) ** 2
-)
 
 
 def setup_task_model_pairs(
@@ -49,13 +37,9 @@ def setup_task_model_pairs(
     motor_noise_std,
     disturbance_type: Literal['constant', 'curl'],
     disturbance_stds,
-    readout_norm_value,
-    readout_norm_loss_weight,
     key,
     **kwargs,
 ):
-    loss_func = simple_reach_loss() + readout_norm_loss_weight * get_readout_norm_loss(readout_norm_value)
-    
     task_base = get_base_task(
         n_steps=n_steps,
     )

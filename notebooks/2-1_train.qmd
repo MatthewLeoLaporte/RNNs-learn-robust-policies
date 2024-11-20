@@ -121,7 +121,7 @@ These are parameters that can be [varied](https://quarto.org/docs/computations/p
 ```{python}
 #| tags: [parameters]
 
-disturbance_type: Literal['curl', 'constant'] = 'constant'  
+disturbance_type: Literal['curl', 'constant'] = 'curl'  
 feedback_delay_steps = 0
 feedback_noise_std = 0.0
 motor_noise_std = 0.0
@@ -131,15 +131,15 @@ p_perturbed = {
     'amplitude': 1.0,  
     'std': 1.0,  
 }
-hidden_size = 50
+hidden_size = 100
 n_replicates = 5  # TODO
 n_steps = 100
 dt = 0.05
 
-n_batches = 500  # training iterations
+n_batches = 10000  # training iterations
 batch_size = 250
 learning_rate_0 = 0.01
-constant_lr_iterations = 10  # Number of initial training iterations to hold lr constant
+constant_lr_iterations = 1000  # Number of initial training iterations to hold lr constant
 cosine_annealing_alpha = 0.01  # Max learning rate factor decrease during cosine annealing
 weight_decay = 0
 ```
@@ -171,7 +171,7 @@ p_perturbed = p_perturbed  # Defined with the hyperparameters earlier
 # Define the disturbance amplitudes to train, depending on disturbance type
 # NOTE: Only one of these disturbance types is trained per notebook run; see the parameters cell above
 disturbance_stds = {
-    'curl': [1.6],
+    'curl': [0.1],
     'constant': [0.4],
 }
 ```

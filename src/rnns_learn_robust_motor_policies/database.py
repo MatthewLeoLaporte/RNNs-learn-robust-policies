@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from datetime import datetime
 import logging
 from pathlib import Path
-from typing import Optional, Dict, Any, TypeVar
+from typing import Literal, Optional, Dict, Any, TypeVar
 import hashlib
 import json
 import uuid
@@ -383,12 +383,17 @@ def get_hash_path(directory: Path, hash_: str, suffix: str = '', ext: str = '.eq
     return (directory / "_".join(c for c in components if c)).with_suffix(ext)
 
 
-def check_model_files(session: Session) -> None:
+def check_model_files(
+    session: Session,
+    clean_orphaned_files: Literal['no', 'delete', 'archive'] = 'no',
+) -> None:
     """Check model files and update availability status."""
     logger.info("Checking availability of model files...")
     
     try:
         records = session.query(ModelRecord).all()
+        known_hashes = {record.hash for record in records}
+        
         for record in records:
             model_file_exists = get_hash_path(MODELS_DIR, record.hash).exists()
             replicate_info_file_exists = get_hash_path(
@@ -402,6 +407,19 @@ def check_model_files(session: Session) -> None:
             
             record.is_path_defunct = not model_file_exists
             record.has_replicate_info = replicate_info_file_exists
+        
+        if clean_orphaned_files != 'no':
+            archive_dir = MODELS_DIR / "archive"
+            for file_path in MODELS_DIR.glob("*.eqx"):
+                file_hash = file_path.stem 
+                if file_hash not in known_hashes: 
+                    if clean_orphaned_files == 'delete':
+                        logger.info(f"Deleting orphaned file: {file_path}")
+                        file_path.unlink()
+                    elif clean_orphaned_files == 'archive':
+                        logger.info(f"Moving orphaned file to archive: {file_path}")
+                        file_path.rename(archive_dir / file_path.name)
+                        
         
         session.commit()
         logger.info("Finished checking model files")

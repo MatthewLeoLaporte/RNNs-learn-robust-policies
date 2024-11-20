@@ -60,8 +60,8 @@ disturbance_active: dict[str, Callable] = {
 
 # Define how the network's context input will be determined from the trial specs, to which it is then added
 CONTEXT_INPUT_FUNCS = {
-    "active": lambda trial_specs, key: trial_specs.intervene[INTERVENOR_LABEL].active.astype(float),
-    "amplitude": lambda trial_specs, key: get_field_amplitude(trial_specs.intervene[INTERVENOR_LABEL]),
+    # "active": lambda trial_specs, key: trial_specs.intervene[INTERVENOR_LABEL].active.astype(float),
+    # "amplitude": lambda trial_specs, key: get_field_amplitude(trial_specs.intervene[INTERVENOR_LABEL]),
     "std": lambda trial_specs, key: trial_specs.intervene[INTERVENOR_LABEL].scale,
 }
 

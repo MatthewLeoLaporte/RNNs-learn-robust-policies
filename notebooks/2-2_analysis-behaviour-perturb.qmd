@@ -134,11 +134,11 @@ We may want to specify 1) which trained models to load, by their parameters, and
 #| tags: [parameters]
 
 # Specify which trained models to load 
-disturbance_type_load: Literal['curl', 'constant'] = 'constant'
+disturbance_type_load: Literal['curl', 'constant'] = 'curl'
 feedback_noise_std_load = 0.0
 motor_noise_std_load = 0.0
 feedback_delay_steps_load = 0
-hidden_size = 50
+hidden_size = 100
 
 # Specify model parameters to use for analysis (None -> use training value)
 disturbance_type: Optional[Literal['curl', 'constant']] = 'curl'
@@ -178,9 +178,10 @@ model_info = get_model_record(
     motor_noise_std=motor_noise_std_load,
     feedback_delay_steps=feedback_delay_steps_load,
     hidden_size=hidden_size,
-    n_batches=500,
-    origin='2-1',
+    n_batches=10000,
+    origin=TRAIN_NB_ID,
     has_replicate_info=True,
+    disturbance_stds=[0.6],
 )
 ```
 
@@ -243,19 +244,14 @@ def take_replicate_or_best(tree: TrainStdDict, i_replicate=None, replicate_axis=
     return jt.map(map_func, tree, is_leaf=is_type(TrainStdDict))
 ```
 
-Which replicates are included?
-
-```{python}
-print("\nReplicates included in analysis for each training condition:")
-eqx.tree_pprint(jt.map(lambda x: jnp.where(x)[0], included_replicates), short_arrays=False)
-```
-
 Set the indices corresponding to the excluded replicates to NaN in each of the model arrays. This ensures that the shapes of the arrays remain consistent. NaN results will be ignored at plotting time. 
 
 ```{python}
 models_all_replicates = models_base
 
 if exclude_underperformers:
+    print("\nReplicates included in analysis for each training condition:")
+    eqx.tree_pprint(jt.map(lambda x: jnp.where(x)[0], included_replicates), short_arrays=False)
     models_base = jt.map(
         lambda models, included: tree_set_scalar(models, jnp.nan, jnp.where(~included)[0]),
         models_base, included_replicates,
@@ -263,8 +259,7 @@ if exclude_underperformers:
     )
     n_replicates_included = jt.map(lambda x: jnp.sum(x).item(), included_replicates)
 else:
-    models_base = models_base
-    n_replicates_included = dict.fromkeys(models.keys(), model_info.n_replicates)
+    n_replicates_included = dict.fromkeys(models_base.keys(), model_info.n_replicates)
 ```
 
 ### Optionally select a subset of training conditions

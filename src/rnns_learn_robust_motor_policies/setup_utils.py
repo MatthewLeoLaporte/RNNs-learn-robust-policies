@@ -14,7 +14,7 @@ import jax.numpy as jnp
 import jax.tree as jt
 
 from feedbax import is_type, is_module
-from feedbax.loss import AbstractLoss
+from feedbax.loss import AbstractLoss, ModelLoss
 from feedbax.misc import attr_str_tree_to_where_func
 from feedbax.noise import Multiplicative, Normal
 from feedbax.task import SimpleReaches
@@ -40,6 +40,13 @@ def get_base_task(
         n_steps=n_steps,
         **TASK_EVAL_PARAMS['full'], 
     )
+
+
+readout_norm_func = lambda weights: jnp.linalg.norm(weights, axis=(-2, -1), ord='fro')
+get_readout_norm_loss = lambda value: ModelLoss(
+    "readout_norm",
+    lambda model: (readout_norm_func(model.step.net.readout.weight) - value) ** 2
+)
 
 
 def setup_train_histories(
@@ -72,7 +79,9 @@ def setup_train_histories(
         assert readout_norm_value is not None, (
             "readout_norm_value must be provided if readout_norm_loss_weight is not None"
         )
-        loss_func = loss_func + readout_norm_loss_weight * get_readout_norm_loss(readout_norm_value)
+        loss_func_validation = loss_func + readout_norm_loss_weight * get_readout_norm_loss(readout_norm_value)
+    else:
+        loss_func_validation = loss_func
     
     return jt.map(
         lambda models: init_task_trainer_history(
@@ -84,6 +93,7 @@ def setup_train_histories(
             save_model_parameters=jnp.array(save_model_parameters),
             save_trial_specs=None,
             batch_size=batch_size,
+            loss_func_validation=loss_func_validation,
             model=models,
             where_train=where_train,  
         ),

@@ -3,57 +3,28 @@ created: 2024-10-04T11:27
 updated: 2024-11-13T10:32
 ---
 
-- [ ] **Debug NaN in ‘std’ variant** 
+- [x] Debug NaN in ‘std’ variant
 - [ ] **Goal steady-state fixed points**
 - [ ] **Eigendecomposition of steady-state Jacobians**
 - [ ] Move part 1 training to a script + a yaml file defining which hyperparameters to train — or otherwise we’ll have to use batch quarto render 
-- [ ] Try -1 and 1 for the “active” trianing variant, not 0 and 1
+- [ ] Try -1 and 1 for the “active” trianing variant, not 0 and 1?
+	- I’m not sure this makes sense, since we want negative values of context input to be “anti-robust”
 
-## NaN in curl ‘std’ variant
+## Training
 
-Considering 100 example training trials from the respective tasks, with train std = 1.6
-
-- The position and velocity losses are blowing up to huge values (~1e11) on the very first training iteration
-- Context inputs are somewhat larger and higher-variance for the ‘std’ case, than the amplitude case (1.29&0.96 versus 0.80&0.60)
-- For ‘amplitude’, the intervention `scale` is always 1.6, whereas for ‘std’ it is equal to the context input
-- The intervention `amplitude` is identical for both ‘std’ and ’amplitude’; for ‘amplitude’ it is of course equivalent to the context input
-- The intervention `active` is always `True` for both variants (because I have currently set it so)
-
-None of this seems particularly critical. One possibility is that the slightly higher context inputs are driving the network into instability. If we get a typical batch (250 samples), what are the extremes of the context input?
-
-- In the ‘amplitude’ case, the largest context input for a single sample of 250 trials is 2.7
-- For ‘std’, it is 4.4
-
-This could be significant. 
-
-Here is the distribution of the context input over 25,000 trials of ‘amplitude’:
-
-![[file-20241119160413412.png]]
-
-And the same for ‘std’:
-
-![[file-20241119160444596.png]]
-
-These are both half-normal as expected, however ‘std’ is much wider. 
-
-This is because the context input for `amplitude` is just a standard normal sample, which is then multiplied by 1.6 to get the actual field strength; 
-
-whereas the context input for `std` is 1.6 *times* a standard normal sample, which is then multiplied by another standard normal sample to get the field strength. It may make more sense to pass a standard normal sample in both cases, and keep the scaling by `field_std` in whichever part of the intervention params is *not* passed as context input. Thus the context input would behave essentially the same although its relationship to the actual field strength would change.
-
-Comparing to the constant field case, where the ‘std’ variant trained just fine even though `field_std` was multiplied by the normal sample prior to assigning the context input… the `field_std` is just smaller, so while the distribution for ‘std’ is still wider than for ‘amplitude’, overall it is no wider than it is for the ‘amplitude’ variant in the curl case. So the absolute amplitude of the context input may still matter
-
-**I tried this out and it looks like it works… was able to train for 500 iterations for all three methods, without NaN resulting**
-
-
+- [ ] Reset `opt_state` at iteration 500
+- [ ] Pre-training for 1000 steps without perturbations
+- [ ] Ramping up perturbations – the only way I see to do this atm is to modify task specs to have the signature `batch, key` rather than just `key`…
+- [ ] Looks like `train_step` is re-compiling on the first batch, again, since I started passing `batch`. Debug.
 
 ## Model loss terms
 
 - [x] Construct `history.loss_validation` from `task.loss_func` only, when a custom loss is passed to `TaskTrainer`; thus we don’t need to associate model loss terms with the task instance, but can pass the customized loss directly to `TaskTrainer` as I wanted
-- [ ] That also means we don’t need to know about the custom loss alterations when calling `get_task_model_pairs`. However, we still need a deserialisation function for `TaskTrainerHistories`… maybe `TaskTrainer` should generally be able to return this?
+- [x] ~~That also means we don’t need to know about the custom loss alterations when calling `get_task_model_pairs`. However, we still need a deserialisation function for `TaskTrainerHistories`… maybe `TaskTrainer` should generally be able to return this?~~
 
 ## Database
 
-- [ ] ~~Maybe: Give post-training models their own table, with a reference to the `model_hash` they originated from; then in `post_training`, optionally skip post-training of models when there is already a record with matching `model_hash` and post-training hyperparameters.~~
+- [ ] Function which deletes/archives any .eqx files for which the database record is missing – this will allow us to delete database records to “delete” models, then use this function to clean up afterwards
 - [ ] Automatically export CSV or something for each db table, as a backup
 
 ### Figures
@@ -76,11 +47,9 @@ It might also make sense to automatically save evaluated states to disk, and to 
 
 ## Formatting
 
-- [ ] Add zero hline on velocity plots
+- [x] Add zero hline on velocity plots
 	- I already did this in 1-2a, but I think it was not visible. Moved to `fbp.profiles` so that it is plotted before the profiles themselves
-- [ ] ~~The context annotations are cut off for the velocity/force profile plots in 1-2b~~
 - [ ] Show trial, replicate, condition info in hoverinfo of individual *aligned* trajectories
-- [ ] ~~Plot std bounds (or similar) for aligned 2D trajectories; plotting all the individual trials is too expensive once they are aligned. I’m not sure how to plot filled areas between fully 2D curves; instead it might make sense to use a [KDE](https://plotly.com/python/2d-histogram-contour/) with a single contour.~~ It’s hard to plot multiple KDEs on the same subplot in different colors. It would make more sense to plot confidence bounds, but this is also tricky. Leaving it be for now; instead I will downsample the curves if they exceed a specified quantity.
 
 ## Meetings
 

@@ -48,15 +48,38 @@ figs, records = retrieve_figures(
     db_session,
     model_parameters=dict(
         # disturbance_type=disturbance_type_train, 
-        disturbance_type='constant',
+        disturbance_type='curl',
         # hidden_size=100, 
         origin="2-1",
-        n_batches=500,
+        n_batches=10000,
+        disturbance_stds=[0.6],
         # feedback_noise_std=(0, 0.1),
         # readout_norm_value = 2,
     ), 
-    variant_label='amplitude',
+    variant_label='std',
     identifier="loss_history", 
+    # disturbance_train_std=1.2,
+)
+# d = [records_to_dict(r) for r in zip(*records)]
+```
+
+Distribution of replicate losses
+
+```{python}
+figs, records = retrieve_figures(
+    db_session,
+    model_parameters=dict(
+        # disturbance_type=disturbance_type_train, 
+        disturbance_type='curl',
+        # hidden_size=100, 
+        origin="2-1",
+        n_batches=10000,
+        disturbance_stds=[0.6],
+        # feedback_noise_std=(0, 0.1),
+        # readout_norm_value = 2,
+    ), 
+    variant_label='std',
+    identifier="loss_dist_over_replicates_best", 
     # disturbance_train_std=1.2,
 )
 # d = [records_to_dict(r) for r in zip(*records)]
