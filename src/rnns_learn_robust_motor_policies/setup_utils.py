@@ -52,7 +52,7 @@ get_readout_norm_loss = lambda value: ModelLoss(
 def setup_train_histories(
     models_tree,
     disturbance_stds,
-    n_batches,
+    n_batches_total,
     batch_size,
     n_replicates,
     *,
@@ -86,7 +86,7 @@ def setup_train_histories(
     return jt.map(
         lambda models: init_task_trainer_history(
             loss_func,
-            n_batches,
+            n_batches_total,
             n_replicates,
             ensembled=True,
             ensemble_random_trials=False,

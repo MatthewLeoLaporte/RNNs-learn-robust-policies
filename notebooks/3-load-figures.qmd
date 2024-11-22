@@ -8,6 +8,7 @@ from rnns_learn_robust_motor_policies.database import (
     records_to_dict,
     retrieve_figures,
 )
+from rnns_learn_robust_motor_policies.plot_utils import figleaves
 
 import plotly 
 import plotly.graph_objects as go
@@ -50,17 +51,32 @@ figs, records = retrieve_figures(
         # disturbance_type=disturbance_type_train, 
         disturbance_type='curl',
         # hidden_size=100, 
-        origin="2-1",
-        n_batches=10000,
-        disturbance_stds=[0.6],
+        origin="1-1",
+        n_batches_total=10000,
+        intervention_scaleup_batches=[1000,3000],
+        # disturbance_stds=[0, 0.4, 0.8, 1.6, 2.0],
+        state_reset_iterations=[500],
         # feedback_noise_std=(0, 0.1),
         # readout_norm_value = 2,
     ), 
-    variant_label='std',
+    # variant_label='std',
     identifier="loss_history", 
     # disturbance_train_std=1.2,
 )
 # d = [records_to_dict(r) for r in zip(*records)]
+```
+
+```{python}
+# 1
+n_scaleup_batches = 5000
+
+# 2
+n_scaleup_batches = 0
+state_reset_iterations = [500, 1500, 5000]
+
+# 3
+n_batches_baseline = 0
+state_reset_iterations = [500, 5000]
 ```
 
 Distribution of replicate losses

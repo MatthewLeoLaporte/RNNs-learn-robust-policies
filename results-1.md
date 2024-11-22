@@ -8,6 +8,20 @@ updated: 2024-11-09T00:06
 
 #### No noise, no delay
 ![[10 Projects/10 PhD/41 RNNs learn robust policies/results-1.assets/1-1__loss-history__curl__std-0__replicates-10.png]]
+
+##### With 1000 iterations of baseline pre-training
+
+Note that these pre-training runs were done sometime later than the other plots in this section and there may be some minor changes in other hyperparameters, hence why this does not look identical to the [[#No noise, no delay|original case]].
+
+![[file-20241121111545670.png]]
+
+There are actually two runs (calls to the `TaskTrainer`) here, but the run is totally smooth because we retain the optimizer state between them.
+
+##### With 1000 iterations of pre-training and an optimizer reset at 500
+
+Interesting that the optimizer reset causes a rapid drop in loss.
+![[file-20241122121104678.png]]
+
 #### 0.04 noise, no delay
 ![[10 Projects/10 PhD/41 RNNs learn robust policies/results-1.assets/1-1__loss-history__random__std-0__replicates-10.png]]
 Clearly noise affects the balance of the loss terms, in particular it puts a floor on the final velocity error (makes sense since due to the motor noise), and likewise it also increases the position error a bit.
@@ -23,9 +37,6 @@ This looks almost identical to the zero noise, zero delay case. Presumably, in t
 
 Again, almost identical to the zero noise, zero delay case.
 ![[1-1__loss-history__random__std-0__replicates-10 1.png]]
-#### 0.1 noise, 4 step delay
-
-TODO
 
 ### Curl fields
 
@@ -41,6 +52,36 @@ Curl field std. 2.4. At this level, the fields appear to be too strong for the m
 ![[10 Projects/10 PhD/41 RNNs learn robust policies/results-1.assets/1-1__loss-history__curl__std-2.4__replicates-10.png]]
 It is clear from the loss distribution over replicates that everything is more or less fine except at the highest curl std:
 ![[10 Projects/10 PhD/41 RNNs learn robust policies/results-1.assets/best-loss-distn-by-replicate.png]]
+##### With 1000 iters of baseline pre-training
+
+Even though we retain the optimizer state, there is a loss discontinuity because the force fields suddenly switch on.
+
+![[file-20241121112227121.png]]
+
+This discontinuity grows as the field std increases
+
+![[file-20241121112346966.png]]
+
+Until eventually (around std=2) it breaks:
+
+![[file-20241121112413797.png]]
+
+##### With 1000 iters of baseline pretraining, then 2000 iters of intervention scale-up (cosine)
+
+Std 0.8
+![[file-20241122121821010.png]]
+
+And 1.6
+![[file-20241122121853763.png]]
+This looks worse than the simple training schedule with no pre-training or scale-up
+
+##### With 1000 iters of pre-training, an optimizer reset at 500, and 2000 steps of scale-up
+
+Std 1.6. Not great
+![[file-20241122122125369.png]]
+
+
+
 #### 0.04 noise, no delay
 
 Curl std. 0.8. 
@@ -80,6 +121,7 @@ Curl std. 0.8. Some minor signs of instability towards the end.
 Curl std. 1.6. More pronounced and definitive divergence than the equivalent condition in the 2-step delay case.
 ![[1-1__loss-history__curl__std-1.6__replicates-10 4.png]]
 The std. 2.4 case is as expected from the 2-step delay case.
+
 
 ### Random constant fields
 

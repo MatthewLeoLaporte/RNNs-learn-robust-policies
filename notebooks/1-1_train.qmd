@@ -106,17 +106,23 @@ n_replicates = 5
 n_steps = 100
 dt = 0.05
 
-n_batches_baseline = 250
-n_batches = 250
+n_batches_baseline = 0
+n_batches_condition = 10000
 batch_size = 250
 learning_rate_0 = 0.01
-constant_lr_iterations = 400  # Number of initial training iterations to hold lr constant
-cosine_annealing_alpha = 0.01  # Max learning rate factor decrease during cosine annealing 
+constant_lr_iterations = 2000  # Number of initial training iterations to hold lr constant
+cosine_annealing_alpha = 1.0  # Max learning rate factor decrease during cosine annealing 
 weight_decay = 0
 
 # Force the Frobenius norm of the readout weight matrix to be close (squared error) to this value
 readout_norm_value = 2.0
 readout_norm_loss_weight = 0.01
+
+n_scaleup_batches = 0
+intervention_scaleup_batches = (n_batches_baseline, n_batches_baseline + n_scaleup_batches)
+
+# reset the optimizer state at these iterations
+state_reset_iterations = jnp.array([500, 5000])
 ```
 
 ### RNG setup
@@ -130,9 +136,8 @@ key_init, key_train, key_eval = jr.split(key, 3)
 
 ```{python}
 disturbance_stds = {
-    # 'curl': [0, 0.6, 1.2, 1.8],
-    'curl': [0],
-    'constant': [0, 0.025, 0.25, 2.5],
+    'curl': [0, 0.8, 1.6],
+    'constant': [0, 0.01, 0.1, 1],
 }
 
 if not disturbance_type in ['curl', 'constant']:
@@ -148,6 +153,7 @@ task_model_pairs = setup_task_model_pairs(
     motor_noise_std=motor_noise_std,
     disturbance_type=disturbance_type,
     disturbance_stds=disturbance_stds[disturbance_type],
+    intervention_scaleup_batches=intervention_scaleup_batches,
     key=key_init,    
 )
 
@@ -171,10 +177,8 @@ where_train = lambda model: (
     model.step.net.readout, 
 )
 
-n_batches_total = n_batches_baseline + n_batches
+n_batches_total = n_batches_baseline + n_batches_condition
 save_model_parameters = iterations_to_save_model_parameters(n_batches_total)
-
-state_reset_iterations = jnp.array([800])
 ```
 
 ```{python}
@@ -205,7 +209,7 @@ train_params = dict(
     loss_func=loss_func,
     ensembled=True,
     batch_size=batch_size, 
-    log_step=n_batches // 5,
+    log_step=500,
     save_model_parameters=save_model_parameters,
     state_reset_iterations=state_reset_iterations,
     # disable_tqdm=True,
@@ -216,34 +220,42 @@ key0, key1 = jr.split(key_train, 2)
 
 
 def train_pair(pair):   
-    pretrained, pretrain_history, opt_state = trainer(
-        task_baseline,
-        pair.model,
-        n_batches=n_batches_baseline, 
-        where_train=where_train,
-        run_label="Baseline training",
-        key=key0,
-        **train_params,
-    )
+    if n_batches_baseline > 0:
+        pretrained, pretrain_history, opt_state = trainer(
+            task_baseline,
+            pair.model,
+            n_batches=n_batches_baseline, 
+            where_train=where_train,
+            run_label="Baseline training",
+            key=key0,
+            **train_params,
+        )
+    else: 
+        pretrained = pair.model
+        pretrain_history = None
+        opt_state = None
     
     trained, train_history, _ = trainer(
         pair.task, 
         pretrained,
         opt_state=opt_state,
-        n_batches=n_batches, 
-        idx_init=n_batches_baseline,
+        n_batches=n_batches_condition, 
+        idx_start=n_batches_baseline,
         where_train=where_train,
         run_label="Condition training",
         key=key1,
         **train_params,
     )
     
-    train_history_all = tree_concatenate([pretrain_history, train_history])
+    if pretrain_history is None:
+        train_history_all = train_history
+    else:
+        train_history_all = tree_concatenate([pretrain_history, train_history])
     
     return trained, train_history_all
 
 
-trained_models, train_history = tree_unzip(tree_map_tqdm(
+trained_models, train_histories = tree_unzip(tree_map_tqdm(
     train_pair,
     task_model_pairs,
     label="Training all pairs",
@@ -254,17 +266,23 @@ trained_models, train_history = tree_unzip(tree_map_tqdm(
 ## Save the models with their parameters on the final iteration
 
 ```{python}
-save_model_parameters_all = concat_save_iterations(save_model_parameters, (n_batches_baseline, n_batches))
+save_model_parameters_all = concat_save_iterations(
+    save_model_parameters, 
+    (n_batches_baseline, n_batches_condition),
+)
 
 training_hyperparameters = dict(
     learning_rate_0=learning_rate_0,
     constant_lr_iterations=constant_lr_iterations,
     cosine_annealing_alpha=cosine_annealing_alpha,
     weight_decay=weight_decay,
-    n_batches=n_batches,
+    n_batches_total=n_batches_total,
+    n_batches_condition=n_batches_condition,
+    n_batches_baseline=n_batches_baseline,
     batch_size=batch_size,
     save_model_parameters=save_model_parameters.tolist(),
     where_train_strs=where_func_to_labels(where_train),
+    state_reset_iterations=state_reset_iterations.tolist(),
 )
 ```
 
@@ -281,13 +299,14 @@ model_hyperparameters = dict(
     disturbance_stds=disturbance_stds[disturbance_type],
     readout_norm_loss_weight=readout_norm_loss_weight,
     readout_norm_value=readout_norm_value,
+    intervention_scaleup_batches=intervention_scaleup_batches,
 )
 ```
 
 ```{python}
 train_histories_hyperparameters=dict(
     disturbance_stds=disturbance_stds,
-    n_batches=n_batches,
+    n_batches_total=n_batches_total,
     batch_size=batch_size,
     n_replicates=n_replicates,
     where_train_strs=where_func_to_labels(where_train),
@@ -309,8 +328,3 @@ model_record = save_model_and_add_record(
 )
 ```
 
-## Tmp
-
-```{python}
-import feedbax.plotly as fbp
-```

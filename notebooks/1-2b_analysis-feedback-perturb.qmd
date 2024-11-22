@@ -427,7 +427,7 @@ def impulse_active(
     if start_bounds is None:
         start_bounds = (0, n_steps)
     
-    def f(trial_spec, key):
+    def f(trial_spec, _, key):
         start_idx = start_idx_func(key, start_bounds)
         return TimeSeriesParam(unmask_1d_at_idx(
             n_steps - 1, start_idx, impulse_duration
@@ -447,7 +447,7 @@ def feedback_impulse(
     trial_mask = jnp.zeros((model_info.n_steps - 1,), bool).at[idxs_impulse].set(True)
     
     if feedback_dim is None:
-        array = lambda trial_spec, key: random_unit_vector(key, 2)
+        array = lambda trial_spec, _, key: random_unit_vector(key, 2)
     else:
         array = jnp.zeros((2,)).at[feedback_dim].set(1)
     

@@ -133,11 +133,11 @@ We may want to specify 1) which trained models to load, by their parameters, and
 #| tags: [parameters]
 
 # Specify which trained models to load 
-disturbance_type_load: Literal['curl', 'constant'] = 'constant'
+disturbance_type_load: Literal['curl', 'constant'] = 'curl'
 feedback_noise_std_load = 0.0
 motor_noise_std_load = 0.0
 feedback_delay_steps_load = 0
-hidden_size = 100
+hidden_size = 50
 where_train_strs = ["step.net.hidden", "step.net.readout"]
 readout_norm_loss_weight = 0.01
 readout_norm_value = 2.0
@@ -183,6 +183,9 @@ model_info = get_model_record(
     where_train_strs=where_train_strs,
     readout_norm_loss_weight=readout_norm_loss_weight,
     readout_norm_value=readout_norm_value,
+    intervention_scaleup_batches=[1000,3000],
+    # disturbance_stds=[0, 0.4, 0.8, 1.6, 2.0],
+    state_reset_iterations=[500],
     has_replicate_info=1,
 )
 ```
@@ -277,7 +280,7 @@ else:
 Depending on how training goes, we might want to leave out some of the training conditions (i.e. training disturbance stds) from the analysis.
 
 ```{python}
-disturbance_train_stds = model_info.disturbance_stds
+disturbance_train_stds = model_info.disturbance_stds[:-1]
 
 models_base = subdict(models_base, disturbance_train_stds)
 ```

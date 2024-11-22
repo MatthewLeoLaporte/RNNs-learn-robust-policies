@@ -112,7 +112,7 @@ def get_field_amplitude(intervenor_params):
         raise ValueError(f"Unknown intervenor parameters type: {type(intervenor_params)}")
 
 
-def vector_with_gaussian_length(trial_spec, key):
+def vector_with_gaussian_length(key):
     key1, key2 = jr.split(key)
     
     angle = jr.uniform(key1, (), minval=-jnp.pi, maxval=jnp.pi)

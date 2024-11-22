@@ -99,7 +99,7 @@ def get_lateral_distance(
     return lateral_dist
 
 
-def orthogonal_field(trial_spec, *, key):
+def orthogonal_field(trial_spec, _, key):
     init_pos = trial_spec.inits['mechanics.effector'].pos
     goal_pos = jnp.take(trial_spec.targets['mechanics.effector.pos'].value, -1, axis=-2)
     direction_vec = goal_pos - init_pos

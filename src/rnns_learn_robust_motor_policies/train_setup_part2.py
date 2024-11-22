@@ -32,19 +32,29 @@ from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainStdDict
 # (See the definition of `SCALE_FUNCS` below.)
 disturbance_params = {
     "active": lambda field_std: {
-        'curl': dict(amplitude=lambda trial_spec, key: jr.normal(key, ())),
-        'constant': dict(field=vector_with_gaussian_length),
+        'curl': dict(
+            amplitude=lambda trial_spec, batch_info, key: jr.normal(key, ()),
+        ),
+        'constant': dict(
+            field=lambda trial_spec, batch_info, key: vector_with_gaussian_length(key),
+        ),
     },
     "amplitude": lambda field_std: {
-        'curl': dict(amplitude=lambda trial_spec, key: jr.normal(key, ())),
-        'constant': dict(field=vector_with_gaussian_length),
+        'curl': dict(
+            amplitude=lambda trial_spec, batch_info, key: jr.normal(key, ()),
+        ),
+        'constant': dict(
+            field=lambda trial_spec, batch_info, key: vector_with_gaussian_length(key),
+        ),
     },
     "std": lambda field_std: {
         'curl': dict(
-            amplitude=lambda trial_spec, key: field_std * jr.normal(key, ())
+            amplitude=lambda trial_spec, batch_info, key: field_std * jr.normal(key, ())
         ),
         'constant': dict(
-            field=lambda trial_spec, key: field_std * vector_with_gaussian_length(trial_spec, key)
+            field=lambda trial_spec, batch_info, key: (
+                field_std * vector_with_gaussian_length(key),
+            )
         ),
     },
 }
@@ -52,9 +62,9 @@ disturbance_params = {
 
 # Define whether the disturbance is active on each trial
 disturbance_active: dict[str, Callable] = {
-    "active": lambda p: lambda trial_spec, key: jr.bernoulli(key, p=p),
-    "amplitude": lambda p: lambda trial_spec, key: jr.bernoulli(key, p=p),  
-    "std": lambda p: lambda trial_spec, key: jr.bernoulli(key, p=p),  
+    "active": lambda p: lambda trial_spec, _, key: jr.bernoulli(key, p=p),
+    "amplitude": lambda p: lambda trial_spec, _, key: jr.bernoulli(key, p=p),  
+    "std": lambda p: lambda trial_spec, _, key: jr.bernoulli(key, p=p),  
 }
 
 
@@ -76,7 +86,7 @@ SCALE_FUNCS = {
     "active": lambda field_std: field_std,
     "amplitude": lambda field_std: field_std,
     "std": lambda field_std: (
-        lambda trial_spec, key: jnp.abs(jr.normal(key, ()))
+        lambda trial_spec, _, key: jnp.abs(jr.normal(key, ()))
     ),
 }
 

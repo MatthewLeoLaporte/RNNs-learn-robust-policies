@@ -1,5 +1,7 @@
+from functools import partial
 from typing import Literal
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
@@ -20,9 +22,20 @@ from rnns_learn_robust_motor_policies.setup_utils import get_base_task
 from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainStdDict
 
 
-disturbance_params = {
-    'curl': dict(amplitude=lambda trial_spec, key: jr.normal(key, (1,))),
-    'constant': dict(field=vector_with_gaussian_length),
+
+disturbance_params = lambda scale_func: {
+    'curl': dict(
+        amplitude=lambda trial_spec, batch_info, key: scale_func(
+            batch_info,
+            jr.normal(key, ()), 
+        )
+    ),
+    'constant': dict(
+        field=lambda trial_spec, batch_info, key: scale_func(
+            batch_info,
+            vector_with_gaussian_length(key), 
+        )
+    ),
 }
 
 
@@ -37,9 +50,21 @@ def setup_task_model_pairs(
     motor_noise_std,
     disturbance_type: Literal['constant', 'curl'],
     disturbance_stds,
+    intervention_scaleup_batches: tuple[int, int],
     key,
     **kwargs,
 ):
+    n_batches_scaleup = intervention_scaleup_batches[1] - intervention_scaleup_batches[0]
+    if n_batches_scaleup > 0:
+        def batch_scale_up(batch_start, n_batches, batch_info, x):
+            progress = jax.nn.relu(batch_info.current - batch_start) / n_batches
+            progress = jnp.minimum(progress, 1.0)
+            scale = 0.5 * (1 - jnp.cos(progress * jnp.pi)) 
+            return x * scale
+    else:
+        def batch_scale_up(batch_start, n_batches, batch_info, x):
+            return x
+    
     task_base = get_base_task(
         n_steps=n_steps,
     )
@@ -62,7 +87,9 @@ def setup_task_model_pairs(
         return DISTURBANCE_CLASSES[disturbance_type].with_params(
             scale=field_std,
             active=active,
-            **disturbance_params[disturbance_type],
+            **disturbance_params(
+                partial(batch_scale_up, intervention_scaleup_batches[0], n_batches_scaleup)
+            )[disturbance_type],
         )
     
     task_model_pairs = jt.map(

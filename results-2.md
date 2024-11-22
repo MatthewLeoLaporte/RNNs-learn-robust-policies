@@ -5,7 +5,7 @@ updated: 2024-11-08T11:36
 
 ## Training networks with contextual inputs
 
-- [ ] Some loss plots
+- [x] Some loss plots
 
 ## Plant perturbations
 
@@ -17,10 +17,15 @@ Show that changing the context input controls the robustness of the behaviour.
 
 ## Feedback perturbations
 
-Likewise, show that changing the context input appears to change the gains.
+Likewise, show that changing the context input appears to change the feedback gains.
 
 ### Aligned trajectories
 
 ### Distributions of performance measures
 
-## Network analyses
+## Dynamical structure
+
+- [ ] **Goal steady-state fixed points**: do they systematically change?
+- [ ] **Eigendecomposition of steady-state Jacobians**: do the negative real parts become more negative, as the context input increases?
+
+## 

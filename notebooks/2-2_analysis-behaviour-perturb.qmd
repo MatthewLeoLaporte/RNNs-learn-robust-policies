@@ -387,7 +387,7 @@ task_base, models = schedule_intervenor(
 
 ```{python}
 def get_context_input_func(x):
-    return lambda trial_spec, key: (
+    return lambda trial_spec, _, key: (
         jnp.full_like(trial_spec.intervene[INTERVENOR_LABEL].active, x, dtype=float)
     )
 

@@ -2,25 +2,22 @@
 created: 2024-10-04T11:27
 updated: 2024-11-13T10:32
 ---
-
-- [x] Debug NaN in ‘std’ variant
-- [ ] **Goal steady-state fixed points**
-- [ ] **Eigendecomposition of steady-state Jacobians**
-- [ ] Move part 1 training to a script + a yaml file defining which hyperparameters to train — or otherwise we’ll have to use batch quarto render 
-- [ ] Try -1 and 1 for the “active” trianing variant, not 0 and 1?
-	- I’m not sure this makes sense, since we want negative values of context input to be “anti-robust”
+**See [[results-2|Part 2 results]] for ongoing analysis TODOs.**
 
 ## Training
 
-- [ ] Reset `opt_state` at iteration 500
-- [ ] Pre-training for 1000 steps without perturbations
-- [ ] Ramping up perturbations – the only way I see to do this atm is to modify task specs to have the signature `batch, key` rather than just `key`…
+- [x] Reset `opt_state` at iteration 500
+- [ ] Fix readout after baseline training
+- [x] Pre-training for 1000 steps without perturbations
+- [x] Ramping up perturbations – the only way I see to do this atm is to modify task specs to have the signature `batch, key` rather than just `key`…
+
+### Other technical stuff
+
 - [ ] Looks like `train_step` is re-compiling on the first batch, again, since I started passing `batch`. Debug.
-
-## Model loss terms
-
-- [x] Construct `history.loss_validation` from `task.loss_func` only, when a custom loss is passed to `TaskTrainer`; thus we don’t need to associate model loss terms with the task instance, but can pass the customized loss directly to `TaskTrainer` as I wanted
-- [x] ~~That also means we don’t need to know about the custom loss alterations when calling `get_task_model_pairs`. However, we still need a deserialisation function for `TaskTrainerHistories`… maybe `TaskTrainer` should generally be able to return this?~~
+	- Interesting that in the baseline case, the “Training/validation step compiled in…” notices register as ~0 s for the condition (i.e. continuation of baseline) training run, which makes sense given that the identical functions were just compiled for the baseline run; however, there is still a ~5 s delay between when the tqdm bar appears, and when it starts moving!
+- [ ] Try -1 and 1 for the “active” trianing variant, not 0 and 1?
+	- I’m not sure this makes sense, since we want negative values of context input to be “anti-robust”
+- [ ] Move part 1 training to a script + a yaml file defining which hyperparameters to train — or otherwise we’ll have to use batch quarto render 
 
 ## Database
 
