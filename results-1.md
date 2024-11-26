@@ -9,6 +9,9 @@ updated: 2024-11-09T00:06
 #### No noise, no delay
 ![[10 Projects/10 PhD/41 RNNs learn robust policies/results-1.assets/1-1__loss-history__curl__std-0__replicates-10.png]]
 
+> [!NOTE]+
+> This is with constant learning rate = 0.01; some of the subsequent examples use a cosine annealing schedule but note that it doesn’t make much difference.
+
 ##### With 1000 iterations of baseline pre-training
 
 Note that these pre-training runs were done sometime later than the other plots in this section and there may be some minor changes in other hyperparameters, hence why this does not look identical to the [[#No noise, no delay|original case]].
@@ -17,11 +20,30 @@ Note that these pre-training runs were done sometime later than the other plots 
 
 There are actually two runs (calls to the `TaskTrainer`) here, but the run is totally smooth because we retain the optimizer state between them.
 
-##### With 1000 iterations of pre-training and an optimizer reset at 500
+> [!NOTE]+
+> This is a control case, since the pre-training run uses exactly the same task (baseline) as the subsequent run. I’ve included it here for consistency.
 
-Interesting that the optimizer reset causes a rapid drop in loss.
+> [!NOTE]+
+> This is with cosine annealed (alpha=0.01) learning rate over the last 8000 steps.
+
+##### Turning off readout training at 1000
+
+Note that we preserve the `opt_state` for the hidden layer parameters, which is why there isn’t a gross discontinuity in the loss.
+
+![[file-20241124152418414.png]]
+##### With an optimizer reset at 500
+
+Interesting that the optimizer reset causes a rapid drop in loss. 
+
 ![[file-20241122121104678.png]]
+> [!NOTE]+
+> This is with constant learning rate = 0.01.
+##### With optimizer reset at 500, 1500, and 5000
 
+![[file-20241122162820639.png]]
+
+> [!NOTE]+
+> This is with constant learning rate = 0.01.
 #### 0.04 noise, no delay
 ![[10 Projects/10 PhD/41 RNNs learn robust policies/results-1.assets/1-1__loss-history__random__std-0__replicates-10.png]]
 Clearly noise affects the balance of the loss terms, in particular it puts a floor on the final velocity error (makes sense since due to the motor noise), and likewise it also increases the position error a bit.
@@ -52,19 +74,34 @@ Curl field std. 2.4. At this level, the fields appear to be too strong for the m
 ![[10 Projects/10 PhD/41 RNNs learn robust policies/results-1.assets/1-1__loss-history__curl__std-2.4__replicates-10.png]]
 It is clear from the loss distribution over replicates that everything is more or less fine except at the highest curl std:
 ![[10 Projects/10 PhD/41 RNNs learn robust policies/results-1.assets/best-loss-distn-by-replicate.png]]
+
+> [!NOTE]
+> Unless indicated otherwise, all of the variants under subheadings below had a quadratic penalty of weight 0.01, driving the value of the Frobenius norm of the readout weights to 2.0.
+
+##### Scale up perturbation from 0 to 100% over the first 1000 iterations
+
+Std 0.8
+![[file-20241124181356936.png]]
+
+Std 1.6
+![[file-20241124181407688.png]]
+
 ##### With 1000 iters of baseline pre-training
 
 Even though we retain the optimizer state, there is a loss discontinuity because the force fields suddenly switch on.
 
 ![[file-20241121112227121.png]]
 
-This discontinuity grows as the field std increases
+This discontinuity grows as the field std increases 
 
 ![[file-20241121112346966.png]]
 
 Until eventually (around std=2) it breaks:
 
 ![[file-20241121112413797.png]]
+
+> [!NOTE]+
+> This is with cosine annealed (alpha=0.01) learning rate over the last 8000 steps.
 
 ##### With 1000 iters of baseline pretraining, then 2000 iters of intervention scale-up (cosine)
 
@@ -75,12 +112,56 @@ And 1.6
 ![[file-20241122121853763.png]]
 This looks worse than the simple training schedule with no pre-training or scale-up
 
-##### With 1000 iters of pre-training, an optimizer reset at 500, and 2000 steps of scale-up
+> [!NOTE]+
+> This is with cosine annealed (alpha=0.01) learning rate over the last 8000 steps.
+
+##### With 1000 iters of pre-training, an optimizer reset at 500, and 2000 iters of scale-up (cosine)
 
 Std 1.6. Not great
 ![[file-20241122122125369.png]]
+> [!NOTE]+
+> This is with cosine annealed (alpha=0.01) learning rate over the last 8000 steps.
+
+##### With 1000 iters of pre-training and 5000 iters of scale-up (cosine)
+
+Std 1.6
+![[file-20241122162514530.png]]
+
+##### With 1000 iters of pre-training, no scale-up, and optimizer resets at 500, 1500, and 5000
+
+The resets after the first one (during pre-training) don’t help with convergence in the presence of interventions. They might actually cause the instability seen in the std 1.6 case.
+
+Std 0.8
+![[file-20241122162627188.png]]
+
+Std 1.6
+![[file-20241122162641870.png]]
+> [!NOTE]+
+> This is with constant learning rate = 0.01.
+
+##### Without pre-training or scale-up, but with resets at 500 and 5000 iters
+
+Std 0.8: The first reset does seem to accelerate the training, but the second one is useless and possibly causes the instability seen right at the end.
+![[file-20241122162929942.png]]
+
+Std 1.6: There’s some jaggedness between 1000-4000 which might be downstream of the first reset.
+![[file-20241122162948587.png]]
 
 
+> [!NOTE]+
+> This is with constant learning rate = 0.01.
+
+##### With 1000 iters of baseline, and readout training turned off at iter 1000 (i.e. same iteration we turn on perturbations)
+
+![[file-20241124152608187.png]]
+
+##### With 1000 iters of baseline, readout turned off at 1000, and 5000 iters of pert scaleup
+
+Std 0.8
+![[file-20241124172339634.png]]
+
+Std 1.6. Note that the minimum total loss is around 1000-2000 which is not great
+![[file-20241124172351662.png]]
 
 #### 0.04 noise, no delay
 
@@ -334,6 +415,7 @@ And a **4-step delay**
 ![[curl-train-std-1.6.png]]
 ##### Comparison across curl training conditions
 ![[curl-field-4.0.png]]
+^compare-curl-train-aligned
 
 ##### Trained on max random field std.
 ![[random-train-std-1.0.png]]

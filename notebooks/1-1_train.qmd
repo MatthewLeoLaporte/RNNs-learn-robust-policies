@@ -110,19 +110,29 @@ n_batches_baseline = 0
 n_batches_condition = 10000
 batch_size = 250
 learning_rate_0 = 0.01
-constant_lr_iterations = 2000  # Number of initial training iterations to hold lr constant
+constant_lr_iterations = 2000 # Number of initial training iterations to hold lr constant
 cosine_annealing_alpha = 1.0  # Max learning rate factor decrease during cosine annealing 
 weight_decay = 0
 
 # Force the Frobenius norm of the readout weight matrix to be close (squared error) to this value
 readout_norm_value = 2.0
-readout_norm_loss_weight = 0.01
+readout_norm_loss_weight = 0.0
 
 n_scaleup_batches = 0
 intervention_scaleup_batches = (n_batches_baseline, n_batches_baseline + n_scaleup_batches)
 
 # reset the optimizer state at these iterations
-state_reset_iterations = jnp.array([500, 5000])
+state_reset_iterations = jnp.array([])
+
+# change which parameters are trained, after a given number of iterations
+where_train = {
+    0: lambda model: (
+        model.step.net.hidden,
+        model.step.net.readout, 
+    ),
+    # stop training the readout 
+    # 1000: lambda model: model.step.net.hidden,
+}
 ```
 
 ### RNG setup
@@ -172,20 +182,15 @@ optimizer_class = partial(
     weight_decay=weight_decay,
 )
 
-where_train = lambda model: (
-    model.step.net.hidden,
-    model.step.net.readout, 
-)
-
-n_batches_total = n_batches_baseline + n_batches_condition
-save_model_parameters = iterations_to_save_model_parameters(n_batches_total)
+n_batches = n_batches_baseline + n_batches_condition
+save_model_parameters = iterations_to_save_model_parameters(n_batches)
 ```
 
 ```{python}
 schedule = make_delayed_cosine_schedule(
     learning_rate_0, 
     constant_lr_iterations, 
-    n_batches_total, 
+    n_batches, 
     cosine_annealing_alpha,
 ) 
 
@@ -206,8 +211,9 @@ loss_func = simple_reach_loss() + readout_norm_loss
 
 ```{python}
 train_params = dict(
-    loss_func=loss_func,
     ensembled=True,
+    loss_func=loss_func,
+    where_train=where_train,
     batch_size=batch_size, 
     log_step=500,
     save_model_parameters=save_model_parameters,
@@ -225,7 +231,6 @@ def train_pair(pair):
             task_baseline,
             pair.model,
             n_batches=n_batches_baseline, 
-            where_train=where_train,
             run_label="Baseline training",
             key=key0,
             **train_params,
@@ -241,7 +246,6 @@ def train_pair(pair):
         opt_state=opt_state,
         n_batches=n_batches_condition, 
         idx_start=n_batches_baseline,
-        where_train=where_train,
         run_label="Condition training",
         key=key1,
         **train_params,
@@ -271,17 +275,19 @@ save_model_parameters_all = concat_save_iterations(
     (n_batches_baseline, n_batches_condition),
 )
 
+where_train_strs = jt.map(where_func_to_labels, where_train)
+
 training_hyperparameters = dict(
     learning_rate_0=learning_rate_0,
     constant_lr_iterations=constant_lr_iterations,
     cosine_annealing_alpha=cosine_annealing_alpha,
     weight_decay=weight_decay,
-    n_batches_total=n_batches_total,
+    n_batches=n_batches,
     n_batches_condition=n_batches_condition,
     n_batches_baseline=n_batches_baseline,
     batch_size=batch_size,
     save_model_parameters=save_model_parameters.tolist(),
-    where_train_strs=where_func_to_labels(where_train),
+    where_train_strs=where_train_strs,
     state_reset_iterations=state_reset_iterations.tolist(),
 )
 ```
@@ -306,10 +312,10 @@ model_hyperparameters = dict(
 ```{python}
 train_histories_hyperparameters=dict(
     disturbance_stds=disturbance_stds,
-    n_batches_total=n_batches_total,
+    n_batches=n_batches,
     batch_size=batch_size,
     n_replicates=n_replicates,
-    where_train_strs=where_func_to_labels(where_train),
+    where_train_strs=where_train_strs,
     save_model_parameters=save_model_parameters.tolist(),
     readout_norm_loss_weight=readout_norm_loss_weight,
     readout_norm_value=readout_norm_value,

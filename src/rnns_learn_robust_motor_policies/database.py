@@ -101,6 +101,7 @@ class ModelRecord(Base):
     disturbance_type: Mapped[str]
     where_train_strs: Mapped[Sequence[str]]
     n_replicates: Mapped[int]
+    n_batches: Mapped[int]
     save_model_parameters: Mapped[Sequence[int]]
     
     @hybrid_property

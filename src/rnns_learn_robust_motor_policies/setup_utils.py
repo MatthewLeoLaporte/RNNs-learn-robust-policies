@@ -52,7 +52,7 @@ get_readout_norm_loss = lambda value: ModelLoss(
 def setup_train_histories(
     models_tree,
     disturbance_stds,
-    n_batches_total,
+    n_batches,
     batch_size,
     n_replicates,
     *,
@@ -72,7 +72,12 @@ def setup_train_histories(
     Here, neither of these are a concern since 1) we are always using the same 
     loss function for each set of saved/loaded models in this project, 2) `save_trial_specs is None`.
     """   
-    where_train = attr_str_tree_to_where_func(where_train_strs)
+    # Assume that where funcs may be lists (normally defined as tuples, but retrieved through sqlite JSON)
+    where_train = jt.map(
+        attr_str_tree_to_where_func, 
+        where_train_strs,
+        is_leaf=is_type(list),
+    )
     
     loss_func = simple_reach_loss()
     if readout_norm_loss_weight is not None:
@@ -86,7 +91,7 @@ def setup_train_histories(
     return jt.map(
         lambda models: init_task_trainer_history(
             loss_func,
-            n_batches_total,
+            n_batches,
             n_replicates,
             ensembled=True,
             ensemble_random_trials=False,

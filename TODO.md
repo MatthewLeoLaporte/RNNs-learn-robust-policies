@@ -4,10 +4,14 @@ updated: 2024-11-13T10:32
 ---
 **See [[results-2|Part 2 results]] for ongoing analysis TODOs.**
 
+- [x] Try uniform distribution in $[0, 1]$ for “std” method
+- [ ] Parameter scaleup for part 2
+- [x] In `get_best_models`, `where_train` should depend on the iteration (i.e. the replicate) we are retrieving the parameters for; i.e. we should have a function that computes which `where_train` to use, from `best_save_idx`, so that we don’t end up with `None`/`NaN` in our resulting “best” models
+
 ## Training
 
 - [x] Reset `opt_state` at iteration 500
-- [ ] Fix readout after baseline training
+- [x] Fix readout after baseline training
 - [x] Pre-training for 1000 steps without perturbations
 - [x] Ramping up perturbations – the only way I see to do this atm is to modify task specs to have the signature `batch, key` rather than just `key`…
 

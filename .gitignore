@@ -10,9 +10,8 @@ render_params.yaml
 render_params_all.yaml
 config/paths.yml
 
-# Markdown copies of example notebooks
-# (They are meant to make search-replace easier)
-examples/markdown/
+# script versions of notebooks
+notebooks/*.py
 
 # external libraries
 external/

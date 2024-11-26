@@ -3,6 +3,8 @@ from collections.abc import Callable
 from functools import partial
 import logging
 from pathlib import Path
+from typing import Any, Sequence
+import numpy as np
 from sqlalchemy.orm import Session
 
 import equinox as eqx
@@ -26,8 +28,8 @@ from feedbax import (
 )
 from feedbax.misc import attr_str_tree_to_where_func
 import feedbax.plotly as fbp 
-from feedbax.train import TaskTrainerHistory
-from feedbax._tree import tree_labels
+from feedbax.train import TaskTrainerHistory, WhereFunc, _get_trainable_params_superset
+from feedbax._tree import filter_spec_leaves, tree_labels
 
 from rnns_learn_robust_motor_policies.database import (
     Base,
@@ -184,19 +186,58 @@ def get_measures_to_rate(models, tasks):
 MEASURES_TO_RATE = ('end_pos_error',)
 
 
+def _get_most_recent_idxs(idxs: Sequence[int], max_idx: int) -> Any:
+    """Returns the value for the largest key less than or equal to `idx`."""
+    keys = jnp.array(sorted(idxs))
+    key_idxs = np.searchsorted(keys, np.arange(max_idx + 1), side='right')
+    return keys[key_idxs - 1]
+
+
 def get_best_models(
+    model_record: ModelRecord,
     models: PyTree[eqx.Module, 'T'],
     train_histories: PyTree[TaskTrainerHistory],
+    save_model_parameters: Array,
     best_save_idx: PyTree[Int[Array, "replicate"]],
     n_replicates: int,
-    where_train: Callable[[eqx.Module], PyTree[Array]],
+    where_train: WhereFunc | dict[str, WhereFunc],
 ) -> PyTree[eqx.Module, 'T']:
     """Serializes models with the best parameters for each replicate and training condition."""
+    # Get a function that returns the `where_func` used on a given iteration
+    if isinstance(where_train, dict):
+        where_train_idxs = _get_most_recent_idxs(
+            [int(k) for k in where_train.keys()],
+            model_record.n_batches,        
+        )
+        get_where_train = lambda idx: where_train[str(where_train_idxs[idx])]
+    else:
+        get_where_train = lambda idx: where_train
+    
+    # TODO: If any model parameters were trainable at the end of the training run, 
+    # but were not trainable at the time of the best iteration, then this will keep 
+    # the final parameters. However, we should probably keep the value of these parameters
+    # at the best iteration, even though they were not trainable then, since perhaps they 
+    # became trainable later (i.e. resulting in the final values) and this may have 
+    # affected the final loss.
+    # TODO: Similarly, I think this might fail if two replicates differ in whether a parameter 
+    # was trainable at the best iteration; we'll end up trying to do a `tree_stack` on pytrees
+    # where some array leaves are sometimes `None`. The solution to this is the same as the 
+    # solution above: we need to select the best version of parameters that were trainable 
+    # *at any point*
     best_saved_parameters = tree_stack([
+        # Select the best parameters for each replicate, for all train histories
         jt.map(
-            lambda train_history, best_idx_by_replicate: tree_take_multi(
-                train_history.model_parameters, 
-                [int(best_idx_by_replicate[i]), i], 
+            lambda train_history, best_idxs: tree_take_multi(
+                # Filter out the parameters that were not trainable at the best iteration
+                eqx.filter(
+                    train_history.model_parameters, 
+                    filter_spec_leaves(
+                        train_history.model_parameters, 
+                        get_where_train(save_model_parameters[int(best_idxs[i])]),
+                    ),
+                    is_leaf=is_module,
+                ),
+                [int(best_idxs[i]), i], 
                 [0, 1],
             ),
             train_histories, best_save_idx,
@@ -205,16 +246,7 @@ def get_best_models(
         for i in range(n_replicates)
     ])
     
-    models_with_best_parameters = jt.map(
-        lambda model, best_params: eqx.tree_at(
-            where_train,
-            model, 
-            where_train(best_params),
-        ),
-        models, 
-        best_saved_parameters,
-        is_leaf=is_module,
-    )
+    models_with_best_parameters = eqx.combine(models, best_saved_parameters)
     
     return models_with_best_parameters
 
@@ -287,11 +319,27 @@ def get_replicate_distribution_figure(
 
 
 def get_train_history_figures(
-    histories_by_train_std: PyTree[TaskTrainerHistory, 'T']
+    histories: PyTree[TaskTrainerHistory, 'T'],
+    best_saved_iteration_by_replicate,
 ) -> PyTree[go.Figure, 'T']:
+    def get_figure(history, best_save_iterations):
+        fig = fbp.loss_history(history.loss)
+        text = "Best iter. by replicate: " + ", ".join(
+            str(idx) for idx in best_save_iterations
+        )
+        fig.add_annotation(dict(
+            text=text,
+            showarrow=False,
+            xref="paper",
+            yref="paper",
+            x=0.5, 
+            y=1,
+        ))
+        return fig
+        
     return jt.map(
-        lambda history: fbp.loss_history(history.loss),
-        histories_by_train_std,
+        lambda history, best_save_iterations: get_figure(history, best_save_iterations),
+        histories, best_saved_iteration_by_replicate,
         is_leaf=is_type(TaskTrainerHistory),
     )
 
@@ -311,7 +359,7 @@ def save_training_figures(
     fig_specs: dict[str, FigFuncSpec] = dict(
         loss_history=FigFuncSpec(
             func=get_train_history_figures,
-            args=(train_histories,),
+            args=(train_histories, replicate_info['best_saved_iteration_by_replicate']),
         ),
         loss_dist_over_replicates_best=FigFuncSpec(
             func=partial(
@@ -390,6 +438,7 @@ def save_training_figures(
 
 
 def compute_replicate_info(
+    model_record,
     models,
     tasks,
     train_histories, 
@@ -422,8 +471,10 @@ def compute_replicate_info(
     
     # Create models with best parameters
     best_models = get_best_models(
+        model_record,
         models, 
         train_histories, 
+        save_model_parameters,
         best_save_idx, 
         n_replicates, 
         where_train,
@@ -493,7 +544,12 @@ def process_model_record(
     
     origin = str(model_record.origin)
     # TODO: Either ignore the typing here, or make these columns explicit in `ModelRecord`
-    where_train = attr_str_tree_to_where_func(model_record.where_train_strs)
+    where_train = jt.map(
+        attr_str_tree_to_where_func,
+        model_record.where_train_strs,
+        is_leaf=is_type(list),
+    )
+    # where_train = attr_str_tree_to_where_func(tuple(set(jt.leaves(model_record.where_train_strs))))
     disturbance_type = str(model_record.disturbance_type)
     n_replicates = int(model_record.n_replicates)       
     save_model_parameters = jnp.array(model_record.save_model_parameters)
@@ -505,7 +561,7 @@ def process_model_record(
     else:
         models, model_hyperparams, train_histories, train_history_hyperparams = all_data
     
-    # Evaluate each model on its respective validation task
+    # Get respective validation tasks for each model
     tasks = setup_tasks_only(
         SETUP_FUNCS[origin], 
         key=jr.PRNGKey(0), 
@@ -514,6 +570,7 @@ def process_model_record(
     
     # Compute replicate info``
     replicate_info, best_models = compute_replicate_info(
+        model_record,
         models,
         tasks,
         train_histories, 

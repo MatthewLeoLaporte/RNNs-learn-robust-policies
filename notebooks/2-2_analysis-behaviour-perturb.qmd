@@ -141,7 +141,7 @@ feedback_delay_steps_load = 0
 hidden_size = 100
 
 # Specify model parameters to use for analysis (None -> use training value)
-disturbance_type: Optional[Literal['curl', 'constant']] = 'curl'
+disturbance_type: Optional[Literal['curl', 'constant']] = None
 feedback_noise_std: Optional[float] = None
 motor_noise_std: Optional[float] = None
 ```
@@ -173,15 +173,18 @@ key_init, key_train, key_eval = jr.split(key, 3)
 ```{python}
 model_info = get_model_record(
     db_session,
+    origin=TRAIN_NB_ID,
+    has_replicate_info=True,
     disturbance_type=disturbance_type_load,
     feedback_noise_std=feedback_noise_std_load,
     motor_noise_std=motor_noise_std_load,
     feedback_delay_steps=feedback_delay_steps_load,
     hidden_size=hidden_size,
     n_batches=10000,
-    origin=TRAIN_NB_ID,
-    has_replicate_info=True,
-    disturbance_stds=[0.6],
+    disturbance_stds=[0.4, 0.8, 1.2, 1.6, 2.0],
+    learning_rate_0=0.001,
+    # intervention_scaleup_batches=[0, 1000],
+    training_methods=['amplitude', 'std'],
 )
 ```
 
@@ -287,6 +290,8 @@ eval_parameters = use_record_params_where_none(dict(
     feedback_noise_std=feedback_noise_std,
     motor_noise_std=motor_noise_std,
 ), model_info)
+
+disturbance_type = eval_parameters["disturbance_type"]
 ```
 
 ```{python}
@@ -302,13 +307,13 @@ any_system_noise = any(jt.leaves((
 disturbance_amplitude = {
     'curl': 4,
     'constant': 0.4,
-}[eval_parameters["disturbance_type"]]
+}[disturbance_type]
 ```
 
 ### Context inputs 
 
 ```{python}
-context_inputs = [-4, -2, -1, -0.5, 0, 0.5, 1, 2, 4]
+context_inputs = [-2, -1, -0.5, 0, 0.5, 1, 1.5, 2, 3]
 ```
 
 ### Number of evaluations per model and condition
@@ -387,7 +392,7 @@ task_base, models = schedule_intervenor(
 
 ```{python}
 def get_context_input_func(x):
-    return lambda trial_spec, _, key: (
+    return lambda trial_spec, key: (
         jnp.full_like(trial_spec.intervene[INTERVENOR_LABEL].active, x, dtype=float)
     )
 
@@ -528,8 +533,8 @@ plot_condition_trajectories = partial(
         margin_t=75,
     ),
     scatter_kws=dict(
-        line_width=1, 
-        opacity=0.6,
+        line_width=1.5, 
+        opacity=0.66,
     ),
 )
 ```
@@ -570,17 +575,78 @@ figs = jt.map(
 
 ```{python}
 for path, fig in tqdm(figs_flatten_with_paths(figs)):
-    training_method = path[0].key
-    disturbance_train_std = path[1].key
-    
     add_endpoint_traces(fig, POS_ENDPOINTS_ALIGNED['small'], xaxis='x1', yaxis='y1')
     
     fig_parameters = dict(
-        training_method=training_method,
+        training_method=path[0].key,
         disturbance_type=disturbance_type,
         disturbance_type_train=disturbance_type_load,
-        disturbance_train_std=disturbance_train_std,
+        disturbance_train_std=path[1].key,
         disturbance_amplitude=disturbance_amplitude,
+        # TODO: The number of replicates (`n_replicates_included`) may vary with the disturbance train std!
+        # n=min(n_evals['small'] * n_replicates, n_curves_max),
+    )
+    
+    add_evaluation_figure(
+        db_session,
+        eval_info,
+        fig,
+        plot_id,
+        **fig_parameters,
+    )
+```
+
+### Comparison of given context values, across training field stds
+
+```{python}
+plot_id = "aligned_to_reach_condition/compare_field_stds_by_context_input"
+```
+
+```{python}
+context_inputs_plot = [-2, 0, 2]
+
+plot_vars = jt.map(
+    lambda d: {
+        context_input: tree_stack(
+            jt.map(lambda arr: arr[context_inputs.index(context_input)], d).values()
+        )
+        for context_input in context_inputs_plot
+    },
+    plot_vars_stacked,
+    is_leaf=is_type(TrainStdDict),
+)
+```
+
+```{python}
+figs = jt.map(
+    partial(
+        plot_condition_trajectories, 
+        colorscale=COLORSCALES['disturbance_train_stds'],
+        colorscale_axis=0,
+        # stride=stride,
+        legend_title="Train std.",
+        legend_labels=disturbance_train_stds,
+        curves_mode='lines',
+        var_endpoint_ms=0,
+        scatter_kws=dict(line_width=0.5, opacity=0.3),
+        # ref_endpoints=(pos_endpoints, None),
+    ),
+    plot_vars,
+    is_leaf=is_type(Responses),
+)
+```
+
+
+```{python}
+for path, fig in tqdm(figs_flatten_with_paths(figs)):   
+    add_endpoint_traces(fig, POS_ENDPOINTS_ALIGNED['small'], xaxis='x1', yaxis='y1')
+    
+    fig_parameters = dict(
+        disturbance_type=disturbance_type,
+        disturbance_type_train=disturbance_type_load,
+        disturbance_amplitude=disturbance_amplitude,
+        training_method=path[0].key,
+        context_input=path[1].key,
         # TODO: The number of replicates (`n_replicates_included`) may vary with the disturbance train std!
         # n=min(n_evals['small'] * n_replicates, n_curves_max),
     )
