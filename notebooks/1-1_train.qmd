@@ -64,7 +64,7 @@ from rnns_learn_robust_motor_policies.database import (
     get_db_session,
     save_model_and_add_record,
 )
-from rnns_learn_robust_motor_policies.misc import print_version_info
+from rnns_learn_robust_motor_policies.misc import log_version_info
 from rnns_learn_robust_motor_policies.setup_utils import get_readout_norm_loss
 from rnns_learn_robust_motor_policies.train_setup_part1 import (
     setup_task_model_pairs,
@@ -81,7 +81,7 @@ from rnns_learn_robust_motor_policies.train_setup import (
 Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
 
 ```{python}
-print_version_info(jax, eqx, optax)
+log_version_info(jax, eqx, optax)
 ```
 
 ### Initialize model database connection

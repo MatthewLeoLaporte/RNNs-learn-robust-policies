@@ -44,6 +44,7 @@ import plotly
 import plotly.graph_objects as go
 from tqdm.auto import tqdm
 
+import feedbax
 from feedbax import (
     is_module, 
     is_type,
@@ -62,6 +63,7 @@ from feedbax.intervene import (
 import feedbax.plotly as fbp
 from feedbax.task import TrialSpecDependency
 
+import rnns_learn_robust_motor_policies
 from rnns_learn_robust_motor_policies import PROJECT_SEED
 from rnns_learn_robust_motor_policies.colors import (
     COLORSCALES, 
@@ -79,7 +81,7 @@ from rnns_learn_robust_motor_policies.database import (
     add_evaluation_figure,
     use_record_params_where_none,
 )
-from rnns_learn_robust_motor_policies.misc import print_version_info
+from rnns_learn_robust_motor_policies.misc import log_version_info
 from rnns_learn_robust_motor_policies.train_setup_part2 import (
     setup_task_model_pairs, 
 )
@@ -117,7 +119,9 @@ from rnns_learn_robust_motor_policies.types import (
 Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
 
 ```{python}
-print_version_info(jax, eqx, plotly)
+version_info = log_version_info(
+    jax, eqx, plotly, git_modules=(feedbax, rnns_learn_robust_motor_policies)
+)
 ```
 
 ### Initialize model database connection
@@ -347,6 +351,7 @@ eval_info = add_evaluation(
     model_hash=model_info.hash,
     eval_parameters=eval_parameters,
     origin=NB_ID,
+    version_info=version_info,
 )
 ```
 
@@ -676,7 +681,14 @@ for l0 in figs:
 
 ## Measure distributions
 
-**TODO**
+Across context inputs, for a given training condition.
+
+```{python}
+train_field_std = 1.2
+```
+
+
+
 
 ## Output correlation
 

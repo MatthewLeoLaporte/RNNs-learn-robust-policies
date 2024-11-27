@@ -48,6 +48,7 @@ import plotly
 import plotly.graph_objects as go
 from tqdm.auto import tqdm
 
+import feedbax
 from feedbax import (
     is_module, 
     is_type,
@@ -67,6 +68,7 @@ import feedbax.plotly as fbp
 from feedbax.task import SimpleReaches
 from feedbax.xabdeef.losses import simple_reach_loss
 
+import rnns_learn_robust_motor_policies
 from rnns_learn_robust_motor_policies import PROJECT_SEED
 from rnns_learn_robust_motor_policies.colors import (
     COLORSCALES,
@@ -81,10 +83,19 @@ from rnns_learn_robust_motor_policies.database import (
     get_model_record,
     use_record_params_where_none,
 )
+from rnns_learn_robust_motor_policies import measures
+from rnns_learn_robust_motor_policies.measures import (
+    MEASURES, 
+    MEASURE_LABELS,
+    RESPONSE_VAR_LABELS,
+    Measure,
+    Responses,
+    output_corr,
+)
 from rnns_learn_robust_motor_policies.misc import (
     lohi, 
     lomidhi,
-    print_version_info,
+    log_version_info,
 )
 from rnns_learn_robust_motor_policies.train_setup_part1 import (
     setup_task_model_pairs,
@@ -118,7 +129,9 @@ from rnns_learn_robust_motor_policies.types import (
 Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
 
 ```{python}
-print_version_info(jax, eqx, plotly)
+version_info = log_version_info(
+    jax, eqx, plotly, git_modules=(feedbax, rnns_learn_robust_motor_policies)
+)
 ```
 
 ### Initialize model database connection
@@ -139,10 +152,11 @@ disturbance_type_load: Literal['curl', 'constant'] = 'curl'
 feedback_noise_std_load = 0.0
 motor_noise_std_load = 0.0
 feedback_delay_steps_load = 0
-hidden_size = 100
+hidden_size = 50
 where_train_strs = ["step.net.hidden", "step.net.readout"]
-readout_norm_loss_weight = 0.01
+readout_norm_loss_weight = 0.0
 readout_norm_value = 2.0
+disturbance_stds_load = [0, 0.8, 1.6]
 
 # Specify model parameters to use for analysis (None -> use training value)
 # disturbance_type: Optional[Literal['curl', 'constant']] = None
@@ -185,15 +199,20 @@ plotly_vscode_latex_fix()
 ```{python}
 model_info = get_model_record(
     db_session,
+    origin=TRAIN_NB_ID,
     disturbance_type=disturbance_type_load,
+    disturbance_stds=disturbance_stds_load,
     feedback_noise_std=feedback_noise_std_load,
     motor_noise_std=motor_noise_std_load,
     feedback_delay_steps=feedback_delay_steps_load,
     hidden_size=hidden_size,
-    where_train_strs=where_train_strs,
     readout_norm_loss_weight=readout_norm_loss_weight,
     readout_norm_value=readout_norm_value,
     has_replicate_info=1,
+    #! Temporary
+    # where_train_strs=where_train_strs,
+    intervention_scaleup_batches=[0,0],
+    state_reset_iterations=[],
 )
 ```
 
@@ -358,6 +377,7 @@ eval_info = add_evaluation(
     model_hash=model_info.hash,
     eval_parameters=eval_parameters,
     origin=NB_ID,
+    version_info=version_info,
 )
 ```
 
@@ -1137,136 +1157,72 @@ However, the current approach works just fine as well.
 
 ### Define all performance measures
 
-Max parallel (forward/backward, depending on mul=1 or mul=-1) force
-
 ```{python}
-def get_max_parallel_force(responses, mul=1., timesteps=slice(None)):
-    return jnp.max(mul * responses.force[..., timesteps, 0], axis=-1)
-```
+shortly_after_impulse = slice(impulse_end_step, impulse_end_step + impulse_duration)
+after_impulse = slice(impulse_end_step, None)
 
-Max net control force 
+# Use these as-is from the `measures` module
+measure_keys = [
+    "max_net_force",
+    "max_parallel_force_reverse",
+    "sum_net_force",
+    "max_parallel_vel_forward",
+    "max_parallel_vel_reverse",
+    "max_orthogonal_vel_left",
+    "max_orthogonal_vel_right",
+    "max_deviation",
+    "sum_deviation",
+]
 
-```{python}
-def get_net_force(responses, timesteps=slice(None)):
-    return jnp.linalg.norm(responses.force[..., timesteps, :], axis=-1)
-    
-def get_max_net_force(responses, **kwargs):
-    return jnp.max(get_net_force(responses, **kwargs), axis=-1)
-```
-
-Sum control forces
-
-```{python}
-def get_sum_net_forces(responses):
-    return jnp.sum(get_net_force(responses), axis=-1)
-```
-
-Max parallel (forward/backward) velocity 
-
-```{python}
-def get_max_parallel_vel(responses, mul=1.):
-    return jnp.max(mul * responses.vel[..., 0], axis=-1)
-```
-
-Max lateral (left/right) velocity
-
-```{python}
-def get_max_lateral_vel(responses, mul=1.):
-    return jnp.max(mul * responses.vel[..., 1], axis=-1)
-```
-
-Max deviation from steady state position (projection doesn't matter)
-
-```{python}
-def get_deviation(responses):
-    return jnp.linalg.norm(responses.pos, axis=-1)
-
-def get_max_deviation(responses):
-    return jnp.max(get_deviation(responses), axis=-1)
-```
-
-Sum deviations from steady state position
-
-```{python}
-def get_sum_deviations(responses):
-    return jnp.sum(get_deviation(responses), axis=-1)
-```
-
-
-```{python}
-all_measure_funcs, measure_handles = tree_unzip(OrderedDict({
-    "Max net force during pert.": (
-        partial(get_max_net_force, timesteps=impulse_time_idxs),
-        "force-net-max-during-pert",
-    ),
-    "Max backward force": (
-        partial(get_max_parallel_force, mul=-1.), 
-        "force-backward-max",
-    ),
-    "Max net force after pert.": (
-        partial(
-            get_max_net_force, 
-            timesteps=slice(impulse_end_step, None),
+# Add a couple more measures over specific intervals of the trials
+custom_measures, custom_measure_labels = tree_unzip({
+    "max_parallel_force_forward_shortly_after_impulse": (
+        measures.set_timesteps(
+            measures.max_parallel_force, shortly_after_impulse,
         ),
-        "force-net-max-after-pert",
+        f"Max forward force within {impulse_duration} steps of pert. end",
     ),
-    f"Max forward force within {impulse_duration} steps of pert. end": (
-        partial(
-            get_max_parallel_force, 
-            mul=1.,
-            timesteps=slice(impulse_end_step, impulse_end_step + impulse_duration),
+    "max_net_force_during_impulse": (
+        measures.set_timesteps(
+            measures.max_net_force, impulse_time_idxs,
         ),
-        "force-net-max-after-pert",
+        "Max net force during pert.",
     ),
-    "Max forward force": (
-        partial(get_max_parallel_force, mul=1.), 
-        "force-forward-max",
+    "max_net_force_after_impulse": (
+        measures.set_timesteps(
+            measures.max_net_force, after_impulse,
+        ),
+        "Max net force after pert.",
     ),
-    "Max net force": (get_max_net_force, "force-net-max"),
-    "Sum net forces": (get_sum_net_forces, "force-net-sum"),
-    "Max forward velocity": (
-        partial(get_max_parallel_vel, mul=1.), 
-        "vel-forward-max",
-    ),
-    "Max backward velocity": (
-        partial(get_max_parallel_vel, mul=-1.), 
-        "vel-backward-max",
-    ),
-    "Max lateral velocity (left)": (
-        partial(get_max_lateral_vel, mul=1.), 
-        "vel-lateral-left-max",
-    ),
-    "Max lateral velocity (right)": (
-        partial(get_max_lateral_vel, mul=-1.), 
-        "vel-lateral-right-max",
-    ),
-    "Max deviation": (get_max_deviation, "deviation-max"),
-    "Sum deviations": (get_sum_deviations, "deviation-sum")
-}))
+})
+
+all_measures = subdict(MEASURES, measure_keys) | custom_measures
+measure_labels = MEASURE_LABELS | custom_measure_labels
 ```
 
 ### Calculate all performance measures 
 
 ```{python}
-def get_all_measures(measure_funcs: PyTree[Callable], all_responses: PyTree[Responses]):
+def get_all_measures(measures: PyTree[Callable], all_responses: PyTree[Responses]):
     return jt.map(
         lambda func: jt.map(
             lambda responses: func(responses),
             all_responses,
             is_leaf=is_type(Responses),
         ),
-        measure_funcs,
+        measures,
+        is_leaf=is_type(Measure),
     )
     
-all_measures = get_all_measures(all_measure_funcs, all_responses_tuples)
+all_measure_values = get_all_measures(all_measures, all_responses_tuples)
 
-all_measures_lohi = {
-    measure_name: jt.map(
+all_measure_values_lohi = {
+    key: jt.map(
         lambda train_condn_measures: subdict(train_condn_measures, lohi(disturbance_train_stds)),
         measure,
         is_leaf=is_type(TrainStdDict),
     )
-    for measure_name, measure in all_measures.items()
+    for key, measure in all_measure_values.items()
 }
 ```
 
@@ -1327,25 +1283,25 @@ We'll find the maximum measure value for each measure type, and apply the same y
 
 ```{python}
 measure_ranges = {
-    measure_name: (
+    key: (
             jnp.nanmin(measure_data_stacked),
             jnp.nanmax(measure_data_stacked),   
     )
-    for measure_name, measure_data_stacked in {
-        measure_name: jnp.stack(jt.leaves(measure_data))
-        for measure_name, measure_data in all_measures.items()
+    for key, measure_data_stacked in {
+        key: jnp.stack(jt.leaves(measure_data))
+        for key, measure_data in all_measure_values.items()
     }.items()
 }
 
 figs = {
-    measure_name: [
+    key: [
         get_violins(
             measure, 
-            measure_name,
+            measure_labels[key],
             layout_kws=dict(
                 width=800,
                 height=600,
-                yaxis_range=[0, measure_ranges[measure_name][1]],
+                yaxis_range=[0, measure_ranges[key][1]],
             ),
             # Leave this annotation in, for now, since I'm not sure how I want to report 
             # two different perturbation amplitudes in the figure table (i.e. `fig_parameters` below)
@@ -1362,20 +1318,18 @@ figs = {
         )
         for impulse_amplitude_idx, measure in enumerate(measure_by_pert_amp)
     ]
-    for measure_name, measure_by_pert_amp in all_measures.items()
+    for key, measure_by_pert_amp in all_measure_values.items()
 }
 ```
 
 ```{python}
 for path, fig in tqdm(figs_flatten_with_paths(figs)):
-    measure_name = path[0].key
-    measure_handle = measure_handles[measure_name]
     impulse_amplitude_idx = path[1].idx
     impulse_amplitude = {k: v[impulse_amplitude_idx] for k, v in impulse_amplitudes.items()}
     
     fig_parameters = dict(
         # analysis_variant=analysis_variant,
-        measure_name=measure_handle,
+        measure_name=path[0].key,
         disturbance_amplitude=impulse_amplitude['pos'],
         disturbance_amplitude1=impulse_amplitude['vel'],
         # TODO
@@ -1392,8 +1346,8 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
 ```
 
 ```{python}
-for measure_name in all_measures:
-    figs[measure_name][-1].show()
+for key in all_measures:
+    figs[key][-1].show()
 ```
 
 ### Comparison of low-high training conditions
@@ -1404,25 +1358,25 @@ plot_id = "performance_measures/lohi_train_conditions"
 
 ```{python}
 measure_ranges_lohi = {
-    measure_name: (
+    key: (
             jnp.nanmin(measure_data_stacked),
             jnp.nanmax(measure_data_stacked),   
     )
-    for measure_name, measure_data_stacked in {
-        measure_name: jnp.stack(jt.leaves(measure_data))
-        for measure_name, measure_data in all_measures_lohi.items()
+    for key, measure_data_stacked in {
+        key: jnp.stack(jt.leaves(measure_data))
+        for key, measure_data in all_measure_values_lohi.items()
     }.items()
 }
 
 figs = {
-    measure_name: [
+    key: [
         get_violins(
             measure, 
-            measure_name,
+            measure_labels[key],
             layout_kws=dict(
                 width=500,
                 height=400,
-                yaxis_range=[0, measure_ranges_lohi[measure_name][1]],
+                yaxis_range=[0, measure_ranges_lohi[key][1]],
             ),
             annotation_kws=dict(
                 perturbations={
@@ -1437,20 +1391,18 @@ figs = {
         )
         for impulse_amplitude_idx, measure in enumerate(measure_by_pert_amp)
     ]
-    for measure_name, measure_by_pert_amp in all_measures_lohi.items()
+    for key, measure_by_pert_amp in all_measure_values_lohi.items()
 }
 ```
 
 ```{python}
 for path, fig in tqdm(figs_flatten_with_paths(figs)):
-    measure_name = path[0].key
-    measure_handle = measure_handles[measure_name]
     impulse_amplitude_idx = path[1].idx
     impulse_amplitude = {k: v[impulse_amplitude_idx] for k, v in impulse_amplitudes.items()}
     
     fig_parameters = dict(
         # analysis_variant=analysis_variant,
-        measure_name=measure_handle,
+        measure_name=path[0].key,
         disturbance_amplitude=impulse_amplitude['pos'],
         disturbance_amplitude1=impulse_amplitude['vel'],
         # TODO
@@ -1467,9 +1419,9 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
 ```
 
 ```{python}
-for measure_name in all_measures:
-    figs[measure_name][0].show()
-    figs[measure_name][-1].show()
+for key in all_measures:
+    figs[key][0].show()
+    figs[key][-1].show()
 ```
 
 ### Comparison across impulse amplitudes
@@ -1562,31 +1514,29 @@ def get_violins_comparing_amplitudes(measure_data, measure_name, pert_var, annot
 
 ```{python}
 figs = {
-    measure_name: {
+    key: {
         pert_var: get_violins_comparing_amplitudes(
             measure, 
-            measure_name,
+            measure_labels[key],
             pert_var,
             layout_kws=dict(
-                yaxis_range=[0, measure_ranges[measure_name][1]],
+                yaxis_range=[0, measure_ranges[key][1]],
             ),
         )
         for pert_var in pert_var_names
     }
-    for measure_name, measure in all_measures.items()
+    for key, measure in all_measure_values.items()
 }
 ```
 
 ```{python}
 for path, fig in tqdm(figs_flatten_with_paths(figs)):
-    measure_name = path[0].key
-    measure_handle = measure_handles[measure_name]
     pert_var = path[1].key
-    n_dist = int(np.prod(jt.leaves(all_measures[measure_name])[0].shape))
+    n_dist = int(np.prod(jt.leaves(all_measure_values[path[0].key])[0].shape))
     
     fig_parameters = dict(
         # analysis_variant=analysis_variant,
-        measure_name=measure_handle,
+        measure_name=path[0].key,
         disturbance_type=f"impulse/feedback/{pert_var}",
         n=n_dist,
     )
@@ -1601,7 +1551,7 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
 ```
 
 ```{python}
-for measure_name in all_measures:
-    figs[measure_name]['pos'].show()
-    figs[measure_name]['vel'].show()
+for key in all_measures:
+    figs[key]['pos'].show()
+    figs[key]['vel'].show()
 ```

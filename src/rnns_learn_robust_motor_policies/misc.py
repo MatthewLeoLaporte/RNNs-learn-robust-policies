@@ -1,10 +1,13 @@
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from datetime import datetime
 import json
+import logging
 from pathlib import Path
 import platform
+from rich.logging import RichHandler
 import subprocess
 from types import ModuleType
+from typing import Optional
 
 import equinox as eqx
 import jax.numpy as jnp 
@@ -18,6 +21,14 @@ from feedbax._tree import apply_to_filtered_leaves
 from feedbax.intervene import CurlFieldParams, FixedFieldParams
 
 from rnns_learn_robust_motor_policies.tree_utils import subdict
+
+
+logging.basicConfig(
+    format='(%(name)-20s) %(message)s', 
+    level=logging.INFO, 
+    handlers=[RichHandler(level="NOTSET")],
+)
+logger = logging.getLogger(__name__)
 
 
 def dict_str(d, value_format='.2f'):
@@ -121,16 +132,27 @@ def vector_with_gaussian_length(key):
     return length * jnp.array([jnp.cos(angle), jnp.sin(angle)]) 
 
 
-def print_version_info(
+def log_version_info(
     *args: ModuleType, 
-    feedbax_commit_id: bool = True,
+    git_modules: Optional[Sequence[ModuleType]] = None,
     python_version: bool = True,
-):
-    indent = "  "
-    print("Version info:")
+) -> dict[str, str]:
+    version_info: dict[str, str] = {}
+    
     if python_version:
-        print(f"{indent}python: {platform.python_version()}")
+        python_ver = platform.python_version()
+        version_info["python"] = python_ver
+        logger.info(f"python version: {python_ver}")
+    
     for package in args:
-        print(f"{indent}{package.__name__}: {package.__version__}")
-    if feedbax_commit_id:
-        print(f"{indent}feedbax commit: {git_commit_id()}")
+        version = package.__version__
+        version_info[package.__name__] = version
+        logger.info(f"{package.__name__} version: {version}")
+    
+    if git_modules:
+        for module in git_modules:
+            commit = git_commit_id(module=module)
+            version_info[f"{module.__name__} commit"] = commit
+            logger.info(f"{module.__name__} commit: {commit}")
+    
+    return version_info

@@ -76,6 +76,7 @@ import jax.tree as jt
 import numpy as np
 import optax 
 
+import feedbax
 from feedbax import (
     is_module,
     is_type,
@@ -86,12 +87,13 @@ from feedbax.misc import where_func_to_labels
 from feedbax.train import TaskTrainer
 from feedbax.xabdeef.losses import simple_reach_loss
 
+import rnns_learn_robust_motor_policies 
 from rnns_learn_robust_motor_policies import PROJECT_SEED
 from rnns_learn_robust_motor_policies.database import (
     get_db_session,
     save_model_and_add_record,
 )
-from rnns_learn_robust_motor_policies.misc import print_version_info
+from rnns_learn_robust_motor_policies.misc import log_version_info
 from rnns_learn_robust_motor_policies.setup_utils import (
     get_readout_norm_loss,
 )
@@ -110,7 +112,9 @@ from rnns_learn_robust_motor_policies.train_setup import (
 Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
 
 ```{python}
-print_version_info(jax, eqx, optax)
+version_info = log_version_info(
+    jax, eqx, optax, git_modules=(feedbax, rnns_learn_robust_motor_policies)
+)
 ```
 
 ### Initialize model database connection
@@ -128,8 +132,8 @@ These are parameters that can be [varied](https://quarto.org/docs/computations/p
 
 disturbance_type: Literal['curl', 'constant'] = 'curl'  
 feedback_delay_steps = 0
-feedback_noise_std = 0.0
-motor_noise_std = 0.0
+feedback_noise_std = 0.1
+motor_noise_std = 0.1
 hidden_size = 100
 n_replicates = 5
 n_steps = 100
@@ -140,7 +144,7 @@ n_batches_condition = 10000
 batch_size = 250
 learning_rate_0 = 0.001
 constant_lr_iterations = 2000 # Number of initial training iterations to hold lr constant
-cosine_annealing_alpha = 0.01  # Max learning rate factor decrease during cosine annealing 
+cosine_annealing_alpha = 1.0  # Max learning rate factor decrease during cosine annealing 
 weight_decay = 0
 
 # Force the Frobenius norm of the readout weight matrix to be close (squared error) to this value
@@ -384,5 +388,6 @@ model_record = save_model_and_add_record(
     other_hyperparameters=training_hyperparameters,
     train_history=train_histories,
     train_history_hyperparameters=train_histories_hyperparameters,
+    version_info=version_info,
 )
 ```

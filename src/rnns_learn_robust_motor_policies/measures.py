@@ -285,6 +285,15 @@ def reverse_measure(measure: Measure) -> Measure:
         transform_func,
         is_leaf=lambda x: x is None,
     )
+    
+
+def set_timesteps(measure: Measure, timesteps) -> Measure:
+    return eqx.tree_at(
+        lambda measure: measure.timesteps,
+        measure,
+        timesteps,
+        is_leaf=lambda x: x is None,
+    )
 
 
 MEASURES = dict(

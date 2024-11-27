@@ -47,6 +47,7 @@ import plotly
 import plotly.graph_objects as go
 from tqdm.auto import tqdm
 
+import feedbax
 from feedbax import (
     is_module, 
     is_type,
@@ -66,6 +67,7 @@ from feedbax.intervene import (
 )
 import feedbax.plotly as fbp
 
+import rnns_learn_robust_motor_policies
 from rnns_learn_robust_motor_policies import PROJECT_SEED
 from rnns_learn_robust_motor_policies.colors import (
     COLORSCALES, 
@@ -87,10 +89,11 @@ from rnns_learn_robust_motor_policies.measures import (
     MEASURES, 
     MEASURE_LABELS,
     RESPONSE_VAR_LABELS,
+    Measure,
     Responses,
     output_corr,
 )
-from rnns_learn_robust_motor_policies.misc import lohi, print_version_info
+from rnns_learn_robust_motor_policies.misc import lohi, log_version_info
 from rnns_learn_robust_motor_policies.train_setup_part1 import setup_task_model_pairs
 from rnns_learn_robust_motor_policies.post_training import setup_replicate_info
 from rnns_learn_robust_motor_policies.plot import (
@@ -122,7 +125,9 @@ from rnns_learn_robust_motor_policies.types import PertAmpDict, TrainStdDict
 Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
 
 ```{python}
-print_version_info(jax, eqx, plotly)
+version_info = log_version_info(
+    jax, eqx, plotly, git_modules=(feedbax, rnns_learn_robust_motor_policies)
+)
 ```
 
 ### Initialize model database connection
@@ -356,6 +361,7 @@ eval_info = add_evaluation(
     model_hash=model_info.hash,
     eval_parameters=eval_parameters,
     origin=NB_ID,
+    version_info=version_info,
 )
 ```
 
@@ -1044,11 +1050,9 @@ all_measures = subdict(MEASURES, measure_keys)
 ```{python}
 from jaxtyping import PyTree
 from collections.abc import Callable
-from feedbax.bodies import SimpleFeedbackState
 
-from rnns_learn_robust_motor_policies.measures import Measure
 
-def get_all_measures(measures: PyTree[Callable], all_aligned_vars: PyTree[SimpleFeedbackState]):
+def get_all_measures(measures: PyTree[Callable], all_aligned_vars: PyTree[Responses]):
     return jt.map(
         lambda func: jt.map(
             lambda aligned_vars: func(aligned_vars),

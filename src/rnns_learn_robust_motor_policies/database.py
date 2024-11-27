@@ -77,6 +77,7 @@ logging.getLogger('alembic.runtime.migration').setLevel(logging.WARNING)
 class Base(DeclarativeBase):
     type_annotation_map = {
         dict[str, Any]: JSON,
+        dict[str, str]: JSON,
         Sequence[str]: JSON,
         Sequence[int]: JSON,
     }
@@ -95,6 +96,7 @@ class ModelRecord(Base):
     is_path_defunct: Mapped[bool] = mapped_column(default=False)
     postprocessed: Mapped[bool] = mapped_column(default=False)
     has_replicate_info: Mapped[bool]
+    version_info: Mapped[Optional[dict[str, str]]]
     
     # Explicitly define some parameter columns to avoid typing issues, though our dynamic column 
     # migration would handle whatever parameters the user happens to pass, without this.
@@ -139,6 +141,7 @@ class EvaluationRecord(Base):
     model_hash: Mapped[Optional[str]] = mapped_column(ForeignKey(f'{MODELS_TABLE_NAME}.hash'))
     archived: Mapped[bool] = mapped_column(default=False)
     archived_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    version_info: Mapped[Optional[dict[str, str]]]
     
     @hybrid_property
     def figure_dir(self):
@@ -441,6 +444,7 @@ def save_model_and_add_record(
     train_history_hyperparameters: Optional[Dict[str, Any]] = None,
     replicate_info: Optional[Any] = None,
     replicate_info_hyperparameters: Optional[Dict[str, Any]] = None,
+    version_info: Optional[Dict[str, str]] = None,
 ) -> ModelRecord:
     """Save model files with hash-based names and add database record."""
     (
@@ -489,6 +493,7 @@ def save_model_and_add_record(
         origin=origin,
         is_path_defunct=False, 
         has_replicate_info=replicate_info is not None,
+        version_info=version_info,
         **hyperparameters,
     )
     
@@ -528,6 +533,7 @@ def add_evaluation(
     model_hash: Optional[str],  # Changed from ModelRecord to Optional[int]
     eval_parameters: Dict[str, Any],
     origin: Optional[str] = None,
+    version_info: Optional[dict[str, str]] = None,
 ) -> EvaluationRecord:
     """Create new notebook evaluation record.
     
@@ -566,6 +572,7 @@ def add_evaluation(
             hash=eval_hash,
             model_hash=model_hash,  # Can be None
             origin=origin,
+            version_info=version_info,
             **eval_parameters,
         )
         session.add(eval_record)

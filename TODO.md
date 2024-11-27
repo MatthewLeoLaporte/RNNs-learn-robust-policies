@@ -5,8 +5,8 @@ updated: 2024-11-13T10:32
 **See [[results-2|Part 2 results]] for ongoing analysis TODOs.**
 
 - [ ] Parameter scaleup for part 2
+- [ ] Add constant field aligned trajectory results to [[results-2]]
 - [ ] New measure: covariance between network output and system noise variables
-- [x] Define measures centrally in `measures.py`
 - [ ] Use new `measure.py` in 1-2b, 2-2
 ## Training
 

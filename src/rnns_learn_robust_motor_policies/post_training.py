@@ -67,7 +67,7 @@ logging.basicConfig(
     level=logging.INFO, 
     handlers=[RichHandler(level="NOTSET")],
 )
-logger = logging.getLogger('rich')
+logger = logging.getLogger(__name__)
 
 
 # The setup/deserialisation depends on where/how the model was trained
