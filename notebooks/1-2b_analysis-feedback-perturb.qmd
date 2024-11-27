@@ -1192,7 +1192,6 @@ def get_sum_deviations(responses):
     return jnp.sum(get_deviation(responses), axis=-1)
 ```
 
-**TODO** covariance between force output and system noise variables.
 
 ```{python}
 all_measure_funcs, measure_handles = tree_unzip(OrderedDict({

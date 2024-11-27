@@ -26,7 +26,7 @@ The network receives the value of the uniform sample. Thus it has information ab
 Show that changing the context input controls the robustness of the behaviour.
 ### Aligned trajectories, varying the context input
 
-#### Trained and evaluated on curl fields 
+#### Trained and evaluated on curl fields, no delay
 
 Evaluation curl fields have amplitude 4.
 
@@ -91,7 +91,62 @@ Std 2.0
 ![[file-20241126121955803.png]]
 ![[file-20241126122005631.png]]
 ![[file-20241126122026428.png]]
+
+#### Trained and evaluated on curl fields, 4-step delay
+
+**Evaluation curl fields have amplitude 2. Note that this is only half as strong as before, since curl amplitude 4 is very unstable for networks trained on delay 4.**
+
+##### Trained with DAI
+
+- As in the non-delayed case, there is a kind of asymptotic effect with the context input, and the achievable robustness depends on the train std
+- Very high values of the context input can smooth out the oscillations, but do not seem to be able to decrease the lateral deviations beyound some bound, even as the train std is increased to the point that things because absolutely unstable
+
+Std 0.4
+![[file-20241126135507506.png]]
+
+
+Std 0.8
+![[file-20241126135524479.png]]
+
+The highest context input here is particular interesting
+![[file-20241126135809600.png]]
+
+Std 1.2
+![[file-20241126135617359.png]]
+
+###### Comparison of -2, 0, and 1 context input trajectories, across train stds
+
+Something weird happens before train std 2.
+
+![[file-20241126143954222.png]]
+
+![[file-20241126144011282.png]]
+![[file-20241126144022068.png]]
+##### Trained with PAI
+
+- Note that the context-1 case seems to be pretty robust here, but that as we go to values above 1, we appear to more quickly reach “hyperrobust instability” than we did without delay
+
+Std 0.4
+![[file-20241126143525172.png]]
+
+Std 0.8
+![[file-20241126143559348.png]]
+
+Std 1.2
+![[file-20241126143626141.png]]
+The context-1 case is very interesting, here:
+![[file-20241126143901533.png]]
+###### Comparison of -2, 0, and 1 context input trajectories, across train stds
+![[file-20241126144135029.png]]
+![[file-20241126144146327.png]]
+
+![[file-20241126144157899.png]]
+Here it seems clearer that training on perturbations induces “hyper-robustness” more quickly in the presence of delays; these are only the context-1 responses and they are already curving in the opposite direction starting just above std 1.2
 ### Distributions of performance measures
+
+#### Trained and evaluated on curl fields, no delay
+
+#### Trained and evaluated on curl fields, 4-step delay
 
 ## Feedback perturbations
 

@@ -24,16 +24,17 @@ MASS = 1.0
 N_STEPS = 100
 WORKSPACE = ((-1., -1.),
              (1., 1.))
+EVAL_REACH_LENGTH = 0.5
 TASK_EVAL_PARAMS: dict[str, dict[str, Any]] = dict(
     full=dict(
         eval_grid_n=2,
         eval_n_directions=24,
-        eval_reach_length=0.5,
+        eval_reach_length=EVAL_REACH_LENGTH,
     ),
     small=dict(
         eval_grid_n=1,
         eval_n_directions=7,
-        eval_reach_length=0.5,
+        eval_reach_length=EVAL_REACH_LENGTH,
     ),
 )
 # Once effector positions are center-subtracted and aligned to reach direction,

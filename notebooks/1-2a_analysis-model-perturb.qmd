@@ -83,7 +83,13 @@ from rnns_learn_robust_motor_policies.database import (
     get_model_record,
     use_record_params_where_none,
 )
-from rnns_learn_robust_motor_policies.measures import output_corr
+from rnns_learn_robust_motor_policies.measures import (
+    MEASURES, 
+    MEASURE_LABELS,
+    RESPONSE_VAR_LABELS,
+    Responses,
+    output_corr,
+)
 from rnns_learn_robust_motor_policies.misc import lohi, print_version_info
 from rnns_learn_robust_motor_policies.train_setup_part1 import setup_task_model_pairs
 from rnns_learn_robust_motor_policies.post_training import setup_replicate_info
@@ -175,7 +181,7 @@ key_init, key_train, key_eval = jr.split(key, 3)
 ```{python}
 model_info = get_model_record(
     db_session,
-    origin=NB_ID,
+    origin=TRAIN_NB_ID,
     has_replicate_info=True,
     disturbance_type=disturbance_type_load,
     feedback_noise_std=feedback_noise_std_load,
@@ -494,14 +500,6 @@ TODO: Instead of a two-layer `jt.map`, we could instead define a function (to sc
 In other words, change from x/y components to parallel/orthogonal components, relative to a straight reach.
 
 ```{python}
-Responses = namedtuple('Responses', ('pos', 'vel', 'force'))
-
-# class Responses(eqx.Module):
-#     pos: Any
-#     vel: Any
-#     force: Any
-
-aligned_var_labels = Responses('Position', 'Velocity', 'Control force')
 where_vars_to_align = lambda states, pos_endpoints: Responses(
     # Positions with respect to the origin
     states.mechanics.effector.pos - pos_endpoints[0][..., None, :],
@@ -753,7 +751,7 @@ n_curves_max = 20
 
 plot_condition_trajectories = partial(
     fbp.trajectories_2D,
-    var_labels=aligned_var_labels,
+    var_labels=RESPONSE_VAR_LABELS,
     axes_labels=('x', 'y'),
     # mode='std',
     mean_trajectory_line_width=3,
@@ -1020,150 +1018,27 @@ plot_id = "performance_measures"
 
 ### Calculate all measures
 
-Maximum speed
+Select which measures to compute. These are conveniently pre-defined as instances of `Measure` in 
+`rnns_learn_robust_motor_policies.measures`, and we just need to select which ones we want from `MEASURES`.
 
 ```{python}
-def get_max_speed(responses):
-    return jnp.max(get_speed(responses), axis=-1)
-```
+measure_keys = [
+    "max_parallel_vel_forward",
+    "max_orthogonal_vel_left",
+    "max_orthogonal_vel_right",
+    "max_orthogonal_distance_left",
+    "sum_orthogonal_distance",
+    "end_position_error",
+    "end_velocity_error",
+    "max_parallel_force_forward",
+    "sum_parallel_force",
+    "max_orthogonal_force_right",  
+    "sum_orthogonal_force",
+    "max_net_force",
+    "sum_net_force",
+]
 
-Maximum lateral (left and right relative to reach direction) and forward velocities
-
-```{python}
-def get_max_forward_vel(aligned_vars, mul=1.):
-    return jnp.max(mul * aligned_vars.vel[..., 0], axis=-1)
-```
-
-```{python}
-def get_max_lateral_vel(aligned_vars, mul=1.):
-    return jnp.max(mul * aligned_vars.vel[..., 1], axis=-1)
-```
-
-Time to peak forward velocity
-
-```{python}
-def get_argmax_forward_vel(aligned_vars, mul=1.):
-    return jnp.argmax(mul * aligned_vars.vel[..., 0], axis=-1)
-```
-
-Maximum and summed lateral distance of the effector from a straight trajectory
-
-```{python}
-def get_max_lateral_distance(aligned_vars, reach_length=None):
-    distances = jnp.max(aligned_vars.pos[..., 1], axis=-1)
-    if reach_length is not None:
-        distances = 100 * distances / reach_length
-    return distances
-
-def get_sum_lateral_distance(aligned_vars):
-    return jnp.sum(jnp.abs(aligned_vars.pos[..., 1]), axis=-1)
-```
-
-(Note that we use `jnp.abs`, so perturbations that cause oscillation about the straight reach line will lead to accumulation of summed deviation, not cancellation.)
-
-Position and velocity errors relative to the goal, averaged over the last `last_n_steps` time steps
-
-```{python}
-last_n_steps = 10
-
-def end_position_error(aligned_vars, reach_length=1, last_n_steps=1):
-    final_pos = aligned_vars.pos[..., -last_n_steps:, :]
-    # Since the data is aligned, the goal is always at the same position
-    goal_pos = jnp.array([reach_length, 0])
-    error = jnp.mean(jnp.linalg.norm(final_pos - goal_pos, axis=-1), axis=-1)
-    if reach_length is not None:
-        error = 100 * error / reach_length
-    return error
-    
-# TODO: This could be normalized by the max. velocity
-def end_velocity_error(aligned_vars, last_n_steps=1):
-    final_vel = aligned_vars.vel[..., -last_n_steps:, :]
-    goal_vel = 0
-    return jnp.mean(jnp.linalg.norm(final_vel - goal_vel, axis=-1), axis=-1)
-```
-
-Max and sum of the net control forces
-
-```{python}
-def get_net_control_force(aligned_vars):
-    return jnp.linalg.norm(aligned_vars.force, axis=-1)
-
-def get_max_net_control_force(aligned_vars):
-    return jnp.max(get_net_control_force(aligned_vars), axis=-1)
-    
-def get_sum_net_control_force(aligned_vars):
-    return jnp.sum(get_net_control_force(aligned_vars), axis=-1)
-    
-def get_max_parallel_force(aligned_vars, mul=1., timesteps=slice(None)):
-    return jnp.max(mul * aligned_vars.force[..., timesteps, 0], axis=-1)
-    
-def get_sum_parallel_force(aligned_vars, timesteps=slice(None)):
-    return jnp.sum(jnp.abs(aligned_vars.force[..., timesteps, 0]), axis=-1)
-    
-def get_max_lateral_force(aligned_vars, mul=1., timesteps=slice(None)):
-    return jnp.max(mul * aligned_vars.force[..., timesteps, 1], axis=-1)
-    
-def get_sum_lateral_force(aligned_vars, timesteps=slice(None)):
-    return jnp.sum(jnp.abs(aligned_vars.force[..., timesteps, 1]), axis=-1)
-```
-
-Collect measures into PyTree
-
-```{python}
-all_measure_funcs, measure_handles = tree_unzip(OrderedDict({
-    # "Max speed": (get_max_speed, "speed-max"),
-    "Max forward velocity": (get_max_forward_vel, "vel-forward-max"),
-    "Max lateral velocity<br>(left)": (
-        partial(get_max_lateral_vel, mul=1.), 
-        "vel-lateral-left-max",
-    ),
-    "Max lateral velocity<br>(right)": (
-        partial(get_max_lateral_vel, mul=-1.), 
-        "vel-lateral-right-max",
-    ),
-    "Max lateral distance<br>(% reach length)": (
-        partial(
-            get_max_lateral_distance, 
-            reach_length=example_task['full'].eval_reach_length,
-        ), 
-        "dist-lateral-max",
-    ),
-    "Sum lateral distance": (get_sum_lateral_distance, "dist-lateral-sum"),
-    "End position error<br>(% reach length)": (
-        partial(
-            end_position_error, 
-            last_n_steps=last_n_steps, 
-            reach_length=example_task['full'].eval_reach_length,
-        ), 
-        "error-end-pos",
-    ),
-    "End velocity error": (
-        partial(end_velocity_error, last_n_steps=last_n_steps), 
-        "error-end-vel",
-    ),
-    "Max net control force": (get_max_net_control_force, "force-net-max"),
-    "Sum net control force": (get_sum_net_control_force, "force-net-sum"),
-    "Max forward force": (
-        partial(get_max_parallel_force, mul=1.), 
-        "force-forward-max",
-    ),
-    "Sum parallel force": (
-        partial(get_sum_parallel_force), 
-        "force-forward-sum",
-    ),
-    "Max lateral force<br>(counter pert.)": (
-        partial(get_max_lateral_force, mul=-1.), 
-        "force-counterfield-lateral-max",
-    ),
-    "Sum lateral force": (
-        partial(get_sum_lateral_force), 
-        "force-lateral-sum",
-    ),
-}))
-
-box_measure_funcs, box_measure_handles = tree_unzip(OrderedDict({
-    "Time to peak forward velocity": (get_argmax_forward_vel, "vel-forward-max-timestep"),
-}))
+all_measures = subdict(MEASURES, measure_keys)
 ```
 
 ```{python}
@@ -1171,19 +1046,22 @@ from jaxtyping import PyTree
 from collections.abc import Callable
 from feedbax.bodies import SimpleFeedbackState
 
-def get_all_measures(measure_funcs: PyTree[Callable], all_aligned_vars: PyTree[SimpleFeedbackState]):
+from rnns_learn_robust_motor_policies.measures import Measure
+
+def get_all_measures(measures: PyTree[Callable], all_aligned_vars: PyTree[SimpleFeedbackState]):
     return jt.map(
         lambda func: jt.map(
             lambda aligned_vars: func(aligned_vars),
             all_aligned_vars,
             is_leaf=is_type(Responses),
         ),
-        measure_funcs,
+        measures,
+        is_leaf=is_type(Measure),
     )
     
-all_measures = get_all_measures(all_measure_funcs, aligned_vars['full'])
+all_measure_values = get_all_measures(all_measures, aligned_vars['full'])
 
-box_measures = get_all_measures(box_measure_funcs, aligned_vars['full'])
+# box_measures = get_all_measures(box_measure_funcs, aligned_vars['full'])
 
 # TODO: fix the `pos_endpoints` hardcoding, above
 # all_measures_small = get_all_measures(all_measure_funcs, all_states['small'])
@@ -1200,43 +1078,43 @@ One plot per evaluation condition (disturbance amplitude); one violin per traini
 Distributions are aggregated over all replicates and trials. 
 
 ```{python}
-def get_violins_per_measure(plot_func, all_measures, **kwargs):
+def get_violins_per_measure(plot_func, measure_values, **kwargs):
     return {
-        measure_name: plot_func(
-            measure, measure_name, **kwargs
+        key: plot_func(
+            values, MEASURE_LABELS[key], **kwargs
         )
-        for measure_name, measure in all_measures.items()
+        for key, values in measure_values.items()
     }
     
 
 figs = get_violins_per_measure(
     get_violins_across_train_conditions, 
-    all_measures,
+    all_measure_values,
     colors=disturbance_amplitudes_colors_dark,
 )
 ```
 
 ```{python}
-n_dist = int(np.prod(jt.leaves(all_measures)[0].shape)) 
+n_dist = int(np.prod(jt.leaves(all_measure_values)[0].shape)) 
 
-for measure_name, measure_handle in tqdm(measure_handles.items()):
+for key in tqdm(all_measures):
     fig_parameters = dict(
-        measure_name=measure_handle,
+        measure_name=key,
         n=n_dist, 
     )
     
     add_evaluation_figure(
         db_session,
         eval_info,
-        fig,
+        figs[key],
         plot_id,
         **fig_parameters,
     )
 ```
 
 ```{python}
-for measure_name in all_measures:
-    figs[measure_name].show()
+for key in all_measures:
+    figs[key].show()
 ```
 
 ### Repeat for just a single reach condition
@@ -1263,31 +1141,26 @@ plot_id = "performance_measures/compare_replicates_lowhigh_train_conditions"
 ```
 
 ```{python}
-def get_one_measure_plot_per_eval_condition(plot_func, all_measures, colors, **kwargs):
+def get_one_measure_plot_per_eval_condition(plot_func, measures, colors, **kwargs):
     return {
-        measure_name: PertAmpDict({
+        key: PertAmpDict({
             disturbance_amplitude: plot_func(
                 measure[disturbance_amplitude], 
-                measure_name, 
+                MEASURE_LABELS[key], 
                 colors,
                 **kwargs,
             )
             for disturbance_amplitude in measure
         })
-        for measure_name, measure in all_measures.items()
+        for key, measure in measures.items()
     }
 ```
 
 ```{python}   
 subset_by_train_stds = partial(subset_dict_tree_level, dict_type=TrainStdDict)
 
-all_measures_subset_disturbance_train_stds = subset_by_train_stds(
-    all_measures,
-    lohi(disturbance_train_stds),
-)
-
-box_measures_subset_disturbance_train_stds = subset_by_train_stds(
-    box_measures,
+all_measure_values_lohi_stds = subset_by_train_stds(
+    all_measure_values,
     lohi(disturbance_train_stds),
 )
 ```
@@ -1297,21 +1170,21 @@ replicates_all_lohi_included = jt.reduce(jnp.logical_and, lohi(included_replicat
 
 figs = get_one_measure_plot_per_eval_condition(
     get_measure_replicate_comparisons, 
-    all_measures_subset_disturbance_train_stds,
+    all_measure_values_lohi_stds,
     lohi(disturbance_train_stds_colors_dark),
     included_replicates=np.where(replicates_all_lohi_included)[0],
 )
 ```
 
 ```{python}
-n_dist = int(np.prod(jt.leaves(all_measures_subset_disturbance_train_stds)[0].shape))
+n_dist = int(np.prod(jt.leaves(all_measure_values_lohi_stds)[0].shape))
 
-for measure_name, measure_handle in tqdm(measure_handles.items()):
-    for disturbance_amplitude, fig in figs[measure_name].items():
+for key in tqdm(all_measures):
+    for disturbance_amplitude, fig in figs[key].items():
 
         fig_parameters = dict(
             disturbance_amplitude=disturbance_amplitude,
-            measure_name=measure_handle,
+            measure_name=MEASURE_LABELS[key],
             n=n_dist, 
         )
         
@@ -1325,8 +1198,8 @@ for measure_name, measure_handle in tqdm(measure_handles.items()):
 ```
 
 ```{python}
-for measure_name in all_measures:
-    figs[measure_name][disturbance_amplitudes[-1]].show()
+for key in all_measures:
+    figs[key][disturbance_amplitudes[-1]].show()
 ```
 
 ### Summary comparison of no-disturbance vs. high-disturbance evaluation, for no-disturbance vs. high-disturbance training
@@ -1337,123 +1210,49 @@ plot_id = "performance_measures/lowhigh_summaries"
 
 ```{python}
 all_measures_lohi = {
-    measure_name: subdict(measure, lohi(disturbance_amplitudes))
-    for measure_name, measure in all_measures_subset_disturbance_train_stds.items()
-}
-
-box_measures_lohi = {
-    measure_name: subdict(measure, lohi(disturbance_amplitudes))
-    for measure_name, measure in box_measures_subset_disturbance_train_stds.items()
+    key: subdict(measure, lohi(disturbance_amplitudes))
+    for key, measure in all_measure_values_lohi_stds.items()
 }
 ```
 
 ```{python}
 figs = {
-    measure_name: get_violins_across_train_conditions(
+    key: get_violins_across_train_conditions(
         measure, 
-        measure_name, 
+        MEASURE_LABELS[key], 
         colors=disturbance_amplitudes_colors_dark,
         layout_kws=dict(
             width=300, height=300, 
         )
     )
-    for measure_name, measure in all_measures_lohi.items()
+    for key, measure in all_measures_lohi.items()
 }
 ```
 
 ```{python}
 n_dist = int(np.prod(jt.leaves(all_measures_lohi)[0].shape))
 
-for measure_name, measure_handle in tqdm(measure_handles.items()):
+for key in tqdm(all_measures):
     fig_parameters = dict(
-        measure_name=measure_handle,
+        measure_name=MEASURE_LABELS[key],
         n=n_dist, 
     )
     
     add_evaluation_figure(
         db_session,
         eval_info,
-        fig,
+        figs[key],
         plot_id,
         **fig_parameters,
     )
 ```
 
 ```{python}
-for measure_name in all_measures:
-    figs[measure_name].show()
+for key in all_measures:
+    figs[key].show()
 ```
 
 i.e. not one plot for each evaluation condition for each measure, but a single plot for each measure, comparing the distributions for zero vs. high training disturbance std, on zero vs. high evaluation disturbance amplitude.
-
-### Time to peak velocity
-
-Since this is an integer (# timesteps), a KDE is not great for visualization (lumpy). Instead we mostly want to visualize the difference in mean and spread, thus we should use a box plot.
-
-```{python}
-# def get_lohi_summary_boxes(measure_data, measure_name, annotation_kws=None):
-#     n_dist = np.prod(jt.leaves(measure_data)[0].shape)
-    
-#     fig = go.Figure(
-#         data=jt.leaves([
-#             [
-#                 go.Box(
-#                     x=jnp.full((n_dist,), disturbance_train_std),
-#                     y=data.flatten(),
-#                     name=disturbance_amplitude,
-#                     # box_visible=False,
-#                     # meanline_visible=True,
-#                     line_color=disturbance_amplitudes_colors_dark[disturbance_amplitude],
-#                     showlegend=(j == 0),
-#                     # spanmode='hard',
-#                 )
-#                 for j, (disturbance_train_std, data) 
-#                 in enumerate(measure_data[disturbance_amplitude].items())
-#             ]
-#             for i, disturbance_amplitude in enumerate(measure_data)
-#         ]),
-#         layout=dict(
-#             width=500,
-#             height=400,
-#             xaxis_title="Train disturbance std.",
-#             yaxis_title=measure_name,
-#             xaxis_range=[-0.5, len(measure_data) - 0.5],
-#             xaxis_tickvals=list(measure_data.keys()),
-#             yaxis_range=[0, None],
-#             legend_title="Disturbance amplitude",
-#             # violinmode='overlay',
-#             # violingap=0,
-#         )
-#     )
-    
-#     if annotation_kws is None:
-#         annotation_kws = dict()
-    
-    # fig_parameters = dict(
-    #     measure_name=measure_name,
-    #     n=n_dist, 
-    # )
-    
-    # add_evaluation_figure(
-    #     db_session,
-    #     eval_info,
-    #     fig,
-    #     plot_id,
-    #     **fig_parameters,
-    # )
-    
-#     return fig
-    
-# figs = {
-#     measure_name: get_lohi_summary_boxes(measure, measure_name)
-#     for measure_name, measure in box_measures_lohi.items()
-# }
-```
-
-```{python}
-# for measure_name in box_measures:
-#     figs[measure_name].show()
-```
 
 
 ## Correlation of network activity with output weights
@@ -1480,7 +1279,10 @@ all_output_weights = jt.map(
 ```{python}
 all_output_corrs = jt.map(
     lambda activities: TrainStdDict({
-        train_std: output_corr(activities[train_std], all_output_weights[train_std])
+        train_std: output_corr(
+            activities[train_std], 
+            all_output_weights[train_std],
+        )
         for train_std in activities
     }),
     all_activities,
@@ -1489,7 +1291,11 @@ all_output_corrs = jt.map(
 ```
 
 ```{python}
-fig = get_violins_across_train_conditions(all_output_corrs['full'], "Output correlation", colors=disturbance_amplitudes_colors_dark)
+fig = get_violins_across_train_conditions(
+    all_output_corrs['full'], 
+    "Output correlation", 
+    colors=disturbance_amplitudes_colors_dark,
+)
 ```
 
 

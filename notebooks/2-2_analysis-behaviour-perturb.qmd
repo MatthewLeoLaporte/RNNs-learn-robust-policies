@@ -137,7 +137,7 @@ We may want to specify 1) which trained models to load, by their parameters, and
 disturbance_type_load: Literal['curl', 'constant'] = 'curl'
 feedback_noise_std_load = 0.0
 motor_noise_std_load = 0.0
-feedback_delay_steps_load = 0
+feedback_delay_steps_load = 4
 hidden_size = 100
 
 # Specify model parameters to use for analysis (None -> use training value)
@@ -305,7 +305,7 @@ any_system_noise = any(jt.leaves((
 
 ```{python}
 disturbance_amplitude = {
-    'curl': 4,
+    'curl': 2,
     'constant': 0.4,
 }[disturbance_type]
 ```
@@ -313,7 +313,7 @@ disturbance_amplitude = {
 ### Context inputs 
 
 ```{python}
-context_inputs = [-2, -1, -0.5, 0, 0.5, 1, 1.5, 2, 3]
+context_inputs = [-2, -1, -0.5, 0, 0.5, 1, 1.25, 1.5, 2, 3]
 ```
 
 ### Number of evaluations per model and condition
@@ -596,6 +596,13 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
     )
 ```
 
+```{python}
+for l0 in figs:
+    for l1, fig in figs[l0].items():
+        print(l0, l1)
+        fig.show()
+```
+
 ### Comparison of given context values, across training field stds
 
 ```{python}
@@ -603,7 +610,7 @@ plot_id = "aligned_to_reach_condition/compare_field_stds_by_context_input"
 ```
 
 ```{python}
-context_inputs_plot = [-2, 0, 2]
+context_inputs_plot = [-2, 1, 0, 1, 2]
 
 plot_vars = jt.map(
     lambda d: {
@@ -658,6 +665,13 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
         plot_id,
         **fig_parameters,
     )
+```
+
+```{python}
+for l0 in figs:
+    for l1, fig in figs[l0].items():
+        print(l0, l1)
+        fig.show()
 ```
 
 ## Measure distributions
