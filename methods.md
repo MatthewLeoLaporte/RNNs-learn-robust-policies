@@ -43,10 +43,25 @@ For 4 sets of 24 center-out reaches (i.e. 96 reach conditions), with 10 replicat
 - Control forces (not necessarily network output!)
 - Network activity
 - [ ] Weight decay?
+- [ ] Readout norm?
 
-### Part 1
+### Part 1: Single strategy networks
 
-### Part 2
+### Part 2: Hybrid strategy networks
+
+#### Training methods
+
+##### Direct amplitude information (DAI)
+
+The field strength for each training trial is sampled i.i.d. from a zero-mean normal distribution. 
+
+The network receives the absolute value of the standard normal sample, prior to its scaling by `field_std`.
+
+##### Probabilistic amplitude information (PAI)
+
+The field strength is sampled i.i.d. from a zero-mean normal distribution, and then scaled by `field_std` but also by a uniform sample i.i.d. in $[0, 1]$.
+
+The network receives the value of the uniform sample. Thus it has information about how “on" the field is, i.e. the probability that it will experience a field with std X, versus no field. It does not receive information about the exact strength of the field, on a given trial.
 
 ### Replicates
 

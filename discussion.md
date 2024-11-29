@@ -28,9 +28,27 @@ Demonstrate that in terms of measures, the models trained on perturbations are a
 - However, there are some caveats when comparing these results to the changes in robustness measures we expect from (say) an H-infinity controller
 - This is because the H-infinity controller 
 
+### Efficiency and control forces
 
+The maximum control forces tend to increase with robustness, but often the sum of overall forces decreases. 
+
+For example, consider these plots of the max and sum net control force, across changing context input, for models trained on curl fields, and evaluated on amplitude 2 curl fields:
+
+![[file-20241128121846572.png]]
+
+Similar effects are seen for non-hybrid networks trained on different curl stds.
+
+The explanation here is that control gains go up for more robust networks, and so we expect their *worst-case local efficiency* to be worse, however overall they may be more efficient in terms of total expenditure because their strategies more effectively solve the task.
 
 ## Limitations and concerns
+
+### Readout norm and null space
+
+Cite study that talks about readout norms and output correlations. 
+
+Discuss how partitioning of activity between the null and potent spaces may be a strategy for robustness.
+
+This deserves further attention in future work.
 
 ### Types of perturbations studied
 

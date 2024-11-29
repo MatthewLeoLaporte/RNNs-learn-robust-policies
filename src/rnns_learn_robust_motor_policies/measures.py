@@ -7,7 +7,10 @@ import equinox as eqx
 from equinox import Module
 from equinox import filter_vmap as vmap
 import jax.numpy as jnp
-from jaxtyping import Array, Float
+import jax.tree as jt
+from jaxtyping import Array, Float, PyTree
+
+from feedbax import is_type
 
 from rnns_learn_robust_motor_policies.constants import EVAL_REACH_LENGTH
 
@@ -151,20 +154,22 @@ class Measure(Module):
         Returns:
             Computed measure values
         """
-        try:
-            # TODO: `Fix compose`.
-            return compose(*self._call_methods)(responses)
-            # for method in self._call_methods:
-            #     responses = method(responses)
-            #     return responses
-        except Exception as e:
-            print(type(responses))
-            print(self._call_methods)
-            raise e
+        return compose(*self._call_methods)(responses)
 
 
 # Common transformations
 vector_magnitude = partial(jnp.linalg.norm, axis=-1)
+
+
+def signed_max(x, axis=None, keepdims=False):
+    """Return the value with the largest magnitude, positive or negative.
+    """
+    abs_x = jnp.abs(x)
+    max_idx = jnp.argmax(abs_x, axis=axis)
+    if axis is None:
+        return x.flatten()[max_idx]
+    else:
+        return jnp.take_along_axis(x, jnp.expand_dims(max_idx, axis=axis), axis=axis)
 
 
 # Force measures
@@ -194,7 +199,7 @@ max_orthogonal_force = Measure(
     direction=Direction.ORTHOGONAL,
     agg_func=jnp.max,
 )
-sum_orthogonal_force = Measure(
+sum_orthogonal_force_abs = Measure(
     response_var=ResponseVar.FORCE,
     direction=Direction.ORTHOGONAL,
     transform_func=jnp.abs,
@@ -213,6 +218,11 @@ max_orthogonal_vel = Measure(
     direction=Direction.ORTHOGONAL,
     agg_func=jnp.max,
 )
+max_orthogonal_vel_signed = Measure(
+    response_var=ResponseVar.VELOCITY,
+    direction=Direction.ORTHOGONAL,
+    agg_func=signed_max,
+)
 
 
 # Position measures
@@ -222,7 +232,18 @@ max_orthogonal_distance = Measure(
     agg_func=jnp.max,
     normalizer=EVAL_REACH_LENGTH / 100,
 )
+largest_orthogonal_distance = Measure(
+    response_var=ResponseVar.POSITION,
+    direction=Direction.ORTHOGONAL,
+    agg_func=signed_max,
+    normalizer=EVAL_REACH_LENGTH / 100,
+)
 sum_orthogonal_distance = Measure(
+    response_var=ResponseVar.POSITION,
+    direction=Direction.ORTHOGONAL,
+    agg_func=jnp.sum,
+)
+sum_orthogonal_distance_abs = Measure(
     response_var=ResponseVar.POSITION,
     direction=Direction.ORTHOGONAL,
     transform_func=jnp.abs,
@@ -232,7 +253,6 @@ max_deviation = Measure(
     response_var=ResponseVar.POSITION,
     transform_func=vector_magnitude,
     agg_func=jnp.max,
-    normalizer=EVAL_REACH_LENGTH / 100,
 )
 sum_deviation = Measure(
     response_var=ResponseVar.POSITION,
@@ -304,14 +324,17 @@ MEASURES = dict(
     sum_parallel_force=sum_parallel_force,
     max_orthogonal_force_left=max_orthogonal_force,
     max_orthogonal_force_right=reverse_measure(max_orthogonal_force),
-    sum_orthogonal_force=sum_orthogonal_force,
+    sum_orthogonal_force_abs=sum_orthogonal_force_abs,
     max_parallel_vel_forward=max_parallel_vel,
     max_parallel_vel_reverse=reverse_measure(max_parallel_vel),
     max_orthogonal_vel_left=max_orthogonal_vel,
     max_orthogonal_vel_right=reverse_measure(max_orthogonal_vel),
+    max_orthogonal_vel_signed=max_orthogonal_vel_signed,
     max_orthogonal_distance_left=max_orthogonal_distance,
     max_orthogonal_distance_right=reverse_measure(max_orthogonal_distance),
+    largest_orthogonal_distance=largest_orthogonal_distance,
     sum_orthogonal_distance=sum_orthogonal_distance,
+    sum_orthogonal_distance_abs=sum_orthogonal_distance_abs,
     max_deviation=max_deviation,
     sum_deviation=sum_deviation,
     end_velocity_error=make_end_velocity_error(),
@@ -327,16 +350,31 @@ MEASURE_LABELS = dict(
     sum_parallel_force="Sum of absolute parallel forces",
     max_orthogonal_force_left="Max lateral force<br>(left)",
     max_orthogonal_force_right="Max lateral force<br>(right)",
-    sum_orthogonal_force="Sum of absolute lateral forces",
+    sum_orthogonal_force_abs="Sum of absolute lateral forces",
     max_parallel_vel_forward="Max forward velocity",
     max_parallel_vel_reverse="Max reverse velocity",
     max_orthogonal_vel_left="Max lateral velocity<br>(left)",
     max_orthogonal_vel_right="Max lateral velocity<br>(right)",
-    max_orthogonal_distance_left="Max lateral distance<br>(left)",
-    max_orthogonal_distance_right="Max lateral distance<br>(right)",
-    sum_orthogonal_distance="Sum of absolute lateral distances",
+    max_orthogonal_vel_signed="Largest lateral velocity",
+    max_orthogonal_distance_left="Max lateral distance<br>(left, % reach length)",
+    max_orthogonal_distance_right="Max lateral distance<br>(right, % reach length)",
+    largest_orthogonal_distance="Largest lateral distance<br>(% reach length)",
+    sum_orthogonal_distance="Sum of signed lateral distances",
+    sum_orthogonal_distance_abs="Sum of absolute lateral distances",
     max_deviation="Max deviation",  # From zero/origin! i.e. stabilization task
     sum_deviation="Sum of deviations",
     end_velocity_error=f"Mean velocity error<br>(last {ENDPOINT_ERROR_STEPS} steps)",
     end_position_error=f"Mean position error<br>(last {ENDPOINT_ERROR_STEPS} steps)",
 )
+
+
+def compute_all_measures(measures: PyTree[Measure], all_responses: PyTree[Responses]):
+    return jt.map(
+        lambda func: jt.map(
+            lambda responses: func(responses),
+            all_responses,
+            is_leaf=is_type(Responses),
+        ),
+        measures,
+        is_leaf=is_type(Measure),
+    )

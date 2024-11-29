@@ -99,8 +99,8 @@ These are parameters that can be [varied](https://quarto.org/docs/computations/p
 
 disturbance_type: Literal['curl', 'constant'] = 'curl'  
 feedback_delay_steps = 0
-feedback_noise_std = 0.0
-motor_noise_std = 0.0
+feedback_noise_std = 0.01
+motor_noise_std = 0.01
 hidden_size = 50
 n_replicates = 5
 n_steps = 100
@@ -133,6 +133,11 @@ where_train = {
     # stop training the readout 
     # 1000: lambda model: model.step.net.hidden,
 }
+
+disturbance_stds = {
+    'curl': [0, 0.5, 1.0, 1.5],
+    'constant': [0, 0.01, 0.1, 1],
+}
 ```
 
 ### RNG setup
@@ -145,11 +150,6 @@ key_init, key_train, key_eval = jr.split(key, 3)
 ## Create model-task pairings for different disturbance conditions
 
 ```{python}
-disturbance_stds = {
-    'curl': [0, 0.8, 1.6],
-    'constant': [0, 0.01, 0.1, 1],
-}
-
 if not disturbance_type in ['curl', 'constant']:
     raise ValueError(f"Unknown disturbance type: {disturbance_type}")
 

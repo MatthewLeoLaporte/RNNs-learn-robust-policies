@@ -90,6 +90,7 @@ from rnns_learn_robust_motor_policies.measures import (
     RESPONSE_VAR_LABELS,
     Measure,
     Responses,
+    compute_all_measures,
     output_corr,
 )
 from rnns_learn_robust_motor_policies.misc import (
@@ -100,6 +101,7 @@ from rnns_learn_robust_motor_policies.misc import (
 from rnns_learn_robust_motor_policies.train_setup_part1 import (
     setup_task_model_pairs,
 )
+from rnns_learn_robust_motor_policies.plot import get_violins
 from rnns_learn_robust_motor_policies.plot_utils import (
     toggle_bounds_visibility,
     figs_flatten_with_paths,
@@ -1129,8 +1131,6 @@ We'll want to map over each combination of perturbation condition (feedback vari
 Also, move the `ImpulseAmpTuple` level to the outside.
 
 ```{python}
-Responses = namedtuple('Responses', all_responses.keys())
-
 all_responses_tuple = Responses(**all_responses) 
 ```
 
@@ -1143,10 +1143,6 @@ all_responses_tuples = move_level_to_outside(
     ), 
     ImpulseAmpTuple,
 )
-```
-
-```{python}
-# pp(all_responses_tuples)
 ```
 
 :::{note}
@@ -1202,81 +1198,16 @@ measure_labels = MEASURE_LABELS | custom_measure_labels
 
 ### Calculate all performance measures 
 
-```{python}
-def get_all_measures(measures: PyTree[Callable], all_responses: PyTree[Responses]):
-    return jt.map(
-        lambda func: jt.map(
-            lambda responses: func(responses),
-            all_responses,
-            is_leaf=is_type(Responses),
-        ),
-        measures,
-        is_leaf=is_type(Measure),
-    )
-    
-all_measure_values = get_all_measures(all_measures, all_responses_tuples)
+```{python}   
+all_measure_values = compute_all_measures(all_measures, all_responses_tuples)
 
-all_measure_values_lohi = {
-    key: jt.map(
-        lambda train_condn_measures: subdict(train_condn_measures, lohi(disturbance_train_stds)),
-        measure,
-        is_leaf=is_type(TrainStdDict),
-    )
-    for key, measure in all_measure_values.items()
-}
+all_measure_values_lohi = jt.map(lohi, all_measure_values, is_leaf=is_type(TrainStdDict))
 ```
 
 ### Comparison of all training conditions
 
 ```{python}
 plot_id = "performance_measures/all_train_conditions"
-```
-
-```{python}
-def get_violins(measure_data, measure_name, annotation_kws=None, layout_kws=None):
-    n_dist = np.prod(jt.leaves(measure_data)[0].shape)
-    n_violins = len(jt.leaves(measure_data, is_leaf=is_type(TrainStdDict))[0])
-    
-    if layout_kws is None:
-        layout_kws = dict()
-        
-    if annotation_kws is None:
-        annotation_kws = dict()    
-        
-    fig = go.Figure(
-        data=jt.leaves([
-            [
-                go.Violin(
-                    x=np.full((n_dist,), disturbance_train_std),
-                    y=data.flatten(),
-                    name=pert_var,
-                    legendgroup=pert_var,
-                    box_visible=False,
-                    meanline_visible=True,
-                    line_color=pert_vars_colors[pert_var],
-                    showlegend=(j == 0),
-                    spanmode='hard',
-                )
-                for j, (disturbance_train_std, data) in enumerate(measure_data[pert_var].items())
-            ]
-            for i, pert_var in enumerate(measure_data)
-        ]),
-        layout=dict(
-            xaxis_title="Train field std.",
-            xaxis_type='category',
-            yaxis_title=measure_name,
-            xaxis_range=[-0.5, n_violins - 0.5],
-            xaxis_tickvals=np.arange(n_violins),
-            # yaxis_range=[0, None],
-            legend_title="Perturbed<br>feedback var.",
-            legend_tracegroupgap=1,
-            # violinmode='overlay',
-            violingap=0,
-            **layout_kws,
-        )
-    )
-    
-    return fig
 ```
 
 We'll find the maximum measure value for each measure type, and apply the same y-axis maximum for each plot of the same measure type, across the different impulse magnitudes. 
@@ -1297,24 +1228,15 @@ figs = {
     key: [
         get_violins(
             measure, 
-            measure_labels[key],
+            yaxis_title=measure_labels[key],
+            xaxis_title="Train field std.",
+            legend_title="Perturbed<br>feedback var.",
+            colors=pert_vars_colors,
             layout_kws=dict(
                 width=800,
                 height=600,
                 yaxis_range=[0, measure_ranges[key][1]],
             ),
-            # Leave this annotation in, for now, since I'm not sure how I want to report 
-            # two different perturbation amplitudes in the figure table (i.e. `fig_parameters` below)
-            annotation_kws=dict(
-                perturbations={
-                    f"{pert_var} impulse ({analysis_variant} direction)": (
-                        impulse_amplitudes[pert_var][impulse_amplitude_idx], 
-                        impulse_start_step, 
-                        impulse_end_step,
-                    )
-                    for pert_var in impulse_amplitude
-                }
-            )
         )
         for impulse_amplitude_idx, measure in enumerate(measure_by_pert_amp)
     ]
@@ -1372,22 +1294,16 @@ figs = {
     key: [
         get_violins(
             measure, 
-            measure_labels[key],
+            yaxis_title=measure_labels[key],
+            xaxis_title="Train field std.",
+            legend_title="Perturbed<br>feedback var.",
+            colors=pert_vars_colors,
+            arr_axis_labels=["Evaluation", "Replicate", "Condition"],
             layout_kws=dict(
                 width=500,
                 height=400,
                 yaxis_range=[0, measure_ranges_lohi[key][1]],
             ),
-            annotation_kws=dict(
-                perturbations={
-                    f"{pert_var} impulse ({analysis_variant} direction)": (
-                        impulse_amplitudes[pert_var][impulse_amplitude_idx], 
-                        impulse_start_step, 
-                        impulse_end_step,
-                    )
-                    for pert_var in impulse_amplitude
-                }
-            )
         )
         for impulse_amplitude_idx, measure in enumerate(measure_by_pert_amp)
     ]
@@ -1433,6 +1349,15 @@ plot_id = "performance_measures/compare_impulse_amplitudes"
 ```
 
 ```{python}
+# TODO: Generalize with `plot.get_violins`. 
+# Note that 
+# 1) there is an additional level here, ImpulseAmpTuple, which is on the outside 
+# but actually should be on the inside (since it's on the x axis); 
+# 2) `TrainStdDict` is on the inside, but should probably be on the outside if we want 
+# `get_violins` to accept an outer `Sequence` level, and plot it as side-by-side/split violins; 
+# 3) `pert_var` is passed velow, but this isn't really necessary; we could pass `measure_data[pert_var]`
+# just as well; so this isn't something that `get_violins` needs to handle
+
 def get_violins_comparing_amplitudes(measure_data, measure_name, pert_var, annotation_kws=None, layout_kws=None):
     example_arr = jt.leaves(measure_data)[0]
     n_dist = np.prod(example_arr.shape)

@@ -54,6 +54,7 @@ from feedbax import (
     tree_struct_bytes,
     tree_take, 
     tree_take_multi,
+    tree_unzip,
 )
 from feedbax.intervene import (
     CurlField, 
@@ -81,12 +82,25 @@ from rnns_learn_robust_motor_policies.database import (
     add_evaluation_figure,
     use_record_params_where_none,
 )
-from rnns_learn_robust_motor_policies.misc import log_version_info
+from rnns_learn_robust_motor_policies.measures import (
+    MEASURES, 
+    MEASURE_LABELS,
+    RESPONSE_VAR_LABELS,
+    Direction,
+    Measure,
+    Responses,
+    ResponseVar,
+    compute_all_measures,
+    output_corr,
+    signed_max,
+)
+from rnns_learn_robust_motor_policies.misc import log_version_info, lohi
 from rnns_learn_robust_motor_policies.train_setup_part2 import (
     setup_task_model_pairs, 
 )
 from rnns_learn_robust_motor_policies.plot import (
     add_endpoint_traces,
+    get_violins,
 )
 from rnns_learn_robust_motor_policies.plot_utils import (
     figleaves,
@@ -138,10 +152,10 @@ We may want to specify 1) which trained models to load, by their parameters, and
 #| tags: [parameters]
 
 # Specify which trained models to load 
-disturbance_type_load: Literal['curl', 'constant'] = 'curl'
-feedback_noise_std_load = 0.0
-motor_noise_std_load = 0.0
-feedback_delay_steps_load = 4
+disturbance_type_load: Literal['curl', 'constant'] = 'constant'
+feedback_noise_std_load = 0.01
+motor_noise_std_load = 0.01
+feedback_delay_steps_load = 0
 hidden_size = 100
 
 # Specify model parameters to use for analysis (None -> use training value)
@@ -185,7 +199,8 @@ model_info = get_model_record(
     feedback_delay_steps=feedback_delay_steps_load,
     hidden_size=hidden_size,
     n_batches=10000,
-    disturbance_stds=[0.4, 0.8, 1.2, 1.6, 2.0],
+    # disturbance_stds=[0.0, 0.5, 1.0, 1.5],
+    disturbance_stds=[0.0, 0.0025, 0.025, 0.25, 2.5],
     learning_rate_0=0.001,
     # intervention_scaleup_batches=[0, 1000],
     training_methods=['amplitude', 'std'],
@@ -274,7 +289,9 @@ else:
 Depending on how training goes, we might want to leave out some of the training conditions (i.e. training disturbance stds) from the analysis.
 
 ```{python}
-disturbance_train_stds = model_info.disturbance_stds
+disturbance_train_stds = [
+    x for x in model_info.disturbance_stds if x < 1.6 or x > 0
+]
 
 models_base = jt.map(
     lambda train_std_dict: subdict(train_std_dict, disturbance_train_stds),
@@ -317,7 +334,8 @@ disturbance_amplitude = {
 ### Context inputs 
 
 ```{python}
-context_inputs = [-2, -1, -0.5, 0, 0.5, 1, 1.25, 1.5, 2, 3]
+# context_inputs = [-2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2]
+context_inputs = [-2., -1., 0., 1., 2.]
 ```
 
 ### Number of evaluations per model and condition
@@ -440,9 +458,9 @@ trials_colors, trials_colors_dark = get_colors_dicts(
 )
 
 # by training condition
-# disturbance_train_stds_colors, disturbance_train_stds_colors_dark = get_colors_dicts(
-#     disturbance_train_stds, COLORSCALES['disturbance_train_stds'],
-# )
+disturbance_train_stds_colors, disturbance_train_stds_colors_dark = get_colors_dicts(
+    disturbance_train_stds, COLORSCALES['disturbance_train_stds'],
+)
 
 # by evaluation condition
 # disturbance_amplitudes_colors, disturbance_amplitudes_colors_dark = get_colors_dicts(
@@ -490,9 +508,6 @@ all_states = jt.map(
 ### Project positions, velocities, and forces into reach direction
 
 ```{python}
-Responses = namedtuple('Responses', ('pos', 'vel', 'force'))
-
-aligned_var_labels = Responses('Position', 'Velocity', 'Control force')
 where_vars_to_align = lambda states, pos_endpoints: Responses(
     # Positions with respect to the origin
     states.mechanics.effector.pos - pos_endpoints[0][..., None, :],
@@ -525,7 +540,7 @@ n_curves_max = 20
 
 plot_condition_trajectories = partial(
     fbp.trajectories_2D,
-    var_labels=aligned_var_labels,
+    var_labels=RESPONSE_VAR_LABELS,
     axes_labels=('x', 'y'),
     # mode='std',
     mean_trajectory_line_width=3,
@@ -687,7 +702,65 @@ Across context inputs, for a given training condition.
 train_field_std = 1.2
 ```
 
+```{python}
 
+# TODO:
+measure_keys = [
+    "max_parallel_vel_forward",
+    "max_orthogonal_vel_signed",
+    "max_orthogonal_vel_left",
+    # "max_orthogonal_vel_right",  # -2
+    "largest_orthogonal_distance",
+    "max_orthogonal_distance_left",
+    "sum_orthogonal_distance",
+    "sum_orthogonal_distance_abs",
+    "end_position_error",
+    # "end_velocity_error",  # -1
+    "max_parallel_force_forward",
+    # "sum_parallel_force",  # -2
+    # "max_orthogonal_force_right",  # -1
+    "sum_orthogonal_force_abs",
+    "max_net_force",
+    "sum_net_force",
+]
+
+custom_measures = custom_measure_labels = dict()
+
+all_measures = subdict(MEASURES, measure_keys) | custom_measures
+measure_labels = MEASURE_LABELS | custom_measure_labels
+
+all_measure_values = compute_all_measures(all_measures, aligned_vars['full'])
+```
+
+```{python}
+figs = {
+    measure_key: {
+        variant_label: get_violins(
+            all_measure_values[measure_key][variant_label],
+            yaxis_title=measure_labels[measure_key],
+            xaxis_title="Context input",
+            legend_title="Train std.",
+            colors=disturbance_train_stds_colors,
+            arr_axis_labels=["Evaluation", "Replicate", "Condition"],
+            zero_hline=True,
+            layout_kws=dict(
+                width=700,
+                height=500,
+                yaxis_fixedrange=False,
+                yaxis_autorange=True,
+                # yaxis_range=[0, measure_ranges_lohi[key][1]],
+            ),
+        )
+        for variant_label in model_info.training_methods
+    }
+    for measure_key in all_measures
+}
+```
+
+```{python}
+for measure_key in figs:
+    figs[measure_key]['amplitude'].show()
+```
 
 
 ## Output correlation

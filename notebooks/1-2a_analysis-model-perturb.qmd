@@ -91,6 +91,7 @@ from rnns_learn_robust_motor_policies.measures import (
     RESPONSE_VAR_LABELS,
     Measure,
     Responses,
+    compute_all_measures,
     output_corr,
 )
 from rnns_learn_robust_motor_policies.misc import lohi, log_version_info
@@ -1047,28 +1048,11 @@ measure_keys = [
 all_measures = subdict(MEASURES, measure_keys)
 ```
 
-```{python}
-from jaxtyping import PyTree
-from collections.abc import Callable
-
-
-def get_all_measures(measures: PyTree[Callable], all_aligned_vars: PyTree[Responses]):
-    return jt.map(
-        lambda func: jt.map(
-            lambda aligned_vars: func(aligned_vars),
-            all_aligned_vars,
-            is_leaf=is_type(Responses),
-        ),
-        measures,
-        is_leaf=is_type(Measure),
-    )
-    
-all_measure_values = get_all_measures(all_measures, aligned_vars['full'])
-
-# box_measures = get_all_measures(box_measure_funcs, aligned_vars['full'])
+```{python}   
+all_measure_values = compute_all_measures(all_measures, aligned_vars['full'])
 
 # TODO: fix the `pos_endpoints` hardcoding, above
-# all_measures_small = get_all_measures(all_measure_funcs, all_states['small'])
+# all_measures_small = compute_all_measures(all_measure_funcs, all_states['small'])
 ```
 
 ### Plot measure distributions by training condition, across evaluation conditions

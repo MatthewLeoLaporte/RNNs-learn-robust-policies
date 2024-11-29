@@ -141,7 +141,7 @@ class EvaluationRecord(Base):
     model_hash: Mapped[Optional[str]] = mapped_column(ForeignKey(f'{MODELS_TABLE_NAME}.hash'))
     archived: Mapped[bool] = mapped_column(default=False)
     archived_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
-    version_info: Mapped[Optional[dict[str, str]]]
+    version_info_eval: Mapped[Optional[dict[str, str]]]
     
     @hybrid_property
     def figure_dir(self):
@@ -459,7 +459,7 @@ def save_model_and_add_record(
         )
     )
     
-    hyperparameters = model_hyperparameters | other_hyperparameters
+    hyperparameters = model_hyperparameters | other_hyperparameters | dict(version_info=version_info)
     
     # Save model and get hash-based filename
     model_hash, model_path = save_with_hash(model, MODELS_DIR, hyperparameters)
@@ -493,7 +493,6 @@ def save_model_and_add_record(
         origin=origin,
         is_path_defunct=False, 
         has_replicate_info=replicate_info is not None,
-        version_info=version_info,
         **hyperparameters,
     )
     
@@ -572,7 +571,7 @@ def add_evaluation(
             hash=eval_hash,
             model_hash=model_hash,  # Can be None
             origin=origin,
-            version_info=version_info,
+            version_info_eval=version_info,
             **eval_parameters,
         )
         session.add(eval_record)

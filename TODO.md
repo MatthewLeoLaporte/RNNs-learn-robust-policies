@@ -7,8 +7,21 @@ updated: 2024-11-13T10:32
 - [ ] Parameter scaleup for part 2
 - [ ] Add constant field aligned trajectory results to [[results-2]]
 - [ ] New measure: covariance between network output and system noise variables
-- [ ] Use new `measure.py` in 1-2b, 2-2
+- [x] Use new `measure.py` in 1-2b
+- [x] Compute measures in 2-2
+- [ ] Distribution of direction of max net force
+- [ ] **Merge `feature-database` into `main`**
+- [ ] See how much more robust the baseline model is in part 1, if we **decrease the weight on the control cost**. (Talk to Gunnar about this – it will also affect the time urgency.)
+
+## Analysis
+
+- [ ] For each train std. in the “std” method, there is a certain context input at which the position profile is closest to a straight reach. Determine what this context input is. (I’m not sure about error bounds; I guess we would do the optimization for *all* validation trials individually.)
+
 ## Training
+
+- [ ] Include the baseline condition in part 2, not for the aligned trajectory plots but for the measure plots
+- [ ] Train on curl std 0.5, 1.0, 1.5
+- [ ] Train with a small amount of noise (0.01?) in every case; the 
 
 ### Other technical stuff
 
@@ -43,14 +56,9 @@ It might also make sense to automatically save evaluated states to disk, and to 
 
 ## Formatting
 
-- [x] Add zero hline on velocity plots
-	- I already did this in 1-2a, but I think it was not visible. Moved to `fbp.profiles` so that it is plotted before the profiles themselves
 - [ ] Show trial, replicate, condition info in hoverinfo of individual *aligned* trajectories
 
 ## Meetings
 
 - [ ] Schedule a [[02 Questions#Steve|meeting]] with Steve. For one, ask about sensory perturbations in human tasks – do they see oscillations (i.e. going from straight to “loopy”, like we see in the control vs. robust networks)
 
-## Bigger things
-
-- [ ] Vmap task generation, then train in parallel? i.e. instead of using a loop and getting a `TrainStdDict`, we would add another batch dimension to the model parameter arrays. The `trainer` would need to vmap separately over the task and over the ensemble

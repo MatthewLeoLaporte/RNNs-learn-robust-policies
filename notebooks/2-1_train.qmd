@@ -130,10 +130,10 @@ These are parameters that can be [varied](https://quarto.org/docs/computations/p
 ```{python}
 #| tags: [parameters]
 
-disturbance_type: Literal['curl', 'constant'] = 'curl'  
+disturbance_type: Literal['curl', 'constant'] = 'constant'  
 feedback_delay_steps = 0
-feedback_noise_std = 0.1
-motor_noise_std = 0.1
+feedback_noise_std = 0.025
+motor_noise_std = 0.025
 hidden_size = 100
 n_replicates = 5
 n_steps = 100
@@ -168,7 +168,7 @@ where_train = {
     # 1000: lambda model: model.step.net.hidden,
 }
 
-training_methods: list[Literal["active", "amplitude", "std"]] = ["amplitude", "std"]
+training_methods: list[Literal["active", "amplitude", "std"]] = ["active", "amplitude", "std"]
 
 p_perturbed = {
     'active': 0.25,
@@ -180,8 +180,8 @@ p_perturbed = {
 # Define the disturbance amplitudes to train, depending on disturbance type
 # NOTE: Only one of these disturbance types is trained per notebook run; see the parameters cell above
 disturbance_stds = {
-    'curl': [0.4, 0.8, 1.2, 1.6, 2.0],
-    'constant': [0.4, 0.8, 1.2, 1.6, 2.0],
+    'curl': [0.0, 0.5, 1.0, 1.5],
+    'constant': [0.0, 0.02, 0.1, 0.5],
 }
 ```
 

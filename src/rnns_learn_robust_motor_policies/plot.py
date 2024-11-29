@@ -1,6 +1,7 @@
 from collections.abc import Sequence
-from typing import Optional
+from typing import Optional, TypeVar
 
+import equinox as eqx
 from feedbax import is_type
 import jax.numpy as jnp
 import jax.tree as jt 
@@ -92,42 +93,71 @@ def add_endpoint_traces(
                 )
             ]
         )
-        
-# TODO: Generalize this; it should work with any two-level nested dict structure, not just pert amp and train std
-def get_violins_across_train_conditions(
-    measure_data: PertAmpDict[float, TrainStdDict[float, Float[Array, "evals replicates conditions"]]], 
-    measure_name: str, 
+
+
+def get_violins(
+    data: dict[float, dict[float, Float[Array, "..."]]],  # "evals replicates conditions"
+    legend_title: str = "",
     layout_kws: dict = None,
+    arr_axis_labels: Optional[Sequence[str]] = None,  # ["Evaluation", "Replicate", "Condition"]
+    zero_hline: bool = False,
     *,
+    yaxis_title: str, 
+    xaxis_title: str,
     colors: dict[float, str],
 ):
-    example_traindict = jt.leaves(measure_data, is_leaf=is_type(TrainStdDict))[0]
-    n_train_std = len(example_traindict)
-    n_dist = np.prod(jt.leaves(measure_data)[0].shape)
+    """
+    Arguments:
+        data: Outer dict gives legend groups, inner dict gives x-axis values.
+        arr_axis_labels: Indices for array axes are included for outliers,
+            for example so the batch/replicate can be identified. These strings
+            will be used to label indices into axes of arrays of `data`.
+    """
+    example_legendgroup = list(data.values())[0]
+    n_violins = len(example_legendgroup)
+    
+    example_arr = jt.leaves(data)[0]
+    n_dist = np.prod(example_arr.shape)
+
+    # Construct data for hoverinfo
+    customdata = jnp.tile(
+        jnp.stack(jnp.unravel_index(
+            jnp.arange(n_dist), 
+            example_arr.shape,
+        ), axis=-1), 
+        (len(data), 1),
+    ).T
+    
+    if arr_axis_labels is None:
+        arr_axis_labels = [f"dim{i}" for i in range(len(customdata))]
+    
+    customdata_hovertemplate_strs = [
+        f"{label}: %{{customdata[{i}]}}" for i, label in enumerate(arr_axis_labels)
+    ]
 
     fig = go.Figure(
         layout=dict(
-            # title=(f"Response to amplitude {disturbance_amplitude} field <br>N = {n_dist}"),
+            # title=(f"Response to amplitude {legendgroup_value} field <br>N = {n_dist}"),
             width=500,
             height=300,
             legend=dict(
-                title="Field<br>amplitude",
+                title=legend_title, 
                 title_font_size=12,
                 tracegroupgap=1,
             ),
             yaxis=dict(
-                title=measure_name,
+                title=yaxis_title,
                 titlefont_size=12,
                 range=[0, None],
             ),
             xaxis=dict(
-                title="Train field std.",
+                title=xaxis_title, 
                 titlefont_size=12,
                 type='category',
-                range=[-0.75, n_train_std - 0.25],
+                range=[-0.75, n_violins - 0.25],
                 # tickmode='array',
-                tickvals=np.arange(n_train_std),
-                ticktext=[f'{std:.2g}' for std in example_traindict],
+                tickvals=np.arange(n_violins),
+                ticktext=[f'{x:.2g}' for x in example_legendgroup],
             ),
             violinmode='overlay',
             violingap=0,
@@ -136,28 +166,37 @@ def get_violins_across_train_conditions(
         )
     )
     
-    for i, disturbance_amplitude in enumerate(measure_data):
-        measure_data_i = measure_data[disturbance_amplitude]
+    if zero_hline:
+        fig.add_hline(0, line_dash='dot', line_color='grey')
+    
+    for i, legendgroup_value in enumerate(data):
+        data_i = data[legendgroup_value]
         
         xs = jnp.stack([
             jnp.full_like(data, j)
-            for j, data in enumerate(measure_data_i.values())
+            for j, data in enumerate(data_i.values())
         ]).flatten()
         
         fig.add_trace(
             go.Violin(
                 x=xs,
-                y=jnp.stack(tuple(measure_data_i.values())).flatten(),
-                name=disturbance_amplitude,
-                legendgroup=disturbance_amplitude,
+                y=jnp.stack(tuple(data_i.values())).flatten(),
+                name=legendgroup_value,
+                legendgroup=legendgroup_value,
                 box_visible=False,
                 meanline_visible=True,
-                line_color=colors[disturbance_amplitude],
+                line_color=colors[legendgroup_value],
                 # showlegend=False,
                 opacity=1,
                 spanmode='hard',
                 scalemode='width',
                 # width=1.5,
+                customdata=customdata.T,
+                hovertemplate='<br>'.join([
+                    "%{y:.2f}",
+                    *customdata_hovertemplate_strs,
+                    "<extra></extra>",                    
+                ])
             )
         )
         
@@ -165,6 +204,7 @@ def get_violins_across_train_conditions(
         fig.update_layout(**layout_kws)
     
     return fig
+
 
 
 # TODO
