@@ -5,7 +5,13 @@ Especially in the case of constant fields, there are some differences between th
 
 ## Constant fields
 
-### Binary context switch
+### General observations
+
+- There is a training std. which induces a good spread of robustness behaviour across context inputs. Mostly this seems to lie between 0.03 and 0.08.
+- For larger training stds., depending on the training method, even negative context inputs may produce solutions that look very similar to baseline in terms of the maximal and summed velocities and forces, and mainly differ in terms of geometry and steady-state outputs.
+- “Hyper-robustness” does not appear as consistently as with curl fields; for BCS and PAI there are some overshoots, but they are not consistent with PAI. However, even without overshoot the steady-state attractors may be strengthened. This remains to be seen in the network analysis.
+
+### Binary context switch (BCS)
 
 > [!Info]
 > Here, 25% of trials are perturbed. The perturbation is drawn from a zero-mean, `field std.`-std normal distribution. If the field is perturbed, the network gets a context input of 1, otherwise 0.
@@ -155,8 +161,37 @@ The measure distributions reflect these strange reversed relationships:
 ![[file-20241130114105772.png]]
 #### Aligned trajectories
 
+Control is as expected
+![[file-20241130140346124.png]]
 
+Spread becomes apparent at std 0.02
+![[file-20241130140448871.png]]
 
+By 0.04, context 2 has overshot the goal
+![[file-20241130140532658.png]]
 
+However at higher stds 0.16 (below) and 0.32, things normalize again, and start to look more like the DAI policies. I assume this is because even with the probabilistic information, there is less uncertainty that the perturbation will be a large one even if the context input is relatively small.
+![[file-20241130140617353.png]]
+
+Looking at the train std comparisons, it is clear that at lower train stds that under-robustness occurs for context -2, but at higher stds it does not (relative to baseline, though of course it is still less robust relative to context 0, context 1, etc.)
+![[file-20241130140900326.png]]
+
+At context 0 we have a spread, rather than uniformity. Note that 0.08, 0.16, 0.32 all reach the target and have approximately the same profiles. (At context 1, not shown here, the spread moves slightly closer to the goal, with std 0.04 close to overlapping with std ≥0.08)
+![[file-20241130140951119.png]]
+
+At context 2, the spread remains and curiously std 0.32 reaches the goal, but 0.08 and 0.16 overshoot.
+![[file-20241130141241405.png]]
 
 #### Measure distributions
+
+Max velocity is in line with DAI; up to std ~0.04 the trend develops, followed by regression to baseline.
+
+![[file-20241130141309515.png]]
+Similarly with control force:
+![[file-20241130141714891.png]]
+![[file-20241130141737419.png]]
+
+Lateral distance is in some ways intermediate between BCS and DAI, with only a few negative values appearing for context 2. 
+![[file-20241130141432323.png]]
+![[file-20241130141558478.png]]
+![[file-20241130141617043.png]]

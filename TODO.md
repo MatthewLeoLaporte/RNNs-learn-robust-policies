@@ -21,12 +21,8 @@ updated: 2024-11-13T10:32
 
 ## Training
 
-- [x] Include the baseline condition in part 2, not for the aligned trajectory plots but for the measure plots
-	- Sometimes I’ve been leaving it out to save memory when evaluating several training methods at once, but it’s not hard to include now
-- [x] Train on curl std 0.5, 1.0, 1.5
-- [x] Train with a small amount of noise (0.01?) in every case
-- [x] Try `p_perturbed` less than 1 for “amplitude” and “std” methods, for constant fields
-	- For “std” it leads to a [[results-training-methods-part2#`p_perturbed=0.25`|reversed]] relationship! Negative context inputs more robust than positive. Very strange.
+**See also [[results-training-methods-part2]].**
+
 - Debug the equinox vmap warning that keeps showing up at the start of each training run (in 2-1 anyway)
 
 ### Best training method for constant fields
