@@ -3,6 +3,7 @@ from collections.abc import Callable, Sequence
 from typing import Literal, Optional
 
 import equinox as eqx
+import jax
 import jax.numpy as jnp 
 import jax.random as jr
 import jax.tree as jt
@@ -22,7 +23,7 @@ from rnns_learn_robust_motor_policies.constants import (
     WORKSPACE,
 )
 from rnns_learn_robust_motor_policies.setup_utils import get_base_task
-from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainStdDict
+from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainStdDict, TrainingMethodDict
 
 
 # Separate this def by training method so that we can multiply by `field_std` in the "std" case,
@@ -31,7 +32,7 @@ from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainStdDict
 # `scale` parameter, which is not seen by the network in those cases; and in `"std"` it is
 # multiplied by the `field` parameter, which is not seen by the network in that case. 
 # (See the definition of `SCALE_FUNCS` below.)
-disturbance_params = {
+disturbance_params = TrainingMethodDict({
     "active": lambda field_std: {
         'curl': dict(
             amplitude=lambda trial_spec, batch_info, key: jr.normal(key, ()),
@@ -58,23 +59,23 @@ disturbance_params = {
             )
         ),
     },
-}
+})
 
 
 # Define whether the disturbance is active on each trial
-disturbance_active: dict[str, Callable] = {
+disturbance_active: dict[str, Callable] = TrainingMethodDict({
     "active": lambda p: lambda trial_spec, _, key: jr.bernoulli(key, p=p),
     "amplitude": lambda p: lambda trial_spec, _, key: jr.bernoulli(key, p=p),  
     "std": lambda p: lambda trial_spec, _, key: jr.bernoulli(key, p=p),  
-}
+})
 
 
 # Define how the network's context input will be determined from the trial specs, to which it is then added
-CONTEXT_INPUT_FUNCS = {
+CONTEXT_INPUT_FUNCS = TrainingMethodDict({
     "active": lambda trial_specs, key: trial_specs.intervene[INTERVENOR_LABEL].active.astype(float),
     "amplitude": lambda trial_specs, key: get_field_amplitude(trial_specs.intervene[INTERVENOR_LABEL]),
     "std": lambda trial_specs, key: trial_specs.intervene[INTERVENOR_LABEL].scale,
-}
+})
 
 
 """Either scale the field strength by a constant std, or sample the std for each trial.
@@ -83,13 +84,13 @@ Note that in the `"std"` case the actual field amplitude is still scaled by `fie
 but this is done in `disturbance_params` so that the magnitude of the context input 
 is the same on average between the `"amplitude"` and `"std"` methods.
 """
-SCALE_FUNCS = {
+SCALE_FUNCS = TrainingMethodDict({
     "active": lambda field_std: field_std,
     "amplitude": lambda field_std: field_std,
     "std": lambda field_std: (
         lambda trial_spec, _, key: jr.uniform(key, (), minval=0, maxval=1)
     ),
-}
+})
 
 
 def disturbance(disturbance_type, field_std, p_perturbed, method):
@@ -122,6 +123,8 @@ def setup_task_model_pairs(
     **kwargs,
 ):
     """Returns a skeleton PyTree for reloading trained models."""
+    
+    # TODO: Implement scale-up 
     n_batches_scaleup = intervention_scaleup_batches[1] - intervention_scaleup_batches[0]
     if n_batches_scaleup > 0:
         def batch_scale_up(batch_start, n_batches, batch_info, x):
@@ -157,10 +160,10 @@ def setup_task_model_pairs(
             dict(context=TrialSpecDependency(context_input_func))
         )
         for method_label, context_input_func in CONTEXT_INPUT_FUNCS.items()
-        if method_label in training_methods or training_methods is None
+        if training_methods is None or method_label in training_methods
     }
     
-    task_model_pairs = {
+    task_model_pairs = TrainingMethodDict({
         method_label: TrainStdDict({
             disturbance_std: TaskModelPair(*schedule_intervenor(
                 task, models_base,
@@ -177,6 +180,6 @@ def setup_task_model_pairs(
             for disturbance_std in disturbance_stds
         })
         for method_label, task in tasks.items()
-    }
+    })
     
     return task_model_pairs

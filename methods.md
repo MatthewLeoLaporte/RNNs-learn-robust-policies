@@ -51,9 +51,13 @@ For 4 sets of 24 center-out reaches (i.e. 96 reach conditions), with 10 replicat
 
 #### Training methods
 
+##### Binary context switch (BCS)
+
+The network is simply given a Boolean (0-1) input which indicates whether the training perturbation is currently active, though it vary in amplitude and direction.
+
 ##### Direct amplitude information (DAI)
 
-The field strength for each training trial is sampled i.i.d. from a zero-mean normal distribution. 
+The field strength for each training trial is sampled i.i.d. from a zero-mean normal distribution.
 
 The network receives the absolute value of the standard normal sample, prior to its scaling by `field_std`.
 

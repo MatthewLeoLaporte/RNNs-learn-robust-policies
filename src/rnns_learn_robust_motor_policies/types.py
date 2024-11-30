@@ -43,6 +43,11 @@ class PertVarDict(Dict[K, V], Generic[K, V]):
 class ContextInputDict(Dict[K, V], Generic[K, V]):
     def __repr__(self):
         return f"ContextInputDict({dict.__repr__(self)})"
+    
+
+class TrainingMethodDict(Dict[K, V], Generic[K, V]):
+    def __repr__(self):
+        return f"TrainingMethodDict({dict.__repr__(self)})"    
 
 
 def _dict_flatten_with_keys(obj):
@@ -57,7 +62,7 @@ def _get_dict_unflatten(cls):
     return dict_unflatten
 
 
-for cls in (TrainStdDict, PertAmpDict, PertVarDict, ContextInputDict):
+for cls in (TrainStdDict, PertAmpDict, PertVarDict, ContextInputDict, TrainingMethodDict):
     jtu.register_pytree_with_keys(
         cls, 
         _dict_flatten_with_keys, 

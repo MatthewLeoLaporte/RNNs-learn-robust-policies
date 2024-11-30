@@ -4,28 +4,43 @@ updated: 2024-11-13T10:32
 ---
 **See [[results-2|Part 2 results]] for ongoing analysis TODOs.**
 
-- [ ] Parameter scaleup for part 2
-- [ ] Add constant field aligned trajectory results to [[results-2]]
-- [ ] New measure: covariance between network output and system noise variables
-- [x] Use new `measure.py` in 1-2b
-- [x] Compute measures in 2-2
-- [ ] Distribution of direction of max net force
-- [ ] **Merge `feature-database` into `main`**
+- [x] Add constant field aligned trajectory results to [[results-2]]
+- [x] Merge `feature-database` into `main`
 - [ ] See how much more robust the baseline model is in part 1, if we **decrease the weight on the control cost**. (Talk to Gunnar about this – it will also affect the time urgency.)
+	- My expectation is that it will of course increase the forces and decrease the movement duration, but that depending on the perturbation this will actually make it *less* robust (e.g. curl fields)
+	- 
 
 ## Analysis
 
-- [ ] For each train std. in the “std” method, there is a certain context input at which the position profile is closest to a straight reach. Determine what this context input is. (I’m not sure about error bounds; I guess we would do the optimization for *all* validation trials individually.)
+- [ ] For each train std. in the “std” method, there is a certain **context input at which the position profile is closest to a straight reach**. Determine what this context input is. (I’m not sure about error bounds; I guess we would do the optimization for *all* validation trials individually.)
+
+### Measures
+
+- [ ] **Covariance between network output and system noise variables**
+- [ ] **Direction of max net force (at start of trial?)**
 
 ## Training
 
-- [ ] Include the baseline condition in part 2, not for the aligned trajectory plots but for the measure plots
-- [ ] Train on curl std 0.5, 1.0, 1.5
-- [ ] Train with a small amount of noise (0.01?) in every case; the 
+- [x] Include the baseline condition in part 2, not for the aligned trajectory plots but for the measure plots
+	- Sometimes I’ve been leaving it out to save memory when evaluating several training methods at once, but it’s not hard to include now
+- [x] Train on curl std 0.5, 1.0, 1.5
+- [x] Train with a small amount of noise (0.01?) in every case
+- [x] Try `p_perturbed` less than 1 for “amplitude” and “std” methods, for constant fields
+	- For “std” it leads to a [[results-training-methods-part2#`p_perturbed=0.25`|reversed]] relationship! Negative context inputs more robust than positive. Very strange.
+- Debug the equinox vmap warning that keeps showing up at the start of each training run (in 2-1 anyway)
+
+### Best training method for constant fields
+
+- This is unclear. 
+- It looks like the ideal set of field stds. to get a good spread of measures/robustness varies between methods
+- [ ] Go through the sets of trained models I’ve made recently and find the “best spread” for each method
+- [ ] Make some general comments on what is happening to the trajectories (lateral displacements, endpoints errors; are the relationships monotonic (not always!) etc.) as context input & field std vary, for the different methods
+- [ ] Ask o1 if there are any training techniques that might work better, or if it can think of a reason why
 
 ### Other technical stuff
 
-- [ ] Looks like `train_step` is re-compiling on the first batch, again, since I started passing `batch`. Debug.
+- [ ] Parameter scaleup for part 2
+- [ ] **Looks like `train_step` is re-compiling on the first batch, again, since I started passing `batch`. Debug.**
 	- Interesting that in the baseline case, the “Training/validation step compiled in…” notices register as ~0 s for the condition (i.e. continuation of baseline) training run, which makes sense given that the identical functions were just compiled for the baseline run; however, there is still a ~5 s delay between when the tqdm bar appears, and when it starts moving!
 - [ ] Try -1 and 1 for the “active” trianing variant, not 0 and 1?
 	- I’m not sure this makes sense, since we want negative values of context input to be “anti-robust”

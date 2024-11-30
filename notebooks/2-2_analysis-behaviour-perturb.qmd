@@ -124,9 +124,10 @@ from rnns_learn_robust_motor_policies.tree_utils import (
     subdict, 
 )
 from rnns_learn_robust_motor_policies.types import (
-    TrainStdDict, 
     ContextInputDict,
     PertAmpDict,
+    TrainingMethodDict,
+    TrainStdDict, 
 )
 ```
 
@@ -158,10 +159,15 @@ motor_noise_std_load = 0.01
 feedback_delay_steps_load = 0
 hidden_size = 100
 
+disturbance_stds_load = [0.0, 0.01, 0.02, 0.03, 0.04, 0.08, 0.16, 0.32]
+training_methods_load = ['active', 'amplitude', 'std']
+
 # Specify model parameters to use for analysis (None -> use training value)
 disturbance_type: Optional[Literal['curl', 'constant']] = None
 feedback_noise_std: Optional[float] = None
 motor_noise_std: Optional[float] = None
+
+training_methods = ['std']  # To analyze; suset of `training_methods_load`
 ```
 
 These parameters may be passed as strings from the command line in some cases, so we need to cast them to be sure.
@@ -199,11 +205,10 @@ model_info = get_model_record(
     feedback_delay_steps=feedback_delay_steps_load,
     hidden_size=hidden_size,
     n_batches=10000,
-    # disturbance_stds=[0.0, 0.5, 1.0, 1.5],
-    disturbance_stds=[0.0, 0.0025, 0.025, 0.25, 2.5],
+    disturbance_stds=disturbance_stds_load,
     learning_rate_0=0.001,
     # intervention_scaleup_batches=[0, 1000],
-    training_methods=['amplitude', 'std'],
+    training_methods=training_methods_load,
 )
 ```
 
@@ -214,6 +219,14 @@ models_load: TrainStdDict[float, eqx.Module] = load(
 
 replicate_info = load(
     model_info.replicate_info_path, partial(setup_replicate_info, models_load),
+)
+```
+
+```{python}
+models_load, replicate_info = jt.map(
+    lambda d: subdict(d, training_methods),
+    (models_load, replicate_info),
+    is_leaf=is_type(TrainingMethodDict),    
 )
 ```
 
@@ -289,8 +302,10 @@ else:
 Depending on how training goes, we might want to leave out some of the training conditions (i.e. training disturbance stds) from the analysis.
 
 ```{python}
+train_std_bounds = lambda x: (x < 1.6,)
+
 disturbance_train_stds = [
-    x for x in model_info.disturbance_stds if x < 1.6 or x > 0
+    x for x in model_info.disturbance_stds if all(train_std_bounds(x))
 ]
 
 models_base = jt.map(
@@ -696,12 +711,6 @@ for l0 in figs:
 
 ## Measure distributions
 
-Across context inputs, for a given training condition.
-
-```{python}
-train_field_std = 1.2
-```
-
 ```{python}
 
 # TODO:
@@ -733,6 +742,10 @@ all_measure_values = compute_all_measures(all_measures, aligned_vars['full'])
 ```
 
 ```{python}
+plot_id = "performance_measures/compare_train_and_context_conditions"
+```
+
+```{python}
 figs = {
     measure_key: {
         variant_label: get_violins(
@@ -751,7 +764,7 @@ figs = {
                 # yaxis_range=[0, measure_ranges_lohi[key][1]],
             ),
         )
-        for variant_label in model_info.training_methods
+        for variant_label in training_methods
     }
     for measure_key in all_measures
 }
@@ -759,7 +772,27 @@ figs = {
 
 ```{python}
 for measure_key in figs:
-    figs[measure_key]['amplitude'].show()
+    figs[measure_key][training_methods[0]].show()
+```
+
+```{python}
+n_dist = int(np.prod(jt.leaves(all_measure_values)[0].shape)) 
+
+for path, fig in tqdm(figs_flatten_with_paths(figs)):
+    fig_parameters = dict(
+        measure_name=path[0].key,
+        training_method=path[1].key,
+        disturbance_amplitude=disturbance_amplitude,
+        n=n_dist, 
+    )
+    
+    add_evaluation_figure(
+        db_session,
+        eval_info,
+        fig,
+        plot_id,
+        **fig_parameters,
+    )
 ```
 
 
