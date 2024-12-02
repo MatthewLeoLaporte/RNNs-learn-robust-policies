@@ -774,8 +774,6 @@ measure_labels = MEASURE_LABELS | custom_measure_labels
 Rearrange response PyTree so `Responses` tuples are on the inside, and `ImpulseAmpTuple` is on the outside.
 
 ```{python}
-from feedbax import move_level_to_outside
-
 impulse_responses_tuples = jt.transpose(
     jt.structure(impulse_responses, is_leaf=is_type(PertVarDict)), 
     jt.structure(jt.leaves(impulse_responses, is_leaf=is_type(PertVarDict))[0]),
