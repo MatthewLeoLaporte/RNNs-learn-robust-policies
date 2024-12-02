@@ -160,7 +160,7 @@ feedback_delay_steps_load = 0
 hidden_size = 100
 
 disturbance_stds_load = [0.0, 0.01, 0.02, 0.03, 0.04, 0.08, 0.16, 0.32]
-training_methods_load = ['active', 'amplitude', 'std']
+training_methods_load = ['std']
 
 # Specify model parameters to use for analysis (None -> use training value)
 disturbance_type: Optional[Literal['curl', 'constant']] = None
@@ -168,6 +168,18 @@ feedback_noise_std: Optional[float] = None
 motor_noise_std: Optional[float] = None
 
 training_methods = ['std']  # To analyze; suset of `training_methods_load`
+```
+
+**Make sure to include 0, 0.5, and 1!**
+
+```{python}
+# context_inputs = [-2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2]
+context_inputs = [-2., -1., 0., 0.5, 1., 2.]
+
+disturbance_amplitudes = {
+    'curl': 2,
+    'constant': 0.4,
+}
 ```
 
 These parameters may be passed as strings from the command line in some cases, so we need to cast them to be sure.
@@ -340,17 +352,7 @@ any_system_noise = any(jt.leaves((
 ### Disturbance amplitudes
 
 ```{python}
-disturbance_amplitude = {
-    'curl': 2,
-    'constant': 0.4,
-}[disturbance_type]
-```
-
-### Context inputs 
-
-```{python}
-# context_inputs = [-2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2]
-context_inputs = [-2., -1., 0., 1., 2.]
+disturbance_amplitude = disturbance_amplitudes[disturbance_type]
 ```
 
 ### Number of evaluations per model and condition
@@ -429,9 +431,9 @@ task_base, models = schedule_intervenor(
 ### Set up variants with different context inputs
 
 ```{python}
-def get_context_input_func(x):
+def get_context_input_func(x, n_steps, n_trials):
     return lambda trial_spec, key: (
-        jnp.full_like(trial_spec.intervene[INTERVENOR_LABEL].active, x, dtype=float)
+        jnp.full((n_trials, n_steps), x, dtype=float)
     )
 
 all_tasks = dict()
@@ -440,7 +442,9 @@ all_tasks['full'] = ContextInputDict({
     context_input: eqx.tree_at(
         lambda task: task.input_dependencies,
         task_base, 
-        {'context': TrialSpecDependency(get_context_input_func(context_input))},
+        {'context': TrialSpecDependency(
+            get_context_input_func(context_input, model_info.n_steps, task_base.n_validation_trials)
+        )},
     )
     for context_input in context_inputs
 })

@@ -177,8 +177,6 @@ Here it seems clearer that training on perturbations induces “hyper-robustness
 This was less obvious to me than with curl fields. 
 
 - The switch to a robust strategy happens at quite low field std, and saturates at stds not much higher. 
-- 
-
 
 ### Distributions of performance measures for PAI
 
@@ -191,7 +189,6 @@ This was less obvious to me than with curl fields.
 > [!NOTE] 
 > Since the PAI model shows "hyperrobust" responses that curve in the opposite direction, perhaps we should use max signed response
 
-
 #### Trained and evaluated on curl fields, 4-step delay
 
 ## Feedback perturbations
@@ -200,6 +197,81 @@ Likewise, show that changing the context input appears to change the feedback ga
 
 ### Aligned trajectories
 
+These are all for impulse magnitude 1.2 (pos) and 0.8 (vel) unless otherwise stated.
+
+#### Trained on constant fields
+##### BCS
+
+###### Position feedback impulse
+
+**Std 0.0**
+![[file-20241201130746349.png]]
+![[file-20241201130806482.png]]
+![[file-20241201130837879.png]]
+![[file-20241201130853965.png]]
+
+**Std 0.04**
+
+![[file-20241201130234175.png]]
+
+![[file-20241201130333581.png]]
+![[file-20241201130423448.png]]
+![[file-20241201130525833.png]]
+###### Velocity feedback impulse
+
+Very similar to the responses for position, except somewhat smaller force magnitudes. 
+
+**Std 0.04**
+![[file-20241201130246189.png]]
+
+##### DAI
+
+###### Position feedback impulse
+
+**Std 0.0**
+
+![[file-20241201132111309.png]]
+The context inputs are slightly more separated here than they were for BCS, but only slightly.
+
+![[file-20241201132142649.png]]
+
+**Std 0.04**
+![[file-20241201132252629.png]]
+The relationship in the orthogonal forces seems more ordered than in BCS, which is probably related to the extremely bounded (i.e. no hyper-robust) performance seen for DAI. Not that context 2 does not oscillate much more than the others.
+
+![[file-20241201132332929.png]]
+The same orderliness is also reflected in the positions:
+![[file-20241201132534688.png]]
+
+These are a lot more similar than they are for BCS. There is higher variance for context -2, but it is not much worse than any of the other context inputs. 
+![[file-20241201132638777.png]]
+
+###### Velocity feedback impulse
+
+**Std 0.04**
+![[file-20241201132307483.png]]
+
+##### PAI 
+
+###### Position feedback impulse
+
+**Std 0**: Interesting that the variances are somewhat higher for the negative context inputs, but that’s probably just because the network never sees them during training so they are driving it outside its stabilized region.
+
+![[file-20241201124337644.png]]
+![[file-20241201124358247.png]]
+**Std 0.04**
+![[file-20241201124623808.png]]
+![[file-20241201124635320.png]]
+![[file-20241201141425369.png]]
+![[file-20241201141440917.png]]
+###### Velocity feedback impulse
+
+These look almost identical to the position impulse plots, except that the forces are a little smaller here.
+
+**Std 0**
+![[file-20241201124901475.png]]
+**Std 0.04**
+![[file-20241201124818087.png]]
 ### Distributions of performance measures
 
 ## Dynamical structure
