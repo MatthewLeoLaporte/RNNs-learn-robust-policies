@@ -4,17 +4,16 @@ updated: 2024-11-13T10:32
 ---
 **See [[results-2|Part 2 results]] for ongoing analysis TODOs.**
 
-- [x] Add constant field aligned trajectory results to [[results-2]]
+- [ ] **Get steady-state Jacobians in 2-4**
+- [ ] **Add [[#Measures|new measures]]**
 - [ ] See how much more robust the baseline model is in part 1, if we **decrease the weight on the control cost**. (Talk to Gunnar about this – it will also affect the time urgency.)
 	- My expectation is that it will of course increase the forces and decrease the movement duration, but that depending on the perturbation this will actually make it *less* robust (e.g. curl fields)
-	- 
 
 ## Analysis
 
-- [ ] For each train std. in the “std” method, there is a certain **context input at which the position profile is closest to a straight reach**. Determine what this context input is. (I’m not sure about error bounds; I guess we would do the optimization for *all* validation trials individually.)
-
 ### Measures
 
+- [ ] For each train std. in the “std” method, there is a certain **context input at which the position profile is closest to a straight reach**. Determine what this context input is. (I’m not sure about error bounds; I guess we would do the optimization for *all* validation trials individually.)
 - [ ] **Covariance between network output and system noise variables**
 - [ ] **Direction of max net force (at start of trial?)**
 

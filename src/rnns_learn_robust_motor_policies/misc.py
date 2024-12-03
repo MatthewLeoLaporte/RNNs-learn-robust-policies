@@ -156,3 +156,13 @@ def log_version_info(
             logger.info(f"{module.__name__} commit: {commit}")
     
     return version_info
+
+
+def round_to_list(xs: Array, n: int = 5):
+    """Rounds floats to a certain number of decimals when casting an array to a list.
+    
+    This is useful when (e.g.) using `jnp.linspace` to get a sequence of numbers which 
+    will be used as keys of a dict, where we want to avoid small floating point variations
+    being present in the keys.
+    """
+    return [round(x, n) for x in xs.tolist()]

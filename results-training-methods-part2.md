@@ -54,8 +54,9 @@ The pattern is similar at context 2, with std-dependent hyperrobust overcorrecti
 ![[file-20241130104333171.png]]
 #### Measure distributions
 
-> [!NOTE]+
-> I haven’t included the train std. 0 violins here because of 
+
+> [!question] 
+> Is the broadening of the distributions seen in human data? (Or theory?)
 
 Note that the variance in max forward velocity increases with train std.
 
@@ -142,6 +143,9 @@ Same with mean position error:
 > The result for `p_perturbed=0.25` is strange, so we review it first, and then proceed to the bulk of the results for `p_perturbed=1.0`.
 
 #### `p_perturbed=0.25`
+
+> [!attention] 
+> Verify that the context input is actually zero on unperturbed trials
 
 Weirdly, the expected trend is totally reversed in this case. At std 0.08 there is still no spread developed,
 ![[file-20241130113736813.png]]

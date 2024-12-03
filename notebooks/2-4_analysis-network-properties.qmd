@@ -8,7 +8,7 @@ execute:
 ---
 
 ```{python}
-NB_ID = "2-3"
+NB_ID = "2-4"
 
 TRAIN_NB_ID = "2-1"
 ```
@@ -17,9 +17,11 @@ TRAIN_NB_ID = "2-1"
 
 Here are some basic analyses of network weights and activities. 
 
-1. Eigendecomposition of the Jacobian matrix at the goal steady-state.
-2. Norm of the readout weights in different training conditions.
-3. Correlation between top PCs and the network output -- this should be related to 2.
+1. Eigendecomposition of the Jacobian matrix at goal steady-states.
+2. Correlation between top PCs and the network output.
+3. Fixed point structures. 
+
+In particular, we want to see how these vary 
 
 ## Environment setup
 
@@ -46,6 +48,7 @@ import jax.tree as jt
 import numpy as np
 import plotly
 import plotly.graph_objects as go
+from sklearn.decomposition import PCA
 
 from feedbax import (
     is_module, 
@@ -58,6 +61,8 @@ from feedbax import (
     tree_take_multi,
     tree_unzip,
 )
+from feedbax.task import SimpleReaches, TrialSpecDependency
+from feedbax.xabdeef.losses import simple_reach_loss
 
 from rnns_learn_robust_motor_policies import PROJECT_SEED
 from rnns_learn_robust_motor_policies.colors import (
@@ -65,8 +70,19 @@ from rnns_learn_robust_motor_policies.colors import (
     MEAN_LIGHTEN_FACTOR,
     get_colors_dicts,
 )
+from rnns_learn_robust_motor_policies.constants import WORKSPACE
 from rnns_learn_robust_motor_policies.database import (
     get_db_session,
+    get_model_record,
+    add_evaluation,
+    add_evaluation_figure,
+    use_record_params_where_none,
+)
+from rnns_learn_robust_motor_policies.fp_finder import (
+    FixedPointFinder,
+    FPFilteredResults,
+    fp_adam_optimizer,
+    take_top_fps,
 )
 from rnns_learn_robust_motor_policies.misc import log_version_info
 from rnns_learn_robust_motor_policies.train_setup_part2 import setup_task_model_pairs
@@ -83,8 +99,13 @@ from rnns_learn_robust_motor_policies.state_utils import (
 from rnns_learn_robust_motor_policies.tree_utils import (
     pp,
     subdict, 
+    take_single_replicate,
 )
-from rnns_learn_robust_motor_policies.types import PertAmpDict, TrainStdDict
+from rnns_learn_robust_motor_policies.types import (
+    ContextInputDict,
+    PertAmpDict, 
+    TrainStdDict,
+)
 ```
 
 Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
@@ -105,11 +126,13 @@ db_session = get_db_session()
 #| tags: [parameters]
 
 # Specify which trained models to load 
-disturbance_type_load: Literal['curl', 'constant'] = 'constant'
+training_methods_load = ['amplitude', 'std']
+disturbance_type_load: Literal['curl', 'constant'] = 'curl'
+disturbance_stds_load = [0.4, 0.8, 1.2]
 feedback_noise_std_load = 0.0
 motor_noise_std_load = 0.0
 feedback_delay_steps = 0
-hidden_size = 50
+hidden_size = 100
 
 # Specify model parameters to use for analysis (None -> use training value)
 # disturbance_type: Optional[Literal['curl', 'constant']] = None
@@ -140,11 +163,14 @@ key_init, key_train, key_eval = jr.split(key, 3)
 ```{python}
 model_info = get_model_record(
     db_session,
+    training_methods=training_methods_load,
     disturbance_type=disturbance_type_load,
+    disturbance_stds=disturbance_stds_load,
     feedback_noise_std=feedback_noise_std_load,
     motor_noise_std=motor_noise_std_load,
     feedback_delay_steps=feedback_delay_steps,
     hidden_size=hidden_size,
+    has_replicate_info=True,
 )
 ```
 
@@ -182,7 +208,7 @@ Depending on how training goes, we might want to leave out some of the training 
 ```{python}
 disturbance_train_stds = model_info.disturbance_stds
 
-models_base = subdict(models_base, disturbance_train_stds)
+models_base = jt.map(lambda d: subdict(d, disturbance_train_stds), models_load, is_leaf=is_type(TrainStdDict))
 ```
 
 ### Optionally exclude replicates that perform much worse than average
@@ -275,9 +301,9 @@ eval_parameters |= dict(
 ```{python}
 eval_info = add_evaluation(
     db_session,
+    origin=NB_ID,
     model_hash=model_info.hash,
     eval_parameters=eval_parameters,
-    origin=NB_ID,
 )
 ```
 
@@ -291,27 +317,264 @@ Violins.
 
 ### By replicate (sanity check)
 
-## Get goal steady-state fixed points
+## Get steady-state fixed points
 
-**TODO**: Vmap this calculation over the different goal positions, as well as over the values of the context input
+These are the "goal-goal" FPs; i.e. the point mass is at the goal, so the network will stabilize on some hidden state that outputs a constant force that does not change the position of the point mass on average.
 
+This contrasts with non-steady-state fixed points, which correspond to network outputs which should cause the point mass to move, and thus the network's feedback input (and thus fixed point) to change.
 
-## Eigendecomposition of goal steady-state Jacobians
-
-**TODO**: We need a value of `h` to calculate these; i.e. we need to input the respective fixed points
+**TODO**
+**TODO**
+**TODO**: Do the analysis for all replicates and all model variants (training stds and methods).
+It's not difficult to map over the PyTree of model variants, however the replicates are a bit more
+complex since `fpfinder` can be vmapped easily enough over candidate `states` for an ensemble, 
+but we can't vmap over an `rnn_func` that is a `Callable` wrapping the batched weights. So we need 
+to have an intermediate function that takes a single model and its candidate states, and constructs 
+the `rnn_func` and runs the FPFinder; then vmap over thise function with `models` and `states`.
+(It could also compute the states itself for the single model, however this would mean using `task.eval`
+inside the function. Can we vmap over `task.eval` when it is inside another function, this way? We
+should be able to...)
 
 ```{python}
-task = get_base_task()
+models = models_base['std'][0.8]
+```
+
+### Define a task where the point mass is already at the goal
+
+This is the same set of tasks (varying by context input) we used for the feedback perturbation analysis, except a bit shorter in duration.
+
+```{python}
+context_inputs = [-2., -1., 0., 1., 2.]
+```
+
+```{python}
+eval_grid_n = 5
+EVAL_N_DIRECTIONS = 1
+EVAL_REACH_LENGTH = 0.0  
+```
+
+```{python}
+# Define the base task
+task = SimpleReaches(
+    loss_func=simple_reach_loss(),
+    workspace=WORKSPACE, 
+    n_steps=model_info.n_steps,
+    eval_grid_n=eval_grid_n,
+    eval_n_directions=EVAL_N_DIRECTIONS,
+    eval_reach_length=EVAL_REACH_LENGTH,  
+)
 ```
 
 ```{python}
 goals_pos = task.validation_trials.targets["mechanics.effector.pos"].value[:, -1]
+```
 
-def get_rnn_func(net):
-    def rnn_func(key, pos, context, h): 
-        return net(jnp.concatenate([pos, pos, context]), h, key=key)
-    return rnn_func 
+```{python}
+def get_context_input_func(x, n_steps, n_trials):
+    return lambda trial_spec, key: (
+        jnp.full((n_trials, n_steps - 1), x, dtype=float)
+    )
+
+all_tasks = ContextInputDict({
+    context_input: eqx.tree_at(
+        lambda task: task.input_dependencies,
+        task, 
+        {
+            'context': TrialSpecDependency(get_context_input_func(
+                context_input, model_info.n_steps, task.n_validation_trials
+            ))
+        },
+    )
+    for context_input in context_inputs
+})
+```
+
+### Evaluate the model on the task, to get candidate hidden states
+
+```{python}
+def evaluate_all_states():
+    return jt.map(
+        lambda task: task.eval_ensemble(models, model_info.n_replicates, key=key_eval),
+        # lambda task: task.eval(model, key=key_eval),
+        all_tasks,
+        is_leaf=is_module,
+    )
+```
+
+```{python}
+all_states_bytes = tree_struct_bytes(eqx.filter_eval_shape(evaluate_all_states))
+
+print(f"\nEstimate {all_states_bytes / 1e9:.2f} GB of memory needed for all states.")
+```
+
+```{python}
+all_states = evaluate_all_states()
+```
+
+### Instantiate the fixed point finder
+
+```{python}
+# Fixed point optimization hyperparameters
+fp_tol = 1e-7  # Used for both fp_tol and opt_stop_tol
+fp_num_batches = 10000         # Total number of batches to train on.
+# fp_batch_size = 128          # How many examples in each batch
+fp_step_size = 0.2          # initial learning rate
+fp_decay_factor = 0.9999     # decay the learning rate this much
+fp_decay_steps = 1           #
+fp_adam_b1 = 0.9             # Adam parameters
+fp_adam_b2 = 0.999
+fp_adam_eps = 1e-5
+fp_opt_print_every = 200   # Print training information during optimziation every so often
+
+# Fixed point finding thresholds and other HPs
+fp_noise_var = 0.0      # Gaussian noise added to fixed point candidates before optimization.
+# fp_opt_stop_tol = 0.00001  # Stop optimizing when the average value of the batch is below this value.
+# fp_tol = 0.00001        # Discard fps with squared speed larger than this value.
+fp_unique_tol = 0.025   # tolerance for determination of identical fixed points
+fp_outlier_tol = 1.0    # Anypoint whos closest fixed point is greater than tol is an outlier.
+```
+
+```{python}
+fp_optimizer = fp_adam_optimizer(
+    learning_rate=fp_step_size, 
+    decay_steps=fp_decay_steps, 
+    decay_rate=fp_decay_factor, 
+    b1=fp_adam_b1, 
+    b2=fp_adam_b2, 
+    eps=fp_adam_eps, 
+)
+
+fpfinder = FixedPointFinder(fp_optimizer)
+
+fpf_func = partial(
+    fpfinder.find_and_filter,
+    outlier_tol=fp_outlier_tol,
+    unique_tol=fp_unique_tol,    
+)
+```
+
+### Find the fixed points
+
+```{python}
+def get_ss_network_input_with_context(pos, context):
+    input_star = jnp.zeros((models.step.net.hidden.input_size,))
+    # Set target and feedback inputs to the same position
+    input_star = input_star.at[1:3].set(pos) 
+    input_star = input_star.at[5:7].set(pos)
+    return input_star.at[0].set(context)
     
+
+def get_rnn_func_at_context(rnn, pos, x):
+    input_star = get_ss_network_input_with_context(pos, x)
+    def rnn_func(h):
+        return rnn(input_star, h, key=key_eval)
+    return rnn_func
+
+def get_rnn_fps(rnn, candidate_states, context):
+    fps = fpf_func(
+        get_rnn_func_at_context(rnn, 0.0, context), 
+        candidate_states, 
+        fp_tol,
+    )
+    return fps
+```
+
+```{python}
+stride = 8
+
+all_fps = ContextInputDict({
+    context_input: eqx.filter_vmap(get_rnn_fps, in_axes=(0, None, None))(
+        models.step.net.hidden,
+        jnp.reshape(
+            all_states[context_input].net.hidden, 
+            (-1, model_info.hidden_size),
+        )[::stride],
+        context_input,
+    )
+    for context_input in context_inputs
+})
+```
+
+How many fixed points meet all criteria? 
+
+```{python}
+n_fps_meeting_criteria = jt.map(
+    lambda fps: fps.counts['meets_all_criteria'], 
+    all_fps, 
+    is_leaf=is_type(FPFilteredResults),
+)
+
+print("\nNumber of fixed points meeting all criteria:")
+eqx.tree_pprint(
+    n_fps_meeting_criteria,
+    short_arrays=False,
+)
+```
+
+Note that *no* points may be found for some replicates, but that's OK.
+
+:::{note}
+More interestingly, sometimes more than one "fixed point" meets all criteria. But typically these are actually the same fixed point, except that due to differences in optimization, some context inputs converged better than others. 
+
+We could try to vary `fp_tol`, or use some kind of adaptive convergence criteria, but instead it is simple enough for now to test if the "different" points are very far from each other, and if not, just average them and keep going. 
+
+First, get the top 5 points for each replicate and context input.
+
+```{python}
+all_top_fps = take_top_fps(all_fps, n_keep=6)
+```
+
+Now get the standard deviation over the top 5, averaged over units.
+
+```{python}
+top_fps_std_mean = jt.map(
+    lambda fps: jnp.nanmean(jnp.nanstd(fps, axis=1), axis=-1),
+    all_top_fps,
+)
+
+print("\nStandard deviation of top 5 fixed points, mean over dimensions (network units):")
+eqx.tree_pprint(top_fps_std_mean, short_arrays=False)
+```
+
+At this point we could exclude replicates based on a threshold for these standard deviation means. However, I've generally found that 
+
+If the above printout of standard deviations has a value larger than about 0.01, this may need to be revisited. Thus, raise an error if that's the case, but otherwise do not worry about it.
+
+```{python}
+threshold = 0.01
+
+all_top_fps_std_mean = jnp.stack(jt.leaves(top_fps_std_mean))
+below_threshold = all_top_fps_std_mean < threshold
+
+assert jnp.all(below_threshold | jnp.isnan(all_top_fps_std_mean)), (
+    "\nStandard deviation between multiple candidate fixed points is high. " 
+    "Consider excluding replicates for which this is true. "
+)
+```
+:::
+
+Find replicates for which a FP was found for every context input.
+
+```{python}
+satisfactory_replicates = jnp.all(jnp.stack(jt.leaves(n_fps_meeting_criteria), axis=0), axis=0)
+
+print("\nReplicates for which a fixed point was found for every context input:")
+eqx.tree_pprint(satisfactory_replicates, short_arrays=False)
+```
+
+Average over the top fixed points, to get a single one for each included replicate and control input.
+
+```{python}
+fps_final = jt.map(
+    lambda fps: jnp.nanmean(fps[satisfactory_replicates], axis=1), 
+    all_top_fps, 
+    is_leaf=is_type(FPFilteredResults),
+)
+```
+
+## Eigendecomposition of goal steady-state Jacobians
+
+```{python}
 jacobian_funcs = jt.map(
     lambda model: jax.jacobian(get_rnn_func(model.step.net)),
     trained_models,

@@ -97,6 +97,7 @@ from rnns_learn_robust_motor_policies.misc import (
     lohi, 
     lomidhi,
     log_version_info,
+    round_to_list,
 )
 from rnns_learn_robust_motor_policies.perturbations import (
     feedback_impulse,
@@ -1319,9 +1320,6 @@ for key in all_measures:
 Pull out impulse amplitudes from arrays into a PyTree level, so that we can use `get_violins` as usual.
 
 ```{python}
-def round_to_list(xs: Array, n: int = 5):
-    return [round(x, n) for x in xs.tolist()]
-
 measures_plot = jt.map(
     lambda d: PertVarDict({
         pert_var: jt.map(

@@ -101,7 +101,11 @@ from rnns_learn_robust_motor_policies.measures import (
     output_corr,
     signed_max,
 )
-from rnns_learn_robust_motor_policies.misc import log_version_info, lohi
+from rnns_learn_robust_motor_policies.misc import (
+    log_version_info, 
+    lohi,
+    round_to_list,
+)
 from rnns_learn_robust_motor_policies.perturbations import (
     feedback_impulse,
 )
@@ -805,7 +809,7 @@ measures_plot = jt.map(
 measures_plot = jt.map(
     lambda d: PertVarDict({
         pert_var: jt.map(
-            lambda arr: PertAmpDict(zip(impulse_amplitudes[pert_var].tolist(), arr)),
+            lambda arr: PertAmpDict(zip(round_to_list(impulse_amplitudes[pert_var]), arr)),
             d[pert_var],
         )
         for pert_var in d
