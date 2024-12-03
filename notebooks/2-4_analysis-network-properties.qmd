@@ -61,6 +61,7 @@ from feedbax import (
     tree_take_multi,
     tree_unzip,
 )
+import feedbax.plotly as fbp
 from feedbax.task import SimpleReaches, TrialSpecDependency
 from feedbax.xabdeef.losses import simple_reach_loss
 
@@ -158,6 +159,14 @@ key = jr.PRNGKey(PROJECT_SEED)
 key_init, key_train, key_eval = jr.split(key, 3)
 ```
 
+### Colors setup
+
+```{python}
+context_input_colors, context_input_colors_dark = get_colors_dicts(
+    context_inputs, COLORSCALES['context_inputs'],
+)
+```
+
 ## Load and adjust trained models
 
 ```{python}
@@ -187,7 +196,7 @@ replicate_info = load(
 ### Modify the system noise if needed
 
 ```{python}
-models_base = jt.map(
+all_models = jt.map(
     partial(
         set_model_noise, 
         noise_stds=dict(
@@ -208,7 +217,7 @@ Depending on how training goes, we might want to leave out some of the training 
 ```{python}
 disturbance_train_stds = model_info.disturbance_stds
 
-models_base = jt.map(lambda d: subdict(d, disturbance_train_stds), models_load, is_leaf=is_type(TrainStdDict))
+all_models = jt.map(lambda d: subdict(d, disturbance_train_stds), models_load, is_leaf=is_type(TrainStdDict))
 ```
 
 ### Optionally exclude replicates that perform much worse than average
@@ -253,17 +262,17 @@ eqx.tree_pprint(jt.map(lambda x: jnp.where(x)[0], included_replicates), short_ar
 Set the indices corresponding to the excluded replicates to NaN in each of the model arrays. This ensures that the shapes of the arrays remain consistent. NaN results will be ignored at plotting time. 
 
 ```{python}
-models_all_replicates = models_base
+models_all_replicates = all_models
 
 if exclude_underperformers:
-    models_base = jt.map(
+    all_models = jt.map(
         lambda models, included: tree_set_scalar(models, jnp.nan, jnp.where(~included)[0]),
-        models_base, included_replicates,
+        all_models, included_replicates,
         is_leaf=is_module,
     )
     n_replicates_included = jt.map(lambda x: jnp.sum(x).item(), included_replicates)
 else:
-    models_base = models_base
+    all_models = all_models
     n_replicates_included = dict.fromkeys(models.keys(), model_info.n_replicates)
 ```
 
@@ -336,16 +345,16 @@ inside the function. Can we vmap over `task.eval` when it is inside another func
 should be able to...)
 
 ```{python}
-models = models_base['std'][0.8]
+models = all_models['std'][0.8]
+```
+
+```{python}
+context_inputs = [-2., -1., 0., 1., 2.]
 ```
 
 ### Define a task where the point mass is already at the goal
 
 This is the same set of tasks (varying by context input) we used for the feedback perturbation analysis, except a bit shorter in duration.
-
-```{python}
-context_inputs = [-2., -1., 0., 1., 2.]
-```
 
 ```{python}
 eval_grid_n = 5
@@ -393,10 +402,15 @@ all_tasks = ContextInputDict({
 
 ```{python}
 def evaluate_all_states():
+    # Normally this should return a TrainStdDict of ContextInputDict of SimpleFeedbackState
     return jt.map(
-        lambda task: task.eval_ensemble(models, model_info.n_replicates, key=key_eval),
-        # lambda task: task.eval(model, key=key_eval),
-        all_tasks,
+        lambda models: jt.map(
+            lambda task: task.eval_ensemble(models, model_info.n_replicates, key=key_eval),
+            # lambda task: task.eval(model, key=key_eval),
+            all_tasks,
+            is_leaf=is_module,
+        ),
+        all_models,
         is_leaf=is_module,
     )
 ```
@@ -453,9 +467,11 @@ fpf_func = partial(
 )
 ```
 
-### Find the fixed points
+### Find the fixed points at the origin's steady state
 
 ```{python}
+POS = 0.0 
+
 def get_ss_network_input_with_context(pos, context):
     input_star = jnp.zeros((models.step.net.hidden.input_size,))
     # Set target and feedback inputs to the same position
@@ -464,35 +480,42 @@ def get_ss_network_input_with_context(pos, context):
     return input_star.at[0].set(context)
     
 
-def get_rnn_func_at_context(rnn, pos, x):
-    input_star = get_ss_network_input_with_context(pos, x)
+def get_rnn_func_at_context(pos, context, rnn):
+    input_star = get_ss_network_input_with_context(pos, context)
     def rnn_func(h):
         return rnn(input_star, h, key=key_eval)
     return rnn_func
 
+
 def get_rnn_fps(rnn, candidate_states, context):
     fps = fpf_func(
-        get_rnn_func_at_context(rnn, 0.0, context), 
+        get_rnn_func_at_context(POS, context, rnn), 
         candidate_states, 
         fp_tol,
     )
     return fps
 ```
 
+**TODO** Collapse the PyTree into batch dims of single model object & state object, and then run them simultaneously? (multi vmap?)
+
 ```{python}
 stride = 8
 
-all_fps = ContextInputDict({
-    context_input: eqx.filter_vmap(get_rnn_fps, in_axes=(0, None, None))(
-        models.step.net.hidden,
-        jnp.reshape(
-            all_states[context_input].net.hidden, 
-            (-1, model_info.hidden_size),
-        )[::stride],
-        context_input,
-    )
-    for context_input in context_inputs
-})
+all_fps = jt.map(
+    lambda models, states_by_context: ContextInputDict({
+        context_input: eqx.filter_vmap(get_rnn_fps, in_axes=(0, None, None))(
+            models.step.net.hidden,
+            jnp.reshape(
+                states_by_context[context_input].net.hidden, 
+                (-1, model_info.hidden_size),
+            )[::stride],
+            context_input,
+        )
+        for context_input in context_inputs
+    }),
+    all_models, all_states,
+    is_leaf=is_module,
+)
 ```
 
 How many fixed points meet all criteria? 
@@ -556,7 +579,14 @@ assert jnp.all(below_threshold | jnp.isnan(all_top_fps_std_mean)), (
 Find replicates for which a FP was found for every context input.
 
 ```{python}
-satisfactory_replicates = jnp.all(jnp.stack(jt.leaves(n_fps_meeting_criteria), axis=0), axis=0)
+satisfactory_replicates = jt.map(
+    lambda n_matching_fps_by_context: jnp.all(
+        jnp.stack(jt.leaves(n_matching_fps_by_context), axis=0), 
+        axis=0,
+    ),
+    n_fps_meeting_criteria,
+    is_leaf=is_type(ContextInputDict),
+)
 
 print("\nReplicates for which a fixed point was found for every context input:")
 eqx.tree_pprint(satisfactory_replicates, short_arrays=False)
@@ -564,33 +594,149 @@ eqx.tree_pprint(satisfactory_replicates, short_arrays=False)
 
 Average over the top fixed points, to get a single one for each included replicate and control input.
 
+NOTE: We aren't actually indexing out `fps[mask]` here, since we want to be able to vmap the replicate dimension here, with that of the models, when calculating the Jacobians. Later, we can exclude replicates from the final results based on `satisfactory_replicates`.
+
 ```{python}
 fps_final = jt.map(
-    lambda fps: jnp.nanmean(fps[satisfactory_replicates], axis=1), 
-    all_top_fps, 
-    is_leaf=is_type(FPFilteredResults),
+    lambda top_fps_by_context, mask: jt.map(
+        lambda fps: jnp.nanmean(fps, axis=1),  
+        top_fps_by_context,
+        is_leaf=is_type(FPFilteredResults),
+    ),
+    all_top_fps, satisfactory_replicates,
+    is_leaf=is_type(ContextInputDict),
 )
 ```
 
-## Eigendecomposition of goal steady-state Jacobians
+### Find the goal-goal and init-goal FPs for a center-out task
+
+**TODO**: Do the structures (e.g. the goal-goal ring) change with the context input? (In principle the fixed points could remain in place, while the local dynamics change.)
+
+## Eigendecomposition of the origin-steady-state Jacobians
+
+Now that we have fixed points (network states) for the steady state at the workspace origin, we can linearize the network around these points.
+
+:::{note}
+Ideally, for each model we want a function that takes a context input and returns a square Jacobian matrix (i.e. from hidden states to hidden states). However, note that we had to compute the fixed points *given* the context input. So for now we will simply calculate a set of Jacobians for the context inputs we *did* evaluate. 
+
+In the future, we may be able to get those functions-of-context by wrapping the fixed point calculation up with the Jacobian calculation, however that might be kind of messy given that the fixed point calculation involves some filtering of candidates. 
+:::
 
 ```{python}
-jacobian_funcs = jt.map(
-    lambda model: jax.jacobian(get_rnn_func(model.step.net)),
-    trained_models,
+def get_rnn_func_at_context_(pos, rnn, context):
+    input_star = get_ss_network_input_with_context(pos, context)
+    def rnn_func(h):
+        return rnn(input_star, h, key=key_eval)
+    return rnn_func
+```
+
+```{python}
+def get_jac_func(func, context):
+    return jax.jacobian(get_rnn_func_at_context_(POS, func, context))
+    
+def get_jacobian(func, context, fp):
+    return get_jac_func(func, context)(fp)
+```
+
+```{python}
+jacobians = jt.map(
+    lambda models, fps_by_context: ContextInputDict({
+        context_input: eqx.filter_vmap(get_jacobian, in_axes=(0, None, 0))(
+            models.step.net.hidden, context_input, fps,
+        )
+        for context_input, fps in fps_by_context.items()
+    }),
+    all_models, fps_final,
     is_leaf=is_module,
 )
 
-jacobians = jt.map(
-    lambda jac_func: eqx.filter_vmap(
-        eqx.filter_vmap(
-            jac_func, 
-            # Map over context inputs
-            in_axes=(None, None, 0, None),
+jacobians_stacked = jt.map(
+    lambda jacobians_by_context: jnp.stack(jt.leaves(jacobians_by_context), axis=0),
+    jacobians,
+    is_leaf=is_type(ContextInputDict),
+)
+```
+
+Perform the eigendecomposition. It's easier to just do this on the CPU since we need non-symmetric decomposition and the matrix is only 100x100 or so.
+
+```{python}
+eig_cpu = jax.jit(lambda *args, **kwargs: tuple(jax.lax.linalg.eig(*args, **kwargs)), device=jax.devices('cpu')[0])
+
+eigvals, eigvecs_l, eigvecs_r = tree_unzip(jt.map(eig_cpu, jacobians_stacked))
+```
+
+Only keep the replicates where the eigenvalues are non-NaN for every context input.
+
+```{python}
+eigvals_valid = jt.map(
+    lambda eigvals: jnp.all(~jnp.isnan(
+        jnp.nanmean(eigvals, axis=-1)
+    ), axis=0), 
+    eigvals,
+)
+```
+
+Sanity check: this should look the same (nearly?) as `satisfactory_replicates`:
+
+```{python}
+eqx.tree_pprint(tree_stack([eigvals_valid, satisfactory_replicates]), short_arrays=False)
+```
+
+```{python}
+eigvals_valid_idxs = jt.map(
+    lambda x: jnp.where(x)[0], eigvals_valid, 
+)
+```
+
+```{python}
+eigvals_final = jt.map(
+    lambda eigvals, idxs: jt.map(lambda vals: vals[:, idxs], eigvals),
+    eigvals, eigvals_valid_idxs,
+    is_leaf=is_type(ContextInputDict),
+)
+```
+
+
+```{python}
+# Note that this is the index into the eigenvalues with the NaN values excluded; 
+# whereas if we want to use the *original* index of the replicates we will have 
+# to index into `eigvals` rather than `eigvals_final`
+i_replicate = 1
+
+from plotly.colors import sample_colorscale
+
+# Construct a boundec colorscale, so plotly will discretize the colorbar
+colors = list(context_input_colors_dark.values())
+colorscale = [
+    [n + j, colors[i]] 
+    for i, n in enumerate(np.linspace(0, 1, len(context_inputs), endpoint=False)) 
+    for j in [0, 1 / len(context_inputs)]
+]
+
+tickvals = [0,1,2,3,4] # np.linspace(0, len(context_inputs) - 1, 2 * len(context_inputs) + 1)[1::2]
+
+def plot_eigvals(eigvals, i_replicate, colorscale='Viridis'):
+    return fbp.plot_eigvals(
+        eigvals[:, i_replicate],
+        colors=np.arange(0, len(context_inputs)).tolist(),
+        colorscale=colorscale,
+        marker_size=4,
+        marker_colorbar=dict(
+            title="Context input",
+            tickvals=tickvals,
+            labelalias=dict(zip(tickvals, [str(x) for x in context_inputs])),
         ),
-        # Map over goal positions
-        in_axes=(None, 0, None, None),
-    ),
-    jacobian_funcs,
+        layout_kws=dict(
+            width=600,
+            height=500,
+        )
+    )
+```
+
+
+```{python}
+eigval_figs = jt.map(
+    lambda eigvals: plot_eigvals(eigvals, i_replicate, colorscale),
+    eigvals_final,
 )
 ```

@@ -4,7 +4,7 @@ updated: 2024-11-13T10:32
 ---
 **See [[results-2|Part 2 results]] for ongoing analysis TODOs.**
 
-- [ ] **Get steady-state Jacobians in 2-4**
+- [x] **Get steady-state Jacobians in 2-4**
 - [ ] **Add [[#Measures|new measures]]**
 - [ ] See how much more robust the baseline model is in part 1, if we **decrease the weight on the control cost**. (Talk to Gunnar about this – it will also affect the time urgency.)
 	- My expectation is that it will of course increase the forces and decrease the movement duration, but that depending on the perturbation this will actually make it *less* robust (e.g. curl fields)
