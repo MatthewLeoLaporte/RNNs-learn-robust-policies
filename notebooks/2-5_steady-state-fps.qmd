@@ -316,37 +316,11 @@ eval_info = add_evaluation(
 )
 ```
 
-## Distributions of model weights
-
-Input-hidden, hidden-hidden, and hidden-output
-
-Violins.
-
-### By training condition
-
-### By replicate (sanity check)
-
 ## Get steady-state fixed points
 
 These are the "goal-goal" FPs; i.e. the point mass is at the goal, so the network will stabilize on some hidden state that outputs a constant force that does not change the position of the point mass on average.
 
 This contrasts with non-steady-state fixed points, which correspond to network outputs which should cause the point mass to move, and thus the network's feedback input (and thus fixed point) to change.
-
-**TODO**
-**TODO**
-**TODO**: Do the analysis for all replicates and all model variants (training stds and methods).
-It's not difficult to map over the PyTree of model variants, however the replicates are a bit more
-complex since `fpfinder` can be vmapped easily enough over candidate `states` for an ensemble, 
-but we can't vmap over an `rnn_func` that is a `Callable` wrapping the batched weights. So we need 
-to have an intermediate function that takes a single model and its candidate states, and constructs 
-the `rnn_func` and runs the FPFinder; then vmap over thise function with `models` and `states`.
-(It could also compute the states itself for the single model, however this would mean using `task.eval`
-inside the function. Can we vmap over `task.eval` when it is inside another function, this way? We
-should be able to...)
-
-```{python}
-models = all_models['std'][0.8]
-```
 
 ```{python}
 context_inputs = [-2., -1., 0., 1., 2.]
@@ -470,7 +444,7 @@ fpf_func = partial(
 ### Find the fixed points at the origin's steady state
 
 ```{python}
-POS = 0.0 
+ORIGIN = 0.0  # Broadcasts because we use at-set assignment
 
 def get_ss_network_input_with_context(pos, context):
     input_star = jnp.zeros((models.step.net.hidden.input_size,))
@@ -480,16 +454,16 @@ def get_ss_network_input_with_context(pos, context):
     return input_star.at[0].set(context)
     
 
-def get_rnn_func_at_context(pos, context, rnn):
+def get_ss_rnn_func_at_context(pos, context, rnn):
     input_star = get_ss_network_input_with_context(pos, context)
     def rnn_func(h):
         return rnn(input_star, h, key=key_eval)
     return rnn_func
 
 
-def get_rnn_fps(rnn, candidate_states, context):
+def get_ss_rnn_fps(pos, rnn, candidate_states, context):
     fps = fpf_func(
-        get_rnn_func_at_context(POS, context, rnn), 
+        get_ss_rnn_func_at_context(pos, context, rnn), 
         candidate_states, 
         fp_tol,
     )
@@ -503,7 +477,10 @@ stride = 8
 
 all_fps = jt.map(
     lambda models, states_by_context: ContextInputDict({
-        context_input: eqx.filter_vmap(get_rnn_fps, in_axes=(0, None, None))(
+        context_input: eqx.filter_vmap(
+            partial(get_ss_rnn_fps, ORIGIN), 
+            in_axes=(0, None, None),
+        )(
             models.step.net.hidden,
             jnp.reshape(
                 states_by_context[context_input].net.hidden, 
@@ -536,16 +513,16 @@ eqx.tree_pprint(
 
 Note that *no* points may be found for some replicates, but that's OK.
 
-:::{note}
-More interestingly, sometimes more than one "fixed point" meets all criteria. But typically these are actually the same fixed point, except that due to differences in optimization, some context inputs converged better than others. 
-
-We could try to vary `fp_tol`, or use some kind of adaptive convergence criteria, but instead it is simple enough for now to test if the "different" points are very far from each other, and if not, just average them and keep going. 
-
-First, get the top 5 points for each replicate and context input.
+Get the top 5 points for each replicate and context input.
 
 ```{python}
 all_top_fps = take_top_fps(all_fps, n_keep=6)
 ```
+
+:::{note}
+More interestingly, sometimes more than one "fixed point" meets all criteria and is included in `all_top_fps`. But typically these are actually the same fixed point, except that due to differences in optimization, some context inputs converged better than others. 
+
+We could try to vary `fp_tol`, or use some kind of adaptive convergence criteria, but instead it is simple enough for now to test if the "different" points are very far from each other, and if not, just average them and keep going. 
 
 Now get the standard deviation over the top 5, averaged over units.
 
@@ -597,7 +574,7 @@ Average over the top fixed points, to get a single one for each included replica
 NOTE: We aren't actually indexing out `fps[mask]` here, since we want to be able to vmap the replicate dimension here, with that of the models, when calculating the Jacobians. Later, we can exclude replicates from the final results based on `satisfactory_replicates`.
 
 ```{python}
-fps_final = jt.map(
+fps_origin = jt.map(
     lambda top_fps_by_context, mask: jt.map(
         lambda fps: jnp.nanmean(fps, axis=1),  
         top_fps_by_context,
@@ -608,19 +585,75 @@ fps_final = jt.map(
 )
 ```
 
-### Find the goal-goal and init-goal FPs for a center-out task
+### Find fixed points at a grid of steady-state positions
 
-**TODO**: Do the structures (e.g. the goal-goal ring) change with the context input? (In principle the fixed points could remain in place, while the local dynamics change.)
+**TODO**: Refactor this into a function
 
-## Eigendecomposition of the origin-steady-state Jacobians
+```{python}
+stride = 8
 
-Now that we have fixed points (network states) for the steady state at the workspace origin, we can linearize the network around these points.
+all_fps = jt.map(
+    lambda models, states_by_context: ContextInputDict({
+        context_input: eqx.filter_vmap(
+            eqx.filter_vmap(
+                get_ss_rnn_fps, 
+                in_axes=(0, None, None, None),  # Over grid positions
+            ),
+            in_axes=(None, 0, None, None),  # Over replicates
+        )(
+            goals_pos,
+            models.step.net.hidden,
+            jnp.reshape(
+                states_by_context[context_input].net.hidden, 
+                (-1, model_info.hidden_size),
+            )[::stride],
+            context_input,
+        )
+        for context_input in context_inputs
+    }),
+    all_models, all_states,
+    is_leaf=is_module,
+)
+
+n_fps_meeting_criteria = jt.map(
+    lambda fps: fps.counts['meets_all_criteria'], 
+    all_fps, 
+    is_leaf=is_type(FPFilteredResults),
+)
+
+satisfactory_replicates = jt.map(
+    lambda n_matching_fps_by_context: jnp.all(
+        jnp.stack(jt.leaves(n_matching_fps_by_context), axis=0), 
+        axis=0,
+    ),
+    n_fps_meeting_criteria,
+    is_leaf=is_type(ContextInputDict),
+)
+
+all_top_fps = take_top_fps(all_fps, n_keep=6)
+
+fps_grid = jt.map(
+    lambda top_fps_by_context, mask: jt.map(
+        lambda fps: jnp.nanmean(fps, axis=-2),  
+        top_fps_by_context,
+        is_leaf=is_type(FPFilteredResults),
+    ),
+    all_top_fps, satisfactory_replicates,
+    is_leaf=is_type(ContextInputDict),
+)
+```
+
+## Eigendecomposition of the steady-state Jacobians
+
+Now that we have fixed points (network states) for the steady states, we can linearize the network around these points.
 
 :::{note}
 Ideally, for each model we want a function that takes a context input and returns a square Jacobian matrix (i.e. from hidden states to hidden states). However, note that we had to compute the fixed points *given* the context input. So for now we will simply calculate a set of Jacobians for the context inputs we *did* evaluate. 
 
 In the future, we may be able to get those functions-of-context by wrapping the fixed point calculation up with the Jacobian calculation, however that might be kind of messy given that the fixed point calculation involves some filtering of candidates. 
 :::
+
+### Linearization at the origin
 
 ```{python}
 def get_rnn_func_at_context_(pos, rnn, context):
@@ -740,3 +773,21 @@ eigval_figs = jt.map(
     eigvals_final,
 )
 ```
+
+### Linearization at a set of grid points
+
+**TODO**: Repeat the last section for the grid steady-state FPs.
+
+## Visualization of steady-state grid FPs
+
+How much do the fixed points vary across workspace positions? 
+
+Is there translation invariance, or at the other extreme, does every steady-state point correspond to a different zero-force fixed point?
+
+## Feedback perturbation at steady-state
+
+Here, the "init-goal" FPs correspond to a steady-state network input where one of the feedback channels has been perturbed. 
+
+In particular, we could ramp up the perturbation from zero, and see how the FP changes, relative to the steady-state one.
+
+**TODO**: We don't need to perturb the task here necessarily -- not even to get the candidate FPs. We can probably use the steady-state FPs as the candidates (perhaps augmented with some jitter to get a batch) and simply ramp the relevant network input and repeat the FP calculation. We can do this on a smaller grid than before, since we want to make sure that there isn't huge variation between FPs but also this variation isn't our primary concern here. 

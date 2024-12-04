@@ -1,0 +1,18 @@
+
+
+In each case, we should look at the following, across context inputs
+
+1. project the fixed points into PC space
+2. examine their Jacobian eigenspectra 
+
+## Center-out reaching
+
+### Find the structure of the steady (goal-goal) FPs
+
+**TODO**: Do the structures (e.g. the goal-goal ring) change with the context input? (In principle the fixed points could remain in place, while the local dynamics change.)
+
+### Find the structure of the initial unsteady (init-goal) FPs
+
+Similarly, see how the structure of the initial fixed points changes
+
+### Find the structure

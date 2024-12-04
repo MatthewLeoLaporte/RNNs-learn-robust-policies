@@ -4,12 +4,34 @@ updated: 2024-11-13T10:32
 ---
 **See [[results-2|Part 2 results]] for ongoing analysis TODOs.**
 
-- [x] **Get steady-state Jacobians in 2-4**
 - [ ] **Add [[#Measures|new measures]]**
 - [ ] See how much more robust the baseline model is in part 1, if we **decrease the weight on the control cost**. (Talk to Gunnar about this – it will also affect the time urgency.)
 	- My expectation is that it will of course increase the forces and decrease the movement duration, but that depending on the perturbation this will actually make it *less* robust (e.g. curl fields)
 
 ## Analysis
+
+### Fixed points
+#### Translation invariance
+
+- [ ] Do fixed points vary with goal position (i.e. target input), or just with the difference between target and feedback inputs?
+	- for example, do the fixed points change if we translate the target and feedback position inputs in the same way?
+	- The “ring” of steady-state (“goal-goal”) FPs for simple reaching suggests this might be the case. 
+- [ ] (In other words?:) Is there only a single steady-state fixed point for each trained network (+context input)?
+	- If not, do all steady-state FPs show the same kinds of behaviour (e.g. increasing context input → more contracting?)
+
+#### FP trajectories
+
+How do the fixed points change over reach/stabilization trajectories? 
+
+- [ ] **How do the init-goal and goal-goal fixed point structures vary with context input?**
+- [ ] **What about the init-goal fixed points for a feedback perturbation (i.e. if we suddenly change the network input)?**
+
+#### Other questions
+
+- [ ] What are the “wing” eigenvalues, e.g. seen for the origin steady-state FP, in DAI+curl?
+	- Note that they seem to be the strongest oscillatory modes
+	- They become larger (i.e. decay more slowly) and higher-frequency with increasing context input 
+	- They become relatively larger and higher-frequency when training on stronger field std.
 
 ### Measures
 
