@@ -68,8 +68,13 @@ The field strength is sampled i.i.d. from a zero-mean normal distribution, and t
 The network receives the value of the uniform sample. Thus it has information about how “on" the field is, i.e. the probability that it will experience a field with std X, versus no field. It does not receive information about the exact strength of the field, on a given trial.
 
 ### Replicates
+#### Exclusion from further analysis based on performance measures
 
-- Exclusion of replicates from further analysis based on performance
+The logic here is that systems like the brain will have much more efficient learning systems, and that we are approximating their efficiency by taking advantage of variance between model initializations.
+
+In other words: we are interested in the kind of performance that is feasible with these kinds of networked controllers, more than the kind of performance that we should expect on average (or in the worst case) given the technical details of network initialization etc.
+
+**For this reason, it may be best just to consider the best-performing replicate in each case, except for supplementary analysis where we should the variation between replicates.**
 
 ### Optimality 
 

@@ -122,6 +122,7 @@ from rnns_learn_robust_motor_policies.tree_utils import (
     subdict,
 )
 from rnns_learn_robust_motor_policies.setup_utils import (
+    query_and_load_models,
     set_model_noise,
     setup_models_only,
 )
@@ -233,110 +234,33 @@ plotly_vscode_latex_fix()
 ## Load and adjust trained models
 
 ```{python}
-model_info = get_model_record(
+models_base, model_info, replicate_info, n_replicates_included = query_and_load_models(
     db_session,
-    origin=TRAIN_NB_ID,
-    disturbance_type=disturbance_type_load,
-    disturbance_stds=disturbance_stds_load,
-    feedback_noise_std=feedback_noise_std_load,
-    motor_noise_std=motor_noise_std_load,
-    feedback_delay_steps=feedback_delay_steps_load,
-    hidden_size=hidden_size,
-    readout_norm_loss_weight=readout_norm_loss_weight,
-    readout_norm_value=readout_norm_value,
-    has_replicate_info=1,
-    #! Temporary
-    # where_train_strs=where_train_strs,
-    intervention_scaleup_batches=[0,0],
-    state_reset_iterations=[],
-)
-```
-
-```{python}
-models_load: TrainStdDict[float, eqx.Module] = load(
-    model_info.path, partial(setup_models_only, setup_task_model_pairs),
-)
-
-replicate_info = load(
-    model_info.replicate_info_path, partial(setup_replicate_info, models_load),
-)
-```
-
-### Modify the system noise if needed
-
-```{python}
-models_base = jt.map(
-    partial(
-        set_model_noise, 
-        noise_stds=dict(
-            feedback=feedback_noise_std,
-            motor=motor_noise_std,
-        ),
-        enable_noise=True,
+    params_query=dict(
+        origin=TRAIN_NB_ID,
+        disturbance_type=disturbance_type_load,
+        disturbance_stds=disturbance_stds_load,
+        feedback_noise_std=feedback_noise_std_load,
+        motor_noise_std=motor_noise_std_load,
+        feedback_delay_steps=feedback_delay_steps_load,
+        hidden_size=hidden_size,
+        readout_norm_loss_weight=readout_norm_loss_weight,
+        readout_norm_value=readout_norm_value,
+        intervention_scaleup_batches=[0,0],
+        state_reset_iterations=[],
     ),
-    models_load,
-    is_leaf=is_module,
+    noise_stds=dict(
+        feedback=feedback_noise_std,
+        motor=motor_noise_std,
+    ),
+    tree_inclusions={
+        TrainStdDict: None,
+    },
+    exclude_underperformers_by="best_total_loss",
 )
 ```
 
-### Optionally exclude replicates that perform much worse than average
-
-```{python}
-exclude_underperformers = True
-```
-
-```{python}
-measure_to_exclude_by = 'best_total_loss'
-
-included_replicates = replicate_info['included_replicates'][measure_to_exclude_by]
-best_replicate = replicate_info['best_replicates'][measure_to_exclude_by]
-
-def take_replicate_or_best(tree: TrainStdDict, i_replicate=None, replicate_axis=1):
-    if i_replicate is None:
-        return TrainStdDict({
-            train_std: tree_take(subtree, best_replicate[train_std], replicate_axis)
-            for train_std, subtree in tree.items()
-        })
-    else:
-        return tree_take_multi(tree, [i_replicate], [replicate_axis])
-```
-
-Which replicates are included?
-
-```{python}
-print("\nReplicates included in analysis for each training condition:")
-eqx.tree_pprint(included_replicates, short_arrays=False)
-```
-
-Set the indices corresponding to the excluded replicates to NaN in each of the model arrays. This ensures that the shapes of the arrays remain consistent. NaN results will be ignored at plotting time. 
-
-```{python}
-models_all = models_base
-
-if exclude_underperformers:
-    models_base = jt.map(
-        lambda models, included: tree_set_scalar(models, jnp.nan, jnp.where(~included)[0]),
-        models_base, included_replicates,
-        is_leaf=is_module,
-    )
-    n_replicates_included = jt.map(lambda x: jnp.sum(x).item(), included_replicates)
-else:
-    models_base = models_base
-    n_replicates_included = dict.fromkeys(models.keys(), model_info.n_replicates)
-```
-
-### Optionally select a subset of training conditions
-
-Depending on how training goes, we might want to leave out some of the training conditions (i.e. training disturbance stds) from the analysis.
-
-```{python}
-# exclude the highest disturbance std (2.0), since the policy started to be unstable
-disturbance_train_stds = model_info.disturbance_stds#[:-1]
-
-models_base = subdict(models_base, disturbance_train_stds)
-```
-
-## Sort out the evaluation parameters
+## Sort out the evaluation parameters and create a database record
 
 We will either be evaluating on specific disturbance types and noise conditions, or if none are specified here,
 keeping the same conditions used during training.

@@ -46,6 +46,7 @@ from rnns_learn_robust_motor_policies.setup_utils import (
     setup_train_histories,
     setup_models_only,
     setup_tasks_only,
+    setup_replicate_info,
 )
 from rnns_learn_robust_motor_policies.state_utils import (
     get_aligned_vars,
@@ -181,9 +182,6 @@ def get_measures_to_rate(models, tasks):
     return dict(
         end_pos_error=mean_end_pos_errors,
     )
-    
-
-MEASURES_TO_RATE = ('end_pos_error',)
 
 
 def _get_most_recent_idxs(idxs: Sequence[int], max_idx: int) -> Any:
@@ -498,37 +496,6 @@ def compute_replicate_info(
     
     return replicate_info, best_models
     
-    
-def setup_replicate_info(models, n_replicates, *, key):
-    """Returns a skeleton PyTree for loading the replicate info"""
-    
-    def models_tree_with_value(value):
-        return jt.map(
-            lambda _: value,
-            models,
-            is_leaf=is_module,
-        )
-        
-    def get_measure_dict(value): 
-        return dict.fromkeys(
-            ("best_total_loss",) + MEASURES_TO_RATE,
-            models_tree_with_value(value),
-        )
-    
-    # For each piece of replicate info, we need a PyTree with the same structure as the model PyTree
-    return {
-        info_label: models_tree_with_value(value)
-        for info_label, value in dict(
-            best_save_idx=jnp.zeros(n_replicates, dtype=int),
-            best_saved_iteration_by_replicate=[0] * n_replicates,
-            losses_at_best_saved_iteration=jnp.zeros(n_replicates, dtype=float),
-            losses_at_final_saved_iteration=jnp.zeros(n_replicates, dtype=float),
-            readout_norm=jnp.zeros(n_replicates, dtype=float),
-        ).items()
-    } | dict(
-        best_replicates=get_measure_dict(0),
-        included_replicates=get_measure_dict(jnp.ones(n_replicates, dtype=bool)),
-    )
 
 def process_model_record(
     session: Session,

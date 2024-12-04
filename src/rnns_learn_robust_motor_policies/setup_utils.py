@@ -1,6 +1,8 @@
+from collections.abc import Callable, Sequence
+from functools import partial
 from pathlib import Path
 import time
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 import fnmatch
 import html
 import json 
@@ -13,7 +15,14 @@ from IPython.display import display
 import jax.numpy as jnp
 import jax.tree as jt
 
-from feedbax import is_type, is_module
+from feedbax import (
+    is_type, 
+    is_module, 
+    load, 
+    tree_set_scalar,
+    tree_take, 
+    tree_take_multi,
+)
 from feedbax.loss import AbstractLoss, ModelLoss
 from feedbax.misc import attr_str_tree_to_where_func
 from feedbax.noise import Multiplicative, Normal
@@ -27,6 +36,13 @@ from rnns_learn_robust_motor_policies.constants import (
     TASK_EVAL_PARAMS,
     N_STEPS,
     WORKSPACE,
+)
+from rnns_learn_robust_motor_policies.database import (
+    get_model_record,
+)
+from rnns_learn_robust_motor_policies.tree_utils import subdict
+from rnns_learn_robust_motor_policies.types import (
+    TrainStdDict,
 )
 
 
@@ -300,5 +316,161 @@ def convert_tasks_to_small(tasks):
         tasks,
         is_leaf=is_module,
     )
+
+
+# When excluding models based on performance measures aside from loss, these are the ones we'll consider
+MEASURES_TO_RATE = ('end_pos_error',)
+
+
+def setup_replicate_info(models, n_replicates, *, key):
+    """Returns a skeleton PyTree for loading the replicate info"""
     
+    def models_tree_with_value(value):
+        return jt.map(
+            lambda _: value,
+            models,
+            is_leaf=is_module,
+        )
+        
+    def get_measure_dict(value): 
+        return dict.fromkeys(
+            ("best_total_loss",) + MEASURES_TO_RATE,
+            models_tree_with_value(value),
+        )
+    
+    # For each piece of replicate info, we need a PyTree with the same structure as the model PyTree
+    return {
+        info_label: models_tree_with_value(value)
+        for info_label, value in dict(
+            best_save_idx=jnp.zeros(n_replicates, dtype=int),
+            best_saved_iteration_by_replicate=[0] * n_replicates,
+            losses_at_best_saved_iteration=jnp.zeros(n_replicates, dtype=float),
+            losses_at_final_saved_iteration=jnp.zeros(n_replicates, dtype=float),
+            readout_norm=jnp.zeros(n_replicates, dtype=float),
+        ).items()
+    } | dict(
+        best_replicates=get_measure_dict(0),
+        included_replicates=get_measure_dict(jnp.ones(n_replicates, dtype=bool)),
+    )
+
+    
+def query_and_load_models(
+    db_session,
+    setup_task_model_pairs: Callable,
+    params_query: dict[str, Any],
+    noise_stds: Optional[dict[Literal['feedback', 'motor'], Optional[float]]] = None,
+    tree_inclusions: Optional[dict[type, Optional[Any | Sequence | Callable]]] = None,
+    exclude_underperformers_by: Optional[str] = None,
+):
+    """Query the models table in the project database and return the loaded and processed models.
+    
+    Arguments:
+        db_session: The SQLAlchemy database session
+        setup_task_model_pairs: The function used to setup the task-model PyTree for this 
+            part of the project.
+        params_load: The parameters used to query the records of the model table of the database. 
+            If more than one record matches, an error is raised.  
+        tree_inclusions: Optionally, rules by which to include parts of dict nodes in the loaded 
+            PyTree of models. Each rule's key is a dict node type in the PyTree, e.g. `TrainStdDict`, 
+            and the respective values are the node key(s) which should be kept, or a callable that 
+            returns true for the keys to be kept. If `None`, all nodes are kept as-is.
+        exclude_underperformers_by: An optional key of a performance measure evaluated in 
+            `post_training` by which to exclude model replicates. Excluded replicates will have 
+            their parameters replaced with NaN in the arrays of the returned PyTree.
+            
+    Returns:
+        models: The PyTree of models
+        model_info: The object mapping to the models' database record
+        replicate_info: A dict of information about the model replicates
+        n_replicates_included: The number of replicates not excluded (made NaN) in the arrays of 
+            the models PyTree
+    """
+    
+    model_info = get_model_record(
+        db_session,
+        has_replicate_info=True,
+        **params_query,
+    )
+    
+    if model_info is None:
+        raise ValueError('No model with given parameters found in database!')
+    
+    assert model_info.replicate_info_path is not None, (
+        "Model record's replicate_info_path is None, but has_replicate_info==True"
+    )
+    
+    models: TrainStdDict[float, eqx.Module] = load(
+        model_info.path, partial(setup_models_only, setup_task_model_pairs),
+    )
+
+    replicate_info = load(
+        model_info.replicate_info_path, partial(setup_replicate_info, models),
+    )
+    
+    n_replicates_included = model_info.n_replicates
+    
+    if noise_stds is not None:
+        models = jt.map(
+            partial(
+                set_model_noise, 
+                noise_stds=noise_stds,
+                enable_noise=True,
+            ),
+            models,
+            is_leaf=is_module,
+        )
+    
+    if tree_inclusions is not None:
+        for dict_type, inclusion in tree_inclusions.items():
+            if inclusion is not None:
+                
+                replace_func = lambda d, inclusion: subdict(d, inclusion)
+                
+                if isinstance(inclusion, Callable):
+                    # Callables always result in sequence-like inclusions
+                    inclusion = [
+                        x for x in model_info.inclusion if all(inclusion(x))
+                    ]
+                elif not isinstance(inclusion, Sequence):
+                    # If not a Callable and not a Sequence, then assume we've 
+                    # been given a single key to include
+                    replace_func = lambda d, inclusion: d[inclusion]
+                
+                models, replicate_info = jt.map(
+                    lambda d: replace_func(d, inclusion), 
+                    (models, replicate_info),
+                    is_leaf=is_type(dict_type),
+                )
+        
+    if exclude_underperformers_by is not None:
+        included_replicates = replicate_info['included_replicates'][exclude_underperformers_by]
+        best_replicate = replicate_info['best_replicates'][exclude_underperformers_by]
+
+        def take_replicate_or_best(tree: TrainStdDict, i_replicate=None, replicate_axis=1):
+            if i_replicate is None:
+                map_func = lambda tree: TrainStdDict({
+                    train_std: tree_take(subtree, best_replicate[train_std], replicate_axis)
+                    for train_std, subtree in tree.items()
+                })
+            else:
+                map_func = lambda tree: tree_take_multi(tree, [i_replicate], [replicate_axis])
+                
+            return jt.map(map_func, tree, is_leaf=is_type(TrainStdDict))
+        
+        models = jt.map(
+            lambda models, included: tree_set_scalar(models, jnp.nan, jnp.where(~included)[0]),
+            models, 
+            included_replicates,
+            is_leaf=is_module,
+        )
+        
+        # print("\nReplicates included in analysis for each training condition:")
+        # eqx.tree_pprint(jt.map(lambda x: jnp.where(x)[0], included_replicates), short_arrays=False)
+    
+        n_replicates_included = jt.map(lambda x: jnp.sum(x).item(), included_replicates)
+        
+        if any(n < 1 for n in jt.leaves(n_replicates_included)):
+            raise ValueError("No replicates met inclusion criteria for at least one model variant")
+    
+    return models, model_info, replicate_info, n_replicates_included
     

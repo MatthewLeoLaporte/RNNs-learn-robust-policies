@@ -25,29 +25,39 @@ K = TypeVar('K')
 V = TypeVar('V')
 
 
-class TrainStdDict(Dict[K, V], Generic[K, V]):
+class CustomDict(Dict[K, V], Generic[K, V]):
     def __repr__(self):
-        return f"TrainStdDict({dict.__repr__(self)})"
-    
-    
-class PertAmpDict(Dict[K, V], Generic[K, V]):
-    def __repr__(self):
-        return f"PertAmpDict({dict.__repr__(self)})"
+        return f"{self.__class__.__name__}({dict.__repr__(self)})"
 
-
-class PertVarDict(Dict[K, V], Generic[K, V]):
-    def __repr__(self):
-        return f"PertVarDict({dict.__repr__(self)})"
+    # In principle we could check if self and other are instances of two 
+    # different custom dict classes, and return a plain dict in that case.
+    # However I foresee no reason at this point we should want to mix
+    # different custom types, so I'll keep this simple.
+    def __or__(self, other):
+        return type(self)({**self, **other})
     
-    
-class ContextInputDict(Dict[K, V], Generic[K, V]):
-    def __repr__(self):
-        return f"ContextInputDict({dict.__repr__(self)})"
+    def __ror__(self, other):
+        return type(self)({**other, **self})
     
 
-class TrainingMethodDict(Dict[K, V], Generic[K, V]):
-    def __repr__(self):
-        return f"TrainingMethodDict({dict.__repr__(self)})"    
+class TrainStdDict(CustomDict[K, V], Generic[K, V]):
+    ...
+
+
+class PertAmpDict(CustomDict[K, V], Generic[K, V]):
+    ...
+
+
+class PertVarDict(CustomDict[K, V], Generic[K, V]):
+    ...
+
+
+class ContextInputDict(CustomDict[K, V], Generic[K, V]):
+    ...
+
+
+class TrainingMethodDict(CustomDict[K, V], Generic[K, V]):
+    ...
 
 
 def _dict_flatten_with_keys(obj):
