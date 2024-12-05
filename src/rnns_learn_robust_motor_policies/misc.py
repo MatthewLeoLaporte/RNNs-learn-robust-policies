@@ -4,7 +4,6 @@ import json
 import logging
 from pathlib import Path
 import platform
-from rich.logging import RichHandler
 import subprocess
 from types import ModuleType
 from typing import Optional
@@ -14,6 +13,9 @@ import jax.numpy as jnp
 import jax.random as jr 
 import jax.tree as jt
 from jaxtyping import Array
+import numpy as np
+import pandas as pd
+from rich.logging import RichHandler
 import yaml
 
 from feedbax.misc import git_commit_id
@@ -166,3 +168,31 @@ def round_to_list(xs: Array, n: int = 5):
     being present in the keys.
     """
     return [round(x, n) for x in xs.tolist()]
+
+
+def create_arr_df(arr, col_names=None):   
+    """Convert a numpy/JAX array into a dataframe of values, with additional columns
+    giving the indices of the values in the array.
+    
+    If the array has complex dtype, split the real and imaginary components
+    into separate columns.
+    """
+    if col_names is None:
+        col_names = [f'dim_{i}' for i in range(len(arr.shape))]
+    
+    # Get all indices including the eigenvalue dimension
+    indices = np.indices(arr.shape)
+    
+    if np.iscomplexobj(arr):
+        data_cols = {'real': arr.real.flatten(), 'imag': arr.imag.flatten()}
+    else:
+        data_cols = {'value': arr.flatten()}
+    
+    # Create the base dataframe
+    df = pd.DataFrame(data_cols)
+    
+    # Add all dimension indices
+    for i, idx_array in enumerate(indices):
+        df[col_names[i]] = idx_array.flatten()
+    
+    return df

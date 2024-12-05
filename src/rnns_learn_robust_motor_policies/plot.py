@@ -7,6 +7,7 @@ import jax.numpy as jnp
 import jax.tree as jt 
 from jaxtyping import Array, Bool, Float 
 import numpy as np
+import plotly.express as px
 import plotly.graph_objects as go
 
 from rnns_learn_robust_motor_policies.plot_utils import (
@@ -258,3 +259,48 @@ def get_measure_replicate_comparisons(
     
     return fig
     
+
+
+def plot_eigvals_df(df, marginals='box', trace_kws=None, layout_kws=None, **kwargs):
+    fig = px.scatter(
+        df,
+        x='real',
+        y='imag',
+        marginal_x=marginals,
+        marginal_y=marginals,
+        **kwargs,
+    )
+
+    fig.update_layout(
+        yaxis=dict(scaleanchor="x", scaleratio=1),
+        width=600,
+        height=500,
+    )
+    fig.add_shape(
+        type='circle',
+        xref='x', yref='y',
+        x0=-1, y0=-1, x1=1, y1=1,
+        line_color='black',
+    )
+    fig.add_trace(go.Scatter(
+        x=[-1, 1], y=[0, 0],
+        mode='lines',
+        line_dash='dot',
+        line_color='grey',
+        showlegend=False,
+    ))
+    fig.add_trace(go.Scatter(
+        x=[0, 0], y=[-1, 1],
+        mode='lines',
+        line_dash='dot',
+        line_color='grey',
+        showlegend=False,
+    ))
+    
+    if trace_kws is not None:
+        fig.update_traces(**trace_kws)
+        
+    if layout_kws is not None:
+        fig.update_layout(**layout_kws)
+    
+    return fig
