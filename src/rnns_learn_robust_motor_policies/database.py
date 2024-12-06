@@ -47,7 +47,7 @@ from sqlalchemy.sql.type_api import TypeEngine
 from feedbax import is_type, save, tree_zip
 from feedbax._io import arrays_to_lists
 from feedbax._tree import (
-    everyf,
+    allf,
     is_not_type,
     make_named_dict_subclass,
     make_named_tuple_subclass,
@@ -789,7 +789,7 @@ def records_to_dict(records: list[Base], collapse_constant: bool = True) -> dict
     """Zips multiple records into a single dict."""
     records_dict = tree_zip(
         *[record_to_dict(r) for r in records], 
-        is_leaf=everyf(is_type(dict, list), is_not_type(RecordDict)),
+        is_leaf=allf(is_type(dict, list), is_not_type(RecordDict)),
         zip_cls=ColumnTuple,
     )
     if collapse_constant:

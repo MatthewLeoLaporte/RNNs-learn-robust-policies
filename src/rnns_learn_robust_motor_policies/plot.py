@@ -9,6 +9,7 @@ from jaxtyping import Array, Bool, Float
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+from sklearn.decomposition import PCA
 
 from rnns_learn_robust_motor_policies.plot_utils import (
     add_context_annotation,
@@ -280,7 +281,12 @@ def plot_eigvals_df(df, marginals='box', trace_kws=None, layout_kws=None, **kwar
         type='circle',
         xref='x', yref='y',
         x0=-1, y0=-1, x1=1, y1=1,
-        line_color='black',
+        fillcolor='white',
+        layer='below',
+        line=dict(
+            color='black',
+            width=2,
+        ),
     )
     fig.add_trace(go.Scatter(
         x=[-1, 1], y=[0, 0],
@@ -302,5 +308,136 @@ def plot_eigvals_df(df, marginals='box', trace_kws=None, layout_kws=None, **kwar
         
     if layout_kws is not None:
         fig.update_layout(**layout_kws)
+    
+    return fig
+
+
+# def plot_fp_loss(all_fps, fp_loss_func, n_bins=50):
+#     fp_tols = list(all_fps.keys())
+    
+#     f1, ax = plt.subplots(figsize=(12, 6))
+#     for tol in fp_tols: 
+#         ax.semilogy(all_fps[tol]['losses']); 
+#         ax.set_xlabel('Fixed point #')
+#         ax.set_ylabel('Fixed point loss');
+#     f1.legend(fp_tols)
+#     ax.set_title('Fixed point loss by fixed point (sorted) and stop tolerance')
+
+#     f2, axs = plt.subplots(1, len(fp_tols), figsize=(12,4))
+    
+#     for i, tol in enumerate(fp_tols):
+#         axs[i].hist(np.log10(fp_loss_func(all_fps[tol]['fps'])), n_bins)
+#         axs[i].set_xlabel('log10(FP loss)')
+#         axs[i].set_title('Tolerance: ' + str(tol))
+    
+#     return f1, f2 
+
+
+def plot_fp_pcs(
+    fps_pc: Float[Array, "condition *fp pc"], 
+    colors: str | Sequence[str] | None = None, 
+    candidates_alpha: float = 0.05, 
+    marker_size: int = 3, 
+    marker_symbol: str = 'circle',
+    #! Is this why we can't plot all the FPs in nb6?
+    n_plot_max: int = 1000, 
+    candidates_pc: Optional[Float[Array, "candidate pc"]] = None, 
+    label: str = 'Fixed points',
+    fig: Optional[go.Figure] = None,
+) -> go.Figure:
+    if candidates_pc is not None:
+        emax = candidates_pc.shape[0] if candidates_pc.shape[0] < n_plot_max else n_plot_max
+    else:
+        emax = n_plot_max
+
+    n_fps_per_condition = np.prod(fps_pc.shape[:-1])
+    fps_flat_pc = np.reshape(fps_pc, (-1, fps_pc.shape[-1]))
+    
+    if isinstance(colors, Sequence):
+        colors = np.repeat(colors, n_fps_per_condition)
+    
+    if fig is None:
+        fig = go.Figure(
+            layout=dict(
+                width=1000, 
+                height=1000,
+                # title='Fixed point structure and fixed point candidate starting points',
+                scene=dict(
+                    xaxis_title='PC1',
+                    yaxis_title='PC2',
+                    zaxis_title='PC3',
+                ),
+            )
+        )
+    
+    if fig is not None:  
+        fig.add_trace(
+            go.Scatter3d(
+                    x=fps_flat_pc[0:emax, 0], 
+                    y=fps_flat_pc[0:emax, 1], 
+                    z=fps_flat_pc[0:emax, 2], 
+                    mode='markers',
+                    marker_color=colors,
+                    marker_colorscale='phase',
+                    marker_size=marker_size,
+                    marker_symbol=marker_symbol,
+                    name=label,
+            ),
+        )
+        
+        if candidates_pc is not None:        
+            fig.add_traces(
+                [
+                    go.Scatter3d(
+                        x=candidates_pc[0:emax, 0], 
+                        y=candidates_pc[0:emax, 1], 
+                        z=candidates_pc[0:emax, 2],
+                        mode='markers',
+                        marker_size=marker_size,
+                        marker_color=f'rgba(0,0,0,{candidates_alpha})',
+                        marker_symbol='circle-open',
+                        marker_line_width=2,
+                        marker_line_color=f'rgba(0,0,0,{candidates_alpha})',
+                        name=f'Candidates{label}',
+                    ),
+                ]
+            )
+            
+            # Lines connecting candidates to respective FPs
+            fig.add_traces(
+                [
+                    go.Scatter3d(
+                        x=[candidates_pc[eidx, 0], fps_flat_pc[eidx, 0]], 
+                        y=[candidates_pc[eidx, 1], fps_flat_pc[eidx, 1]],
+                        z=[candidates_pc[eidx, 2], fps_flat_pc[eidx, 2]], 
+                        mode='lines',
+                        line_color=f'rgba(0,0,0,{candidates_alpha})',
+                        showlegend=False,
+                    )
+                    for eidx in range(emax)
+                ]
+            )
+
+    return fig
+
+
+def plot_traj_and_fp_pcs_3D(
+    trajs: Float[Array, "trial time state"], 
+    fps: Float[Array, "fp state"], 
+    pca: PCA,  # transforms from "state" -> "3"
+    colors: str | Sequence[str] | None = None, 
+    colors_fps: str | Sequence[str] | None = None, 
+    fig: Optional[go.Figure] = None,
+):
+    if fig is None:
+        fig = go.Figure(layout=dict(width=1000, height=1000))
+    if colors_fps is None:
+        colors_fps = colors
+    
+    fig = plot_fp_pcs(fps, pca, colors_fps, fig=fig)
+    trajs_pcs = pca.transform(
+        np.array(trajs).reshape(-1, trajs.shape[-1])
+    ).reshape(*trajs.shape[:-1], pca.n_components)  # type: ignore
+    fig = fbp.plot_traj_3D(trajs_pcs, colors=colors, fig=fig)
     
     return fig

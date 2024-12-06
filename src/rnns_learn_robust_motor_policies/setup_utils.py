@@ -23,12 +23,17 @@ from feedbax import (
     tree_take, 
     tree_take_multi,
 )
+from feedbax.intervene import AbstractIntervenor
 from feedbax.loss import AbstractLoss, ModelLoss
 from feedbax.misc import attr_str_tree_to_where_func
 from feedbax.noise import Multiplicative, Normal
 from feedbax.task import SimpleReaches
 from feedbax.train import TaskTrainerHistory, init_task_trainer_history
-from feedbax._tree import tree_zip_named, tree_unzip
+from feedbax._tree import (
+    apply_to_filtered_leaves, 
+    tree_zip_named, 
+    tree_unzip,
+)
 from feedbax.xabdeef.losses import simple_reach_loss
 
 from rnns_learn_robust_motor_policies import MODELS_DIR
@@ -361,6 +366,7 @@ def query_and_load_models(
     noise_stds: Optional[dict[Literal['feedback', 'motor'], Optional[float]]] = None,
     tree_inclusions: Optional[dict[type, Optional[Any | Sequence | Callable]]] = None,
     exclude_underperformers_by: Optional[str] = None,
+    exclude_method: Literal['nan', 'remove'] = 'nan',
 ):
     """Query the models table in the project database and return the loaded and processed models.
     
@@ -377,7 +383,9 @@ def query_and_load_models(
         exclude_underperformers_by: An optional key of a performance measure evaluated in 
             `post_training` by which to exclude model replicates. Excluded replicates will have 
             their parameters replaced with NaN in the arrays of the returned PyTree.
-            
+        exclude_method: Whether to index-out the included replicates ('remove') or replace their 
+            model parameters with NaN ('nan').
+        
     Returns:
         models: The PyTree of models
         model_info: The object mapping to the models' database record
@@ -385,6 +393,7 @@ def query_and_load_models(
         n_replicates_included: The number of replicates not excluded (made NaN) in the arrays of 
             the models PyTree
     """
+    exclude_method = exclude_method.lower()
     
     model_info = get_model_record(
         db_session,
@@ -457,8 +466,19 @@ def query_and_load_models(
                 
             return jt.map(map_func, tree, is_leaf=is_type(TrainStdDict))
         
+        if exclude_method == 'nan':
+            def include_func(models, included): 
+                return tree_set_scalar(models, jnp.nan, jnp.where(~included)[0])
+        elif exclude_method == 'remove':
+            def include_func(models, included): 
+                take = apply_to_filtered_leaves(
+                    lambda x: not is_type(AbstractIntervenor)(x), 
+                    is_leaf=is_type(AbstractIntervenor),
+                )(tree_take)
+                return take(models, jnp.where(included)[0])
+        
         models = jt.map(
-            lambda models, included: tree_set_scalar(models, jnp.nan, jnp.where(~included)[0]),
+            include_func,
             models, 
             included_replicates,
             is_leaf=is_module,

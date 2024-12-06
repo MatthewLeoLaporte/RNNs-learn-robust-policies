@@ -10,14 +10,21 @@ updated: 2024-11-13T10:32
 
 ## Analysis
 
+- [x] Distributions of eigenvalues per context input — do they vary across grid points?
+- [x] PCA of steady-state FPs
+- [x] Plot the readout vector in PC plots
+- [ ] Reaching FPs – just like what I did previously, but vmapped over context inputs
+
 ### Fixed points
 #### Translation invariance
 
-- [ ] Do fixed points vary with goal position (i.e. target input), or just with the difference between target and feedback inputs?
+- [x] Do fixed points vary with goal position (i.e. target input), or just with the difference between target and feedback inputs?
 	- for example, do the fixed points change if we translate the target and feedback position inputs in the same way?
 	- The “ring” of steady-state (“goal-goal”) FPs for simple reaching suggests this might be the case. 
-- [ ] (In other words?:) Is there only a single steady-state fixed point for each trained network (+context input)?
+	- **They do vary. The grid of steady-state FPS form a planar grid** in the space of the top three PCs. As context input changes, this grid translates along an ~orthogonal direction. **Should plot the readout vector** and see if the direction of translation is roughly aligned with it, which would make sense. 
+- [ ] ~~(In other words?:) Is there only a single steady-state fixed point for each trained network (+context input)?~~
 	- If not, do all steady-state FPs show the same kinds of behaviour (e.g. increasing context input → more contracting?)
+	- **Based on the eigenspectra**, the steady-state grid FPs are approximately similar in their dynamical properties. There appears to be significantly more variation between context inputs, than between positions. If we zoom in on a particular eigenvalue, it appears to shift its position in tiny ~grids reflecting the change in position.
 
 #### FP trajectories
 

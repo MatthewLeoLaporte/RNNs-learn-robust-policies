@@ -7,7 +7,7 @@ from jaxtyping import PyTree
 import plotly.graph_objects as go
 
 from feedbax import is_module, tree_take
-from feedbax._tree import eitherf, is_type
+from feedbax._tree import anyf, is_type
 from feedbax.intervene import AbstractIntervenor
 
 
@@ -38,7 +38,7 @@ def subset_dict_tree_level(tree: PyTree[dict[T, Any]], keys: Sequence[T], dict_t
 
 def pp(tree):
     """Pretty-prints PyTrees, truncating objects commonly treated as leaves during data analysis."""
-    eqx.tree_pprint(tree, truncate_leaf=eitherf(is_module, is_type(go.Figure)))
+    eqx.tree_pprint(tree, truncate_leaf=anyf(is_module, is_type(go.Figure)))
 
 
 def take_single_replicate(models, i):
