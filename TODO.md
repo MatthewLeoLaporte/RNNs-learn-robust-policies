@@ -4,6 +4,7 @@ updated: 2024-11-13T10:32
 ---
 **See [[results-2|Part 2 results]] for ongoing analysis TODOs.**
 
+- [x] Separate `feedbax._tree` into own package; rename all functions and prune
 - [ ] **Add [[#Measures|new measures]]**
 - [ ] See how much more robust the baseline model is in part 1, if we **decrease the weight on the control cost**. (Talk to Gunnar about this – it will also affect the time urgency.)
 	- My expectation is that it will of course increase the forces and decrease the movement duration, but that depending on the perturbation this will actually make it *less* robust (e.g. curl fields)
@@ -13,7 +14,8 @@ updated: 2024-11-13T10:32
 - [x] Distributions of eigenvalues per context input — do they vary across grid points?
 - [x] PCA of steady-state FPs
 - [x] Plot the readout vector in PC plots
-- [ ] Reaching FPs – just like what I did previously, but vmapped over context inputs
+- [ ] **Reaching FPs** – just like what I did previously, but vmapped over context inputs
+- [x] Frequency response
 
 ### Fixed points
 #### Translation invariance
@@ -25,6 +27,18 @@ updated: 2024-11-13T10:32
 - [ ] ~~(In other words?:) Is there only a single steady-state fixed point for each trained network (+context input)?~~
 	- If not, do all steady-state FPs show the same kinds of behaviour (e.g. increasing context input → more contracting?)
 	- **Based on the eigenspectra**, the steady-state grid FPs are approximately similar in their dynamical properties. There appears to be significantly more variation between context inputs, than between positions. If we zoom in on a particular eigenvalue, it appears to shift its position in tiny ~grids reflecting the change in position.
+
+#### Network input perturbations
+
+i.e. find steady-state FPs, then change the feedback input and see if the location/properties of the FP changes
+
+- [ ] As we increase the perturbation size, do the eigenvectors become aligned? Do they point in the direction in state space that would increase the readout in the corrective direction?
+- [ ] **Identify the most unstable eigenvectors. Which units have the strongest contribution?** If we perturb these units at steady state, versus some other randomly selected set of units, do we get a large “corrective” change in the network output?
+
+#### Hessian analysis
+
+- Demonstrate that the fixed points are dynamical minima (vs. say saddle-points)
+	- This could also help to reveal what’s going on a 
 
 #### FP trajectories
 
@@ -43,7 +57,7 @@ How do the fixed points change over reach/stabilization trajectories?
 ### Measures
 
 - [ ] For each train std. in the “std” method, there is a certain **context input at which the position profile is closest to a straight reach**. Determine what this context input is. (I’m not sure about error bounds; I guess we would do the optimization for *all* validation trials individually.)
-- [ ] **Covariance between network output and system noise variables**
+- [ ] ~~Covariance between network output and system noise variables~~
 - [ ] **Direction of max net force (at start of trial?)**
 
 ## Training
@@ -71,8 +85,7 @@ How do the fixed points change over reach/stabilization trajectories?
 
 ## Database
 
-- [ ] Function which deletes/archives any .eqx files for which the database record is missing – this will allow us to delete database records to “delete” models, then use this function to clean up afterwards
-- [ ] Automatically export CSV or something for each db table, as a backup
+- [ ] **Function which deletes/archives any .eqx files for which the database record is missing** – this will allow us to delete database records to “delete” models, then use this function to clean up afterwards
 
 ### Figures
 

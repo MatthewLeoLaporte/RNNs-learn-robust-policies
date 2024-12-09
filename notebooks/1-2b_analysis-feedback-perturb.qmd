@@ -168,8 +168,8 @@ disturbance_stds_load = [0, 0.8, 1.6]
 
 # Specify model parameters to use for analysis (None -> use training value)
 # disturbance_type: Optional[Literal['curl', 'constant']] = None
-feedback_noise_std: Optional[float] = None
-motor_noise_std: Optional[float] = None
+feedback_noise_std: Optional[float] = 0.02
+motor_noise_std: Optional[float] = 0.02
 ```
 
 ```{python}
@@ -236,6 +236,7 @@ plotly_vscode_latex_fix()
 ```{python}
 models_base, model_info, replicate_info, n_replicates_included = query_and_load_models(
     db_session,
+    setup_task_model_pairs,
     params_query=dict(
         origin=TRAIN_NB_ID,
         disturbance_type=disturbance_type_load,

@@ -995,6 +995,17 @@ When we switch the disturbance type during testing:
 How can we interpret this?
 
 - Should we train on a combination of the two? 
+## Frequency response
+
+### Of the entire network
+
+Run the network at steady state, as in the feedback perturbation analyses, prior to the impulse perturbation. Do not perturb the network, but run feedback noise through it as usual. Then, do a Fourier transform of the network outputs (the force, prior to passing through the efferent channel) and divide it by the Fourier transform of the feedback noise. Then the magnitude of the result gives the frequency gain through the network, and the angle of the result the phase shift. 
+
+This is for feedback noise std. 0.1, trained on zero noise, zero delay
+
+![[file-20241209125614373.png]]
+Phase in rad
+![[file-20241209172435907.png]]
 
 ## Additional potential analyses
 
