@@ -8,7 +8,7 @@ execute:
 ---
 
 ```{python}
-NB_ID = "2-4"
+NB_ID = "2-5"
 
 TRAIN_NB_ID = "2-1"
 ```
@@ -135,7 +135,7 @@ from rnns_learn_robust_motor_policies.types import (
 Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
 
 ```{python}
-log_version_info(jax, eqx, plotly)
+version_info = log_version_info(jax, eqx, plotly)
 ```
 
 ### Initialize model database connection
@@ -237,8 +237,6 @@ all_models, model_info, replicate_info, n_replicates_included = query_and_load_m
 )
 ```
 
-### 
-
 ## Some helpful function
 
 **TODO** Move these into modules
@@ -314,6 +312,7 @@ eval_info = add_evaluation(
     origin=NB_ID,
     model_hash=model_info.hash,
     eval_parameters=eval_parameters,
+    version_info=version_info,
 )
 ```
 
@@ -397,6 +396,43 @@ print(f"\nEstimate {all_states_bytes / 1e9:.2f} GB of memory needed for all stat
 all_states = evaluate_all_states()
 ```
 
+### Define PCs based on the aggregate states
+
+Since scitkit-learn's PCA implementation does not support NaN, we will need to exclude NaNs whenever we want to project some network states into PC space.
+
+```{python}
+n_pca = 50
+
+all_states_hidden = exclude_nan_replicates(jt.map(
+    lambda states: states.net.hidden,
+    all_states,
+    is_leaf=is_module
+))
+
+all_states_hidden_flat = jnp.concatenate(jt.leaves(
+    jt.map(lambda states: jnp.reshape(states, (-1, model_info.hidden_size)), all_states_hidden)  
+))
+```
+
+```{python}
+pca = PCA(n_components=n_pca).fit(all_states_hidden_flat)
+```
+
+#### Get the readout weight vectors in PC space
+
+```{python}
+all_readout_weights = exclude_nan_replicates(jt.map(
+    lambda model: model.step.net.readout.weight,
+    all_models,
+    is_leaf=is_module,
+))
+
+all_readout_weights_pc = jt.map(
+    batch_reshape(pca.transform),
+    all_readout_weights,
+)
+```
+
 ### Instantiate the fixed point (FP) finder
 
 ```{python}
@@ -436,6 +472,7 @@ fpf_func = partial(
     fpfinder.find_and_filter,
     outlier_tol=fp_outlier_tol,
     unique_tol=fp_unique_tol,    
+    key=key_eval,
 )
 ```
 
@@ -470,21 +507,16 @@ def get_ss_rnn_fps(pos, rnn_cell, candidate_states, context):
 from collections.abc import Callable
 from typing import Any
 
-# def multi_vmap(func, in_axes: Sequence[PyTree[int | Callable[[Any], int] | None]]):
-#     """Given a sequence of `in_axes`, construct a nested vmap of `func`."""
-#     result = func
-#     for ax in in_axes:
-#         result = eqx.filter_vmap(result, in_axes=ax)
-#     return result
-    
-def multi_vmap(func, in_axes_sequence):
-    """Given a sequence of in_axes, construct nested vmaps."""
-    if not in_axes_sequence:
-        return func
-    return eqx.filter_vmap(
-        multi_vmap(func, in_axes_sequence[1:]),
-        in_axes=in_axes_sequence[0]
-    )
+def multi_vmap(
+    func: Callable, 
+    in_axes_sequence: Sequence[PyTree[int | Callable[[Any], int] | None]],
+    vmap_func: Callable = eqx.filter_vmap,
+):
+    """Given a sequence of `in_axes`, construct a nested vmap of `func`."""
+    func_v = func
+    for ax in in_axes_sequence:
+        func_v = vmap_func(func_v, in_axes=ax)
+    return func_v
 
 @eqx.filter_jit
 def get_ss_fps_at_positions(
@@ -503,20 +535,20 @@ def get_ss_fps_at_positions(
     for at least one context input.
     """
     if isinstance(positions, Array) and len(positions.shape) == 2:
-        get_fps_func = eqx.filter_vmap(
-            eqx.filter_vmap(
-                get_ss_rnn_fps, 
-                in_axes=(0, None, None, None),  # Over grid positions
-            ),
-            in_axes=(None, 0, 0, None),  # Over replicates
-        )
-        # get_fps_func = multi_vmap(
-        #     get_ss_rnn_fps,
-        #     in_axes_sequence=(
-        #         [None, 0, 0, None],  # Over replicates
-        #         [0, None, None, None],  # Over grid positions
+        # get_fps_func = eqx.filter_vmap(
+        #     eqx.filter_vmap(
+        #         get_ss_rnn_fps, 
+        #         in_axes=(0, None, None, None),  # Over grid positions
         #     ),
+        #     in_axes=(None, 0, 0, None),  # Over replicates
         # )
+        get_fps_func = multi_vmap(
+            get_ss_rnn_fps,
+            in_axes_sequence=(
+                (None, 0, 0, None),  # Over replicates
+                (0, None, None, None),  # Over grid positions
+            ),
+        )
     else:
         get_fps_func = eqx.filter_vmap(
             get_ss_rnn_fps,
@@ -596,23 +628,23 @@ origin_idx = eval_grid_n ** 2 // 2
 ```
 
 ```{python}
-fps = get_ss_fps_at_positions(
-    ORIGIN, all_models, all_states, context_inputs,
-)
+# fp_results = get_ss_fps_at_positions(
+#     ORIGIN, all_models, all_states, context_inputs,
+# )
 ```
 
 ```{python}
-fps_origin, all_top_fps, n_fps_meeting_criteria, satisfactory_replicates = process_fps(fps)
+# fps_origin, all_top_fps, n_fps_meeting_criteria, satisfactory_replicates = process_fps(fp_results)
 ```
 
 How many fixed points met all criteria? 
 
 ```{python}
-print("\nNumber of fixed points meeting all criteria:")
-eqx.tree_pprint(
-    n_fps_meeting_criteria,
-    short_arrays=False,
-)
+# print("\nNumber of fixed points meeting all criteria:")
+# eqx.tree_pprint(
+#     n_fps_meeting_criteria,
+#     short_arrays=False,
+# )
 ```
 
 Note that *no* points may be found for some replicates/context inputs, but that's OK. 
@@ -625,13 +657,13 @@ To ensure that all 'redundant' FPs actually converge to a single FP, we could tr
 To see whether they are far away from each other, we can look at the standard deviation over the (up to) top 5 returned FPs, averaged over units.
 
 ```{python}
-top_fps_std_mean = jt.map(
-    lambda fps: jnp.nanmean(jnp.nanstd(fps, axis=1), axis=-1),
-    all_top_fps,
-)
+# top_fps_std_mean = jt.map(
+#     lambda fps: jnp.nanmean(jnp.nanstd(fps, axis=1), axis=-1),
+#     all_top_fps,
+# )
 
-print("\nStandard deviation of top 5 fixed points, mean over dimensions (network units):")
-eqx.tree_pprint(top_fps_std_mean, short_arrays=False)
+# print("\nStandard deviation of top 5 fixed points, mean over dimensions (network units):")
+# eqx.tree_pprint(top_fps_std_mean, short_arrays=False)
 ```
 
 At this point we could exclude replicates based on a threshold for these standard deviation means. However, I've found that for our networks in general, there is a single actual fixed point for each fixed network input. I will assume that's the case, and in the following analyses we'll simply use whatever fixed points were returned as `fps_final`.
@@ -639,60 +671,55 @@ At this point we could exclude replicates based on a threshold for these standar
 If the above printout of standard deviations has any large values -- say, much larger than 0.01 -- then this policy may need to be revisited. Thus, raise an error if that's the case, but otherwise do not worry about it.
 
 ```{python}
-threshold = 0.015
+# threshold = 0.015
 
-all_top_fps_std_mean = jnp.stack(jt.leaves(top_fps_std_mean))
-below_threshold = all_top_fps_std_mean < threshold
+# all_top_fps_std_mean = jnp.stack(jt.leaves(top_fps_std_mean))
+# below_threshold = all_top_fps_std_mean < threshold
 
-assert jnp.all(below_threshold | jnp.isnan(all_top_fps_std_mean)), (
-    "\nStandard deviation between multiple candidate fixed points is high. " 
-    "Consider excluding replicates for which this is true. "
-)
+# assert jnp.all(below_threshold | jnp.isnan(all_top_fps_std_mean)), (
+#     "\nStandard deviation between multiple candidate fixed points is high. " 
+#     "Consider excluding replicates for which this is true. "
+# )
 ```
 :::
 
 For which replicates was a FP found for every context input?
 
 ```{python}
-print("\nReplicates for which a fixed point was found for every context input:")
-eqx.tree_pprint(satisfactory_replicates, short_arrays=False)
+# print("\nReplicates for which a fixed point was found for every context input:")
+# eqx.tree_pprint(satisfactory_replicates, short_arrays=False)
 ```
 
 ### Get fixed points at a grid of steady-state positions
 
 ```{python}
-fps = get_ss_fps_at_positions(
+fp_results = get_ss_fps_at_positions(
     goals_pos, all_models, all_states, context_inputs,
 )
 ```
 
 ```{python}
-fps_grid, all_top_fps_grid, n_fps_meeting_criteria_grid, satisfactory_replicates_grid = process_fps(fps)
+fps_grid, all_top_fps_grid, n_fps_meeting_criteria_grid, satisfactory_replicates_grid = process_fps(fp_results)
+del fp_results
 ```
 
-## Visualization of steady-state grid FPs
+```{python}
+fps_grid = jt.map(
+    lambda x: jnp.moveaxis(x, 0, 1),
+    fps_grid,
+)
+```
+
+## Examine the steady-state grid FP structure in PC space
 
 How much do the fixed points vary across workspace positions? 
 
 Is there translation invariance, or at the other extreme, does every steady-state point correspond to a different zero-force fixed point?
 
 ```{python}
-n_pca = 50
-
-all_states_hidden = exclude_nan_replicates(jt.map(
-    lambda states: states.net.hidden,
-    all_states,
-    is_leaf=is_module
-))
-
-all_states_hidden_flat = jnp.concatenate(jt.leaves(
-    jt.map(lambda states: jnp.reshape(states, (-1, model_info.hidden_size)), all_states_hidden)  
-))
-```
-
-```{python}
-pca = PCA(n_components=n_pca).fit(all_states_hidden_flat)
-
+# Note that `take_non_nan` excludes grid points where no fixed point was found;
+# if we do this without first doing `exclude_nan_replicates`, then we'll definitely
+# find a NaN for every index in axis 1, and this PyTree will be empty. 
 fps_grid_pre_pc = jt.map(
     lambda fps: take_non_nan(fps, axis=1),
     exclude_nan_replicates(fps_grid),
@@ -705,22 +732,9 @@ fps_grid_pc = jt.map(
 ```
 
 ```{python}
-all_readout_weights = exclude_nan_replicates(jt.map(
-    lambda model: model.step.net.readout.weight,
-    all_models,
-    is_leaf=is_module,
-))
-
-all_readout_weights_pc = jt.map(
-    batch_reshape(pca.transform),
-    all_readout_weights,
-)
-```
-
-```{python}
 def plot_fp_pcs_by_context(
     fp_pcs_by_context: ContextInputDict, 
-    readout_weights_pc,
+    readout_weights_pc: Optional[Array] = None,
 ):
     fig = go.Figure(
         layout=dict(
@@ -736,11 +750,6 @@ def plot_fp_pcs_by_context(
                 itemsizing='constant',
                 y=0.85,
             ),
-            legend2=dict(
-                title='Readout components',
-                itemsizing='constant',
-                y=0.45,
-            ),
         )
     )
     
@@ -751,36 +760,45 @@ def plot_fp_pcs_by_context(
             label=context,
             colors=context_input_colors_dark[context],
         )
-        
-    # Take the spatial average of the FPs for the lowest context input, at which 
-    # to place the readout vectors in the visualization.
-    mean_base_fp_pc = jnp.mean(fp_pcs_by_context[min(context_inputs)], axis=1)
-        
-    traces = []
-    k = 1
-    for j in range(readout_weights_pc.shape[1]):
-        start = mean_base_fp_pc
-        end = mean_base_fp_pc + k * readout_weights_pc[..., j, :]
-        
-        # Interleave start and end points with None for multiple disconnected lines
-        x = np.column_stack((start[..., 0], end[..., 0], np.full_like(start[..., 0], None))).ravel()
-        y = np.column_stack((start[..., 1], end[..., 1], np.full_like(start[..., 1], None))).ravel()
-        z = np.column_stack((start[..., 2], end[..., 2], np.full_like(start[..., 2], None))).ravel()
-        
-        traces.append(
-            go.Scatter3d(
-                x=x,
-                y=y,
-                z=z,
-                mode='lines',
-                line=dict(width=10),
-                showlegend=True,
-                name=j,
-                legend="legend2",
-            )
+    
+    if readout_weights_pc is not None:
+        fig.update_layout(
+            legend2=dict(
+                title='Readout components',
+                itemsizing='constant',
+                y=0.45,
+            ),
         )
+        
+        # Take the spatial average of the FPs for the lowest context input, at which 
+        # to place the readout vectors in the visualization.
+        mean_base_fp_pc = jnp.mean(fp_pcs_by_context[min(context_inputs)], axis=1)
+        
+        traces = []
+        k = 1
+        for j in range(readout_weights_pc.shape[1]):
+            start = mean_base_fp_pc
+            end = mean_base_fp_pc + k * readout_weights_pc[..., j, :]
+            
+            # Interleave start and end points with None for multiple disconnected lines
+            x = np.column_stack((start[..., 0], end[..., 0], np.full_like(start[..., 0], None))).ravel()
+            y = np.column_stack((start[..., 1], end[..., 1], np.full_like(start[..., 1], None))).ravel()
+            z = np.column_stack((start[..., 2], end[..., 2], np.full_like(start[..., 2], None))).ravel()
+            
+            traces.append(
+                go.Scatter3d(
+                    x=x,
+                    y=y,
+                    z=z,
+                    mode='lines',
+                    line=dict(width=10),
+                    showlegend=True,
+                    name=j,
+                    legend="legend2",
+                )
+            )
 
-    fig.add_traces(traces)
+        fig.add_traces(traces)
 
     return fig
 ```
@@ -853,9 +871,9 @@ def get_all_jacobians(positions, all_fps, all_models):
 ### Compute all Jacobians
 
 ```{python}
-jacobians_origin = get_all_jacobians(
-    ORIGIN, fps_origin, all_models,
-)
+# jacobians_origin = get_all_jacobians(
+#     ORIGIN, fps_origin, all_models,
+# )
 
 jacobians_grid = get_all_jacobians(
     goals_pos, fps_grid, all_models,
@@ -887,7 +905,7 @@ eigvals_valid = jt.map(
     lambda eigvals: jnp.all(~jnp.isnan(
         jnp.nanmean(eigvals, axis=-1)  
     ), axis=0), 
-    eigvals,
+    eigvals_grid,
 )
 ```
 
@@ -995,6 +1013,10 @@ for path, fig in tqdm(figs_flatten_with_paths(eigval_figs)):
 ```
 
 ### Plot eigenvalues by replicate
+
+```{python}
+import plotly.express as px
+```
 
 ```{python}
 eigval_figs = jt.map(
@@ -1113,11 +1135,17 @@ To start with we can look at 1) just the origin steady-state, and 2) perturbatio
 
 
 ```{python}
-perturbation_amplitudes = jnp.array([0.01, 0.1, 1])
+perturbation_amplitudes = jnp.array([0.2, 0.3, 0.4])
 
-n_perturbation_directions = 8
+n_perturbation_directions = 1
 ```
 
+
+```{python}
+pert_amp_colors, pert_amp_colors_dark = get_colors_dicts(
+    perturbation_amplitudes.tolist(), COLORSCALES['disturbance_amplitudes'],
+)
+```
 
 ```{python}
 from jaxtyping import Float, Array
@@ -1139,15 +1167,23 @@ def get_rnn_func(pos, context, fb_pert, rnn_cell):
     
     return rnn_func
 
-@partial(eqx.filter_vmap, in_axes=(None, None, 0, 0, None)) # Over replicates
-@partial(eqx.filter_vmap, in_axes=(0, None, None, 0, None)) # Over grid positions
-@partial(eqx.filter_vmap, in_axes=(None, 0, None, None, None)) # Over perturbation directions
-@partial(eqx.filter_vmap, in_axes=(None, 0, None, None, None)) # Over perturbation amplitudes
-def get_rnn_fp_with_fb_pert(pos, fb_pert, rnn_cell, candidate_states, context):
+
+def augment_state(state, n_samples, scale, *, key):
+    return state + scale * jax.random.normal(key, (n_samples,) + state.shape)
+    
+n_augment = 50
+augment_scale = 1e-2
+    
+@partial(eqx.filter_vmap, in_axes=(None, None, 0, 0, None, 0)) # Over replicates
+@partial(eqx.filter_vmap, in_axes=(0, None, None, 0, None, 0)) # Over grid positions
+@partial(eqx.filter_vmap, in_axes=(None, 0, None, None, None, None)) # Over perturbation directions
+@partial(eqx.filter_vmap, in_axes=(None, 0, None, None, None, None)) # Over perturbation amplitudes
+def get_rnn_fp_with_fb_pert(pos, fb_pert, rnn_cell, candidate_state, context, key):
     """Find the fixed point """       
     fps = fpf_func(
         get_rnn_func(pos, context, fb_pert, rnn_cell), 
-        candidate_states[None, :], # Since we are vmapping over grid positions, there's only a single candidate 
+        augment_state(candidate_state, n_augment, augment_scale, key=key),
+        # candidate_state,
         fp_tol,
     )
     return fps
@@ -1178,15 +1214,16 @@ def get_fps_at_positions_with_fb_perts(
     Exclude any replicate for which no fixed point meeting the acceptance criteria was found, 
     for at least one context input.
     """        
+    # candidates = jt.map(
+    #     lambda fps: jnp.reshape(
+    #         fps, 
+    #         (model_info.n_replicates, -1, model_info.hidden_size),
+    #     )[:, ::stride_candidates],
+    #     all_ss_fps,
+    #     is_leaf=is_module,
+    # )
 
-    candidates = jt.map(
-        lambda fps: jnp.reshape(
-            fps, 
-            (model_info.n_replicates, -1, model_info.hidden_size),
-        )[:, ::stride_candidates],
-        all_ss_fps,
-        is_leaf=is_module,
-    )
+    keys = jr.split(key_eval, (model_info.n_replicates, len(positions)))
 
     return tree_map_tqdm(
         lambda models, candidates_by_context: ContextInputDict({
@@ -1196,10 +1233,11 @@ def get_fps_at_positions_with_fb_perts(
                 models.step.net.hidden,
                 candidates_by_context[context_input],
                 context_input,
+                keys,
             )
             for context_input in context_inputs
         }),
-        all_models, candidates,
+        all_models, all_ss_fps,
         is_leaf=is_module,
     )
 ```
@@ -1223,31 +1261,28 @@ args = (
 ```
 
 ```{python}
-fps_pert_shape = eqx.filter_eval_shape(
+fp_results_shape = eqx.filter_eval_shape(
     get_fps_at_positions_with_fb_perts,
     *args,
 )
 
-print(f"Estimate {tree_struct_bytes(fps_pert_shape) / 1E6} MB of memory needed for all FPs.")
+print(f"Estimate {tree_struct_bytes(fp_results_shape) / 1E6} MB of memory needed for all FPs.")
 ```
 
 ```{python}
 # leaf shape: (replicates, grid points, perturbation amplitudes, perturbation directions, fp candidates (=1), hidden size)
-fps_pert = get_fps_at_positions_with_fb_perts(*args)
+fp_results = get_fps_at_positions_with_fb_perts(*args)
+
+# leaf shape: (replicates, grid points, perturbation amplitudes, perturbation directions, hidden size)
+fps_pert, all_top_fps_pert, n_fps_meeting_criteria_pert, satisfactory_replicates_pert = process_fps(fp_results)
+del fp_results
 ```
 
-As earlier, assume that if there are multiple FPs returned, they are actually the same FP due to slight variations in convergence. Average over them.
+As earlier, assume that if there are multiple FPs returned, they are actually the same FP due to slight variations in convergence; inside `process_fps` we average over them.
 
 :::{note}
 Note that currently, definitely only one FP will be returned because we're only passing a single candidate (the steady-state FP for the respective condition) to the optimization. See the `[None, :]` expansion in the FP-finding function above, which is necessary since we vmapped over both the replicate *and* the grid position. In the future we might instead pass multiple candidates, e.g. by jittering the steady-state FP, or by not vmapping over the grid position for the candidates. 
 :::
-
-```{python}
-fps_pert_final = jt.map(
-    lambda fps: jnp.nanmean(fps, axis=-2),
-    fps_pert,
-)
-```
 
 ### Analysis rationale
 
@@ -1261,10 +1296,170 @@ On the other hand, this analysis may correspond better to the open-loop response
 
 How do the perturbations alter the position of FPs? How does this depend on context input? 
 
-Supplementary: is it consistent across grid points? Across replicates?
+```{python}
+fps_pert_pre_pc = jt.map(
+    lambda fps: take_non_nan(fps, axis=1),
+    exclude_nan_replicates(fps_pert),
+)
 
-### Analysis of eigenspectra of Jacobians
+aa = jt.map(
+    lambda d: ContextInputDict({k: v for k, v in d.items() }),
+    fps_pert_pre_pc,
+    is_leaf=is_type(ContextInputDict),
+)
+
+# Leaf shape: (included replicates, grid points, perturbation amplitudes, perturbation directions, hidden size)
+fps_pert_pc = jt.map(
+    lambda fps: batch_reshape(pca.transform)(fps),
+    aa,
+)
+```
+
+```{python}
+fps_pert_pc_ = jt.map(
+    lambda fps: fps[..., 0, 0, :],
+    fps_pert_pc,
+)
+
+figs_fps_grid = jt.map(
+    lambda fp_pcs_by_context, readout_weights_pc: plot_fp_pcs_by_context(
+        fp_pcs_by_context, readout_weights_pc
+    ),
+    fps_pert_pc_,
+    all_readout_weights_pc,
+    is_leaf=is_type(ContextInputDict),
+)
+
+figs_fps_grid['std'][1.2]
+```
+
+#### Supplementary
+
+Is this structure consistent across grid points? Across replicates?
+
+### Eigenspectra of Jacobians
 
 How do the perturbations alter the eigenspectra of the Jacobians? How does this depend on context input?
 
+**TODO**: Generalize this with the version without perturbations from earlier. Probably, just partial out the `fb_pert` and then use `squeeze` to eliminate the superfluous dimension in the result.
+
+```{python}
+def get_jac_func_with_pert(position, context, fb_pert, func):
+    return jax.jacobian(get_rnn_func(position, context, fb_pert, func))
+
+@partial(eqx.filter_vmap, in_axes=(None, None, None, 0, 0)) # Over replicates
+@partial(eqx.filter_vmap, in_axes=(None, 0, None, 0, None)) # Over grid positions
+@partial(eqx.filter_vmap, in_axes=(1, None, None, 1, None)) # Over perturbation direction
+@partial(eqx.filter_vmap, in_axes=(0, None, None, 0, None)) # Over perturbation amplitude
+def get_jacobian(fb_pert, position, context, fp, func):
+    return get_jac_func_with_pert(position, context, fb_pert, func)(fp)
+```
+
+```{python}
+@eqx.filter_jit
+def get_all_jacobians(fb_perts, positions, all_fps, all_models):    
+    jacobians = jt.map(
+        lambda models, fps_by_context: ContextInputDict({
+            context_input: get_jacobian(  
+                fb_perts, positions, context_input, fps, models.step.net.hidden,
+            )
+            for context_input, fps in fps_by_context.items()
+        }),
+        all_models, all_fps,
+        is_leaf=is_module,
+    )
+
+    jacobians_stacked = stack_by_subtree_type(jacobians, ContextInputDict)
+    
+    return jacobians_stacked
+```
+
+```{python}
+jacobians_pert = get_all_jacobians(
+    fb_perts, goals_pos, fps_pert, all_models,
+)
+# leaf shape: (context, replicate, position, perturbation direction, perturbation_amplitude, hidden size, hidden size)
+```
+
+```{python}
+# If we use `eig_cpu` from earlier, then we get 5-10 GB of returned eigvecs, which
+# is much more memory than used by the rest of this notebook. Thus until we need them,
+# we won't compute them.
+
+get_eigvals_cpu = jax.jit(
+    lambda *args, **kwargs: tuple(jax.lax.linalg.eig(
+        *args, 
+        compute_left_eigenvectors=False, 
+        compute_right_eigenvectors=False, 
+        **kwargs,
+    )), 
+    device=jax.devices('cpu')[0],
+)
+
+eigvals_pert = tree_unzip(jt.map(get_eigvals_cpu, jacobians_pert))[0]
+# leaf shape: (context, replicate, position, perturbation direction, perturbation amplitude, hidden size)
+```
+
+#### Compare eigenspectra by perturbation amplitude
+
+```{python}
+col_names = ['context', 'replicate', 'pos', 'pert.dir.', 'pert.amp.', 'eigenvalue']
+
+eigval_pert_dfs = jt.map(
+    lambda arr: create_arr_df(
+        arr,
+        col_names=col_names,
+    ).astype({'context': 'str', 'replicate': 'str', 'pert.amp.': 'str', 'pert.dir.': 'str'}),
+    eigvals_pert,
+)
+```
+
+```{python}
+condition_func = lambda df: df[
+    (df['pert.dir.'] == '0') 
+    & (df['pos'] == origin_idx)
+    & (df['replicate'] == '1')
+    & (df['context'] == '4')
+]
+```
+
+```{python}
+from rnns_learn_robust_motor_policies.misc import round_to_list
+
+eigval_figs = jt.map(
+    lambda eigval_df: plot_eigvals_df(
+        condition_func(eigval_df),
+        marginals='box',
+        color='pert.amp.',
+        color_discrete_sequence=list(pert_amp_colors_dark.values()),
+        # trace_kws=dict(marker_size=3),
+        layout_kws=dict(
+            legend_title='Pert. amplitude', 
+            legend_itemsizing='constant',
+            xaxis_title='Re',
+            yaxis_title='Im',
+        ),
+    ),
+    eigval_pert_dfs,
+)
+
+# Reverse all the traces, since this improves the visualization in this particular case
+# jt.map(
+#     lambda fig: setattr(fig, 'data', fig.data[::-1]),
+#     eigval_figs,
+#     is_leaf=is_type(go.Figure),
+# )
+
+ff = round_to_list(perturbation_amplitudes)
+
+# Label the traces/legend with actual variable values, and not indices
+jt.map(
+    lambda fig: fig.for_each_trace(
+        lambda t: t.update(name=ff[int(t.name)]) 
+        if t.name is not None else t
+    ),
+    eigval_figs,
+    is_leaf=is_type(go.Figure),
+);
+```
 

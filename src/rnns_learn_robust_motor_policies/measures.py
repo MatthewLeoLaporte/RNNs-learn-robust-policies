@@ -11,33 +11,12 @@ import jax.tree as jt
 from jaxtyping import Array, Float, PyTree
 
 from feedbax import is_type
+from feedbax.bodies import SimpleFeedbackState
 
 from rnns_learn_robust_motor_policies.constants import EVAL_REACH_LENGTH
 
 
 frob = lambda x: jnp.linalg.norm(x, axis=(-1, -2), ord='fro')
-
-
-def output_corr(
-    activities: Float[Array, "evals replicates conditions time hidden"], 
-    weights: Float[Array, "replicates outputs hidden"],
-):
-    # center the activities in time
-    activities = activities - jnp.mean(activities, axis=-2, keepdims=True)
-    
-    def corr(x, w):
-        z = jnp.dot(x, w.T)
-        return frob(z) / (frob(w) * frob(x))
-
-    corrs = vmap(
-        # Vmap over evals and reach conditions (activities only)
-        vmap(vmap(corr, in_axes=(0, None)), in_axes=(0, None)), 
-        # Vmap over replicates (appears in both activities and weights)
-        in_axes=(1, 0),
-    )(activities, weights)
-    
-    # Return the replicate axis to the same position as in `activities`
-    return jnp.moveaxis(corrs, 0, 1)
 
 
 class ResponseVar(str, Enum):
@@ -378,3 +357,25 @@ def compute_all_measures(measures: PyTree[Measure], all_responses: PyTree[Respon
         measures,
         is_leaf=is_type(Measure),
     )
+    
+    
+def output_corr(
+    activities: Float[Array, "evals replicates conditions time hidden"], 
+    weights: Float[Array, "replicates outputs hidden"],
+):
+    # center the activities in time
+    activities = activities - jnp.mean(activities, axis=-2, keepdims=True)
+    
+    def corr(x, w):
+        z = jnp.dot(x, w.T)
+        return frob(z) / (frob(w) * frob(x))
+
+    corrs = vmap(
+        # Vmap over evals and reach conditions (activities only)
+        vmap(vmap(corr, in_axes=(0, None)), in_axes=(0, None)), 
+        # Vmap over replicates (appears in both activities and weights)
+        in_axes=(1, 0),
+    )(activities, weights)
+    
+    # Return the replicate axis to the same position as in `activities`
+    return jnp.moveaxis(corrs, 0, 1)

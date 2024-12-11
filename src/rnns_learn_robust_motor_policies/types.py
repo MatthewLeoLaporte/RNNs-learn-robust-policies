@@ -59,6 +59,19 @@ class ContextInputDict(CustomDict[K, V], Generic[K, V]):
 class TrainingMethodDict(CustomDict[K, V], Generic[K, V]):
     ...
 
+class FPDict(CustomDict[K, V], Generic[K, V]):
+    ...
+    
+    
+_custom_dict_classes = (
+    TrainStdDict, 
+    PertAmpDict, 
+    PertVarDict, 
+    ContextInputDict, 
+    TrainingMethodDict,
+    FPDict,
+)
+
 
 def _dict_flatten_with_keys(obj):
     children = [(jtu.DictKey(k), v) for k, v in obj.items()]
@@ -72,7 +85,7 @@ def _get_dict_unflatten(cls):
     return dict_unflatten
 
 
-for cls in (TrainStdDict, PertAmpDict, PertVarDict, ContextInputDict, TrainingMethodDict):
+for cls in _custom_dict_classes:
     jtu.register_pytree_with_keys(
         cls, 
         _dict_flatten_with_keys, 

@@ -227,11 +227,12 @@ models_base, model_info, replicate_info, n_replicates_included = query_and_load_
         feedback=feedback_noise_std,
         motor=motor_noise_std,
     ),
-    tree_exclusions={
+    tree_inclusions={
         TrainStdDict: lambda x: x < 1.6,
         TrainingMethodDict: training_methods,
     },
     exclude_underperformers_by="best_total_loss",
+    exclude_method='nan',
 )
 ```
 

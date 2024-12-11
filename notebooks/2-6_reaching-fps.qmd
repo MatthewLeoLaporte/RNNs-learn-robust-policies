@@ -1,11 +1,26 @@
+---
+jupyter: python3
+format:
+  html:
+    toc: true 
+execute:
+  echo: false
+---
 
+```{python}
+NB_ID = "2-6"
+
+TRAIN_NB_ID = "2-1"
+```
+
+# Analysis of fixed points during simple reaching
 
 In each case, we should look at the following, across context inputs
 
 1. project the fixed points into PC space
 2. examine their Jacobian eigenspectra 
 
-## Center-out reaching
+## Outline
 
 ### Find the structure of the steady (goal-goal) FPs
 
@@ -15,4 +30,575 @@ In each case, we should look at the following, across context inputs
 
 Similarly, see how the structure of the initial fixed points changes
 
-### Find the structure
+## Environment setup 
+
+```{python}
+%load_ext autoreload
+%autoreload 2
+```
+
+```{python}
+import os
+
+os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
+```
+
+```{python}
+from collections.abc import Sequence
+import functools
+from functools import partial
+from typing import Literal, Optional
+
+import equinox as eqx
+import jax
+import jax.numpy as jnp
+import jax.random as jr
+import jax.tree as jt
+from jaxtyping import Array, PyTree
+import matplotlib.pyplot as plt
+import numpy as np
+import plotly
+import plotly.colors as plc
+import plotly.graph_objects as go
+from sklearn.decomposition import PCA
+from tqdm.auto import tqdm
+
+from feedbax import (
+    is_module, 
+    is_type,
+    load, 
+    tree_map_tqdm,
+    tree_set_scalar,
+    tree_stack,
+    tree_struct_bytes,
+    tree_take, 
+    tree_take_multi,
+    tree_unzip,
+)
+from feedbax.bodies import SimpleFeedbackState
+from feedbax.intervene import (
+    CurlField,
+    FixedField,
+    schedule_intervenor,
+)
+from feedbax.misc import batch_reshape
+import feedbax.plotly as fbp
+from feedbax.task import (
+    SimpleReaches, 
+    TrialSpecDependency,
+    centreout_endpoints,
+)
+from feedbax.xabdeef.losses import simple_reach_loss
+
+from rnns_learn_robust_motor_policies import PROJECT_SEED
+from rnns_learn_robust_motor_policies.colors import (
+    COLORSCALES, 
+    MEAN_LIGHTEN_FACTOR,
+    get_colors_dicts,
+)
+from rnns_learn_robust_motor_policies.constants import (
+    EVAL_REACH_LENGTH,
+    INTERVENOR_LABEL,
+    WORKSPACE,
+)
+from rnns_learn_robust_motor_policies.database import (
+    get_db_session,
+    get_model_record,
+    add_evaluation,
+    add_evaluation_figure,
+    use_record_params_where_none,
+)
+from rnns_learn_robust_motor_policies.fp_finder import (
+    FixedPointFinder,
+    FPFilteredResults,
+    fp_adam_optimizer,
+    take_top_fps,
+)
+from rnns_learn_robust_motor_policies.fps import (
+    get_simple_reach_first_fps,
+)
+from rnns_learn_robust_motor_policies.misc import (
+    create_arr_df, 
+    log_version_info,
+)
+from rnns_learn_robust_motor_policies.train_setup_part2 import setup_task_model_pairs
+from rnns_learn_robust_motor_policies.plot import (
+    plot_eigvals_df,
+    plot_fp_pcs,
+)
+from rnns_learn_robust_motor_policies.plot_utils import (
+    figs_flatten_with_paths,
+    figleaves,
+)
+from rnns_learn_robust_motor_policies.post_training import setup_replicate_info
+from rnns_learn_robust_motor_policies.setup_utils import (
+    get_base_task,
+    query_and_load_models,
+    set_model_noise,
+    setup_models_only,
+)
+from rnns_learn_robust_motor_policies.state_utils import (
+    vmap_eval_ensemble,
+    get_pos_endpoints,
+)
+from rnns_learn_robust_motor_policies.tree_utils import (
+    pp,
+    subdict, 
+    take_single_replicate,
+)
+from rnns_learn_robust_motor_policies.types import (
+    ContextInputDict,
+    PertAmpDict, 
+    TrainingMethodDict,
+    TrainStdDict,
+)
+```
+
+Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
+
+```{python}
+version_info = log_version_info(jax, eqx, plotly)
+```
+
+### Initialize model database connection
+
+```{python}
+db_session = get_db_session()
+```
+
+### Hyperparameters
+
+```{python}
+#| tags: [parameters]
+
+# Specify which trained models to load 
+training_methods_load = ['amplitude', 'std']
+disturbance_type_load: Literal['curl', 'constant'] = 'curl'
+disturbance_stds_load = [0.4, 0.8, 1.2]
+feedback_noise_std_load = 0.0
+motor_noise_std_load = 0.0
+feedback_delay_steps = 0
+hidden_size = 100
+
+# Specify model parameters to use for analysis (None -> use training value)
+disturbance_type: Optional[Literal['curl', 'constant']] = None
+feedback_noise_std: Optional[float] = None
+motor_noise_std: Optional[float] = None
+
+training_methods = None
+```
+
+```{python}
+feedback_noise_std_load = float(feedback_noise_std_load)
+motor_noise_std_load = float(motor_noise_std_load)
+feedback_delay_steps = int(feedback_delay_steps)
+hidden_size = int(hidden_size)
+if feedback_noise_std is not None:
+    feedback_noise_std = float(feedback_noise_std)
+if motor_noise_std is not None:
+    motor_noise_std = float(motor_noise_std)
+```
+
+```{python}
+context_inputs = [-1., -0.5, 0., 0.5, 1., 1.5]
+
+disturbance_amplitudes = {
+    'curl': 2,
+    'constant': 0.4,
+}
+
+n_evals = 5
+
+n_grid = 1
+n_directions = 24
+```
+
+```{python}
+exclude_underperformers_by = 'best_total_loss'
+```
+
+### Colors setup
+
+```{python}
+context_input_colors, context_input_colors_dark = get_colors_dicts(
+    context_inputs, COLORSCALES['context_inputs'],
+)
+```
+
+### RNG setup
+
+```{python}
+key = jr.PRNGKey(PROJECT_SEED)
+key_init, key_train, key_eval = jr.split(key, 3)
+```
+
+## Load and adjust trained models
+
+```{python}
+models_load, model_info, replicate_info, n_replicates_included = query_and_load_models(
+    db_session,
+    setup_task_model_pairs,
+    params_query=dict(
+        origin=TRAIN_NB_ID,
+        training_methods=training_methods_load,
+        disturbance_type=disturbance_type_load,
+        disturbance_stds=disturbance_stds_load,
+        feedback_noise_std=feedback_noise_std_load,
+        motor_noise_std=motor_noise_std_load,
+        feedback_delay_steps=feedback_delay_steps,
+        hidden_size=hidden_size,
+    ),
+    noise_stds=dict(
+        feedback=feedback_noise_std,
+        motor=motor_noise_std,
+    ),
+    tree_inclusions={
+        TrainStdDict: None,
+        TrainingMethodDict: training_methods,
+    },
+    exclude_underperformers_by=exclude_underperformers_by,
+    exclude_method='best-only',
+)
+```
+
+## Sort out the evaluation parameters and create a database record
+
+We will either be evaluating on specific disturbance types and noise conditions, or if none are specified here,
+keeping the same conditions used during training.
+
+```{python}
+eval_parameters = use_record_params_where_none(
+    dict(
+        disturbance_type=disturbance_type,
+        feedback_noise_std=feedback_noise_std,
+        motor_noise_std=motor_noise_std,
+    ), 
+    model_info,
+)
+
+disturbance_type = eval_parameters["disturbance_type"]
+```
+
+```{python}
+any_system_noise = any(jt.leaves((
+    eval_parameters['feedback_noise_std'],
+    eval_parameters['motor_noise_std'],
+)))
+```
+
+### Disturbance amplitudes
+
+```{python}
+disturbance_amplitude = disturbance_amplitudes[disturbance_type]
+```
+
+### Full parameter dict
+
+```{python}
+eval_parameters |= dict(
+    disturbance_type=disturbance_type,
+    disturbance_amplitudes=[disturbance_amplitude], 
+    context_inputs=context_inputs,
+    n_evals=n_evals,
+    # n_evals=n_evals['full'],
+)
+```
+
+### Initialize a record in the evaluations database
+
+```{python}
+eval_info = add_evaluation(
+    db_session,
+    origin=NB_ID,
+    model_hash=model_info.hash,
+    eval_parameters=eval_parameters,
+    version_info=version_info,
+)
+```
+
+## Define tasks
+
+### Define the disturbances
+
+```{python}
+# Evaluate only a single amplitude, for now;
+# we want to see variation over the context input
+if disturbance_type == 'curl':  
+    def disturbance(amplitude):
+        return CurlField.with_params(amplitude=amplitude)    
+        
+elif disturbance_type == 'constant':   
+    def disturbance(field_std):            
+        return FixedField.with_params(
+            scale=field_std,
+            field=orthogonal_field,  
+        ) 
+          
+else:
+    raise ValueError(f"Unknown disturbance type: {disturbance_type}")
+```
+
+### Set up the base task 
+
+See notebook 1-2a for some explanation of the parameter choices here.
+
+```{python}
+# Also add the intervenors to the trained models
+task_base, all_models = schedule_intervenor(
+    get_base_task(
+        model_info.n_steps,
+        validation_params=dict(
+            eval_grid_n=n_grid,
+            eval_n_directions=n_directions,
+            eval_reach_length=EVAL_REACH_LENGTH,
+        )
+    ),
+    models_load,
+    lambda model: model.step.mechanics,
+    disturbance(disturbance_amplitude),
+    label=INTERVENOR_LABEL,
+    default_active=False,
+)
+```
+
+### Set up variants with different context inputs
+
+```{python}
+def get_context_input_func(x, n_steps, n_trials):
+    return lambda trial_spec, key: (
+        jnp.full((n_trials, n_steps), x, dtype=float)
+    )
+
+all_tasks = ContextInputDict({
+    context_input: eqx.tree_at(
+        lambda task: task.input_dependencies,
+        task_base, 
+        {
+            'context': TrialSpecDependency(
+                get_context_input_func(
+                    context_input, 
+                    model_info.n_steps - 1, 
+                    task_base.n_validation_trials
+                ),
+            ),
+        },
+    )
+    for context_input in context_inputs
+})
+```
+
+### Assign some things for convenient reference
+
+```{python}
+example_task = jt.leaves(all_tasks, is_leaf=is_module)[0]
+
+trial_specs = jt.map(lambda task: task.validation_trials, example_task, is_leaf=is_module)
+
+pos_endpoints = jt.map(get_pos_endpoints, trial_specs, is_leaf=is_module)
+```
+
+## Get the FPs of all models, for all values of the context input
+
+```{python}
+stride_trials = 1  # only do the FP analysis for every Nth trial (reach direction)
+loss_tol = 5e-7  # threshold criterion for FP optimization
+
+def get_all_states_and_fps():
+
+    states, fps = tree_unzip(tree_map_tqdm(
+        lambda model: ContextInputDict({
+            context_input: get_simple_reach_first_fps(
+                model, task, loss_tol, stride_trials=stride_trials, key=key_eval
+            )
+            for context_input, task in all_tasks.items()
+        }),
+        all_models,
+        is_leaf=is_module,
+    ))
+    return states, fps
+```
+
+```{python}
+# all_states_and_fps_shape = eqx.filter_eval_shape(get_all_states_and_fps)
+
+# print(
+#     f"{tree_struct_bytes(all_states_and_fps_shape) / 1e9:.3f} GB"
+#     " of memory estimated to store all states."
+# )
+```
+
+```{python}
+# with jax.checking_leaks():
+#     all_states_and_fps_shape = eqx.filter_eval_shape(get_all_states_and_fps)
+```
+
+```{python}
+all_states, all_fps = get_all_states_and_fps()
+```
+
+```{python}
+all_fps = jt.map(jnp.squeeze, all_fps)
+```
+
+```{python}
+all_hidden = jt.map(
+    lambda states: states.net.hidden,
+    all_states,
+    is_leaf=is_module,
+)
+```
+
+## Select a model to analyze, and perform PCA on its hidden states
+
+```{python}
+training_method = 'std'
+train_std = 1.2
+```
+
+Stack the context inputs into the first array dimensions.
+
+```{python}
+fps = tree_stack(all_fps[training_method][train_std].values())
+hidden = tree_stack(all_hidden[training_method][train_std].values())
+```
+
+Check if there are any NaN values. In particular, it seems like occasionally, no FPS will be found (i.e. the values will be NaN) for a small number of reach condition and context input combinations. 
+
+```{python}
+nan_fp_idxs = jt.map(lambda arr: np.where(np.isnan(arr)), fps)
+pp(nan_fp_idxs)
+```
+
+Perform PCA on all the hidden states together, for all context inputs and reach directions.
+
+```{python}
+# Calculate the PCs starting midway through the trial, to prefer the goal plane.
+# This is just to make the plots clearer; statistically it might not be as good. 
+i_step_pca_start = 0
+n_steps = model_info.n_steps
+
+hidden_for_pca = hidden[..., i_step_pca_start - n_steps:, :].reshape(-1, hidden_size)
+pca2 = PCA(n_components=2).fit(hidden_for_pca)
+pca = PCA(n_components=30).fit(hidden_for_pca)
+
+# Convenience for doing PC projection of all batched arrays in a PyTree
+pca_transform = lambda x: jt.map(batch_reshape(pca.transform), x)
+```
+
+```{python}
+hidden_pc = pca_transform(hidden)
+
+fps_pc = pca_transform(fps)
+```
+
+## Visualize FPs
+
+### Plot hidden and FP trajectories for a single context input
+
+**TODO**: hoverinfo should show PC1, PC2, PC3 and not x, y, z; also it should show time
+**TODO**: Plot readout vectors 
+
+```{python}
+conditions_colors = plc.sample_colorscale('phase', np.linspace(0, 1, n_directions))
+conditions_colors_tuples = plc.convert_colors_to_same_type(
+    plc.sample_colorscale('phase', np.linspace(0, 1, n_directions)), 
+    colortype='tuple'
+)[0]
+```
+
+```{python}
+context = 0
+context_idx = context_inputs.index(context)
+
+hidden_pc = pca_transform(hidden)
+
+fps_pc = pca_transform(fps)
+
+fp_alpha = 0.4
+stride_plot = 4
+
+fig = go.Figure(
+    layout=dict(
+        width=800, 
+        height=600,
+        scene=dict(
+            xaxis_title='PC1',
+            yaxis_title='PC2',
+            zaxis_title='PC3',        
+        ), 
+        margin=dict(l=10, r=10, t=0, b=10),
+        legend=dict(
+            yanchor="top", y=0.9, 
+            xanchor="right", 
+        ),
+    ), 
+)
+fig = fbp.plot_traj_3D(
+    fps_pc['states'][context_idx, ::stride_plot], 
+    colors=conditions_colors[::stride_plot], 
+    mode='markers', 
+    marker_size=2, 
+    marker_opacity=fp_alpha,
+    endpoint_symbol='square-open',
+    name="Local FP",
+    fig=fig, 
+)
+fig = fbp.plot_traj_3D(
+    hidden_pc[context_idx, ::stride_plot], 
+    colors=conditions_colors[::stride_plot], 
+    mode='lines', 
+    line_width=2,
+    endpoint_symbol='diamond-open', 
+    name='Reach trajectory',
+    fig=fig,
+)
+fig.show()
+# copy_fig(fig)
+```
+
+#### 2D
+
+```{python}
+pcs = np.array([1, 2])
+
+dimtoend = lambda x: jnp.moveaxis(x, 0, -1)
+
+fig, ax = plt.subplots(figsize=(8, 8))
+ax.set_aspect('equal')
+
+for i, color in enumerate(conditions_colors_tuples[::stride_plot]):
+    ax.plot(
+        *dimtoend(hidden_pc[context_idx, ::stride_plot, ..., pcs])[i].T, 
+        color=color,
+    )
+    ax.plot(
+        *dimtoend(fps_pc['goals-goals'][context_idx, ::stride_plot, ..., pcs])[i].T, 
+        'o', 
+        color=color, 
+        markersize=10, 
+        markerfacecolor="None", 
+        markeredgewidth=3,
+    )
+    ax.plot(
+        *dimtoend(fps_pc['states'][context_idx, ::stride_plot, ..., pcs])[i].T,
+        'o',
+        color=color,
+        markersize=2,
+        markerfacecolor=color,
+    )
+
+ax.set_xlabel(f"PC{pcs[0] + 1}")
+ax.set_ylabel(f"PC{pcs[1] + 1}")
+plt.show()
+```
+
+### Compare goals-goals and inits-goals FPs across context inputs
+
+TODO
+
+### Compare a single reach direction's FP trajectory, across context inputs
+
+TODO
+
+
+

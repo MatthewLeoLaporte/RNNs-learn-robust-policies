@@ -9,18 +9,20 @@ from types import ModuleType
 from typing import Optional
 
 import equinox as eqx
+import jax
 import jax.numpy as jnp 
 import jax.random as jr 
 import jax.tree as jt
-from jaxtyping import Array
+from jaxtyping import Array, Float
 import numpy as np
 import pandas as pd
 from rich.logging import RichHandler
 import yaml
 
+from feedbax import tree_take, is_type
 from feedbax.misc import git_commit_id
 from feedbax._tree import apply_to_filtered_leaves
-from feedbax.intervene import CurlFieldParams, FixedFieldParams
+from feedbax.intervene import AbstractIntervenor, CurlFieldParams, FixedFieldParams
 
 from rnns_learn_robust_motor_policies.tree_utils import subdict
 
@@ -196,3 +198,39 @@ def create_arr_df(arr, col_names=None):
         df[col_names[i]] = idx_array.flatten()
     
     return df
+
+
+def squareform_pdist(xs: Float[Array, "points dims"], ord: int | str | None = 2):
+    """Return the pairwise distance matrix between points in `x`.
+    
+    In the case of `ord=2`, this should be equivalent to:
+    
+        ```python
+        from scipy.spatial.distance import pdist, squareform
+        
+        squareform(pdist(x, metric='euclidean'))
+        ```
+    
+    However, note that the values for `ord` are those supported
+    by `jax.numpy.linalg.norm`. This provides fewer metrics than those 
+    supported by `scipy.spatial.distance.pdist`.
+    """
+    dist = lambda x1, x2: jnp.linalg.norm(x1 - x2, ord=ord)
+    row_dist = lambda x: jax.vmap(dist, in_axes=(None, 0))(x, xs)
+    return jax.lax.map(row_dist, xs)
+
+
+def take_model(*args, **kwargs): 
+    """Performs `tree_take` on a feedbax model.
+    
+    It is currently necessary to use this in place of `tree_take` when 
+    the model contains intervenors with arrays, since those arrays may 
+    not have the same batch (e.g. replicate) dimensions as the other 
+    model arrays.
+    """
+    return apply_to_filtered_leaves(
+        lambda x: not is_type(AbstractIntervenor)(x), 
+        is_leaf=is_type(AbstractIntervenor),
+    )(tree_take)(
+        *args, **kwargs
+    )

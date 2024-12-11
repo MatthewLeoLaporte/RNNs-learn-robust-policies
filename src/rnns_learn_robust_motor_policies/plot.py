@@ -2,14 +2,17 @@ from collections.abc import Sequence
 from typing import Optional, TypeVar
 
 import equinox as eqx
-from feedbax import is_type
 import jax.numpy as jnp
 import jax.tree as jt 
 from jaxtyping import Array, Bool, Float 
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+import pyperclip as clip
 from sklearn.decomposition import PCA
+
+from feedbax import is_type
+import feedbax.plotly as fbp
 
 from rnns_learn_robust_motor_policies.plot_utils import (
     add_context_annotation,
@@ -67,8 +70,8 @@ def add_endpoint_traces(
         )
         for i, key in enumerate(marker_kws):
             marker_kws[key].update(
-                line_color=color_values[i], 
-                color=color_values[i],
+                line_color=color_values[i].item(), 
+                color=color_values[i].item(),
                 cmin=0,
                 cmax=1,
             )
@@ -263,6 +266,13 @@ def get_measure_replicate_comparisons(
 
 
 def plot_eigvals_df(df, marginals='box', trace_kws=None, layout_kws=None, **kwargs):
+    stable_boundary_kws = dict(
+        line=dict(
+            color='black',
+            width=2,
+        ),  
+    )
+    
     fig = px.scatter(
         df,
         x='real',
@@ -283,11 +293,20 @@ def plot_eigvals_df(df, marginals='box', trace_kws=None, layout_kws=None, **kwar
         x0=-1, y0=-1, x1=1, y1=1,
         fillcolor='white',
         layer='below',
-        line=dict(
-            color='black',
-            width=2,
-        ),
+        **stable_boundary_kws,
     )
+    for coord in [-1, 1]:
+        fig.add_vline(
+            x=coord, 
+            row=0, 
+            **stable_boundary_kws,
+        )
+        fig.add_hline(
+            y=coord, 
+            col=2, 
+            **stable_boundary_kws,
+        )
+    
     fig.add_trace(go.Scatter(
         x=[-1, 1], y=[0, 0],
         mode='lines',
@@ -441,3 +460,20 @@ def plot_traj_and_fp_pcs_3D(
     fig = fbp.plot_traj_3D(trajs_pcs, colors=colors, fig=fig)
     
     return fig
+
+
+def copy_fig(fig):
+    """Copy Plotly figure's JSON representation to clipboard.
+    
+    I use this to embed interactive figures in my Obsidian notes: https://github.com/mlprt/obsidian-paste-as-embed
+    """
+    fig = go.Figure(fig)
+    fig.update_layout(
+        width=700, height=600, 
+        margin=dict(l=10, r=10, t=0, b=10),
+        legend=dict(
+            yanchor="top", y=0.9, 
+            xanchor="right", 
+        ),
+    )
+    clip.copy(fig.to_json())

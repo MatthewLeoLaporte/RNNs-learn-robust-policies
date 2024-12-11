@@ -45,6 +45,9 @@ from rnns_learn_robust_motor_policies.constants import (
 from rnns_learn_robust_motor_policies.database import (
     get_model_record,
 )
+from rnns_learn_robust_motor_policies.misc import (
+    take_model,
+)
 from rnns_learn_robust_motor_policies.tree_utils import subdict
 from rnns_learn_robust_motor_policies.types import (
     TrainStdDict,
@@ -54,12 +57,13 @@ from rnns_learn_robust_motor_policies.types import (
 def get_base_task(
     n_steps: int = N_STEPS,
     loss_func: AbstractLoss = simple_reach_loss(),
+    validation_params: dict[str, Any] = TASK_EVAL_PARAMS['full'],
 ) -> SimpleReaches:
     return SimpleReaches(
         loss_func=loss_func,
         workspace=WORKSPACE, 
         n_steps=n_steps,
-        **TASK_EVAL_PARAMS['full'], 
+        **validation_params, 
     )
 
 
@@ -366,7 +370,7 @@ def query_and_load_models(
     noise_stds: Optional[dict[Literal['feedback', 'motor'], Optional[float]]] = None,
     tree_inclusions: Optional[dict[type, Optional[Any | Sequence | Callable]]] = None,
     exclude_underperformers_by: Optional[str] = None,
-    exclude_method: Literal['nan', 'remove'] = 'nan',
+    exclude_method: Literal['nan', 'remove', 'best-only'] = 'nan',
 ):
     """Query the models table in the project database and return the loaded and processed models.
     
@@ -383,8 +387,9 @@ def query_and_load_models(
         exclude_underperformers_by: An optional key of a performance measure evaluated in 
             `post_training` by which to exclude model replicates. Excluded replicates will have 
             their parameters replaced with NaN in the arrays of the returned PyTree.
-        exclude_method: Whether to index-out the included replicates ('remove') or replace their 
-            model parameters with NaN ('nan').
+        exclude_method: Whether to index-out the included replicates ('remove'), replace their 
+            model parameters with NaN ('nan'), or return only the single best replicate 
+            ('best-only').
         
     Returns:
         models: The PyTree of models
@@ -454,33 +459,27 @@ def query_and_load_models(
     if exclude_underperformers_by is not None:
         included_replicates = replicate_info['included_replicates'][exclude_underperformers_by]
         best_replicate = replicate_info['best_replicates'][exclude_underperformers_by]
-
-        def take_replicate_or_best(tree: TrainStdDict, i_replicate=None, replicate_axis=1):
-            if i_replicate is None:
-                map_func = lambda tree: TrainStdDict({
-                    train_std: tree_take(subtree, best_replicate[train_std], replicate_axis)
-                    for train_std, subtree in tree.items()
-                })
-            else:
-                map_func = lambda tree: tree_take_multi(tree, [i_replicate], [replicate_axis])
-                
-            return jt.map(map_func, tree, is_leaf=is_type(TrainStdDict))
         
         if exclude_method == 'nan':
-            def include_func(models, included): 
+            def include_func_nan(models, included, best): 
                 return tree_set_scalar(models, jnp.nan, jnp.where(~included)[0])
+            include_func = include_func_nan
         elif exclude_method == 'remove':
-            def include_func(models, included): 
-                take = apply_to_filtered_leaves(
-                    lambda x: not is_type(AbstractIntervenor)(x), 
-                    is_leaf=is_type(AbstractIntervenor),
-                )(tree_take)
-                return take(models, jnp.where(included)[0])
+            def include_func_remove(models, included, best): 
+                return take_model(models, jnp.where(included)[0])
+            include_func = include_func_remove
+        elif exclude_method == 'best-only':
+            def include_func_best(models, included, best): 
+                return take_model(models, best)
+            include_func = include_func_best
+        else:
+            raise ValueError(f"Invalid exclude_method '{exclude_method}'")
         
         models = jt.map(
             include_func,
             models, 
             included_replicates,
+            best_replicate,
             is_leaf=is_module,
         )
         

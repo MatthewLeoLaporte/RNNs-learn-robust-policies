@@ -274,10 +274,33 @@ These look almost identical to the position impulse plots, except that the force
 ![[file-20241201124818087.png]]
 ### Distributions of performance measures
 
-## Dynamical structure
+## 
+
+## Dynamics
 
 - [ ] **Goal steady-state fixed points**: do they systematically change?
-- [ ] **Eigendecomposition of steady-state Jacobians**: do the negative real parts become more negative, as the context input increases?
+
+### Eigendecomposition of steady-state FP Jacobians
+
+#### Trained on curl fields
+
+##### DAI
+###### Std 0.4
+![[plotly-20241211-153915]]
+
+###### Std 1.2
+![[plotly-20241211-154004]]
+
+##### PAI
+
+###### Std 0.4
+![[plotly-20241211-154150]]
+
+###### Std 1.2
+![[plotly-20241211-154033]]
+
+
+
 
 ## Other/supplementary analyses
 

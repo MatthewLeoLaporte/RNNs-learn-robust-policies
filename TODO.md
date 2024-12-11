@@ -5,16 +5,19 @@ updated: 2024-11-13T10:32
 **See [[results-2|Part 2 results]] for ongoing analysis TODOs.**
 
 - [x] Separate `feedbax._tree` into own package; rename all functions and prune
-- [ ] **Add [[#Measures|new measures]]**
+- [x] **Add [[#Measures|new measures]]**
 - [ ] See how much more robust the baseline model is in part 1, if we **decrease the weight on the control cost**. (Talk to Gunnar about this – it will also affect the time urgency.)
 	- My expectation is that it will of course increase the forces and decrease the movement duration, but that depending on the perturbation this will actually make it *less* robust (e.g. curl fields)
 
 ## Analysis
 
+- [ ] Examine reaching FP trajectories for both baseline (no disturbance) and disturbance conditions
+- [ ] Plot readout vector in 2-6 PC plots
 - [x] Distributions of eigenvalues per context input — do they vary across grid points?
 - [x] PCA of steady-state FPs
 - [x] Plot the readout vector in PC plots
-- [ ] **Reaching FPs** – just like what I did previously, but vmapped over context inputs
+- [x] **Reaching FPs** – just like what I did previously, but vmapped over context inputs
+	- I’ve calculated them, but at some context inputs the trajectories of state FPs are dislocated in some places. Why?
 - [x] Frequency response
 
 ### Fixed points

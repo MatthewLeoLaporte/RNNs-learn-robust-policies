@@ -27,6 +27,9 @@ from sklearn.decomposition import PCA
 from feedbax import is_module
 import feedbax.plotly as fbp
 
+from rnns_learn_robust_motor_policies.misc import squareform_pdist
+
+
 # class FixedPoint(Module):
 #     value: Array
 
@@ -70,7 +73,8 @@ class FixedPointFinder(Module):
         loss_tol: Float[Array, "1"], 
         n_batches: int = 10_000, 
         n_batches_per_iter: int = 200,
-        # key: PRNGKeyArray,  # TODO
+        *,
+        key: PRNGKeyArray,  
     ) -> tuple[int, Float[Array, "n_candidates state"], Float[Array, "n_candidates"]]:
         # NOTE: Like the original Fixed Point Finder, this implementation
         #   1. Optimizes the mean loss of a batch of candidates simultaneously,
@@ -79,9 +83,7 @@ class FixedPointFinder(Module):
         #   2. Runs multiple iterations of the optimization before each check of the
         #      termination criteria; this shouldn't strictly be necessary but its
         #      results are consistent with the original implementation.
-        
-        # Batch the function since we're optimizing multiple candidates at once.
-        batch_func = jax.vmap(func, in_axes=(0,))
+
         # This loss takes the mean over all the candidates.
         loss_func = get_total_fp_loss_func(func)
         opt_state = self.optimizer.init(candidates)
@@ -136,9 +138,11 @@ class FixedPointFinder(Module):
         unique_tol: Optional[float] = None,
         distance_norm: int | str | None = 2,
         verbose: bool = False,        
+        *,
+        key: PRNGKeyArray,  # TODO
     ) -> FPFilteredResults:
         """Finds fixed points and filters by loss, and (optionally) duplicates and outliers."""
-        _, fps, losses = self(func, candidates, loss_tol, n_batches, n_batches_per_iter)
+        _, fps, losses = self(func, candidates, loss_tol, n_batches, n_batches_per_iter, key=key)
         masks, counts = exclude_points(
             fps, losses, loss_tol, outlier_tol, unique_tol, distance_norm, verbose
         )
@@ -216,26 +220,6 @@ def exclude_points(
     counts = jax.tree_map(jnp.sum, masks)
     
     return masks, counts
-
-
-def squareform_pdist(xs: Float[Array, "points dims"], ord: int | str | None = 2):
-    """Return the pairwise distance matrix between points in `x`.
-    
-    In the case of `ord=2`, this should be equivalent to:
-    
-        ```python
-        from scipy.spatial.distance import pdist, squareform
-        
-        squareform(pdist(x, metric='euclidean'))
-        ```
-    
-    However, note that the values for `ord` are those supported
-    by `jax.numpy.linalg.norm`. This provides fewer metrics than those 
-    supported by `scipy.spatial.distance.pdist`.
-    """
-    dist = lambda x1, x2: jnp.linalg.norm(x1 - x2, ord=ord)
-    row_dist = lambda x: jax.vmap(dist, in_axes=(None, 0))(x, xs)
-    return jax.lax.map(row_dist, xs)
 
 
 def find_outliers_mask(arr, tol):
@@ -357,7 +341,6 @@ def take_top_fps(
         n_keep: The number of top FPs to keep. The maximum number that can be returned is 10.
         warn: Whether to log a warning if some qualifying FPs are excluded from the result.
     """
-    #! I'm not sure what happens if `n_keep` is greater than the number of qualifying FPs!
     
     @partial(jnp.vectorize, signature='(n,m),(n)->(p,m)')
     def take_top_fp(fps, mask):
@@ -388,7 +371,7 @@ def take_top_fps(
         )
         # TODO: Warn how many FPs, and give the indices
         if np.any(np.concatenate(jt.leaves(idxs_multi_fps))):
-            logger.warn("Some FPs satisfied criteria but were omitted")
+            logger.warning("Some FPs satisfied criteria but were omitted")
 
     return jt.map(
         lambda results: take_top_fp(results.fps, results.masks['meets_all_criteria']), 
