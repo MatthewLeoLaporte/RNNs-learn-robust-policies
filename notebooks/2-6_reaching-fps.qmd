@@ -200,7 +200,7 @@ if motor_noise_std is not None:
 ```
 
 ```{python}
-context_inputs = [-1., -0.5, 0., 0.5, 1., 1.5]
+context_inputs = [-1.5, -1., -0.5, 0., 0.5, 1., 1.5]
 
 disturbance_amplitudes = {
     'curl': 2,
@@ -223,6 +223,14 @@ exclude_underperformers_by = 'best_total_loss'
 context_input_colors, context_input_colors_dark = get_colors_dicts(
     context_inputs, COLORSCALES['context_inputs'],
 )
+```
+
+```{python}
+conditions_colors = plc.sample_colorscale('phase', np.linspace(0, 1, n_directions))
+conditions_colors_tuples = plc.convert_colors_to_same_type(
+    plc.sample_colorscale('phase', np.linspace(0, 1, n_directions)), 
+    colortype='tuple'
+)[0]
 ```
 
 ### RNG setup
@@ -258,6 +266,16 @@ models_load, model_info, replicate_info, n_replicates_included = query_and_load_
     },
     exclude_underperformers_by=exclude_underperformers_by,
     exclude_method='best-only',
+)
+```
+
+Load the readout weights into their own variable, for ease of reference.
+
+```{python}
+readout_weights = jt.map(
+    lambda model: model.step.net.readout.weight,
+    all_models,
+    is_leaf=is_module,
 )
 ```
 
@@ -491,69 +509,153 @@ hidden_pc = pca_transform(hidden)
 fps_pc = pca_transform(fps)
 ```
 
+```{python}
+readout_weights_pc = pca_transform(readout_weights[training_method][train_std])
+```
+
 ## Visualize FPs
 
-### Plot hidden and FP trajectories for a single context input
-
-**TODO**: hoverinfo should show PC1, PC2, PC3 and not x, y, z; also it should show time
-**TODO**: Plot readout vectors 
+### Plotting functions
 
 ```{python}
-conditions_colors = plc.sample_colorscale('phase', np.linspace(0, 1, n_directions))
-conditions_colors_tuples = plc.convert_colors_to_same_type(
-    plc.sample_colorscale('phase', np.linspace(0, 1, n_directions)), 
-    colortype='tuple'
-)[0]
+def plot_hidden_and_fp_trajectories_3D(
+    fp_trajs_pc: Float[Array, 'curves index pcs=3'],
+    hidden_pc: Float[Array, 'curves index pcs=3'],
+    colors: Sequence,  # len curves
+    fp_alpha: float = 0.4,
+    stride_plot: int = 1,
+    marker_size: float = 2,
+    axis_labels: tuple[str, str, str] = ('PC1', 'PC2', 'PC3'),
+):
+    fig = go.Figure(
+        layout=dict(
+            width=800, 
+            height=600,
+            margin=dict(l=10, r=10, t=0, b=10),
+            legend=dict(
+                yanchor="top", 
+                y=0.9, 
+                xanchor="right", 
+            ),
+            scene_aspectmode='data',
+        ), 
+    )
+    fig = fbp.trajectories_3D(
+        fp_trajs_pc[::stride_plot], 
+        colors=colors[::stride_plot], 
+        mode='markers', 
+        marker_size=marker_size, 
+        marker_opacity=fp_alpha,
+        endpoint_symbol='square-open',
+        name="Local FP",
+        axis_labels=axis_labels,
+        fig=fig, 
+    )
+    fig = fbp.trajectories_3D(
+        hidden_pc[::stride_plot], 
+        colors=colors[::stride_plot], 
+        mode='lines', 
+        line_width=2,
+        endpoint_symbol='diamond-open', 
+        name='Reach trajectory',
+        axis_labels=axis_labels,
+        fig=fig,
+    )
+    
+    return fig
 ```
 
 ```{python}
+from jaxtyping import Array, Float
+
+def readout_vector_traces(
+    readout_weights_pc: Float[Array, 'out=2 pcs=3'], 
+    vector_start_pc: Optional[Float[Array, 'out=2 pcs=3']] = None,
+    colors: tuple = ('#FF0000', '#0000FF'),
+    scale: float = 0.25,
+):
+    fig.update_layout(
+        legend2=dict(
+            title='Readout<br>components',
+            itemsizing='constant',
+            y=0.45,
+        ),
+    )
+
+    traces = []
+
+    if vector_start_pc is None:
+        vector_start_pc = np.zeros_like(readout_weights_pc)
+
+    for j, readout_label in enumerate(('x', 'y')):
+        start = vector_start_pc[j]
+        end = vector_start_pc[j] + scale * readout_weights_pc[j]
+
+        # # Interleave start and end points with None for multiple disconnected lines
+        x = np.column_stack((start[..., 0], end[..., 0], np.full_like(start[..., 0], None))).ravel()
+        y = np.column_stack((start[..., 1], end[..., 1], np.full_like(start[..., 1], None))).ravel()
+        z = np.column_stack((start[..., 2], end[..., 2], np.full_like(start[..., 2], None))).ravel()
+
+        traces.append(
+            go.Scatter3d(
+                x=x,
+                y=y,
+                z=z,
+                mode='lines',
+                line=dict(width=10),
+                showlegend=True,
+                name=readout_label,
+                line_color=colors[j],
+                legend="legend2",
+            )
+        )
+    
+    return traces
+
+```
+
+### Plot hidden and FP trajectories for a single context input
+
+```{python}
+pcs_plot = slice(0, 3)
+
 context = 0
 context_idx = context_inputs.index(context)
 
-hidden_pc = pca_transform(hidden)
-
-fps_pc = pca_transform(fps)
-
-fp_alpha = 0.4
-stride_plot = 4
-
-fig = go.Figure(
-    layout=dict(
-        width=800, 
-        height=600,
-        scene=dict(
-            xaxis_title='PC1',
-            yaxis_title='PC2',
-            zaxis_title='PC3',        
-        ), 
-        margin=dict(l=10, r=10, t=0, b=10),
-        legend=dict(
-            yanchor="top", y=0.9, 
-            xanchor="right", 
-        ),
-    ), 
+fig = plot_hidden_and_fp_trajectories_3D(
+    fps_pc['states'][context_idx, ..., pcs_plot],
+    hidden_pc[context_idx, ..., pcs_plot],
+    colors=conditions_colors,
+    stride_plot=6,
 )
-fig = fbp.plot_traj_3D(
-    fps_pc['states'][context_idx, ::stride_plot], 
-    colors=conditions_colors[::stride_plot], 
-    mode='markers', 
-    marker_size=2, 
-    marker_opacity=fp_alpha,
-    endpoint_symbol='square-open',
-    name="Local FP",
-    fig=fig, 
+
+fig.add_traces(
+    readout_vector_traces(
+        readout_weights_pc[..., pcs_plot],
+        jnp.tile(hidden_pc[context_idx, 0, 0, pcs_plot], (2, 1)),
+    ),
 )
-fig = fbp.plot_traj_3D(
-    hidden_pc[context_idx, ::stride_plot], 
-    colors=conditions_colors[::stride_plot], 
-    mode='lines', 
-    line_width=2,
-    endpoint_symbol='diamond-open', 
-    name='Reach trajectory',
-    fig=fig,
-)
+
 fig.show()
-# copy_fig(fig)
+```
+
+#### Corresponding effector trajectories
+
+```{python}
+states = all_states[training_method][train_std][context]
+
+where_plot = lambda states: (
+    states.mechanics.effector.pos,
+    states.mechanics.effector.vel,
+    states.efferent.output,
+)
+
+fig = fbp.trajectories_2D(
+    jt.map(lambda arr: arr[::stride_plot], where_plot(states)),
+    var_labels=('Position', 'Velocity', 'Control force'),
+    axes_labels=('x', 'y'),
+    legend_title='Reach direction',
+)
 ```
 
 #### 2D
@@ -586,19 +688,105 @@ for i, color in enumerate(conditions_colors_tuples[::stride_plot]):
         markersize=2,
         markerfacecolor=color,
     )
+    
+    
+aa = jnp.pad(readout_weights_pc[..., pcs][None], ((1,0), (0,0), (0,0))).T
+ax.plot(*aa[0], c='r')
+ax.plot(*aa[1], c='b')
 
 ax.set_xlabel(f"PC{pcs[0] + 1}")
 ax.set_ylabel(f"PC{pcs[1] + 1}")
 plt.show()
 ```
 
-### Compare goals-goals and inits-goals FPs across context inputs
-
-TODO
 
 ### Compare a single reach direction's FP trajectory, across context inputs
 
-TODO
+**TODO**. For both baseline and disturbance conditions. 
+
+```{python}
+pcs_plot = slice(0, 3)
+
+direction_idx = 0
+
+fig = plot_hidden_and_fp_trajectories_3D(
+    fps_pc['states'][:, direction_idx, ..., pcs_plot],
+    hidden_pc[:, direction_idx, ..., pcs_plot],
+    colors=list(context_input_colors_dark.values()),
+    # stride_plot=1,
+)
+
+fig.add_traces(
+    readout_vector_traces(
+        readout_weights_pc[..., pcs_plot],
+        jnp.tile(hidden_pc[0, direction_idx, 0, pcs_plot], (2, 1)),
+    ),
+)
+
+fig.show()
+```
+
+### Compare average aligned FP trajectories, across context inputs
+
+TODO. I'm not sure this makes sense, since we need to align them in the high-dimensional space. But perhaps there is a principled way to do it; e.g. by rotating around (which point in?) the readout plane
+
+### Compare goals-goals and inits-goals FPs across context inputs
+
+```{python}
+pcs_plot = slice(0, 3)
+
+fp_alpha = 0.4
+stride_plot = 8
+
+fig = go.Figure(
+    layout=dict(
+        width=800, 
+        height=600,
+        margin=dict(l=10, r=10, t=0, b=10),
+        legend=dict(
+            yanchor="top", 
+            y=0.9, 
+            xanchor="right", 
+        ),
+    ), 
+)
+fig = fbp.trajectories_3D(
+    fps_pc['goals-goals'][..., pcs_plot], 
+    colors=list(context_input_colors_dark.values()),
+    mode='markers', 
+    marker_size=4, 
+    endpoint_symbol=None,
+    name="Goals-goals FPs",
+    axis_labels=('PC1', 'PC2', 'PC3'),
+    fig=fig, 
+    marker_symbol="circle-open",
+)
+fig = fbp.trajectories_3D(
+    fps_pc['inits-goals'][..., pcs_plot], 
+    colors=list(context_input_colors_dark.values()),
+    mode='markers', 
+    marker_size=4, 
+    endpoint_symbol=None,
+    name="Inits-goals FPs",
+    axis_labels=('PC1', 'PC2', 'PC3'),
+    fig=fig, 
+    marker_symbol='circle',
+)
+# copy_fig(fig)
+```
+
+```{python}
+fig.add_traces(
+    readout_vector_traces(
+        readout_weights_pc[..., pcs_plot],
+        jnp.tile(hidden_pc[context_idx, 0, 0, pcs_plot], (2, 1)),
+    ),
+)
+```
+
+```{python}
+fig.show()
+```
 
 
 

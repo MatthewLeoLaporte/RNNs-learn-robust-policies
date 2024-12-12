@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from IPython.display import HTML, display
 import jax
 import jax.numpy as jnp
 import jax.tree as jt
@@ -12,7 +13,7 @@ import matplotlib.figure as mplfig
 import plotly
 import plotly.colors as plc
 import plotly.graph_objects as go
-from IPython.display import HTML, display
+import pyperclip as clip
 
 from feedbax import is_type
 import feedbax.plot as fbp
@@ -177,3 +178,20 @@ def plotly_vscode_latex_fix():
         display(HTML(
             '<script type="text/javascript" async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-MML-AM_SVG"></script>'
         ))
+        
+        
+def copy_fig(fig):
+    """Copy Plotly figure's JSON representation to clipboard.
+    
+    I use this to embed interactive figures in my Obsidian notes: https://github.com/mlprt/obsidian-paste-as-embed
+    """
+    fig = go.Figure(fig)
+    fig.update_layout(
+        width=700, height=600, 
+        margin=dict(l=10, r=10, t=0, b=10),
+        legend=dict(
+            yanchor="top", y=0.9, 
+            xanchor="right", 
+        ),
+    )
+    clip.copy(fig.to_json())

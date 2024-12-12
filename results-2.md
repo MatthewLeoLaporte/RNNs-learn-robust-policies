@@ -274,13 +274,44 @@ These look almost identical to the position impulse plots, except that the force
 ![[file-20241201124818087.png]]
 ### Distributions of performance measures
 
-## 
 
 ## Dynamics
 
-- [ ] **Goal steady-state fixed points**: do they systematically change?
+### Initial and final fixed points
+
+These FPs are for a set of center-out reaches. 
+
+- The goals-goals (steady state) FPs here correspond to the network being at rest, at the reach endpoint. 
+- The inits-goals FPs are the FPs on the very first timestep, when the network’s inputs tell it it’s at the origin but that its target is one of the center-out positions
+- Trajectories of FPs correspond to the FPs of the network for each of the inputs it actually had, during the reaches
+#### Trained on curl fields, evaluated on baseline
+##### DAI
+
+##### PAI
+#### Trained on curl fields, evaluated on amp. 2 curl field
+##### DAI
+
+##### PAI
+
+###### Context input 0, comparing 4 reach directions
+
+![[plotly-20241212-132341]]
+![[plotly-20241212-132845]]
+
+###### Context input 1, comparing 4 reach directions
+![[plotly-20241212-132631]]
+![[plotly-20241212-132812]]
+
+
+###### Comparison of context inputs for a single direction
+![[plotly-20241212-133032]]
+###### Goals-goals and inits-goals FPs across context inputs
+![[plotly-20241212-133252]]
+
 
 ### Eigendecomposition of steady-state FP Jacobians
+
+This is for a grid of steady (i.e. goal-goal) state positions across the workspace. 
 
 #### Trained on curl fields
 
@@ -298,6 +329,9 @@ These look almost identical to the position impulse plots, except that the force
 
 ###### Std 1.2
 ![[plotly-20241211-154033]]
+
+
+
 
 
 

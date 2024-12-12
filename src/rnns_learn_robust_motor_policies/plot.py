@@ -8,7 +8,6 @@ from jaxtyping import Array, Bool, Float
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-import pyperclip as clip
 from sklearn.decomposition import PCA
 
 from feedbax import is_type
@@ -457,23 +456,6 @@ def plot_traj_and_fp_pcs_3D(
     trajs_pcs = pca.transform(
         np.array(trajs).reshape(-1, trajs.shape[-1])
     ).reshape(*trajs.shape[:-1], pca.n_components)  # type: ignore
-    fig = fbp.plot_traj_3D(trajs_pcs, colors=colors, fig=fig)
+    fig = fbp.trajectories_3D(trajs_pcs, colors=colors, fig=fig)
     
     return fig
-
-
-def copy_fig(fig):
-    """Copy Plotly figure's JSON representation to clipboard.
-    
-    I use this to embed interactive figures in my Obsidian notes: https://github.com/mlprt/obsidian-paste-as-embed
-    """
-    fig = go.Figure(fig)
-    fig.update_layout(
-        width=700, height=600, 
-        margin=dict(l=10, r=10, t=0, b=10),
-        legend=dict(
-            yanchor="top", y=0.9, 
-            xanchor="right", 
-        ),
-    )
-    clip.copy(fig.to_json())
