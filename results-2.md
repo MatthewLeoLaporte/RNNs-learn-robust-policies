@@ -14,7 +14,6 @@ Show that changing the context input controls the robustness of the behaviour.
 #### Trained and evaluated on curl fields, no delay
 
 Evaluation curl fields have amplitude 4.
-
 ##### Trained with DAI
 
 - At low field std (0.4), even very high values of the context input do not induce the network to be robust to the amp 4 curl field. Perhaps this makes sense if we consider that the network never 
@@ -288,8 +287,27 @@ These FPs are for a set of center-out reaches.
 ##### DAI
 
 ##### PAI
+###### Context input 0, comparing 4 reach directions
+![[plotly-20241212-141528]]
+
+###### Context input 1, comparing 4 reach directions
+![[plotly-20241212-141647]]
+
+###### Comparison of context inputs for a single direction
+![[plotly-20241212-142259]]
+
 #### Trained on curl fields, evaluated on amp. 2 curl field
 ##### DAI
+###### Context input 0, comparing 4 reach directions
+![[plotly-20241212-134054]]
+
+![[plotly-20241212-134110]]
+
+###### Comparing context inputs, for a single reach direction
+![[plotly-20241212-134208]]
+
+###### Goals-goals and inits-goals FPs across context inputs
+![[plotly-20241212-134339]]
 
 ##### PAI
 

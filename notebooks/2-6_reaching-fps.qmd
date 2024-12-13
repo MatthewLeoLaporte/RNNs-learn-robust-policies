@@ -79,6 +79,7 @@ from feedbax.bodies import SimpleFeedbackState
 from feedbax.intervene import (
     CurlField,
     FixedField,
+    add_intervenors,
     schedule_intervenor,
 )
 from feedbax.misc import batch_reshape
@@ -129,6 +130,7 @@ from rnns_learn_robust_motor_policies.plot import (
 from rnns_learn_robust_motor_policies.plot_utils import (
     figs_flatten_with_paths,
     figleaves,
+    copy_fig,
 )
 from rnns_learn_robust_motor_policies.post_training import setup_replicate_info
 from rnns_learn_robust_motor_policies.setup_utils import (
@@ -203,7 +205,7 @@ if motor_noise_std is not None:
 context_inputs = [-1.5, -1., -0.5, 0., 0.5, 1., 1.5]
 
 disturbance_amplitudes = {
-    'curl': 2,
+    'curl': 0.0,
     'constant': 0.4,
 }
 
@@ -274,7 +276,7 @@ Load the readout weights into their own variable, for ease of reference.
 ```{python}
 readout_weights = jt.map(
     lambda model: model.step.net.readout.weight,
-    all_models,
+    models_load,
     is_leaf=is_module,
 )
 ```
@@ -346,9 +348,9 @@ if disturbance_type == 'curl':
         return CurlField.with_params(amplitude=amplitude)    
         
 elif disturbance_type == 'constant':   
-    def disturbance(field_std):            
+    def disturbance(amplitude):            
         return FixedField.with_params(
-            scale=field_std,
+            scale=amplitude,
             field=orthogonal_field,  
         ) 
           
@@ -518,6 +520,8 @@ readout_weights_pc = pca_transform(readout_weights[training_method][train_std])
 ### Plotting functions
 
 ```{python}
+from jaxtyping import Array, Float
+
 def plot_hidden_and_fp_trajectories_3D(
     fp_trajs_pc: Float[Array, 'curves index pcs=3'],
     hidden_pc: Float[Array, 'curves index pcs=3'],
@@ -566,7 +570,7 @@ def plot_hidden_and_fp_trajectories_3D(
 ```
 
 ```{python}
-from jaxtyping import Array, Float
+
 
 def readout_vector_traces(
     readout_weights_pc: Float[Array, 'out=2 pcs=3'], 
@@ -621,12 +625,13 @@ pcs_plot = slice(0, 3)
 
 context = 0
 context_idx = context_inputs.index(context)
+stride_plot = 6
 
 fig = plot_hidden_and_fp_trajectories_3D(
     fps_pc['states'][context_idx, ..., pcs_plot],
     hidden_pc[context_idx, ..., pcs_plot],
     colors=conditions_colors,
-    stride_plot=6,
+    stride_plot=stride_plot,
 )
 
 fig.add_traces(
@@ -637,6 +642,7 @@ fig.add_traces(
 )
 
 fig.show()
+copy_fig(fig)
 ```
 
 #### Corresponding effector trajectories
@@ -656,6 +662,8 @@ fig = fbp.trajectories_2D(
     axes_labels=('x', 'y'),
     legend_title='Reach direction',
 )
+fig.show()
+copy_fig(fig)
 ```
 
 #### 2D
@@ -724,6 +732,7 @@ fig.add_traces(
 )
 
 fig.show()
+copy_fig(fig)
 ```
 
 ### Compare average aligned FP trajectories, across context inputs
@@ -772,20 +781,17 @@ fig = fbp.trajectories_3D(
     fig=fig, 
     marker_symbol='circle',
 )
-# copy_fig(fig)
-```
 
-```{python}
+
 fig.add_traces(
     readout_vector_traces(
         readout_weights_pc[..., pcs_plot],
         jnp.tile(hidden_pc[context_idx, 0, 0, pcs_plot], (2, 1)),
     ),
 )
-```
 
-```{python}
 fig.show()
+copy_fig(fig)
 ```
 
 

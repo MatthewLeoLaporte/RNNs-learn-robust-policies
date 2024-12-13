@@ -49,7 +49,6 @@ from feedbax import (
     is_module, 
     is_type,
     load, 
-    move_level_to_outside,
     tree_set_scalar,
     tree_stack,
     tree_struct_bytes,
@@ -60,7 +59,6 @@ from feedbax import (
 from feedbax.intervene import (
     CurlField, 
     FixedField, 
-    add_intervenors,
     schedule_intervenor,
 )
 import feedbax.plotly as fbp
@@ -170,8 +168,10 @@ disturbance_type: Optional[Literal['curl', 'constant']] = None
 feedback_noise_std: Optional[float] = None
 motor_noise_std: Optional[float] = None
 
-training_method = 'std'  # To analyze; suset of `training_methods_load`
+training_methods = ['amplitude', 'std']  # To analyze; suset of `training_methods_load`
 ```
+
+**Make sure to include 0, 0.5, and 1!**
 
 ```{python}
 # context_inputs = [-2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2]
@@ -230,10 +230,22 @@ models_base, model_info, replicate_info, n_replicates_included = query_and_load_
     ),
     tree_inclusions={
         # TrainStdDict: lambda x: x < 1.6,
-        TrainingMethodDict: training_method,
+        TrainingMethodDict: training_methods,
     },
     exclude_underperformers_by="best_total_loss",
     exclude_method='nan',
+)
+```
+
+```{python}
+from feedbax._tree import apply_to_filtered_leaves as atfl
+
+tree_stack
+
+all_models = jt.map(
+    lambda d: tree_stack(list(d.values())), 
+    models_base, 
+    is_leaf=is_type(TrainStdDict),
 )
 ```
 
@@ -309,7 +321,7 @@ eval_info = add_evaluation(
 # we want to see variation over the context input
 if disturbance_type == 'curl':  
     def disturbance(amplitude):
-        return CurlField.with_params(amplitude=-amplitude)    
+        return CurlField.with_params(amplitude=amplitude)    
         
 elif disturbance_type == 'constant':   
     def disturbance(field_std):            
@@ -327,32 +339,34 @@ else:
 See notebook 1-2a for some explanation of the parameter choices here.
 
 ```{python}
-task_base, _ = tree_unzip(jt.map( # over disturbance amplitudes
-    lambda disturbance_amplitude: schedule_intervenor(  # (implicitly) over train stds
+def test(disturbance_amplitude):
+    task, model = schedule_intervenor(  # (implicitly) over train stds
         get_base_task(model_info.n_steps),
-        jt.leaves(models_base, is_leaf=is_module)[0],
+        models_base['std'],
         lambda model: model.step.mechanics,
         disturbance(disturbance_amplitude),
         label=INTERVENOR_LABEL,
         default_active=False,
-    ),
-    PertAmpDict(zip(disturbance_amplitudes, disturbance_amplitudes)),
-))
+    )
+    return task, model
+```
 
-all_models = jt.map(
-    lambda models: add_intervenors(
-        models,
-        lambda model: model.step.mechanics,
-        # The first key is the model stage where to insert the disturbance field;
-        # `None` means prior to the first stage.
-        # The field parameters will come from the task, so use an amplitude 0.0 placeholder.
-        {None: {INTERVENOR_LABEL: disturbance(0.0)}},
+```{python}
+task_base, models = tree_unzip(jt.map( # over training methods
+    lambda models_by_method: jt.map( # over disturbance amplitudes
+        lambda disturbance_amplitude: schedule_intervenor(  # (implicitly) over train stds
+            get_base_task(model_info.n_steps),
+            models_by_method,
+            lambda model: model.step.mechanics,
+            disturbance(disturbance_amplitude),
+            label=INTERVENOR_LABEL,
+            default_active=False,
+        ),
+        PertAmpDict(zip(disturbance_amplitudes, disturbance_amplitudes)),
     ),
     models_base,
-    is_leaf=is_module,
-)
-
-# all_models = move_level_to_outside(all_models, TrainingMethodDict)
+    is_leaf=is_type(TrainStdDict),
+))
 ```
 
 ### Set up variants with different context inputs
@@ -363,33 +377,25 @@ def get_context_input_func(x, n_steps, n_trials):
         jnp.full((n_trials, n_steps), x, dtype=float)
     )
 
-all_tasks = {
-    task_size: ContextInputDict({
-        context_input: jt.map(
-            lambda task: eqx.tree_at( 
-                lambda task: task.input_dependencies,
-                task, 
-                {
-                    'context': TrialSpecDependency(
-                        get_context_input_func(
-                            context_input, 
-                            model_info.n_steps - 1, 
-                            task.n_validation_trials,
-                        )
-                    )
-                },
-            ),
-            tasks,
-            is_leaf=is_module,
-        )
-        for context_input in context_inputs
-    })
-    for task_size, tasks in dict(
-        full=task_base, 
-        small=convert_tasks_to_small(task_base),
-    ).items()
-}
+all_tasks = dict()
+
+all_tasks['full'] = ContextInputDict({
+    context_input: eqx.tree_at(
+        lambda task: task.input_dependencies,
+        task_base, 
+        {'context': TrialSpecDependency(
+            get_context_input_func(context_input, model_info.n_steps, task_base.n_validation_trials)
+        )},
+    )
+    for context_input in context_inputs
+})
 ```
+
+Make smaller versions of the tasks for visualization.
+
+```{python}
+all_tasks['small'] = convert_tasks_to_small(all_tasks['full'])
+``` 
 
 ### Assign some things for convenient reference
 
@@ -413,7 +419,7 @@ trials_colors, trials_colors_dark = get_colors_dicts(
 
 # by training condition
 disturbance_train_stds_colors, disturbance_train_stds_colors_dark = get_colors_dicts(
-    model_info.disturbance_stds, COLORSCALES['disturbance_train_stds'],
+    disturbance_train_stds, COLORSCALES['disturbance_train_stds'],
 )
 
 # by evaluation condition
@@ -444,8 +450,8 @@ def evaluate_all_states(models, tasks, n_evals):
 
 ```{python}
 all_states_bytes = (
-    tree_struct_bytes(eqx.filter_eval_shape(evaluate_all_states, all_models, all_tasks['full'], n_evals['full'])),
-    tree_struct_bytes(eqx.filter_eval_shape(evaluate_all_states, all_models, all_tasks['small'], n_evals['small'])),
+    tree_struct_bytes(eqx.filter_eval_shape(evaluate_all_states, models, all_tasks['full'], n_evals['full'])),
+    tree_struct_bytes(eqx.filter_eval_shape(evaluate_all_states, models, all_tasks['small'], n_evals['small'])),
 )
 
 print(f"{sum(all_states_bytes) / 1e9:.2f} GB of memory estimated to store all states.")
@@ -454,7 +460,7 @@ print(f"{sum(all_states_bytes) / 1e9:.2f} GB of memory estimated to store all st
 ```{python}
 # Evaluate all task variants (full and small)
 all_states = jt.map(
-    lambda n, tasks: evaluate_all_states(all_models, tasks, n),
+    lambda n, tasks: evaluate_all_states(models, tasks, n),
     n_evals, all_tasks,
 )
 ```
@@ -549,11 +555,10 @@ figs = jt.map(
 
 ```{python}
 for path, fig in tqdm(figs_flatten_with_paths(figs)):
-    print(path)
     add_endpoint_traces(fig, POS_ENDPOINTS_ALIGNED['small'], xaxis='x1', yaxis='y1')
     
     fig_parameters = dict(
-        training_method=training_method,
+        training_method=path[0].key,
         disturbance_type=disturbance_type,
         disturbance_type_train=disturbance_type_load,
         disturbance_train_std=path[1].key,

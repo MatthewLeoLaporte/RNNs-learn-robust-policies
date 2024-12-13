@@ -27,7 +27,7 @@ def subdict(dct: dict[T, Any], keys: Sequence[T]):
     return type(dct)({k: dct[k] for k in keys})
 
 
-def subset_dict_tree_level(tree: PyTree[dict[T, Any]], keys: Sequence[T], dict_type=dict):
+def tree_subset_dict_level(tree: PyTree[dict[T, Any]], keys: Sequence[T], dict_type=dict):
     """Maps `subdict` over dicts of a given type"""
     return jt.map(
         lambda d: subdict(d, keys),

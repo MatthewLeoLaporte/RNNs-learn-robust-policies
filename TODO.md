@@ -2,18 +2,25 @@
 created: 2024-10-04T11:27
 updated: 2024-11-13T10:32
 ---
-**See [[results-2|Part 2 results]] for ongoing analysis TODOs.**
+**See [[results-2|Part 2 results]] for ongoing analysis TODOs.
 
-- [ ] See how much more robust the baseline model is in part 1, if we **decrease the weight on the control cost**. (Talk to Gunnar about this – it will also affect the time urgency.)
+- [x] **Evaluate models trained on BCS, DAI, PAI on baseline (no eval perturbation)**
+- [ ] Add figures to database in 2-6
+- [ ] See how much more robust the baseline model is in part 1, if we **decrease the weight on the control cost**. (Will also affect the time urgency.)
 	- My expectation is that it will of course increase the forces and decrease the movement duration, but that depending on the perturbation this will actually make it *less* robust (e.g. curl fields)
+
+## Technical
+
+- [ ] Write a `tree_stack` that works with models – can’t just use `apply_to_filtered_leaves` since the shape of the output is changed wrt the input 
+- [ ] Try vmapping over `schedule_intervenor`, to get batch dimensions in models and tasks. Batched tasks seems like a missing link to making some of the analyses easier to write.
 
 ## Analysis
 
+### Fixed points
+
 - [ ] Examine reaching FP trajectories for both baseline (no disturbance) and disturbance conditions
-- [x] Plot readout vector in 2-6 PC plots
 - [ ] Try to get rid of dislocations in fixed point trajectories (though they aren’t very bad except at context -2)
 
-### Fixed points
 #### Translation invariance
 
 - [x] Do fixed points vary with goal position (i.e. target input), or just with the difference between target and feedback inputs?
@@ -53,7 +60,6 @@ How do the fixed points change over reach/stabilization trajectories?
 ### Measures
 
 - [ ] For each train std. in the “std” method, there is a certain **context input at which the position profile is closest to a straight reach**. Determine what this context input is. (I’m not sure about error bounds; I guess we would do the optimization for *all* validation trials individually.)
-- [ ] ~~Covariance between network output and system noise variables~~
 - [ ] **Direction of max net force (at start of trial?)**
 
 ## Training

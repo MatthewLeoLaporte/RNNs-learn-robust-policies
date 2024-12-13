@@ -445,7 +445,7 @@ def query_and_load_models(
                     inclusion = [
                         x for x in model_info.inclusion if all(inclusion(x))
                     ]
-                elif not isinstance(inclusion, Sequence):
+                elif isinstance(inclusion, str) or not isinstance(inclusion, Sequence):
                     # If not a Callable and not a Sequence, then assume we've 
                     # been given a single key to include
                     replace_func = lambda d, inclusion: d[inclusion]
