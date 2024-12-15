@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Optional, TypeVar
+from typing import Literal, Optional, TypeVar
 
 import equinox as eqx
 import jax.numpy as jnp
@@ -101,8 +101,13 @@ def add_endpoint_traces(
 
 def get_violins(
     data: dict[float, dict[float, Float[Array, "..."]]],  # "evals replicates conditions"
+    data_split: Optional[dict[float, dict[float, Float[Array, "..."]]]] = None,
+    split_mode: Literal['whole', 'split'] = 'whole',
     legend_title: str = "",
-    layout_kws: dict = None,
+    violinmode: Literal['overlay', 'group'] = 'overlay',
+    layout_kws: Optional[dict] = None,
+    trace_kws: Optional[dict] = None,
+    trace_split_kws: Optional[dict] = None,
     arr_axis_labels: Optional[Sequence[str]] = None,  # ["Evaluation", "Replicate", "Condition"]
     zero_hline: bool = False,
     *,
@@ -163,7 +168,7 @@ def get_violins(
                 tickvals=np.arange(n_violins),
                 ticktext=[f'{x:.2g}' for x in example_legendgroup],
             ),
-            violinmode='overlay',
+            violinmode=violinmode,
             violingap=0,
             violingroupgap=0,
             margin_t=60,
@@ -181,12 +186,38 @@ def get_violins(
             for j, data in enumerate(data_i.values())
         ]).flatten()
         
-        fig.add_trace(
-            go.Violin(
+        
+        trace = go.Violin(
+            x=xs,
+            y=jnp.stack(tuple(data_i.values())).flatten(),
+            name=legendgroup_value,
+            legendgroup=legendgroup_value,
+            scalegroup=legendgroup_value,
+            box_visible=False,
+            meanline_visible=True,
+            line_color=colors[legendgroup_value],
+            # showlegend=False,
+            opacity=1,
+            spanmode='hard',
+            scalemode='width',
+            # width=1.5,
+            customdata=customdata.T,
+            hovertemplate='<br>'.join([
+                "%{y:.2f}",
+                *customdata_hovertemplate_strs,
+                "<extra></extra>",                    
+            ])
+        )
+        
+        if data_split is not None:           
+            data_split_i = data_split[legendgroup_value]
+            
+            trace_split = go.Violin(
                 x=xs,
-                y=jnp.stack(tuple(data_i.values())).flatten(),
+                y=jnp.stack(tuple(data_split_i.values())).flatten(),
                 name=legendgroup_value,
                 legendgroup=legendgroup_value,
+                scalegroup=legendgroup_value,
                 box_visible=False,
                 meanline_visible=True,
                 line_color=colors[legendgroup_value],
@@ -202,7 +233,23 @@ def get_violins(
                     "<extra></extra>",                    
                 ])
             )
-        )
+            
+            if split_mode == 'split':   
+                trace.update(side='positive')
+                trace_split.update(side='negative')
+            elif split_mode == 'whole':
+                pass
+
+            if trace_split_kws is not None:
+                trace_split.update(**trace_split_kws)
+            
+            fig.add_trace(trace_split)
+            
+        if trace_kws is not None:
+            trace.update(**trace_kws)
+        
+        fig.add_trace(trace)
+        
         
     if layout_kws is not None:
         fig.update_layout(**layout_kws)

@@ -1,6 +1,6 @@
 
 from collections.abc import Callable, Sequence
-from typing import Literal, Optional
+from typing import Literal, Optional, TypeAlias
 
 import equinox as eqx
 import jax
@@ -26,14 +26,16 @@ from rnns_learn_robust_motor_policies.setup_utils import get_base_task
 from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainStdDict, TrainingMethodDict
 
 
-# Separate this def by training method so that we can multiply by `field_std` in the "std" case,
+TrainingMethodLabel: TypeAlias = Literal["bcs", "dai", "pai-asf", "pai-n"]
+
+# Separate this def by training method so that we can multiply by `field_std` in the "pai-asf" case,
 # without it affecting the context input. That is, in all three cases `field_std` is a factor of 
-# the actual field strength, but in `"active"` and `"amplitude"` it is multiplied by the 
-# `scale` parameter, which is not seen by the network in those cases; and in `"std"` it is
+# the actual field strength, but in `"bcs"` and `"dai"` it is multiplied by the 
+# `scale` parameter, which is not seen by the network in those cases; and in `"pai-asf"` it is
 # multiplied by the `field` parameter, which is not seen by the network in that case. 
 # (See the definition of `SCALE_FUNCS` below.)
 disturbance_params = TrainingMethodDict({
-    "active": lambda field_std: {
+    "bcs": lambda field_std: {
         'curl': dict(
             amplitude=lambda trial_spec, batch_info, key: jr.normal(key, ()),
         ),
@@ -41,7 +43,7 @@ disturbance_params = TrainingMethodDict({
             field=lambda trial_spec, batch_info, key: vector_with_gaussian_length(key),
         ),
     },
-    "amplitude": lambda field_std: {
+    "dai": lambda field_std: {
         'curl': dict(
             amplitude=lambda trial_spec, batch_info, key: jr.normal(key, ()),
         ),
@@ -49,7 +51,7 @@ disturbance_params = TrainingMethodDict({
             field=lambda trial_spec, batch_info, key: vector_with_gaussian_length(key),
         ),
     },
-    "std": lambda field_std: {
+    "pai-asf": lambda field_std: {
         'curl': dict(
             amplitude=lambda trial_spec, batch_info, key: field_std * jr.normal(key, ())
         ),
@@ -64,30 +66,30 @@ disturbance_params = TrainingMethodDict({
 
 # Define whether the disturbance is active on each trial
 disturbance_active: dict[str, Callable] = TrainingMethodDict({
-    "active": lambda p: lambda trial_spec, _, key: jr.bernoulli(key, p=p),
-    "amplitude": lambda p: lambda trial_spec, _, key: jr.bernoulli(key, p=p),  
-    "std": lambda p: lambda trial_spec, _, key: jr.bernoulli(key, p=p),  
+    "bcs": lambda p: lambda trial_spec, _, key: jr.bernoulli(key, p=p),
+    "dai": lambda p: lambda trial_spec, _, key: jr.bernoulli(key, p=p),  
+    "pai-asf": lambda p: lambda trial_spec, _, key: jr.bernoulli(key, p=p),  
 })
 
 
 # Define how the network's context input will be determined from the trial specs, to which it is then added
 CONTEXT_INPUT_FUNCS = TrainingMethodDict({
-    "active": lambda trial_specs, key: trial_specs.intervene[INTERVENOR_LABEL].active.astype(float),
-    "amplitude": lambda trial_specs, key: get_field_amplitude(trial_specs.intervene[INTERVENOR_LABEL]),
-    "std": lambda trial_specs, key: trial_specs.intervene[INTERVENOR_LABEL].scale,
+    "bcs": lambda trial_specs, key: trial_specs.intervene[INTERVENOR_LABEL].active.astype(float),
+    "dai": lambda trial_specs, key: get_field_amplitude(trial_specs.intervene[INTERVENOR_LABEL]),
+    "pai-asf": lambda trial_specs, key: trial_specs.intervene[INTERVENOR_LABEL].scale,
 })
 
 
 """Either scale the field strength by a constant std, or sample the std for each trial.
 
-Note that in the `"std"` case the actual field amplitude is still scaled by `field_std`, 
+Note that in the `"pai-asf"` case the actual field amplitude is still scaled by `field_std`, 
 but this is done in `disturbance_params` so that the magnitude of the context input 
-is the same on average between the `"amplitude"` and `"std"` methods.
+is the same on average between the `"dai"` and `"pai-asf"` methods.
 """
 SCALE_FUNCS = TrainingMethodDict({
-    "active": lambda field_std: field_std,
-    "amplitude": lambda field_std: field_std,
-    "std": lambda field_std: (
+    "bcs": lambda field_std: field_std,
+    "dai": lambda field_std: field_std,
+    "pai-asf": lambda field_std: (
         lambda trial_spec, _, key: jr.uniform(key, (), minval=0, maxval=1)
     ),
 })
@@ -106,7 +108,7 @@ def disturbance(disturbance_type, field_std, p_perturbed, method):
 
 
 def setup_task_model_pairs(
-    training_methods: Optional[Sequence[Literal["active", "amplitude", "std"]]] = None, 
+    training_methods: Optional[Sequence[TrainingMethodLabel]] = None, 
     *,
     n_replicates,
     dt,

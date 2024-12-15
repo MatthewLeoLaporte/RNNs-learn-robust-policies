@@ -6,8 +6,21 @@ updated: 2024-11-13T10:32
 
 - [x] **Evaluate models trained on BCS, DAI, PAI on baseline (no eval perturbation)**
 - [ ] Add figures to database in 2-6
+- [ ] Generate train std 0.0 aligned trajectory plots in 2-3 (as well as std 0.4/1.0 already)
+- [ ] Show train std 0.0 violins in the background (e.g. as semitransparent grey) of measure plots in 2-3
 - [ ] See how much more robust the baseline model is in part 1, if we **decrease the weight on the control cost**. (Will also affect the time urgency.)
 	- My expectation is that it will of course increase the forces and decrease the movement duration, but that depending on the perturbation this will actually make it *less* robust (e.g. curl fields)
+- [ ] Move training and analysis notebooks into separate directories – better repo organization
+	- Make sure to find-replace
+	- update how the database/IO works, if necessary
+	- 0-training, 1-analysis, 2-supplement
+	- What about `parameters/`?
+
+## Efficiency
+
+- [x] Make wrapper for `go.Figure` that adds a “copy as png” and “copy as svg” buttons; this will save a lot of time
+	- See https://plotly.com/python/figurewidget-app/
+- [ ] Automatically generate a list of figure types in all notebooks
 
 ## Technical
 
@@ -66,15 +79,23 @@ How do the fixed points change over reach/stabilization trajectories?
 
 **See also [[results-training-methods-part2]].**
 
-- Debug the equinox vmap warning that keeps showing up at the start of each training run (in 2-1 anyway)
+- [ ] Debug the equinox vmap warning that keeps showing up at the start of each training run (in 2-1 anyway)
 
-### Best training method for constant fields
+### Best training method 
 
-- This is unclear. 
+Out of [[methods#Training methods|these]]. This is unclear. 
+
 - It looks like the ideal set of field stds. to get a good spread of measures/robustness varies between methods
-- [ ] Go through the sets of trained models I’ve made recently and find the “best spread” for each method
+- [x] Go through the sets of trained models I’ve made recently and find the “best spread” for each method
 - [ ] Make some general comments on what is happening to the trajectories (lateral displacements, endpoints errors; are the relationships monotonic (not always!) etc.) as context input & field std vary, for the different methods
 - [ ] Ask o1 if there are any training techniques that might work better, or if it can think of a reason why
+
+#### Current state
+
+- BCS is in some ways the best for constant fields, as behaviour is approximately the same across training stds, for context input 0
+- BCS does not even work for curl fields
+- DAI works in both cases, but the results show the worst spread of robust behaviour, probably because the network has little uncertainty about how perturbed it will be
+- PAI works in both cases, but appears to be [[2024-12-13#PhD|inducing]] a bias/adaptation in the curl field case.
 
 ### Other technical stuff
 

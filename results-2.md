@@ -14,7 +14,41 @@ Show that changing the context input controls the robustness of the behaviour.
 #### Trained and evaluated on curl fields, no delay
 
 Evaluation curl fields have amplitude 4.
+
+##### Trained with BCS-0.75
+
+###### Train std 0.0
+![[file-20241214105858243.png]]
+
+###### Train std. 0.5
+
+As with PAI-ASF, at context -3 we have some unrobust behaviour even in the absence of curl.
+![[file-20241214105913680.png]]
+![[file-20241214105953597.png]]
+
+###### Train std 1.0
+
+The “hyperrobust” oscillations in control force show up much earlier and more clearly than in PAI-ASF. However, unlike PAI-ASF, there are no strange oscillations in the control for for context 2+
+
+![[file-20241214110010210.png]]
+
+###### Train std. 1.5
+
+The hyperrobust behaviour at high context inputs disappears.
+![[file-20241214110058954.png]]
+###### Comparison of -2, 0, and 2 context input trajectories, across train stds
+
+Compared to PAI-ASF, the spread between train stds is somewhat more similar comparing context inputs.
+
+![[file-20241214110229948.png]]
+![[file-20241214110238678.png]]
+![[file-20241214110437259.png]]
 ##### Trained with DAI
+
+
+> [!NOTE]+
+> This section has disturbance amplitude 4
+
 
 - At low field std (0.4), even very high values of the context input do not induce the network to be robust to the amp 4 curl field. Perhaps this makes sense if we consider that the network never 
 - Increasing the context input increases the magnitude of the control forces, as expected
@@ -59,69 +93,41 @@ Context 1
 Context 2
 ![[file-20241128111610673.png]]
 
-##### Trained with PAI
+##### Trained with PAI-ASF
 
-
-> [!NOTE]
-> I’ve replaced the figures below with the ones for amplitude 2, rather than amplitude 4, since the show the trends more clearly. 
-
-
-- At low std (0.4), high context input results in more robust trajectories than with DAI; this makes sense if we consider that the network is uncertain about how strong exactly will be the field on a given trial
-- Negative context inputs are definitely “unrobust” even when we train on std 1.6
 - The position trajectories for zero-context look reasonably similar to [[results-1#^compare-curl-train-aligned|those]] from part 1
-- However, the force trajectories look somewhat different; in particular there is more context-dependent curvature to the initial forces
-- **At std 0.8 and above, values of the context input greater than 1 can induce a “hyperrobust” trajectory, which may be nearly straight on average, or which may even curve in the opposite direction to the curl field.** (Remember, at trial start the network has no idea what direction the curl will be.)
-- Very high context inputs lead to a sort of “hyperrobust instability” where the control forces begin oscillating, almost as they do for the “unrobust instability” (i.e. the dark blue curves) but *in the opposite direction*
 
-Std 0.4
-![[file-20241128112530988.png]]
+###### Train std. 0.0
 
-Std 0.8
-![[file-20241128112540425.png]]
+If train std is 0.0, there is only a slight difference in behaviour as context input changes, presumably because the context input is still driving a small change in network dynamics.
+![[file-20241214103416783.png]]
+###### Train std 0.5
 
-Std 1.2
-![[file-20241128112551445.png]]
+Even in the absence of curl, context -3 shows some unrobust behaviour
 
-Std 1.6
-![[file-20241128112622769.png]]
+![[file-20241214103643630.png]]
+Versus at curl 2
+![[file-20241214103718104.png]]
+###### Train std 1.0
+![[file-20241214103844637.png]]
+###### Train std 1.5
 
-
+Note that at higher contexts, the control force starts oscillating, but that this does not appear to affect performance *on average*.
+![[file-20241214103938075.png]]
 ###### Comparison of -2, 0, and 2 context input trajectories, across train stds
 
+- Context input -2 is the most similar across stds. 
+- Context 0 shows a spread, suggesting the entire network learns to be more robust regardless of context input
 
-> [!NOTE]
-> These are for amplitude 4, and are harder to interpret than the results for amplitude 2; see next section.
-
-
-- Compared to DAI, it is nice that the zero-context trajectories are so similar here; though at higher train stds, they do become smoother
-- I’m not sure how to characterize what is happening with the negative context inputs
-- It does seem that something qualitative happens between 0.8 and 1.6; the trend at context -2 reverses direction (it stops becoming more unrobust, and starts becoming more robust again); the force profile for context 0 changes significantly; the “hyperrobust oscillations” start becoming apparent in the context 2 position trajectories (though the shift is already apparent in comparison between 0.8 and 1.2 force profiles)
-
-
-![[file-20241126121955803.png]]
-![[file-20241126122005631.png]]
-![[file-20241126122026428.png]]
-###### Same comparison but for curl amplitude 2 (instead of 4)
-
-This looks much clearer.
-
-Context input -2
-![[file-20241128110348679.png]]
-
-Context 0. Notice that up to std 1.2, the trajectories are very similar, which is what we expect to see if the network is really internally separating baseline (context 0) versus robust strategies
-![[file-20241128110400104.png]]
-
-Context 1: Now the influence of train std. is apparent, since it determines what level of robustness context 1 corresponds to. Note that the control profiles are qualitatively quite different than for context 0.
-
-![[file-20241128110536141.png]]
-Context 2: Here the hyperrobustness is apparent, even as early as std 0.8
-![[file-20241128110732123.png]]
-
-
+![[file-20241214104101160.png]]
+![[file-20241214104116202.png]]
+![[file-20241214104135071.png]]
 #### Trained and evaluated on curl fields, 4-step delay
 
 **Evaluation curl fields have amplitude 2. Note that this is only half as strong as before, since curl amplitude 4 is very unstable for networks trained on delay 4.**
+##### Trained with BCS-0.75
 
+TODO.
 ##### Trained with DAI
 
 - As in the non-delayed case, there is a kind of asymptotic effect with the context input, and the achievable robustness depends on the train std
@@ -148,28 +154,15 @@ Something weird happens before train std 2.
 
 ![[file-20241126144011282.png]]
 ![[file-20241126144022068.png]]
-##### Trained with PAI
+##### Trained with PAI-ASF
 
-- Note that the context-1 case seems to be pretty robust here, but that as we go to values above 1, we appear to more quickly reach “hyperrobust instability” than we did without delay
+TODO.
 
-Std 0.4
-![[file-20241126143525172.png]]
-
-Std 0.8
-![[file-20241126143559348.png]]
-
-Std 1.2
-![[file-20241126143626141.png]]
-The context-1 case is very interesting, here:
-![[file-20241126143901533.png]]
 ###### Comparison of -2, 0, and 1 context input trajectories, across train stds
-![[file-20241126144135029.png]]
-![[file-20241126144146327.png]]
 
-![[file-20241126144157899.png]]
-Here it seems clearer that training on perturbations induces “hyper-robustness” more quickly in the presence of delays; these are only the context-1 responses and they are already curving in the opposite direction starting just above std 1.2
+TODO.
 
-#### Trained and evaluated on random fields, no delay
+#### Trained and evaluated on constant fields, no delay
 
 ##### Determining the train stds. to compare
 
@@ -177,18 +170,38 @@ This was less obvious to me than with curl fields.
 
 - The switch to a robust strategy happens at quite low field std, and saturates at stds not much higher. 
 
-### Distributions of performance measures for PAI
+### Distributions of performance measures
 
 #### Trained and evaluated on curl fields, no delay
 
-![[file-20241128173957248.png]]
+- The max forward force is ~identical both with and without evaluation curl. This suggests an initial open-loop difference in strategy due to context input.
 
-![[file-20241128174025534.png]]
+##### BCS-0.75
+###### No disturbance
+![[file-20241214110545881.png]]
 
-> [!NOTE] 
-> Since the PAI model shows "hyperrobust" responses that curve in the opposite direction, perhaps we should use max signed response
-
+![[file-20241214110622630.png]]
+![[file-20241214110729576.png]]
+![[file-20241214110851931.png]]
+###### Curl field 2
+![[file-20241214110606791.png]]
+![[file-20241214110634077.png]]
+![[file-20241214110740443.png]]
+![[file-20241214110905232.png]]
+##### PAI-ASF
+###### No disturbance
+![[file-20241214104437650.png]]
+![[file-20241214104635763.png]]
+![[file-20241214104755870.png]]
+![[file-20241214104938360.png]]
+###### Curl field 2
+![[file-20241214104450761.png]]
+![[file-20241214104648127.png]]
+![[file-20241214104818379.png]]
+![[file-20241214104951615.png]]
 #### Trained and evaluated on curl fields, 4-step delay
+
+TODO.
 
 ## Feedback perturbations
 
@@ -197,32 +210,70 @@ Likewise, show that changing the context input appears to change the feedback ga
 ### Aligned trajectories
 
 These are all for impulse magnitude 1.2 (pos) and 0.8 (vel) unless otherwise stated.
+#### Trained on curl fields
 
-#### Trained on constant fields
 ##### BCS
+
+###### Position feedback impulse
+![[file-20241215103958440.png]]
+![[file-20241215104025876.png]]
+![[file-20241215104110235.png]]
+![[file-20241215104120989.png]]
+![[file-20241215104129745.png]]
+![[file-20241215104140340.png]]
+###### Velocity feedback impulse
+
+Very similar to position.
+![[file-20241215104206457.png]]
+![[file-20241215104234073.png]]
+
+##### PAI-ASF
+
+###### Position feedback impulse
+
+
+
+![[file-20241215095026554.png]]
+![[file-20241215094938895.png]]
+![[file-20241215095152027.png]]
+![[file-20241215095202834.png]]
+![[file-20241215095221625.png]]
+![[file-20241215095236212.png]]
+
+###### Velocity feedback impulse
+
+Very similar in general to a position perturbation.
+![[file-20241215095343039.png]]
+![[file-20241215095400390.png]]
+#### Trained on constant fields
+##### BCS-75
+
+TODO. I’ve increased `p_perturbed`.
 
 ###### Position feedback impulse
 
 **Std 0.0**
-![[file-20241201130746349.png]]
-![[file-20241201130806482.png]]
-![[file-20241201130837879.png]]
-![[file-20241201130853965.png]]
-
+![[file-20241215121924602.png]]
+![[file-20241215121952032.png]]
+![[file-20241215122001866.png]]
+![[file-20241215122010029.png]]
+![[file-20241215122025009.png]]
+![[file-20241215122033905.png]]
 **Std 0.04**
+![[file-20241215122119793.png]]
+![[file-20241215122127390.png]]
+![[file-20241215122216595.png]]
+![[file-20241215122222624.png]]
+![[file-20241215122234995.png]]
+![[file-20241215122241437.png]]
 
-![[file-20241201130234175.png]]
-
-![[file-20241201130333581.png]]
-![[file-20241201130423448.png]]
-![[file-20241201130525833.png]]
 ###### Velocity feedback impulse
 
 Very similar to the responses for position, except somewhat smaller force magnitudes. 
 
-**Std 0.04**
-![[file-20241201130246189.png]]
+**Std 0.0**
 
+**Std 0.04**
 ##### DAI
 
 ###### Position feedback impulse
@@ -250,7 +301,9 @@ These are a lot more similar than they are for BCS. There is higher variance for
 **Std 0.04**
 ![[file-20241201132307483.png]]
 
-##### PAI 
+##### PAI-ASF
+
+TODO. I’ve corrected this method and these plots need to be replaced.
 
 ###### Position feedback impulse
 
@@ -272,6 +325,64 @@ These look almost identical to the position impulse plots, except that the force
 **Std 0.04**
 ![[file-20241201124818087.png]]
 ### Distributions of performance measures
+
+#### Trained on curl fields
+
+##### BCS-75
+
+![[file-20241215104309957.png]]
+![[file-20241215104318362.png]]
+![[file-20241215104555455.png]]
+![[file-20241215104601449.png]]
+![[file-20241215104621424.png]]
+![[file-20241215104625839.png]]
+![[file-20241215104332311.png]]
+![[file-20241215104342111.png]]
+![[file-20241215104352147.png]]
+![[file-20241215104438011.png]]
+![[file-20241215104520224.png]]
+![[file-20241215104523862.png]]
+![[file-20241215104530319.png]]
+![[file-20241215104535328.png]]
+##### PAI-ASF
+![[file-20241215095719417.png]]
+![[file-20241215095729247.png]]
+![[file-20241215100214838.png]]
+![[file-20241215100223437.png]]
+At negative context, the networks are laggy to respond to the perturbation ending
+![[file-20241215100308677.png]]
+![[file-20241215100407667.png]]
+![[file-20241215095807303.png]]
+![[file-20241215095821762.png]]
+![[file-20241215095852888.png]]
+![[file-20241215095901369.png]]
+![[file-20241215100103098.png]]
+![[file-20241215100113003.png]]
+![[file-20241215100121601.png]]
+![[file-20241215100131071.png]]
+
+
+#### Trained on constant fields
+
+##### BCS-75
+![[file-20241215122557856.png]]
+![[file-20241215122459813.png]]
+![[file-20241215122505822.png]]
+![[file-20241215122521128.png]]
+![[file-20241215122528153.png]]
+![[file-20241215122552429.png]]
+![[file-20241215122605895.png]]
+![[file-20241215122629746.png]]
+![[file-20241215122645350.png]]
+![[file-20241215122655390.png]]
+![[file-20241215122710417.png]]
+![[file-20241215122717459.png]]
+![[file-20241215122741075.png]]
+![[file-20241215122748130.png]]
+![[file-20241215122758105.png]]
+![[file-20241215122805151.png]]
+
+##### PAI-ASF
 
 
 ## Dynamics
@@ -369,14 +480,6 @@ The readout norm will be fixed for each hybrid network; however, it may be the c
 Quantify this.
 
 ### Difference between DAI and PAI 
-
-I think for the main analysis I will focus on PAI, since it allows us to much more effectively control the level of robustness by varying the context input.
-
-However, it would be worth discussing (& including a supplementary figure) about how DAI does not induce robustness in the same way as PAI. 
-
-With DAI we get 1) asymptotic effects, not much happens above context 1, and in particular we can’t get straight or hyperrobust performance; 2) behaviour varies significantly at context 0, across train std, whereas with PAI it is more similar (i.e. it is more of a baseline, irrespective of the perturbations experienced outside the context 0 condition)
-
-This is probably because with PAI the network is always uncertain about how strong the fields will actually be, since its information is probabilistic, and therefore it has to hedge more strongly against this uncertainty, such that it extrapolates better re: the robustness tradeoff.
 
 ### Floor on control forces? Minimum work needed to complete task?
 

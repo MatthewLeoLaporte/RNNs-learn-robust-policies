@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 from IPython.display import HTML, display
+import ipywidgets as widgets
 import jax
 import jax.numpy as jnp
 import jax.tree as jt
@@ -180,7 +181,7 @@ def plotly_vscode_latex_fix():
         ))
         
         
-def copy_fig(fig):
+def copy_fig_json(fig):
     """Copy Plotly figure's JSON representation to clipboard.
     
     I use this to embed interactive figures in my Obsidian notes: https://github.com/mlprt/obsidian-paste-as-embed
@@ -195,3 +196,130 @@ def copy_fig(fig):
         ),
     )
     clip.copy(fig.to_json())
+    
+
+class PlotlyFigureWidget:
+    """Wraps a Plotly figure to display with widget interface elements in notebooks.
+    
+    In particular, adds buttons for copying a figure as PNG or JSON.
+    
+    Written with the help of Claude 3.5 Sonnet.
+    """
+    def __init__(self, fig: go.Figure, bg_fig: Optional[go.Figure] = None, annotation: Optional[str] = None):
+        """
+        Initialize the widget with a Plotly figure.
+        
+        Args:
+            fig (go.Figure): A Plotly graph objects figure
+        """
+        self.annotation = annotation
+        self.fig = fig
+        self.bg_fig = bg_fig
+        
+        if annotation is not None:
+            self.fig.add_annotation(
+                text=annotation,
+                xref='paper', yref='paper',
+                x=1, y=0,
+                xanchor='right', yanchor='bottom',
+                showarrow=False,
+                font=dict(size=8),
+            )
+        
+        self.create_widgets()
+        
+    def create_widgets(self):
+        """Create and arrange the widgets"""
+        # Create the figure widgets
+        if self.bg_fig:
+            # Get divs for both figures
+            main_div = self.fig.to_html(full_html=False)
+            bg_div = self.bg_fig.to_html(full_html=False)
+            
+            print(main_div)
+            
+            container = widgets.HTML(
+                value=f'''
+                <div style="position: relative; width: 800px; height: 600px;">
+                    <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.3;">
+                        {bg_div}
+                    </div>
+                    <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;">
+                        {main_div}
+                    </div>
+                </div>
+                <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+                '''
+            )
+        else:
+            container = go.FigureWidget(self.fig)
+                
+        # Create the buttons
+        self.copy_png_button = widgets.Button(
+            description='PNG',
+            icon='copy',
+            layout=widgets.Layout(
+                width='auto',
+                margin='2px'
+            )
+        )
+        
+        self.copy_json_button = widgets.Button(
+            description='JSON',
+            icon='copy',
+            layout=widgets.Layout(
+                width='auto',
+                margin='2px'
+            )
+        )
+        
+        # Add button click handlers
+        self.copy_png_button.on_click(self.copy_png)
+        self.copy_json_button.on_click(self.copy_json)
+        
+        # Create label
+        label = widgets.HTML(
+            value='Copy as:',
+            layout=widgets.Layout(
+                margin='5px 2px',
+                font_size='12px'
+            )
+        )
+        
+        # Create button container (vertical stack)
+        button_box = widgets.VBox([
+            label,
+            self.copy_png_button,
+            self.copy_json_button
+        ], layout=widgets.Layout(
+            margin='0px 10px',
+            align_items='center'
+        ))
+        
+        # Combine figure and buttons horizontally
+        self.container = widgets.HBox([
+            container,
+            button_box
+        ], layout=widgets.Layout(
+            align_items='center'
+        ))
+        
+    def copy_png(self, b):
+        """Handler for PNG copy button"""
+        fig = go.Figure(self.fig)
+        # fig.update_layout(
+        #     width=700, height=600, 
+        #     margin=dict(l=10, r=10, t=0, b=10),
+        # )
+        img_bytes = fig.to_image(format="png", scale=2)
+        with open('/tmp/fig.png', 'wb') as imgf:
+            imgf.write(img_bytes)
+        os.system(f"xclip -selection clipboard -t image/png -i /tmp/fig.png")
+        
+    def copy_json(self, b):
+        """Handler for JSON copy button"""
+        return copy_fig_json(self.fig)
+    
+    def show(self):
+        """Display the widget"""
+        display(self.container)

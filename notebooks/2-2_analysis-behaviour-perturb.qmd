@@ -156,26 +156,30 @@ We may want to specify 1) which trained models to load, by their parameters, and
 #| tags: [parameters]
 
 # Specify which trained models to load 
-disturbance_type_load: Literal['curl', 'constant'] = 'curl'
+# disturbance_type_load: Literal['curl', 'constant'] = 'curl'
+disturbance_type_load: Literal['curl', 'constant'] = 'constant'
 feedback_noise_std_load = 0.01
 motor_noise_std_load = 0.01
 feedback_delay_steps_load = 0
 hidden_size = 100
 
-disturbance_stds_load = [0.0, 0.5, 1.0, 1.5]
-training_methods_load = ['amplitude', 'std']
+training_methods_load = ['bcs', 'pai-asf']
+# disturbance_stds_load = [0.0, 0.5, 1.0, 1.5]
+disturbance_stds_load = [0.0, 0.01, 0.02, 0.03, 0.04, 0.08, 0.16, 0.32]
 
 # Specify model parameters to use for analysis (None -> use training value)
+# training_method = 'bcs'  # To analyze; subset of `training_methods_load`
+training_method = 'pai-asf'
 disturbance_type: Optional[Literal['curl', 'constant']] = None
+disturbance_train_stds = [0.0, 0.02, 0.04, 0.16]
 feedback_noise_std: Optional[float] = None
 motor_noise_std: Optional[float] = None
 
-training_method = 'std'  # To analyze; suset of `training_methods_load`
 ```
 
 ```{python}
 # context_inputs = [-2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2]
-context_inputs = [-2., -1., 0., 0.5, 1., 2.]
+context_inputs = [-2., -1., 0., 1., 2.]
 
 disturbance_amplitudes_by_type = {
     'curl': [0.0, 2.0],
@@ -235,6 +239,12 @@ models_base, model_info, replicate_info, n_replicates_included = query_and_load_
     exclude_underperformers_by="best_total_loss",
     exclude_method='nan',
 )
+```
+
+Analyze only a subset of training conditions:
+
+```{python}
+models_base = subdict(models_base, disturbance_train_stds)
 ```
 
 ## Sort out the evaluation parameters and create a database record
@@ -309,7 +319,7 @@ eval_info = add_evaluation(
 # we want to see variation over the context input
 if disturbance_type == 'curl':  
     def disturbance(amplitude):
-        return CurlField.with_params(amplitude=-amplitude)    
+        return CurlField.with_params(amplitude=amplitude)    
         
 elif disturbance_type == 'constant':   
     def disturbance(field_std):            
@@ -413,7 +423,7 @@ trials_colors, trials_colors_dark = get_colors_dicts(
 
 # by training condition
 disturbance_train_stds_colors, disturbance_train_stds_colors_dark = get_colors_dicts(
-    model_info.disturbance_stds, COLORSCALES['disturbance_train_stds'],
+    disturbance_train_stds, COLORSCALES['disturbance_train_stds'],
 )
 
 # by evaluation condition
@@ -549,15 +559,14 @@ figs = jt.map(
 
 ```{python}
 for path, fig in tqdm(figs_flatten_with_paths(figs)):
-    print(path)
     add_endpoint_traces(fig, POS_ENDPOINTS_ALIGNED['small'], xaxis='x1', yaxis='y1')
     
     fig_parameters = dict(
         training_method=training_method,
         disturbance_type=disturbance_type,
         disturbance_type_train=disturbance_type_load,
-        disturbance_train_std=path[1].key,
-        disturbance_amplitude=disturbance_amplitude,
+        disturbance_train_std=path[0].key,
+        disturbance_amplitude=path[1].key,
         # TODO: The number of replicates (`n_replicates_included`) may vary with the disturbance train std!
         # n=min(n_evals['small'] * n_replicates, n_curves_max),
     )
@@ -574,7 +583,7 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
 ```{python}
 for l0 in figs:
     for l1, fig in figs[l0].items():
-        print(l0, l1)
+        print(', '.join([training_method, f"train std: {l0}", f"pert amp: {l1}"]))
         fig.show()
 ```
 
@@ -626,9 +635,9 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
     fig_parameters = dict(
         disturbance_type=disturbance_type,
         disturbance_type_train=disturbance_type_load,
-        disturbance_amplitude=disturbance_amplitude,
-        training_method=path[0].key,
-        context_input=path[1].key,
+        training_method=training_method,
+        context_input=path[0].key,
+        disturbance_amplitude=path[1].key,
         # TODO: The number of replicates (`n_replicates_included`) may vary with the disturbance train std!
         # n=min(n_evals['small'] * n_replicates, n_curves_max),
     )
@@ -645,7 +654,7 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
 ```{python}
 for l0 in figs:
     for l1, fig in figs[l0].items():
-        print(l0, l1)
+        print(', '.join([training_method, f"context_input: {l0}", f"pert amp: {l1}"]))
         fig.show()
 ```
 
@@ -681,15 +690,24 @@ measure_labels = MEASURE_LABELS | custom_measure_labels
 all_measure_values = compute_all_measures(all_measures, aligned_vars['full'])
 ```
 
+Move the disturbance amplitude level to the outside of each measure.
+
+```{python}
+all_measure_values = {
+    measure_key: move_level_to_outside(measure_values, PertAmpDict)
+    for measure_key, measure_values in all_measure_values.items()
+}
+```
+
 ```{python}
 plot_id = "performance_measures/compare_train_and_context_conditions"
 ```
 
 ```{python}
 figs = {
-    measure_key: {
-        variant_label: get_violins(
-            all_measure_values[measure_key][variant_label],
+    measure_key: PertAmpDict({
+        pert_amplitude: get_violins(
+            measure_values,
             yaxis_title=measure_labels[measure_key],
             xaxis_title="Context input",
             legend_title="Train std.",
@@ -704,15 +722,16 @@ figs = {
                 # yaxis_range=[0, measure_ranges_lohi[key][1]],
             ),
         )
-        for variant_label in training_methods
-    }
-    for measure_key in all_measures
+        for pert_amplitude, measure_values in all_measure_values[measure_key].items()
+    })
+    for measure_key in all_measure_values
 }
 ```
 
 ```{python}
-for measure_key in figs:
-    figs[measure_key][training_methods[0]].show()
+for path, fig in tqdm(figs_flatten_with_paths(figs)):
+    print(f"Training method: {training_method}, Measure: {path[0].key}, Pert. amp.: {path[1].key}")
+    fig.show()
 ```
 
 ```{python}
@@ -720,9 +739,9 @@ n_dist = int(np.prod(jt.leaves(all_measure_values)[0].shape))
 
 for path, fig in tqdm(figs_flatten_with_paths(figs)):
     fig_parameters = dict(
+        training_method=training_method,
         measure_name=path[0].key,
-        training_method=path[1].key,
-        disturbance_amplitude=disturbance_amplitude,
+        disturbance_amplitude=path[1].key,
         n=n_dist, 
     )
     

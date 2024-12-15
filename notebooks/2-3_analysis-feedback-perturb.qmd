@@ -114,8 +114,10 @@ from rnns_learn_robust_motor_policies.plot import (
     get_violins,
 )
 from rnns_learn_robust_motor_policies.plot_utils import (
+    PlotlyFigureWidget as PFW,
     figleaves,
     figs_flatten_with_paths,
+    plotly_vscode_latex_fix,
 )
 from rnns_learn_robust_motor_policies.post_training import setup_replicate_info
 from rnns_learn_robust_motor_policies.setup_utils import (
@@ -175,17 +177,21 @@ motor_noise_std_load = 0.01
 feedback_delay_steps_load = 0
 hidden_size = 100
 
+# disturbance_stds_load = [0.0, 0.5, 1.0, 1.5]
 disturbance_stds_load = [0.0, 0.01, 0.02, 0.03, 0.04, 0.08, 0.16, 0.32]
-training_methods_load = ['std']
+training_methods_load = ['bcs', 'pai-asf']
 
 # Specify model parameters to use for analysis (None -> use training value)
+training_method = 'pai-asf'  
 disturbance_type: Optional[Literal['curl', 'constant']] = None
+# disturbance_train_stds = [0.0, 0.5, 1.0]
+disturbance_train_stds = [0.0, 0.02, 0.04, 0.08, 0.16]
 feedback_noise_std: Optional[float] = None
 motor_noise_std: Optional[float] = None
 ```
 
 ```{python}
-context_inputs = [-2., -1., 0., 1., 2.]
+context_inputs = [-3, -2., -1., 0., 1., 2., 3]
 ```
 
 ```{python}
@@ -200,13 +206,6 @@ impulse_start_step = 30
 impulse_duration = 5  # steps
 
 eval_grid_n = 5
-```
-
-The analysis will be performed for only one training method, and for a subset of the `disturbance_stds_load`:
-
-```{python}
-training_method = 'std'  
-disturbance_stds_train = [0.0, 0.04, 0.08]
 ```
 
 #### 
@@ -240,12 +239,16 @@ key = jr.PRNGKey(PROJECT_SEED)
 key_init, key_train, key_eval = jr.split(key, 3)
 ```
 
-### Colors setup
+### Plotting setup
+
+```{python}
+plotly_vscode_latex_fix()
+```
 
 ```{python}
 # when coloring by training condition
-disturbance_stds_train_colors, disturbance_stds_train_colors_dark = get_colors_dicts(
-    disturbance_stds_train, COLORSCALES['disturbance_train_stds'],
+disturbance_train_stds_colors, disturbance_train_stds_colors_dark = get_colors_dicts(
+    disturbance_train_stds, COLORSCALES['disturbance_train_stds'],
 )
 
 # when coloring by perturbed feedback variable
@@ -264,6 +267,7 @@ context_input_colors, context_input_colors_dark = get_colors_dicts(
 ```{python}
 models_base, model_info, replicate_info, n_replicates_included = query_and_load_models(
     db_session,
+    setup_task_model_pairs,
     params_query=dict(
         origin=TRAIN_NB_ID,
         disturbance_type=disturbance_type_load,
@@ -286,6 +290,12 @@ models_base, model_info, replicate_info, n_replicates_included = query_and_load_
         TrainingMethodDict: training_method,
     },
     exclude_underperformers_by="best_total_loss",
+)
+
+models_base = jt.map(
+    lambda d: subdict(d, disturbance_train_stds),
+    models_base,
+    is_leaf=is_type(TrainStdDict),
 )
 ```
 
@@ -592,15 +602,25 @@ def get_all_profiles(all_plot, var_label, colors, dict_type, legend_title):
 plot_id = "response_profiles/compare_context_inputs"
 ```
 
+**TODO**: Automatically do the zero training condition, as well
+
 ```{python}
 impulse_amplitude_idx = -2  
 
-train_std = 0.04
+# train_std = dict(
+#     curl=1.0, 
+#     constant=0.04,
+# )[disturbance_type]
+
+train_stds_plot = dict(
+    curl=[0.0, 1.0], 
+    constant=[0.0, 0.04],
+)[disturbance_type]
 ```
 
 ```{python}
 responses_plot = jt.map(
-    lambda d: d[train_std],
+    lambda d: subdict(d. train_stds_plot),
     impulse_responses,
     is_leaf=is_type(TrainStdDict),
 ) 
@@ -648,7 +668,7 @@ for path, fig in figs_flatten_with_paths(figs):
     )
     
     print(var_name, component_name, pert_var)
-    fig.show()
+    PFW(fig).show()
 ```
 
 ## Measure distributions
@@ -721,10 +741,13 @@ plot_id = "performance_measures/compare_impulse_amplitudes"
 ```
 
 ```{python}
-train_std = 0.04
+train_stds = dict(
+    curl=[0, 1.0], 
+    constant=[0, 0.04],
+)[disturbance_type]
 
 measures_plot = jt.map(
-    lambda d: d[train_std],
+    lambda d: subdict(d, train_stds),
     all_measure_values,
     is_leaf=is_type(TrainStdDict),
 )
@@ -745,20 +768,27 @@ measures_plot = jt.map(
 ```{python}
 figs = {
     key: {
-        pert_var: get_violins(
-            measure[pert_var], 
+        pert_var: rbp.get_violins(
+            measure[pert_var][train_stds[-1]], 
+            data_split=measure[pert_var][0.0],
+            split_mode='whole',
             yaxis_title=measure_labels[key],
             xaxis_title="Impulse amplitude",
             legend_title="Context input",
             colors=context_input_colors_dark,
             arr_axis_labels=["Evaluation", "Replicate", "Condition"],
+            violinmode="group",
             layout_kws=dict(
-                width=800,
-                height=600,
+                width=1000,
+                height=500,
                 # yaxis_range=[0, measure_ranges[key][1]],
                 title=f"{pert_var} feedback impulse",
-                violinmode="group",
+                yaxis_range=[None, None],
             ),
+            trace_split_kws=dict(
+                showlegend=False,
+                line_color='grey',
+            )
         )
         for pert_var in pert_var_names
     }
@@ -767,7 +797,47 @@ figs = {
 ```
 
 ```{python}
+# figs_baseline = {
+#     key: {
+#         pert_var: get_violins(
+#             measure[pert_var][0.0], 
+#             yaxis_title=measure_labels[key],
+#             xaxis_title="Impulse amplitude",
+#             legend_title="Context input",
+#             colors=context_input_colors_dark,
+#             arr_axis_labels=["Evaluation", "Replicate", "Condition"],
+#             layout_kws=dict(
+#                 width=800,
+#                 height=600,
+#                 # yaxis_range=[0, measure_ranges[key][1]],
+#                 title=f"{pert_var} feedback impulse",
+#                 violinmode="group",
+#                 yaxis_range=[None, None],
+#             ),
+            
+#         )
+#         for pert_var in pert_var_names
+#     }
+#     for key, measure in measures_plot.items()
+# }
+
+# def get_underlay_fig(fig):
+#     fig = go.Figure(fig)
+#     fig.update_traces(opacity=0.3, line_color='grey')
+#     fig.update_layout(showlegend=False, xaxis_visible=False, yaxis_visible=False)
+#     return fig
+
+# figs_baseline_underlay = jt.map(
+#     lambda fig: get_underlay_fig(fig),
+#     figs_baseline,
+#     is_leaf=is_type(go.Figure),
+# )
+```
+
+```{python}
 for path, fig in tqdm(figs_flatten_with_paths(figs)):
+    fig.add_hline(y=0, line_width=1, line_dash="dash", line_color="black")
+    
     pert_var = path[1].key
     n_dist = int(np.prod(jt.leaves(all_measure_values[path[0].key])[0].shape))
     
@@ -789,6 +859,6 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
 
 ```{python}
 for key in all_measures:
-    figs[key]['pos'].show()
-    figs[key]['vel'].show()
+    PFW(figs[key]['pos'], bg_fig=figs_baseline_underlay[key]['pos']).show()
+    # PFW(figs[key]['vel']).show()
 ```

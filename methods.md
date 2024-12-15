@@ -63,9 +63,17 @@ The network receives the absolute value of the standard normal sample, prior to 
 
 ##### Probabilistic amplitude information (PAI)
 
-The field strength is sampled i.i.d. from a zero-mean normal distribution, and then scaled by `field_std` but also by a uniform sample i.i.d. in $[0, 1]$.
+In each case, the field amplitude may also be scaled by a constant factor (i.e. the `train_std`) on each run.
 
-The network receives the value of the uniform sample. Thus it has information about how “on" the field is, i.e. the probability that it will experience a field with std X, versus no field. It does not receive information about the exact strength of the field, on a given trial.
+###### Amplitude scaling factor (PAI-ASF)
+
+The field strength is sampled i.i.d. from a zero-mean normal distribution, and then scaled by a uniform sample i.i.d. in $[0, 1]$. 
+
+The network receives the value of the uniform sample. Because of the product with a standard normal sample, the uniform sample is the standard deviation of the zero-mean normal distribution from which the trial’s field amplitude is sampling. Thus the network has information about the standard deviation, and thus the probability that it will experience a field at least as absolutely strong as any given threshold. It does not receive information about the exact strength of the field, on a given trial.
+
+###### Noisy context (PAI-N)
+
+Similar to [[#Direct amplitude information (DAI)|DAI]], except that Gaussian noise is added to the absolute field amplitude before providing it to the network. Thuis
 
 ### Replicates
 #### Exclusion from further analysis based on performance measures

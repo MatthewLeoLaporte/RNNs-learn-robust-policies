@@ -130,7 +130,7 @@ from rnns_learn_robust_motor_policies.plot import (
 from rnns_learn_robust_motor_policies.plot_utils import (
     figs_flatten_with_paths,
     figleaves,
-    copy_fig,
+    copy_fig_json,
 )
 from rnns_learn_robust_motor_policies.post_training import setup_replicate_info
 from rnns_learn_robust_motor_policies.setup_utils import (
@@ -642,7 +642,7 @@ fig.add_traces(
 )
 
 fig.show()
-copy_fig(fig)
+copy_fig_json(fig)
 ```
 
 #### Corresponding effector trajectories
@@ -663,7 +663,7 @@ fig = fbp.trajectories_2D(
     legend_title='Reach direction',
 )
 fig.show()
-copy_fig(fig)
+copy_fig_json(fig)
 ```
 
 #### 2D
@@ -732,7 +732,7 @@ fig.add_traces(
 )
 
 fig.show()
-copy_fig(fig)
+copy_fig_json(fig)
 ```
 
 ### Compare average aligned FP trajectories, across context inputs
@@ -791,7 +791,7 @@ fig.add_traces(
 )
 
 fig.show()
-copy_fig(fig)
+copy_fig_json(fig)
 ```
 
 

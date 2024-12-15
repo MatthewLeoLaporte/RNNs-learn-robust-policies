@@ -75,6 +75,7 @@ import jax.random as jr
 import jax.tree as jt
 import numpy as np
 import optax 
+import plotly.graph_objects as go
 
 import feedbax
 from feedbax import (
@@ -89,6 +90,7 @@ from feedbax.xabdeef.losses import simple_reach_loss
 
 import rnns_learn_robust_motor_policies 
 from rnns_learn_robust_motor_policies import PROJECT_SEED
+from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL
 from rnns_learn_robust_motor_policies.database import (
     get_db_session,
     save_model_and_add_record,
@@ -98,6 +100,7 @@ from rnns_learn_robust_motor_policies.setup_utils import (
     get_readout_norm_loss,
 )
 from rnns_learn_robust_motor_policies.train_setup_part2 import (
+    TrainingMethodLabel,
     setup_task_model_pairs, 
 )
 from rnns_learn_robust_motor_policies.tree_utils import pp, subdict
@@ -130,7 +133,7 @@ These are parameters that can be [varied](https://quarto.org/docs/computations/p
 ```{python}
 #| tags: [parameters]
 
-disturbance_type: Literal['curl', 'constant'] = 'constant'  
+disturbance_type: Literal['curl', 'constant'] = 'curl'  
 feedback_delay_steps = 0
 feedback_noise_std = 0.01
 motor_noise_std = 0.01
@@ -168,18 +171,19 @@ where_train = {
     # 1000: lambda model: model.step.net.hidden,
 }
 
-training_methods: list[Literal["active", "amplitude", "std"]] = ["std"]
+training_methods: list[TrainingMethodLabel] = ["bcs"]#, "pai-asf"]
 
 p_perturbed = {
-    'active': 0.25,
+    "bcs": 0.5,
     # The rest don't do anything atm, even if they're <1
-    'amplitude': 0.25,  
-    'std': 1.0,  
+    "dai": 1.0,  
+    "pai-asf": 1.0,  
 }
 
 # Define the disturbance amplitudes to train, depending on disturbance type
 # NOTE: Only one of these disturbance types is trained per notebook run; see the parameters cell above
 disturbance_stds = {
+    # 'curl': [1.0],
     'curl': [0.0, 0.5, 1.0, 1.5],
     'constant': [0.0, 0.01, 0.02, 0.03, 0.04, 0.08, 0.16, 0.32],
 }
@@ -260,6 +264,54 @@ readout_norm_loss = readout_norm_loss_weight * get_readout_norm_loss(readout_nor
 loss_func = simple_reach_loss() + readout_norm_loss
 ```
 
+## Examine the distributions of field strengths in training batches
+
+```{python}
+keys_example_trials = jr.split(key_train, batch_size)
+
+example_batches = jt.map(
+    lambda pair: jax.vmap(pair.task.get_train_trial_with_intervenor_params)(keys_example_trials),
+    task_model_pairs,
+    is_leaf=is_type(TaskModelPair),
+)
+```
+
+```{python}
+# from feedbax.task import TaskTrialSpec
+
+# def plot_curl_amplitudes(trial_specs):
+#     fig = go.Figure(layout=dict(
+#         width=500,
+#         height=400,
+#     ))
+#     # Assume these are constant over each trial
+#     amplitude, scale, active = (
+#         trial_specs.intervene[INTERVENOR_LABEL].amplitude[:, 0],
+#         trial_specs.intervene[INTERVENOR_LABEL].scale[:, 0],
+#         trial_specs.intervene[INTERVENOR_LABEL].active[:, 0],
+#     )
+#     field_amp = active * scale * amplitude
+#     fig.add_trace(
+#         go.Histogram(
+#             x=field_amp,
+#             xbins=dict(
+#                 start=-4, 
+#                 end=4,
+#                 size=0.3,
+#             )
+#         )
+#     )
+#     return fig
+    
+    
+# field_amp_figs = jt.map(
+#     plot_curl_amplitudes,
+#     example_batches,
+#     is_leaf=is_type(TaskTrialSpec)
+# ) 
+```
+
+
 ## Train the task-model pairs
 
 ```{python}
@@ -310,8 +362,9 @@ def train_pair(pair):
         train_history_all = tree_concatenate([pretrain_history, train_history])
     
     return trained, train_history_all
+```
 
-
+```{python}
 trained_models, train_histories = tree_unzip(tree_map_tqdm(
     train_pair,
     task_model_pairs,
