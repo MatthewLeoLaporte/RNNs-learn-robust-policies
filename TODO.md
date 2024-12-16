@@ -9,6 +9,7 @@ updated: 2024-11-13T10:32
 - [x] Show train std 0.0 violins in the background (e.g. as semitransparent grey) of measure plots in 2-3
 	- I’m not sure how to have some violins overlayed while others are grouped, so for now I’ve just plotted them side-by-side. 
 	- This makes things rather skinny but when publishing we could use `get_underlay_fig` to produce a background layer and then composite them as images
+- 
 - [ ] See how much more robust the baseline model is in part 1, if we **decrease the weight on the control cost**. (Will also affect the time urgency.)
 	- My expectation is that it will of course increase the forces and decrease the movement duration, but that depending on the perturbation this will actually make it *less* robust (e.g. curl fields)
 - [x] Move training and analysis notebooks into separate directories – better repo organization
