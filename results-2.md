@@ -361,6 +361,7 @@ Again, usually very similar to position feedback impulse response.
 Note that the grey violins are the std 0.0 condition, which is being compared with one of the other conditions (1.0 amp curl, or 0.04 amp constant)
 
 - Baseline (train std 0.0) still sees some variation between context inputs — often at negative contexts. This is OK since the context input drives a network even that has not optimized to use it for anything, especially outside the range (0-1) that it was trained on. 
+- [ ] When publishing these, generate the grey/baseline sets as separate figs, use `get_underlay_fig` to remove their axes etc, export to images, and then composite them as images
 
 #### Trained on curl fields
 
@@ -517,8 +518,6 @@ Be decisive about what X is.
 The readout norm will be fixed for each hybrid network; however, it may be the case that the output correlation (i.e. partitioning of activity between null and potent spaces) will vary with the context input. 
 
 Quantify this.
-
-### Difference between DAI and PAI 
 
 ### Floor on control forces? Minimum work needed to complete task?
 

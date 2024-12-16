@@ -11,9 +11,9 @@ updated: 2024-11-13T10:32
 	- This makes things rather skinny but when publishing we could use `get_underlay_fig` to produce a background layer and then composite them as images
 - [ ] See how much more robust the baseline model is in part 1, if we **decrease the weight on the control cost**. (Will also affect the time urgency.)
 	- My expectation is that it will of course increase the forces and decrease the movement duration, but that depending on the perturbation this will actually make it *less* robust (e.g. curl fields)
-- [ ] Move training and analysis notebooks into separate directories – better repo organization
+- [x] Move training and analysis notebooks into separate directories – better repo organization
 	- Make sure to find-replace
-	- update how the database/IO works, if necessary
+	- ~~update how the database/IO works, if necessary~~ It shouldn’t matter.
 	- 0-training, 1-analysis, 2-supplement
 	- What about `parameters/`?
 
