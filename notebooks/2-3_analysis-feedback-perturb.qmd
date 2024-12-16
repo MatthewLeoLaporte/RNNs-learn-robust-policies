@@ -171,21 +171,21 @@ db_session = get_db_session()
 #| tags: [parameters]
 
 # Specify which trained models to load 
-disturbance_type_load: Literal['curl', 'constant'] = 'constant'
+disturbance_type_load: Literal['curl', 'constant'] = 'curl'
 feedback_noise_std_load = 0.01
 motor_noise_std_load = 0.01
 feedback_delay_steps_load = 0
 hidden_size = 100
 
-# disturbance_stds_load = [0.0, 0.5, 1.0, 1.5]
-disturbance_stds_load = [0.0, 0.01, 0.02, 0.03, 0.04, 0.08, 0.16, 0.32]
+disturbance_stds_load = [0.0, 0.5, 1.0, 1.5]
+# disturbance_stds_load = [0.0, 0.01, 0.02, 0.03, 0.04, 0.08, 0.16, 0.32]
 training_methods_load = ['bcs', 'pai-asf']
 
 # Specify model parameters to use for analysis (None -> use training value)
 training_method = 'pai-asf'  
 disturbance_type: Optional[Literal['curl', 'constant']] = None
-# disturbance_train_stds = [0.0, 0.5, 1.0]
-disturbance_train_stds = [0.0, 0.02, 0.04, 0.08, 0.16]
+disturbance_train_stds = [0.0, 0.5, 1.0]
+# disturbance_train_stds = [0.0, 0.02, 0.04, 0.08, 0.16]
 feedback_noise_std: Optional[float] = None
 motor_noise_std: Optional[float] = None
 ```
@@ -620,7 +620,7 @@ train_stds_plot = dict(
 
 ```{python}
 responses_plot = jt.map(
-    lambda d: subdict(d. train_stds_plot),
+    lambda d: subdict(d, train_stds_plot),
     impulse_responses,
     is_leaf=is_type(TrainStdDict),
 ) 
@@ -647,6 +647,7 @@ for path, fig in figs_flatten_with_paths(figs):
     var_name = path[0].name
     component_name = path[1].key
     pert_var = path[2].key
+    train_std = path[3].key
     
     n = int(np.prod(jt.leaves(getattr(impulse_responses, var_name))[0].shape[:-2]))
     
@@ -768,7 +769,7 @@ measures_plot = jt.map(
 ```{python}
 figs = {
     key: {
-        pert_var: rbp.get_violins(
+        pert_var: get_violins(
             measure[pert_var][train_stds[-1]], 
             data_split=measure[pert_var][0.0],
             split_mode='whole',
@@ -820,18 +821,6 @@ figs = {
 #     }
 #     for key, measure in measures_plot.items()
 # }
-
-# def get_underlay_fig(fig):
-#     fig = go.Figure(fig)
-#     fig.update_traces(opacity=0.3, line_color='grey')
-#     fig.update_layout(showlegend=False, xaxis_visible=False, yaxis_visible=False)
-#     return fig
-
-# figs_baseline_underlay = jt.map(
-#     lambda fig: get_underlay_fig(fig),
-#     figs_baseline,
-#     is_leaf=is_type(go.Figure),
-# )
 ```
 
 ```{python}
@@ -859,6 +848,6 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
 
 ```{python}
 for key in all_measures:
-    PFW(figs[key]['pos'], bg_fig=figs_baseline_underlay[key]['pos']).show()
-    # PFW(figs[key]['vel']).show()
+    PFW(figs[key]['pos']).show()
+    PFW(figs[key]['vel']).show()
 ```

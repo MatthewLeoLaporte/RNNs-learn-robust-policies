@@ -13,7 +13,7 @@ Show that changing the context input controls the robustness of the behaviour.
 
 #### Trained and evaluated on curl fields, no delay
 
-Evaluation curl fields have amplitude 4.
+Evaluation curl fields have amplitude 2.
 
 ##### Trained with BCS-0.75
 
@@ -170,6 +170,45 @@ This was less obvious to me than with curl fields.
 
 - The switch to a robust strategy happens at quite low field std, and saturates at stds not much higher. 
 
+##### Trained with BCS-0.75
+
+###### Train std 0.0
+![[file-20241216103201955.png]]
+![[file-20241216103214101.png]]
+###### Train std. 0.02, 0.04, 0.16
+![[file-20241216103238833.png]]
+![[file-20241216103250619.png]]
+![[file-20241216103301681.png]]
+###### Comparison of -2, 0, 2 context input trajectories, across train stds
+
+-2, No perturbation: 
+![[file-20241216103339839.png]]
+
+-2, with perturbation:
+![[file-20241216103354503.png]]
+0, with:
+![[file-20241216103418936.png]]
+1, with:
+![[file-20241216103443876.png]]
+2, with:
+![[file-20241216103434342.png]]
+##### Trained with PAI-ASF
+
+###### Train std 0.0
+![[file-20241216104448977.png]]
+![[file-20241216104453579.png]]
+
+###### Train std. 0.02, 0.04, 0.16
+![[file-20241216104459447.png]]
+![[file-20241216104506681.png]]
+![[file-20241216104513355.png]]
+
+###### Comparison of -2, 0, 1, 2 context input trajectories, across train stds
+![[file-20241216104650490.png]]
+![[file-20241216104700020.png]]
+![[file-20241216104741439.png]]
+![[file-20241216104717311.png]]
+
 ### Distributions of performance measures
 
 #### Trained and evaluated on curl fields, no delay
@@ -248,8 +287,6 @@ Very similar in general to a position perturbation.
 #### Trained on constant fields
 ##### BCS-75
 
-TODO. I’ve increased `p_perturbed`.
-
 ###### Position feedback impulse
 
 **Std 0.0**
@@ -269,11 +306,8 @@ TODO. I’ve increased `p_perturbed`.
 
 ###### Velocity feedback impulse
 
-Very similar to the responses for position, except somewhat smaller force magnitudes. 
+Very similar to the responses for position, except somewhat smaller forces. 
 
-**Std 0.0**
-
-**Std 0.04**
 ##### DAI
 
 ###### Position feedback impulse
@@ -302,88 +336,93 @@ These are a lot more similar than they are for BCS. There is higher variance for
 ![[file-20241201132307483.png]]
 
 ##### PAI-ASF
-
-TODO. I’ve corrected this method and these plots need to be replaced.
-
 ###### Position feedback impulse
 
-**Std 0**: Interesting that the variances are somewhat higher for the negative context inputs, but that’s probably just because the network never sees them during training so they are driving it outside its stabilized region.
-
-![[file-20241201124337644.png]]
-![[file-20241201124358247.png]]
-**Std 0.04**
-![[file-20241201124623808.png]]
-![[file-20241201124635320.png]]
-![[file-20241201141425369.png]]
-![[file-20241201141440917.png]]
+**Std 0.0**
+![[file-20241216095109021.png]]
+![[file-20241216095256930.png]]
+![[file-20241216095413835.png]]
+![[file-20241216095441212.png]]
+![[file-20241216095459275.png]]
+![[file-20241216095524679.png]]
+**Std 0.04**:
+![[file-20241216095124711.png]]
+![[file-20241216095328537.png]]
+![[file-20241216095420583.png]]
+![[file-20241216095446629.png]]
+![[file-20241216095507718.png]]
+![[file-20241216095548120.png]]
 ###### Velocity feedback impulse
 
-These look almost identical to the position impulse plots, except that the forces are a little smaller here.
+Again, usually very similar to position feedback impulse response.
 
-**Std 0**
-![[file-20241201124901475.png]]
-**Std 0.04**
-![[file-20241201124818087.png]]
 ### Distributions of performance measures
+
+Note that the grey violins are the std 0.0 condition, which is being compared with one of the other conditions (1.0 amp curl, or 0.04 amp constant)
+
+- Baseline (train std 0.0) still sees some variation between context inputs — often at negative contexts. This is OK since the context input drives a network even that has not optimized to use it for anything, especially outside the range (0-1) that it was trained on. 
 
 #### Trained on curl fields
 
 ##### BCS-75
-
 ![[file-20241215104309957.png]]
-![[file-20241215104318362.png]]
-![[file-20241215104555455.png]]
-![[file-20241215104601449.png]]
-![[file-20241215104621424.png]]
-![[file-20241215104625839.png]]
-![[file-20241215104332311.png]]
-![[file-20241215104342111.png]]
-![[file-20241215104352147.png]]
-![[file-20241215104438011.png]]
-![[file-20241215104520224.png]]
-![[file-20241215104523862.png]]
-![[file-20241215104530319.png]]
-![[file-20241215104535328.png]]
+![[file-20241216101436318.png]]
+![[file-20241216101448722.png]]
+![[file-20241216101651542.png]]
+Here the difference between the pos and vel impulses is clearer… notice the larger difference between baseline (std 0.0) and disturbance train conditions, and the larger and more variable overall responses.
+![[file-20241216101708851.png]]
+![[file-20241216101813906.png]]
+![[file-20241216101823561.png]]
+![[file-20241216101511881.png]]
+![[file-20241216101517348.png]]
+![[file-20241216101535260.png]]
+![[file-20241216101542040.png]]
+![[file-20241216101632362.png]]
+![[file-20241216101638038.png]]
 ##### PAI-ASF
 ![[file-20241215095719417.png]]
-![[file-20241215095729247.png]]
-![[file-20241215100214838.png]]
-![[file-20241215100223437.png]]
-At negative context, the networks are laggy to respond to the perturbation ending
-![[file-20241215100308677.png]]
-![[file-20241215100407667.png]]
-![[file-20241215095807303.png]]
-![[file-20241215095821762.png]]
-![[file-20241215095852888.png]]
-![[file-20241215095901369.png]]
-![[file-20241215100103098.png]]
-![[file-20241215100113003.png]]
-![[file-20241215100121601.png]]
-![[file-20241215100131071.png]]
-
-
+![[file-20241216102122748.png]]
+![[file-20241216102130518.png]]
+![[file-20241216102350079.png]]
+![[file-20241216102356117.png]]
+![[file-20241216102424795.png]]
+![[file-20241216102434895.png]]
+![[file-20241216102236150.png]]
+![[file-20241216102242150.png]]
+![[file-20241216102253571.png]]
+![[file-20241216102258494.png]]
+![[file-20241216102321644.png]]
+![[file-20241216102327569.png]]
 #### Trained on constant fields
 
 ##### BCS-75
-![[file-20241215122557856.png]]
 ![[file-20241215122459813.png]]
-![[file-20241215122505822.png]]
-![[file-20241215122521128.png]]
-![[file-20241215122528153.png]]
-![[file-20241215122552429.png]]
-![[file-20241215122605895.png]]
-![[file-20241215122629746.png]]
-![[file-20241215122645350.png]]
-![[file-20241215122655390.png]]
-![[file-20241215122710417.png]]
-![[file-20241215122717459.png]]
-![[file-20241215122741075.png]]
-![[file-20241215122748130.png]]
-![[file-20241215122758105.png]]
-![[file-20241215122805151.png]]
+![[file-20241216100642301.png]]
+![[file-20241216100705122.png]]
+![[file-20241216100848805.png]]
+![[file-20241216100854446.png]]
+![[file-20241216100906024.png]]
+![[file-20241216100911461.png]]
+![[file-20241216100716511.png]]
+![[file-20241216100723164.png]]
+![[file-20241216100744191.png]]
+![[file-20241216100759562.png]]
+![[file-20241216100829474.png]]
+![[file-20241216100835107.png]]
 
 ##### PAI-ASF
-
+![[file-20241216095648472.png]]
+![[file-20241216095655928.png]]
+![[file-20241216100004803.png]]
+![[file-20241216100010822.png]]
+![[file-20241216100026890.png]]
+![[file-20241216100036784.png]]
+![[file-20241216095757477.png]]
+![[file-20241216095807829.png]]
+![[file-20241216095816799.png]]
+![[file-20241216095823957.png]]
+![[file-20241216095930687.png]]
+![[file-20241216095937157.png]]
 
 ## Dynamics
 

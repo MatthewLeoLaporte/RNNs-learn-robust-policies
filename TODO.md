@@ -4,10 +4,11 @@ updated: 2024-11-13T10:32
 ---
 **See [[results-2|Part 2 results]] for ongoing analysis TODOs.
 
-- [x] **Evaluate models trained on BCS, DAI, PAI on baseline (no eval perturbation)**
 - [ ] Add figures to database in 2-6
-- [ ] Generate train std 0.0 aligned trajectory plots in 2-3 (as well as std 0.4/1.0 already)
-- [ ] Show train std 0.0 violins in the background (e.g. as semitransparent grey) of measure plots in 2-3
+- [x] Generate train std 0.0 aligned trajectory plots in 2-3 (as well as std 0.4/1.0 already)
+- [x] Show train std 0.0 violins in the background (e.g. as semitransparent grey) of measure plots in 2-3
+	- I’m not sure how to have some violins overlayed while others are grouped, so for now I’ve just plotted them side-by-side. 
+	- This makes things rather skinny but when publishing we could use `get_underlay_fig` to produce a background layer and then composite them as images
 - [ ] See how much more robust the baseline model is in part 1, if we **decrease the weight on the control cost**. (Will also affect the time urgency.)
 	- My expectation is that it will of course increase the forces and decrease the movement duration, but that depending on the perturbation this will actually make it *less* robust (e.g. curl fields)
 - [ ] Move training and analysis notebooks into separate directories – better repo organization
@@ -87,8 +88,6 @@ Out of [[methods#Training methods|these]]. This is unclear.
 
 - It looks like the ideal set of field stds. to get a good spread of measures/robustness varies between methods
 - [x] Go through the sets of trained models I’ve made recently and find the “best spread” for each method
-- [ ] Make some general comments on what is happening to the trajectories (lateral displacements, endpoints errors; are the relationships monotonic (not always!) etc.) as context input & field std vary, for the different methods
-- [ ] Ask o1 if there are any training techniques that might work better, or if it can think of a reason why
 
 #### Current state
 

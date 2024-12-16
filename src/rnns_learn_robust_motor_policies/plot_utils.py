@@ -323,3 +323,10 @@ class PlotlyFigureWidget:
     def show(self):
         """Display the widget"""
         display(self.container)
+        
+
+def get_underlay_fig(fig):
+    fig = go.Figure(fig)
+    fig.update_traces(opacity=0.3, line_color='grey')
+    fig.update_layout(showlegend=False, xaxis_visible=False, yaxis_visible=False)
+    return fig

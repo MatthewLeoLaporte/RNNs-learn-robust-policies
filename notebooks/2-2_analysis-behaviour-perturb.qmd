@@ -105,6 +105,7 @@ from rnns_learn_robust_motor_policies.plot import (
     get_violins,
 )
 from rnns_learn_robust_motor_policies.plot_utils import (
+    PlotlyFigureWidget as PFW,
     figleaves,
     figs_flatten_with_paths,
 )
@@ -584,7 +585,7 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
 for l0 in figs:
     for l1, fig in figs[l0].items():
         print(', '.join([training_method, f"train std: {l0}", f"pert amp: {l1}"]))
-        fig.show()
+        PFW(fig).show()
 ```
 
 ### Comparison of given context values, across training field stds
@@ -655,7 +656,7 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
 for l0 in figs:
     for l1, fig in figs[l0].items():
         print(', '.join([training_method, f"context_input: {l0}", f"pert amp: {l1}"]))
-        fig.show()
+        PFW(fig).show()
 ```
 
 ## Measure distributions
@@ -731,7 +732,7 @@ figs = {
 ```{python}
 for path, fig in tqdm(figs_flatten_with_paths(figs)):
     print(f"Training method: {training_method}, Measure: {path[0].key}, Pert. amp.: {path[1].key}")
-    fig.show()
+    PFW(fig).show()
 ```
 
 ```{python}
