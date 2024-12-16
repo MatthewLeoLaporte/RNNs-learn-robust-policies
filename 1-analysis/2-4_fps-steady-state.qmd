@@ -8,9 +8,9 @@ execute:
 ---
 
 ```{python}
-NB_ID = "2-5"
+NB_ID = "2-4"
 
-TRAIN_NB_ID = "2-1"
+TRAIN_NB_ID = "2"
 ```
 
 # Analysis of network properties

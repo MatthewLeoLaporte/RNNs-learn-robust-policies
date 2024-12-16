@@ -14,9 +14,9 @@ In this notebook we begin our analysis of the models trained in the presence of 
 - compare robustness to mechanical disturbances; e.g. differences in endpoint error when subject to large curl fields; 
 
 ```{python}
-NB_ID = "1-2a"
+NB_ID = "1-1"
 
-TRAIN_NB_ID = "1-1"
+TRAIN_NB_ID = "1"
 ```
 
 ## Environment setup

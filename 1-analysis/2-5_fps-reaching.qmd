@@ -8,9 +8,9 @@ execute:
 ---
 
 ```{python}
-NB_ID = "2-6"
+NB_ID = "2-5"
 
-TRAIN_NB_ID = "2-1"
+TRAIN_NB_ID = "2"
 ```
 
 # Analysis of fixed points during simple reaching

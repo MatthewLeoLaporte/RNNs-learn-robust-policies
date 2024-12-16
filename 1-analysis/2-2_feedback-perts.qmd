@@ -8,10 +8,10 @@ execute:
 ---
 
 ```{python}
-NB_ID = "2-3"
+NB_ID = "2-2"
 
 # TODO: This is clear in the eval_rules file; probably don't need to specify here again
-TRAIN_NB_ID = "2-1"  # Notebook the models were trained in
+TRAIN_NB_ID = "2"  # Notebook the models were trained in
 ```
 
 # Analysis of feedback perturbations
