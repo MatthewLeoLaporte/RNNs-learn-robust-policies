@@ -128,6 +128,7 @@ from rnns_learn_robust_motor_policies.plot import (
     plot_fp_pcs,
 )
 from rnns_learn_robust_motor_policies.plot_utils import (
+    PlotlyFigureWidget as PFW,
     figs_flatten_with_paths,
     figleaves,
     copy_fig_json,
@@ -174,11 +175,11 @@ db_session = get_db_session()
 #| tags: [parameters]
 
 # Specify which trained models to load 
-training_methods_load = ['amplitude', 'std']
+training_methods_load = ["bcs", "pai-asf"]
 disturbance_type_load: Literal['curl', 'constant'] = 'curl'
-disturbance_stds_load = [0.4, 0.8, 1.2]
-feedback_noise_std_load = 0.0
-motor_noise_std_load = 0.0
+disturbance_stds_load = [0.0, 0.5, 1.0, 1.5]
+feedback_noise_std_load = 0.01
+motor_noise_std_load = 0.01
 feedback_delay_steps = 0
 hidden_size = 100
 
@@ -205,8 +206,8 @@ if motor_noise_std is not None:
 context_inputs = [-1.5, -1., -0.5, 0., 0.5, 1., 1.5]
 
 disturbance_amplitudes = {
-    'curl': 0.0,
-    'constant': 0.4,
+    'curl': [0.0, 2.0],
+    'constant': [0.0, 0.4],
 }
 
 n_evals = 5
@@ -421,7 +422,7 @@ pos_endpoints = jt.map(get_pos_endpoints, trial_specs, is_leaf=is_module)
 
 ```{python}
 stride_trials = 1  # only do the FP analysis for every Nth trial (reach direction)
-loss_tol = 5e-7  # threshold criterion for FP optimization
+loss_tol = 1e-6  # threshold criterion for FP optimization
 
 def get_all_states_and_fps():
 
@@ -471,8 +472,8 @@ all_hidden = jt.map(
 ## Select a model to analyze, and perform PCA on its hidden states
 
 ```{python}
-training_method = 'std'
-train_std = 1.2
+training_method = 'pai-asf'
+train_std = 1.0
 ```
 
 Stack the context inputs into the first array dimensions.
@@ -494,7 +495,7 @@ Perform PCA on all the hidden states together, for all context inputs and reach 
 ```{python}
 # Calculate the PCs starting midway through the trial, to prefer the goal plane.
 # This is just to make the plots clearer; statistically it might not be as good. 
-i_step_pca_start = 0
+i_step_pca_start = 50
 n_steps = model_info.n_steps
 
 hidden_for_pca = hidden[..., i_step_pca_start - n_steps:, :].reshape(-1, hidden_size)
@@ -516,6 +517,60 @@ readout_weights_pc = pca_transform(readout_weights[training_method][train_std])
 ```
 
 ## Visualize FPs
+
+### Compare goals-goals and inits-goals FPs across context inputs
+
+```{python}
+pcs_plot = slice(0, 3)
+
+fp_alpha = 0.4
+stride_plot = 8
+
+fig = go.Figure(
+    layout=dict(
+        width=800, 
+        height=600,
+        margin=dict(l=10, r=10, t=0, b=10),
+        legend=dict(
+            yanchor="top", 
+            y=0.9, 
+            xanchor="right", 
+        ),
+    ), 
+)
+fig = fbp.trajectories_3D(
+    fps_pc['goals-goals'][..., pcs_plot], 
+    colors=list(context_input_colors_dark.values()),
+    mode='markers', 
+    marker_size=4, 
+    endpoint_symbol=None,
+    name="Goals-goals FPs",
+    axis_labels=('PC1', 'PC2', 'PC3'),
+    fig=fig, 
+    marker_symbol="circle-open",
+)
+fig = fbp.trajectories_3D(
+    fps_pc['inits-goals'][..., pcs_plot], 
+    colors=list(context_input_colors_dark.values()),
+    mode='markers', 
+    marker_size=4, 
+    endpoint_symbol=None,
+    name="Inits-goals FPs",
+    axis_labels=('PC1', 'PC2', 'PC3'),
+    fig=fig, 
+    marker_symbol='circle',
+)
+
+
+fig.add_traces(
+    readout_vector_traces(
+        readout_weights_pc[..., pcs_plot],
+        jnp.tile(hidden_pc[context_idx, 0, 0, pcs_plot], (2, 1)),
+    ),
+)
+
+PFW(fig).show()
+```
 
 ### Plotting functions
 
@@ -641,8 +696,7 @@ fig.add_traces(
     ),
 )
 
-fig.show()
-copy_fig_json(fig)
+PWF(fig).show()
 ```
 
 #### Corresponding effector trajectories
@@ -662,8 +716,7 @@ fig = fbp.trajectories_2D(
     axes_labels=('x', 'y'),
     legend_title='Reach direction',
 )
-fig.show()
-copy_fig_json(fig)
+PWF(fig).show()
 ```
 
 #### 2D
@@ -731,68 +784,13 @@ fig.add_traces(
     ),
 )
 
-fig.show()
-copy_fig_json(fig)
+PFW(fig).show()
 ```
 
 ### Compare average aligned FP trajectories, across context inputs
 
 TODO. I'm not sure this makes sense, since we need to align them in the high-dimensional space. But perhaps there is a principled way to do it; e.g. by rotating around (which point in?) the readout plane
 
-### Compare goals-goals and inits-goals FPs across context inputs
-
-```{python}
-pcs_plot = slice(0, 3)
-
-fp_alpha = 0.4
-stride_plot = 8
-
-fig = go.Figure(
-    layout=dict(
-        width=800, 
-        height=600,
-        margin=dict(l=10, r=10, t=0, b=10),
-        legend=dict(
-            yanchor="top", 
-            y=0.9, 
-            xanchor="right", 
-        ),
-    ), 
-)
-fig = fbp.trajectories_3D(
-    fps_pc['goals-goals'][..., pcs_plot], 
-    colors=list(context_input_colors_dark.values()),
-    mode='markers', 
-    marker_size=4, 
-    endpoint_symbol=None,
-    name="Goals-goals FPs",
-    axis_labels=('PC1', 'PC2', 'PC3'),
-    fig=fig, 
-    marker_symbol="circle-open",
-)
-fig = fbp.trajectories_3D(
-    fps_pc['inits-goals'][..., pcs_plot], 
-    colors=list(context_input_colors_dark.values()),
-    mode='markers', 
-    marker_size=4, 
-    endpoint_symbol=None,
-    name="Inits-goals FPs",
-    axis_labels=('PC1', 'PC2', 'PC3'),
-    fig=fig, 
-    marker_symbol='circle',
-)
-
-
-fig.add_traces(
-    readout_vector_traces(
-        readout_weights_pc[..., pcs_plot],
-        jnp.tile(hidden_pc[context_idx, 0, 0, pcs_plot], (2, 1)),
-    ),
-)
-
-fig.show()
-copy_fig_json(fig)
-```
 
 
 

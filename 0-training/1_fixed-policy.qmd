@@ -8,7 +8,7 @@ jupyter: python3
 ```
 
 ```{python}
-NB_ID = "1-1"
+TRAIN_NB_ID = "1"
 ```
 
 # Training models for Part 1
@@ -81,7 +81,7 @@ from rnns_learn_robust_motor_policies.train_setup import (
 Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
 
 ```{python}
-log_version_info(jax, eqx, optax)
+version_info = log_version_info(jax, eqx, optax)
 ```
 
 ### Initialize model database connection
@@ -325,12 +325,13 @@ train_histories_hyperparameters=dict(
 ```{python}
 model_record = save_model_and_add_record(
     db_session,
-    origin=NB_ID,
+    origin=TRAIN_NB_ID,
     model=trained_models,
     model_hyperparameters=model_hyperparameters,
     other_hyperparameters=training_hyperparameters,
     train_history=train_histories,
     train_history_hyperparameters=train_histories_hyperparameters,
+    version_info=version_info,
 )
 ```
 

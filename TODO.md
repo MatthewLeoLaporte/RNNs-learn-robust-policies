@@ -4,25 +4,27 @@ updated: 2024-11-13T10:32
 ---
 **See [[results-2|Part 2 results]] for ongoing analysis TODOs.
 
-- [ ] Add figures to database in 2-6
-- [x] Generate train std 0.0 aligned trajectory plots in 2-3 (as well as std 0.4/1.0 already)
-- [x] Show train std 0.0 violins in the background (e.g. as semitransparent grey) of measure plots in 2-3
-	- I’m not sure how to have some violins overlayed while others are grouped, so for now I’ve just plotted them side-by-side. 
-	- This makes things rather skinny but when publishing we could use `get_underlay_fig` to produce a background layer and then composite them as images
-- 
+- [ ] **Examine the loss curve over iterations of the FP finding optimization**; possibly, plot the **hidden state over the optimization**; will hopefully give an idea what is different about the conditions that fail to converge
+- [ ] Hessians in 2-4
+- [ ] **Poincare graph - phase portraits** (see work scratch)
+	- http://phaseportrait.blogspot.com/2013/01/discrete-time-phase-portraits.html
+	- for LTI systems, it may make sense to do the discrete → continuous conversion
+	- https://en.wikipedia.org/wiki/Logarithm_of_a_matrix#Calculating_the_logarithm_of_a_diagonalizable_matrix
+- [ ] **Add figures to database in 2-5, 1-3**
+- [ ] **Try a leaky vanilla RNN**
 - [ ] See how much more robust the baseline model is in part 1, if we **decrease the weight on the control cost**. (Will also affect the time urgency.)
 	- My expectation is that it will of course increase the forces and decrease the movement duration, but that depending on the perturbation this will actually make it *less* robust (e.g. curl fields)
-- [x] Move training and analysis notebooks into separate directories – better repo organization
-	- Make sure to find-replace
-	- ~~update how the database/IO works, if necessary~~ It shouldn’t matter.
-	- 0-training, 1-analysis, 2-supplement
-	- What about `parameters/`?
+- [ ] Send inputs to only a subset of units; readout from only a subset
+	- For the inputs, I think: store a list (array) of matrices describing the mapping for each index in the input
+	- A distribution in space (e.g. arrange them in a grid and use a distance measure) is fine
+	- However, that may be unnecessary complexity; if we can easily specify the joint distribution of input connections 
+	- e.g. there are 3 types of input connections, each corresponding to a different subset/slice of the input array 
 
 ## Efficiency
 
 - [x] Make wrapper for `go.Figure` that adds a “copy as png” and “copy as svg” buttons; this will save a lot of time
 	- See https://plotly.com/python/figurewidget-app/
-- [ ] Automatically generate a list of figure types in all notebooks
+
 
 ## Technical
 
@@ -102,7 +104,7 @@ Out of [[methods#Training methods|these]]. This is unclear.
 - [ ] Parameter scaleup for part 2
 - [ ] **Looks like `train_step` is re-compiling on the first batch, again, since I started passing `batch`. Debug.**
 	- Interesting that in the baseline case, the “Training/validation step compiled in…” notices register as ~0 s for the condition (i.e. continuation of baseline) training run, which makes sense given that the identical functions were just compiled for the baseline run; however, there is still a ~5 s delay between when the tqdm bar appears, and when it starts moving!
-- [ ] Try -1 and 1 for the “active” trianing variant, not 0 and 1?
+- [ ] ~~Try -1 and 1 for the “active” trianing variant, not 0 and 1?~~
 	- I’m not sure this makes sense, since we want negative values of context input to be “anti-robust”
 - [ ] Move part 1 training to a script + a yaml file defining which hyperparameters to train — or otherwise we’ll have to use batch quarto render 
 

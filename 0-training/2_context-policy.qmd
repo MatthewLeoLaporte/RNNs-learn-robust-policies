@@ -3,7 +3,7 @@ jupyter: python3
 ---
 
 ```{python}
-NB_ID = "2-1"
+TRAIN_NB_ID = "2"
 ```
 
 # Training models for Part 2
@@ -435,7 +435,7 @@ train_histories_hyperparameters = dict(
 ```{python}
 model_record = save_model_and_add_record(
     db_session,
-    origin=NB_ID,
+    origin=TRAIN_NB_ID,
     model=trained_models,
     model_hyperparameters=model_hyperparameters,
     other_hyperparameters=training_hyperparameters,
