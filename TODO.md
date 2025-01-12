@@ -4,13 +4,10 @@ updated: 2024-11-13T10:32
 ---
 **See [[results-2|Part 2 results]] for ongoing analysis TODOs.
 
-- [ ] **Examine the loss curve over iterations of the FP finding optimization**; possibly, plot the **hidden state over the optimization**; will hopefully give an idea what is different about the conditions that fail to converge
-- [ ] Hessians in 2-4
 - [ ] **Poincare graph - phase portraits** (see work scratch)
 	- http://phaseportrait.blogspot.com/2013/01/discrete-time-phase-portraits.html
 	- for LTI systems, it may make sense to do the discrete → continuous conversion
 	- https://en.wikipedia.org/wiki/Logarithm_of_a_matrix#Calculating_the_logarithm_of_a_diagonalizable_matrix
-- [ ] **Add figures to database in 2-5, 1-3**
 - [ ] **Try a leaky vanilla RNN**
 - [ ] See how much more robust the baseline model is in part 1, if we **decrease the weight on the control cost**. (Will also affect the time urgency.)
 	- My expectation is that it will of course increase the forces and decrease the movement duration, but that depending on the perturbation this will actually make it *less* robust (e.g. curl fields)
@@ -22,6 +19,11 @@ updated: 2024-11-13T10:32
 
 ## Efficiency
 
+- [ ] Maybe save a separate model table record in the database, for each *separate* disturbance std during training. This will:
+	- Prevent us from saving the same trained model multiple times because e.g. once we trained three runs `[0, 0.1, 1]` and another time two runs `[0, 0.1]`.
+	- Force us to use the multi-loading logic in the analyses notebooks (i.e. load db entry with std 0, and db entry with std 0.1, and compare); note that this kind of logic will be necessary anyway for some of the supplementary analyses (e.g. noise comparisons).
+	- Note that the foreign refs in the eval and fig tables would change into sets/lists, which is probably as it should be.
+- [ ] Convert all the notebooks into scripts
 - [x] Make wrapper for `go.Figure` that adds a “copy as png” and “copy as svg” buttons; this will save a lot of time
 	- See https://plotly.com/python/figurewidget-app/
 
@@ -35,7 +37,12 @@ updated: 2024-11-13T10:32
 
 ### Fixed points
 
+- [ ] Hessians - describe the curvature
 - [ ] Examine reaching FP trajectories for both baseline (no disturbance) and disturbance conditions
+
+#### Troubleshooting
+
+- [ ] **Examine the loss curve over iterations of the FP finding optimization**; possibly, plot the **hidden state over the optimization**; will hopefully give an idea what is different about the conditions that fail to converge
 - [ ] Try to get rid of dislocations in fixed point trajectories (though they aren’t very bad except at context -2)
 
 #### Translation invariance
@@ -57,8 +64,8 @@ i.e. find steady-state FPs, then change the feedback input and see if the locati
 
 #### Hessian analysis
 
-- Demonstrate that the fixed points are dynamical minima (vs. say saddle-points)
-	- This could also help to reveal what’s going on a 
+- Demonstrate that the fixed points are dynamical minima (vs. say saddle-points)? (Positive definite?)
+- Does the curvature change with training std? Context input?
 
 #### FP trajectories
 
@@ -110,12 +117,42 @@ Out of [[methods#Training methods|these]]. This is unclear.
 
 ## Database
 
-- [ ] **Function which deletes/archives any .eqx files for which the database record is missing** – this will allow us to delete database records to “delete” models, then use this function to clean up afterwards
+- [ ] Function which deletes/archives any .eqx files for which the database record is missing – this will allow us to delete database records to “delete” models, then use this function to clean up afterwards
+### Model-per-file serialisation
 
+Currently, my model saving and loading process is oriented around entire training runs. 
+
+- All of the models from a training run are saved in the same `.eqx` file, whose name is a hash, which is referenced by a record in the models table of the database. 
+- The models (i.e. training run) table has the array-valued column `disturbance_stds`, which is a list of floats. 
+- When we load models for analysis, we end up with a `TrainStdDict`, i.e. model records map one-to-one with `TrainStdDict`s.
+- It is difficult to load and analyze across the values of hyperparameters other than training disturbance std, e.g. noise level, weight of one of the cost terms, …
+
+I have found myself wanting to analyze across noise level, weight of one of the cost terms, …
+
+#### What would be better?
+
+- instead of a `TrainStdDict` we will have a `NoiseLevelDict`, `CostWeightDict`, … 
+- The model pytree’s type (e.g. `TrainStdDict`) would need to be made explicit in the code for the particular analysis, and we should not explicitly type variables as `TrainStdDict` in e.g. `query_and_load_models`
+- A single model would be serialised per `.eqx` file
+- Model records would refer to individual models, and no record of the structure of training runs would be implicitly preserved in the models table.'
+
+##### Advantages
+
+- Analyses are set up the same way, no matter the hyperparameter being compared across
+- The models table is actually the models table
+- Can skip re-training models that are already in the db, if we’re doing a new spread that happens to intersect some part of hyperparameter space we’ve already visited
+
+##### Challenges
+
+- Convert the old “models” table (i.e. load each training run `.eqx` and split it into multiple records with their own `.eqx` files)
+- Update `query_and_load_models`: currently we pass the values of some model record fields, and check them one-to-one to find a match. Thus `disturbance_std_load` is a list of float, which is matched exactly with a list of float in the “models” table. **Instead, any sequences found in `query_and_load_models` should be interpreted as “map over the models table, loading multiple records, over this spread of values”.** For now, I think it is sufficient that we assume that if any lists are present, they are all the same length, and that we’re only loading a single spread (though multiple hyperparameter values may vary across individual models).
+- `setup_task_model_pairs` should only take a single `disturbance_std`, and should not return a `TrainStdDict`
+- Search repo for `TrainStdDict` to find other code that may need to be changed.
+- Records in the eval table correspond to runs of an analysis notebook. The analysis may be across several single models. Currently, the eval and figure records each have a single foreign reference to the hash of the training run (i.e. model record). Instead, we would need several such references. I don’t think these can be kept as multiple foreign SQL keys. **Instead, we may need some kind of [linking table](https://stackoverflow.com/a/20572207).** A simpler solution is just store the model hashes in a list-of-string column, and forego the foreign key features, which are mostly a convenience at this point.
 ### Figures
 
 - [ ] Return records as a dataframe 
-- [ ] **Add annotations during retrieval**
+- [ ] **Optionally add annotations during retrieval**
 - [ ] **Generate filenames/save to specified directory during retrieval**
 
 #### Function to obtain figures based on training + testing conditions
