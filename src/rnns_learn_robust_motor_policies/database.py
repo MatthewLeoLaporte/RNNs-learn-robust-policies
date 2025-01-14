@@ -33,6 +33,7 @@ from sqlalchemy import (
     inspect,
     or_,
 )
+from sqlalchemy.dialects.postgresql import array as dbarray
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import (
     DeclarativeBase, 
@@ -101,6 +102,7 @@ class ModelRecord(Base):
     # Explicitly define some parameter columns to avoid typing issues, though our dynamic column 
     # migration would handle whatever parameters the user happens to pass, without this.
     disturbance_type: Mapped[str]
+    disturbance_std: Mapped[float]
     where_train_strs: Mapped[Sequence[str]]
     n_replicates: Mapped[int]
     n_batches: Mapped[int]
@@ -131,14 +133,15 @@ class EvaluationRecord(Base):
     """Represents a single evaluation."""
     __tablename__ = EVALUATIONS_TABLE_NAME
 
-    model = relationship("ModelRecord")
+    # model = relationship("ModelRecord")
     figures = relationship("FigureRecord", back_populates="evaluation")
     
     id: Mapped[int] = mapped_column(primary_key=True)
     hash: Mapped[str] = mapped_column(unique=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     origin: Mapped[Optional[str]]
-    model_hash: Mapped[Optional[str]] = mapped_column(ForeignKey(f'{MODELS_TABLE_NAME}.hash'))
+    # model_hash: Mapped[Optional[str]] = mapped_column(ForeignKey(f'{MODELS_TABLE_NAME}.hash'))
+    model_hashes: Mapped[Optional[Sequence[str]]] = mapped_column(nullable=True)
     archived: Mapped[bool] = mapped_column(default=False)
     archived_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     version_info_eval: Mapped[Optional[dict[str, str]]]
@@ -153,7 +156,7 @@ class FigureRecord(Base):
     __tablename__ = FIGURES_TABLE_NAME
 
     evaluation = relationship("EvaluationRecord", back_populates="figures")
-    model = relationship("ModelRecord")
+    # model = relationship("ModelRecord")
     
     id: Mapped[int] = mapped_column(primary_key=True)
     hash: Mapped[str] = mapped_column(unique=True, nullable=False)
@@ -165,11 +168,11 @@ class FigureRecord(Base):
     archived: Mapped[bool] = mapped_column(default=False)
     archived_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     
-    # This is redundant because it can be inferred from `evaluation_hash`, but we include it for convenience
-    model_hash: Mapped[str] = mapped_column(ForeignKey(f'{MODELS_TABLE_NAME}.hash'))
+    model_hashes: Mapped[Optional[Sequence[str]]] = mapped_column(nullable=True)
     
-    # These are also redundant, and can be inferred from `model_hash` and `evaluation_hash`
+    # These are also redundant, and can be inferred from `evaluation_hash`
     disturbance_type: Mapped[str] = mapped_column(nullable=True)
+    disturbance_std: Mapped[float] = mapped_column(nullable=True)
 
 
 TABLE_NAME_TO_MODEL = {
@@ -509,7 +512,7 @@ def save_model_and_add_record(
 
 
 def generate_eval_hash(
-    model_hash: Optional[str], 
+    model_hashes: Optional[Sequence[str]], 
     eval_params: Dict[str, Any],
     origin: Optional[str] = None,
 ) -> str:
@@ -519,8 +522,13 @@ def generate_eval_hash(
         model_hash: Hash of the model being evaluated. None for training notebooks.
         eval_params: Parameters used for evaluation
     """
+    if model_hashes is None:
+        model_str = 'None'
+    else:
+        model_str = ''.join(model_hashes)
+    
     eval_str = "_".join([
-        f"{model_hash or 'None'}",
+        model_str,
         f"{origin or 'None'}",
         f"{json.dumps(eval_params, sort_keys=True)}",
     ])
@@ -529,7 +537,7 @@ def generate_eval_hash(
 
 def add_evaluation(
     session: Session,
-    model_hash: Optional[str],  # Changed from ModelRecord to Optional[int]
+    models: Optional[PyTree[ModelRecord]],  # Changed from ModelRecord to Optional[int]
     eval_parameters: Dict[str, Any],
     origin: Optional[str] = None,
     version_info: Optional[dict[str, str]] = None,
@@ -544,9 +552,14 @@ def add_evaluation(
     """
     eval_parameters = arrays_to_lists(eval_parameters)
     
+    if models is None:
+        model_hashes = None
+    else:
+        model_hashes = [model.hash for model in jt.leaves(models, is_leaf=is_type(ModelRecord))]
+    
     # Generate hash from model_id (if any) and parameters
     eval_hash = generate_eval_hash(
-        model_hash=model_hash,
+        model_hashes=model_hashes,
         eval_params=eval_parameters,
         origin=origin,
     )
@@ -569,7 +582,7 @@ def add_evaluation(
     else:
         eval_record = EvaluationRecord(
             hash=eval_hash,
-            model_hash=model_hash,  # Can be None
+            model_hashes=model_hashes,  # Can be None
             origin=origin,
             version_info_eval=version_info,
             **eval_parameters,
@@ -617,6 +630,7 @@ def add_evaluation_figure(
     eval_record: EvaluationRecord,
     figure: go.Figure | mplf.Figure,
     identifier: str,
+    model_records: Optional[PyTree[ModelRecord]] = None,
     save_formats: Optional[str | Sequence[str]] = "png",
     **parameters: Any,
 ) -> FigureRecord:
@@ -662,10 +676,18 @@ def add_evaluation_figure(
     # Update schema with new parameters
     update_table_schema(session.bind, FIGURES_TABLE_NAME, parameters)
     
+    if model_records is None:
+        model_hashes = None
+    else:
+        model_hashes = [
+            model.hash 
+            for model in jt.leaves(model_records, is_leaf=is_type(ModelRecord))
+        ]
+    
     figure_record = FigureRecord(
         hash=figure_hash,
         evaluation_hash=eval_record.hash,
-        model_hash=eval_record.model_hash,
+        model_hashes=model_hashes,
         identifier=identifier,
         figure_type=figure_type,
         saved_formats=save_formats,
@@ -693,7 +715,7 @@ def use_record_params_where_none(parameters: dict[str, Any], record: Base) -> di
         k: getattr(record, k) if v is None else v
         for k, v in parameters.items()
     }
-    
+
 
 def archive_orphaned_records(session: Session) -> None:
     """Mark records as archived if their model references no longer exist."""
@@ -701,15 +723,15 @@ def archive_orphaned_records(session: Session) -> None:
     
     try:
         # Get all existing model hashes
-        model_hashes = {r.hash for r in session.query(ModelRecord).all()}
+        model_hashes = [r.hash for r in session.query(ModelRecord).all()]  # Changed to a list
         
         # Find and archive orphaned evaluation records
         orphaned_evals = (
             session.query(EvaluationRecord)
             .filter(
-                EvaluationRecord.model_hash.isnot(None),  # Skip training evals
-                ~EvaluationRecord.model_hash.in_(model_hashes),
-                EvaluationRecord.archived == False
+                EvaluationRecord.model_hashes.isnot(None),  # Skip training evals
+                EvaluationRecord.archived == False,
+                ~EvaluationRecord.model_hashes.op('<@')(dbarray(model_hashes))  # Check if any model hash is not in model_hashes
             )
             .all()
         )
@@ -717,9 +739,11 @@ def archive_orphaned_records(session: Session) -> None:
         if orphaned_evals:
             now = datetime.utcnow()
             for record in orphaned_evals:
+                assert record.model_hashes is not None, 'Evaluation records without model hashes should be filtered out already!'
+                missing_hashes = set(record.model_hashes) - set(model_hashes)
                 logger.warning(
-                    f"Archiving evaluation {record.hash} - referenced model "
-                    f"{record.model_hash} no longer exists"
+                    f"Archiving evaluation {record.hash} - referenced model(s) "
+                    f"{', '.join(missing_hashes)} no longer exist"
                 )
                 record.archived = True
                 record.archived_at = now
@@ -736,8 +760,9 @@ def archive_orphaned_records(session: Session) -> None:
         orphaned_figures = (
             session.query(FigureRecord)
             .filter(
-                ~FigureRecord.model_hash.in_(model_hashes),
-                FigureRecord.archived == False
+                FigureRecord.model_hashes.isnot(None),
+                FigureRecord.archived == False,
+                ~FigureRecord.model_hashes.op('<@')(dbarray(model_hashes))  # Similar check for figures
             )
             .all()
         )
@@ -745,9 +770,11 @@ def archive_orphaned_records(session: Session) -> None:
         if orphaned_figures:
             now = datetime.utcnow()
             for record in orphaned_figures:
+                assert record.model_hashes is not None, 'Figure records without model hashes should be filtered out already!'
+                missing_hashes = set(record.model_hashes) - set(model_hashes)
                 logger.warning(
-                    f"Archiving figure {record.hash} - referenced model "
-                    f"{record.model_hash} no longer exists"
+                    f"Archiving figure {record.hash} - referenced model(s) "
+                    f"{', '.join(missing_hashes)} no longer exist"
                 )
                 record.archived = True
                 record.archived_at = now
@@ -760,6 +787,7 @@ def archive_orphaned_records(session: Session) -> None:
         session.rollback()
         logger.error(f"Error archiving orphaned records: {e}")
         raise
+
 
 
 RecordDict = make_named_dict_subclass("RecordDict")

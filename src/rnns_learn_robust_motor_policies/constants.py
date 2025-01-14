@@ -17,6 +17,9 @@ DISTURBANCE_CLASSES = {
 
 ## Model parameters
 MASS = 1.0
+# Default noise levels
+FB_NOISE_STD = 0.01
+MOTOR_NOISE_STD = 0.01
 
 
 ## Task parameters

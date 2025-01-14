@@ -98,7 +98,7 @@ from rnns_learn_robust_motor_policies.misc import (
     round_to_list,
 )
 from rnns_learn_robust_motor_policies.train_setup_part1 import (
-    setup_task_model_pairs,
+    setup_task_model_pair,
 )
 from rnns_learn_robust_motor_policies.plot import get_violins
 from rnns_learn_robust_motor_policies.plot_utils import (
@@ -117,7 +117,7 @@ from rnns_learn_robust_motor_policies.tree_utils import (
     subdict,
 )
 from rnns_learn_robust_motor_policies.setup_utils import (
-    query_and_load_models,
+    query_and_load_model,
     set_model_noise,
     setup_models_only,
 )
@@ -211,9 +211,9 @@ plotly_vscode_latex_fix()
 ## Load and adjust trained models
 
 ```{python}
-models, model_info, replicate_info, n_replicates_included = query_and_load_models(
+models, model_info, replicate_info, n_replicates_included = query_and_load_model(
     db_session,
-    setup_task_model_pairs,
+    setup_task_model_pair,
     params_query=dict(
         origin=TRAIN_NB_ID,
         disturbance_type=disturbance_type_load,
@@ -351,7 +351,7 @@ def frequency_analysis(input_, output, dt):
     # input and output have shape (..., timesteps, 2)
     n_timesteps = input_.shape[-2]
     
-    # FFT handles batch dims automatically
+    # (j)np.fft.fft handles batch dims automatically
     f_input = jnp.fft.fft(input_, axis=-2)  # shape (..., timesteps, 2)
     f_output = jnp.fft.fft(output, axis=-2)  # shape (..., timesteps, 2)
     freqs = jnp.fft.fftfreq(n_timesteps, dt)  # shape (timesteps,)

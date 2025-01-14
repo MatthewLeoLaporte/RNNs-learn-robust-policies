@@ -35,6 +35,7 @@ from feedbax._tree import (
     tree_unzip,
 )
 from feedbax.xabdeef.losses import simple_reach_loss
+from jaxtyping import PyTree
 
 from rnns_learn_robust_motor_policies import MODELS_DIR
 from rnns_learn_robust_motor_policies.constants import (
@@ -76,7 +77,6 @@ get_readout_norm_loss = lambda value: ModelLoss(
 
 def setup_train_histories(
     models_tree,
-    disturbance_stds,
     n_batches,
     batch_size,
     n_replicates,
@@ -363,9 +363,9 @@ def setup_replicate_info(models, n_replicates, *, key):
     )
 
     
-def query_and_load_models(
+def query_and_load_model(
     db_session,
-    setup_task_model_pairs: Callable,
+    setup_task_model_pair: Callable,
     params_query: dict[str, Any],
     noise_stds: Optional[dict[Literal['feedback', 'motor'], Optional[float]]] = None,
     tree_inclusions: Optional[dict[type, Optional[Any | Sequence | Callable]]] = None,
@@ -376,12 +376,12 @@ def query_and_load_models(
     
     Arguments:
         db_session: The SQLAlchemy database session
-        setup_task_model_pairs: The function used to setup the task-model PyTree for this 
+        setup_task_model_pair: The function used to setup the task-model PyTree for this 
             part of the project.
         params_load: The parameters used to query the records of the model table of the database. 
             If more than one record matches, an error is raised.  
         tree_inclusions: Optionally, rules by which to include parts of dict nodes in the loaded 
-            PyTree of models. Each rule's key is a dict node type in the PyTree, e.g. `TrainStdDict`, 
+            PyTree of models. Each rule's key is a dict node type in the PyTree,  
             and the respective values are the node key(s) which should be kept, or a callable that 
             returns true for the keys to be kept. If `None`, all nodes are kept as-is.
         exclude_underperformers_by: An optional key of a performance measure evaluated in 
@@ -392,13 +392,12 @@ def query_and_load_models(
             ('best-only').
         
     Returns:
-        models: The PyTree of models
-        model_info: The object mapping to the models' database record
+        model: The model PyTree
+        model_info: The object mapping to the model's database record
         replicate_info: A dict of information about the model replicates
-        n_replicates_included: The number of replicates not excluded (made NaN) in the arrays of 
-            the models PyTree
+        n_replicates_included: The number of replicates not excluded (made NaN) from the model arrays
     """
-    exclude_method = exclude_method.lower()
+    exclude_method_ = exclude_method.lower()
     
     model_info = get_model_record(
         db_session,
@@ -413,24 +412,26 @@ def query_and_load_models(
         "Model record's replicate_info_path is None, but has_replicate_info==True"
     )
     
-    models: TrainStdDict[float, eqx.Module] = load(
-        model_info.path, partial(setup_models_only, setup_task_model_pairs),
+    model: eqx.Module = load(
+        model_info.path, partial(setup_models_only, setup_task_model_pair),
     )
 
-    replicate_info = load(
-        model_info.replicate_info_path, partial(setup_replicate_info, models),
+    replicate_info: PyTree = load(
+        model_info.replicate_info_path, partial(setup_replicate_info, model),
     )
     
     n_replicates_included = model_info.n_replicates
     
     if noise_stds is not None:
-        models = jt.map(
+        # NOTE: Map over `model` as if it is type `PyTree[eqx.Module]`. This may be
+        #       vestigial but it's also more general, and isn't costly, so I am leaving it as-is.
+        model = jt.map(
             partial(
                 set_model_noise, 
                 noise_stds=noise_stds,
                 enable_noise=True,
             ),
-            models,
+            model,
             is_leaf=is_module,
         )
     
@@ -450,9 +451,9 @@ def query_and_load_models(
                     # been given a single key to include
                     replace_func = lambda d, inclusion: d[inclusion]
                 
-                models, replicate_info = jt.map(
+                model, replicate_info = jt.map(
                     lambda d: replace_func(d, inclusion), 
-                    (models, replicate_info),
+                    (model, replicate_info),
                     is_leaf=is_type(dict_type),
                 )
         
@@ -460,24 +461,24 @@ def query_and_load_models(
         included_replicates = replicate_info['included_replicates'][exclude_underperformers_by]
         best_replicate = replicate_info['best_replicates'][exclude_underperformers_by]
         
-        if exclude_method == 'nan':
-            def include_func_nan(models, included, best): 
-                return tree_set_scalar(models, jnp.nan, jnp.where(~included)[0])
+        if exclude_method_ == 'nan':
+            def include_func_nan(model, included, best): 
+                return tree_set_scalar(model, jnp.nan, jnp.where(~included)[0])
             include_func = include_func_nan
-        elif exclude_method == 'remove':
-            def include_func_remove(models, included, best): 
-                return take_model(models, jnp.where(included)[0])
+        elif exclude_method_ == 'remove':
+            def include_func_remove(model, included, best): 
+                return take_model(model, jnp.where(included)[0])
             include_func = include_func_remove
-        elif exclude_method == 'best-only':
-            def include_func_best(models, included, best): 
-                return take_model(models, best)
+        elif exclude_method_ == 'best-only':
+            def include_func_best(model, included, best): 
+                return take_model(model, best)
             include_func = include_func_best
         else:
-            raise ValueError(f"Invalid exclude_method '{exclude_method}'")
+            raise ValueError(f"Invalid exclude_method '{exclude_method_}'")
         
-        models = jt.map(
+        model = jt.map(
             include_func,
-            models, 
+            model, 
             included_replicates,
             best_replicate,
             is_leaf=is_module,
@@ -491,5 +492,5 @@ def query_and_load_models(
         if any(n < 1 for n in jt.leaves(n_replicates_included)):
             raise ValueError("No replicates met inclusion criteria for at least one model variant")
     
-    return models, model_info, replicate_info, n_replicates_included
+    return model, model_info, replicate_info, n_replicates_included
     

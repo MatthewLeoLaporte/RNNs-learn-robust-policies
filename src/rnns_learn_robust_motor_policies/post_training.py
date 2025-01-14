@@ -42,6 +42,7 @@ from rnns_learn_robust_motor_policies.database import (
     record_to_dict,
     save_model_and_add_record,
 )
+from rnns_learn_robust_motor_policies.misc import log_version_info
 from rnns_learn_robust_motor_policies.setup_utils import (
     setup_train_histories,
     setup_models_only,
@@ -54,11 +55,10 @@ from rnns_learn_robust_motor_policies.state_utils import (
     vmap_eval_ensemble,
 )
 from rnns_learn_robust_motor_policies.train_setup_part1 import (
-    setup_task_model_pairs as setup_task_model_pairs_p1,
-    # setup_train_histories,
+    setup_task_model_pair as setup_task_model_pair_p1,
 )
 from rnns_learn_robust_motor_policies.train_setup_part2 import (
-    setup_task_model_pairs as setup_task_model_pairs_p2
+    setup_task_model_pair as setup_task_model_pair_p2
 )
 from rnns_learn_robust_motor_policies.types import TrainStdDict
 
@@ -73,8 +73,8 @@ logger = logging.getLogger(__name__)
 
 # The setup/deserialisation depends on where/how the model was trained
 SETUP_FUNCS = {
-    '1-1': setup_task_model_pairs_p1,
-    '2-1': setup_task_model_pairs_p2,
+    '1': setup_task_model_pair_p1,
+    '2': setup_task_model_pair_p2,
 }
 
 
@@ -111,6 +111,8 @@ def load_data(model_record: ModelRecord):
     )
 
 
+# TODO: map over this entire function and use `tree_unzip` on the result,
+# instead of mapping multiple times inside this function
 def get_best_iterations_and_losses(
     train_histories: PyTree[TaskTrainerHistory], 
     save_model_parameters: Array, 
@@ -249,71 +251,73 @@ def get_best_models(
     return models_with_best_parameters
 
 
-def get_replicate_distribution_figure(
-    measure: TrainStdDict[float, Shaped[Array, 'replicates']], 
-    yaxis_title="",
-) -> go.Figure:
+# TODO
+#! This no longer works because the model records are 
+# def get_replicate_distribution_figure(
+#     measure: TrainStdDict[float, Shaped[Array, 'replicates']], 
+#     yaxis_title="",
+# ) -> go.Figure:
     
-    n_replicates = len(jt.leaves(measure)[0])
+#     n_replicates = len(jt.leaves(measure)[0])
     
-    df = pd.DataFrame(measure).reset_index().melt(id_vars='index')
-    df["index"] = df["index"].astype(str)
+#     df = pd.DataFrame(measure).reset_index().melt(id_vars='index')
+#     df["index"] = df["index"].astype(str)
 
-    fig = go.Figure()
+#     fig = go.Figure()
 
-    strips = px.scatter(
-        df,
-        x='variable',
-        y='value',
-        color="index",
-        color_discrete_sequence=px.colors.qualitative.Plotly,
-        # stripmode='overlay',
-    )
+#     strips = px.scatter(
+#         df,
+#         x='variable',
+#         y='value',
+#         color="index",
+#         color_discrete_sequence=px.colors.qualitative.Plotly,
+#         # stripmode='overlay',
+#     )
     
-    strips.update_traces(
-        marker_size=10,
-        marker_symbol='circle-open',
-        marker_line_width=3,
-    )
+#     strips.update_traces(
+#         marker_size=10,
+#         marker_symbol='circle-open',
+#         marker_line_width=3,
+#     )
 
-    violins = [
-        go.Violin(
-            x=[disturbance_std] * n_replicates,
-            y=data,
-            # box_visible=True,
-            line_color='black',
-            meanline_visible=True,
-            fillcolor='lightgrey',
-            opacity=0.6,
-            name=f"{disturbance_std}",
-            showlegend=False,   
-            spanmode='hard',  
-        )
-        for disturbance_std, data in measure.items()
-    ]
+#     violins = [
+#         go.Violin(
+#             x=[disturbance_std] * n_replicates,
+#             y=data,
+#             # box_visible=True,
+#             line_color='black',
+#             meanline_visible=True,
+#             fillcolor='lightgrey',
+#             opacity=0.6,
+#             name=f"{disturbance_std}",
+#             showlegend=False,   
+#             spanmode='hard',  
+#         )
+#         for disturbance_std, data in measure.items()
+#     ]
     
-    fig.add_traces(violins)
-    fig.add_traces(strips.data)
+#     fig.add_traces(violins)
+#     fig.add_traces(strips.data)
 
-    fig.update_layout(
-        xaxis_type='category',
-        width=800,
-        height=500,
-        xaxis_title="Train disturbance std.",
-        yaxis_title=yaxis_title,
-        # xaxis_range=[-0.5, len(disturbance_stds) + 0.5],
-        # xaxis_tickvals=np.linspace(0,1.2,4),
-        # yaxis_type='log',
-        violingap=0.1,
-        # showlegend=False,
-        legend_title='Replicate',
-        legend_tracegroupgap=4,
-        # violinmode='overlay',  
-        barmode='overlay',
-        # boxmode='group',
-    )
+#     fig.update_layout(
+#         xaxis_type='category',
+#         width=800,
+#         height=500,
+#         xaxis_title="Train disturbance std.",
+#         yaxis_title=yaxis_title,
+#         # xaxis_range=[-0.5, len(disturbance_stds) + 0.5],
+#         # xaxis_tickvals=np.linspace(0,1.2,4),
+#         # yaxis_type='log',
+#         violingap=0.1,
+#         # showlegend=False,
+#         legend_title='Replicate',
+#         legend_tracegroupgap=4,
+#         # violinmode='overlay',  
+#         barmode='overlay',
+#         # boxmode='group',
+#     )
     
-    return fig
+#     return fig
 
 
 def get_train_history_figures(
@@ -359,30 +363,31 @@ def save_training_figures(
             func=get_train_history_figures,
             args=(train_histories, replicate_info['best_saved_iteration_by_replicate']),
         ),
-        loss_dist_over_replicates_best=FigFuncSpec(
-            func=partial(
-                get_replicate_distribution_figure, 
-                yaxis_title=f"Best batch total loss",
-            ),
-            args=(replicate_info['losses_at_best_saved_iteration'],),
-        ),
-        loss_dist_over_replicates_final=FigFuncSpec(
-            func=partial(
-                get_replicate_distribution_figure, 
-                yaxis_title=f"Final batch total loss",
-            ),
-            args=(replicate_info['losses_at_final_saved_iteration'],),
-        ),
-        readout_norm=FigFuncSpec(
-            func=partial(
-                get_replicate_distribution_figure, 
-                yaxis_title=f"Frobenius norm of readout weights",
-            ),
-            args=(replicate_info['readout_norm'],), 
-        ),
+        # loss_dist_over_replicates_best=FigFuncSpec(
+        #     func=partial(
+        #         get_replicate_distribution_figure, 
+        #         yaxis_title=f"Best batch total loss",
+        #     ),
+        #     args=(replicate_info['losses_at_best_saved_iteration'],),
+        # ),
+        # loss_dist_over_replicates_final=FigFuncSpec(
+        #     func=partial(
+        #         get_replicate_distribution_figure, 
+        #         yaxis_title=f"Final batch total loss",
+        #     ),
+        #     args=(replicate_info['losses_at_final_saved_iteration'],),
+        # ),
+        # readout_norm=FigFuncSpec(
+        #     func=partial(
+        #         get_replicate_distribution_figure, 
+        #         yaxis_title=f"Frobenius norm of readout weights",
+        #     ),
+        #     args=(replicate_info['readout_norm'],), 
+        # ),
     )
     
-    # Evaluate all of them at the TrainStdDict level
+    # TODO
+    # DON'T Evaluate all of them at the TrainStdDict level
     all_figs = {
         fig_label: jt.map(
             fig_spec.func,
@@ -411,8 +416,9 @@ def save_training_figures(
             save_formats=['png'],
             **fig_parameters,
         )
-
-    # Save and add records for each figure
+    
+    # Save and add records for each figure 
+    # TODO: BUT DON'T MAP OVER TrainStdDict
     for plot_id, figs in all_figs.items():
         # Some training notebooks use multiple training methods, and some don't. And some figure functions
         # return one figure per training condition, while others are summaries. Thus we need to descend 
@@ -423,7 +429,10 @@ def save_training_figures(
         jt.map(
             # Map over each set (i.e. training variant) of disturbance train stds
             lambda fig_set, variant_label: jt.map(
-                lambda fig, train_std: save_and_add_figure(fig, plot_id, variant_label, train_std),
+                lambda fig, train_std: save_and_add_figure(
+                    fig, plot_id, variant_label, train_std
+                ),
+                # TODO: WHY is tree_labels here?
                 fig_set, tree_labels(fig_set, join_with="_", is_leaf=is_type(go.Figure)),
                 is_leaf=is_type(go.Figure),
             ),
@@ -502,6 +511,7 @@ def process_model_record(
     model_record: ModelRecord,
     n_std_exclude: float,
     process_all: bool = True,
+    save_figures: bool = True,
 ) -> None:
     """Process a single model record, adding a new record with best parameters and replicate info."""
     
@@ -565,6 +575,7 @@ def process_model_record(
             train_history_hyperparameters=train_history_hyperparams,
             replicate_info=replicate_info,
             replicate_info_hyperparameters=dict(n_replicates=n_replicates),
+            version_info=log_version_info(jax, eqx),
         )
         
     except Exception as e:
@@ -576,7 +587,7 @@ def process_model_record(
     #? Do we really need to make one of these, here? Or should training figures have their own table? 
     eval_info = add_evaluation(
         session,
-        model_hash=model_record.hash,
+        models=model_record,
         eval_parameters=dict(
             n_evals=N_TRIALS_VAL,
             # n_std_exclude=n_std_exclude,  # Not relevant to the figures that are generated?
@@ -584,20 +595,25 @@ def process_model_record(
         origin="post_training",
     )
     
-    # Save training figures
-    save_training_figures(
-        session,
-        eval_info,
-        train_histories, 
-        replicate_info,
-    )
+    if save_figures:
+        # Save training figures
+        save_training_figures(
+            session,
+            eval_info,
+            train_histories, 
+            replicate_info,
+        )
     
-    model_record.postprocessed = int(True)
+    model_record.postprocessed = True
     session.commit()
     logger.info(f"Processed model {model_record.hash}")
     
     
-def main(n_std_exclude: float = 2.0, process_all: bool = False):
+def main(
+    n_std_exclude: float = 2.0, 
+    process_all: bool = False,
+    save_figures: bool = True,
+):
     """Process all models in database."""
     session = get_db_session()
     
@@ -613,7 +629,8 @@ def main(n_std_exclude: float = 2.0, process_all: bool = False):
                     session,
                     model_record,
                     n_std_exclude,
-                    process_all,
+                    process_all=process_all,
+                    save_figures=save_figures,
                 )
                 progress.update(task, advance=1)
             except Exception as e:
@@ -625,6 +642,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Post-training processing of models.")
     parser.add_argument("--n_std_exclude", default=2, type=float, help="Mark replicates this many stds above the best as to-be-excluded")
     parser.add_argument("--process_all", action="store_true", help="Reprocess all models, even if they already have replicate info")
+    parser.add_argument("--no_figs", action="store_true", help="Do not save training figures")
     args = parser.parse_args()
     
-    main(args.n_std_exclude, args.process_all)
+    main(
+        args.n_std_exclude, 
+        args.process_all, 
+        not args.no_figs,
+    )

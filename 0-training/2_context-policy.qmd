@@ -101,7 +101,7 @@ from rnns_learn_robust_motor_policies.setup_utils import (
 )
 from rnns_learn_robust_motor_policies.train_setup_part2 import (
     TrainingMethodLabel,
-    setup_task_model_pairs, 
+    setup_task_model_pair, 
 )
 from rnns_learn_robust_motor_policies.tree_utils import pp, subdict
 from rnns_learn_robust_motor_policies.types import TaskModelPair
@@ -209,7 +209,7 @@ We need to define:
 Some of these (e.g. the form of the context input, `CONTEXT_INPUT_FUNCS`) are defined once and for all in the project module `train_setup_part2.py`.
 
 ```{python}
-task_model_pairs = setup_task_model_pairs(
+task_model_pairs = setup_task_model_pair(
     n_replicates=n_replicates,
     dt=dt,
     hidden_size=hidden_size,

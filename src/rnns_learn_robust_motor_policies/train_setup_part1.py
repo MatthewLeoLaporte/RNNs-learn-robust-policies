@@ -11,6 +11,7 @@ from feedbax.intervene import schedule_intervenor
 from feedbax.misc import attr_str_tree_to_where_func
 from feedbax.train import filter_spec_leaves
 from feedbax.xabdeef.models import point_mass_nn
+from feedbax.xabdeef.losses import simple_reach_loss
 
 from rnns_learn_robust_motor_policies.constants import (
     DISTURBANCE_CLASSES, 
@@ -19,7 +20,7 @@ from rnns_learn_robust_motor_policies.constants import (
 )
 from rnns_learn_robust_motor_policies.misc import vector_with_gaussian_length
 from rnns_learn_robust_motor_policies.setup_utils import get_base_task
-from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainStdDict
+from rnns_learn_robust_motor_policies.types import TaskModelPair
 
 
 
@@ -39,7 +40,7 @@ disturbance_params = lambda scale_func: {
 }
 
 
-def setup_task_model_pairs(
+def setup_task_model_pair(
     *,
     n_replicates,
     dt,
@@ -49,8 +50,9 @@ def setup_task_model_pairs(
     feedback_noise_std,
     motor_noise_std,
     disturbance_type: Literal['constant', 'curl'],
-    disturbance_stds,
+    disturbance_std,
     intervention_scaleup_batches: tuple[int, int],
+    control_loss_scale: float,
     key,
     **kwargs,
 ):
@@ -65,8 +67,17 @@ def setup_task_model_pairs(
         def batch_scale_up(batch_start, n_batches, batch_info, x):
             return x
     
+    loss_func = simple_reach_loss()
+
+    loss_func = eqx.tree_at(
+        lambda loss_func: loss_func.weights['nn_output'],
+        loss_func,
+        control_loss_scale * loss_func.weights['nn_output'],
+    )
+    
     task_base = get_base_task(
         n_steps=n_steps,
+        loss_func=loss_func,
     )
     
     models = get_ensemble(
@@ -91,19 +102,14 @@ def setup_task_model_pairs(
                 partial(batch_scale_up, intervention_scaleup_batches[0], n_batches_scaleup)
             )[disturbance_type],
         )
-    
-    task_model_pairs = jt.map(
-        lambda field_std: TaskModelPair(*schedule_intervenor(
-            task_base, models,
-            lambda model: model.step.mechanics,
-            disturbance(field_std),
-            label=INTERVENOR_LABEL,
-            default_active=False,
-        )),
-        TrainStdDict(zip(disturbance_stds, disturbance_stds)),  
-    )
-    
-    return task_model_pairs
+        
+    return TaskModelPair(*schedule_intervenor(
+        task_base, models,
+        lambda model: model.step.mechanics,
+        disturbance(disturbance_std),
+        label=INTERVENOR_LABEL,
+        default_active=False,
+    ))
 
 
 def setup_model_parameter_histories(

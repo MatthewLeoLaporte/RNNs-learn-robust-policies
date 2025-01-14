@@ -103,7 +103,7 @@ from rnns_learn_robust_motor_policies.perturbations import (
     feedback_impulse,
 )
 from rnns_learn_robust_motor_policies.train_setup_part1 import (
-    setup_task_model_pairs,
+    setup_task_model_pair,
 )
 from rnns_learn_robust_motor_policies.plot import get_violins
 from rnns_learn_robust_motor_policies.plot_utils import (
@@ -122,7 +122,7 @@ from rnns_learn_robust_motor_policies.tree_utils import (
     subdict,
 )
 from rnns_learn_robust_motor_policies.setup_utils import (
-    query_and_load_models,
+    query_and_load_model,
     set_model_noise,
     setup_models_only,
 )
@@ -154,22 +154,21 @@ We may want to specify 1) which trained models to load, by their parameters, and
 
 ```{python}
 #| tags: [parameters]
-
 # Specify which trained models to load 
 disturbance_type_load: Literal['curl', 'constant'] = 'curl'
-feedback_noise_std_load = 0.0
-motor_noise_std_load = 0.0
+feedback_noise_std_load = 0.01
+motor_noise_std_load = 0.01
 feedback_delay_steps_load = 0
-hidden_size = 50
+hidden_size = 100
 where_train_strs = ["step.net.hidden", "step.net.readout"]
 readout_norm_loss_weight = 0.0
 readout_norm_value = 2.0
-disturbance_stds_load = [0, 0.8, 1.6]
+disturbance_stds_load = [0, 0.5, 1.0, 1.5]
 
 # Specify model parameters to use for analysis (None -> use training value)
 # disturbance_type: Optional[Literal['curl', 'constant']] = None
-feedback_noise_std: Optional[float] = 0.02
-motor_noise_std: Optional[float] = 0.02
+feedback_noise_std: Optional[float] = 0.01
+motor_noise_std: Optional[float] = 0.01
 ```
 
 ```{python}
@@ -191,6 +190,26 @@ if motor_noise_std is not None:
 ```
 
 See further below for parameter-based loading of models, as well as the code that modifies the models prior to analysis.
+
+```{python}
+# TODO 
+# TODO Maybe do this for all the notebooks.
+# TODO
+
+params_load = dict(
+    hidden_size=hidden_size,
+    disturbance_type=disturbance_type_load,
+    disturbance_stds=disturbance_stds_load,
+    feedback_noise_std=feedback_noise_std_load,
+    motor_noise_std=motor_noise_std_load,
+    feedback_delay_steps=feedback_delay_steps_load,
+    readout_norm_loss_weight=readout_norm_loss_weight,
+    readout_norm_value=readout_norm_value,
+    control_loss_scale=control_loss_scale,
+    intervention_scaleup_batches=[0,0],
+    state_reset_iterations=[],
+)
+```
 
 ### Task parameters
 
@@ -234,22 +253,10 @@ plotly_vscode_latex_fix()
 ## Load and adjust trained models
 
 ```{python}
-models_base, model_info, replicate_info, n_replicates_included = query_and_load_models(
+models_base, model_info, replicate_info, n_replicates_included = query_and_load_model(
     db_session,
-    setup_task_model_pairs,
-    params_query=dict(
-        origin=TRAIN_NB_ID,
-        disturbance_type=disturbance_type_load,
-        disturbance_stds=disturbance_stds_load,
-        feedback_noise_std=feedback_noise_std_load,
-        motor_noise_std=motor_noise_std_load,
-        feedback_delay_steps=feedback_delay_steps_load,
-        hidden_size=hidden_size,
-        readout_norm_loss_weight=readout_norm_loss_weight,
-        readout_norm_value=readout_norm_value,
-        intervention_scaleup_batches=[0,0],
-        state_reset_iterations=[],
-    ),
+    setup_task_model_pair,
+    params_query=dict(origin=TRAIN_NB_ID) | params_load,
     noise_stds=dict(
         feedback=feedback_noise_std,
         motor=motor_noise_std,
@@ -509,7 +516,7 @@ models = all_models_imp[analysis_variant]
 ```{python}
 # when coloring by training condition
 disturbance_train_stds_colors, disturbance_train_stds_colors_dark = get_colors_dicts(
-    disturbance_train_stds, COLORSCALES['disturbance_train_stds'],
+    disturbance_stds_load, COLORSCALES['disturbance_train_stds'],
 )
 ```
 
@@ -671,7 +678,7 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
         **fig_parameters,
     )
     
-    if disturbance_train_std in lohi(disturbance_train_stds) and pert_var == 'vel':
+    if disturbance_train_std in lohi(disturbance_stds_load) and pert_var == 'vel':
         fig.show()
 ```
 
@@ -893,7 +900,7 @@ plot_id = "response_profiles/compare_pert_vars"
 
 ```{python}
 def get_summary_profiles(var, var_label):
-    figs = get_all_profiles(var, var_label, lohi(disturbance_train_stds))
+    figs = get_all_profiles(var, var_label, lohi(disturbance_stds_load))
     
     # Collapses the perturbation amplitude level across perturbation variables (into a tuple).
     # This implicitly pairs up the perturbation amplitudes for the two variables, in order from lowest to highest.

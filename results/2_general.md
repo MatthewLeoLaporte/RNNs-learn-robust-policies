@@ -15,7 +15,7 @@ Show that changing the context input controls the robustness of the behaviour.
 
 Evaluation curl fields have amplitude 2.
 
-##### Trained with BCS-0.75
+##### Trained with BCS-75
 
 ###### Train std 0.0
 ![[file-20241214105858243.png]]
@@ -125,7 +125,7 @@ Note that at higher contexts, the control force starts oscillating, but that thi
 #### Trained and evaluated on curl fields, 4-step delay
 
 **Evaluation curl fields have amplitude 2. Note that this is only half as strong as before, since curl amplitude 4 is very unstable for networks trained on delay 4.**
-##### Trained with BCS-0.75
+##### Trained with BCS-75
 
 TODO.
 ##### Trained with DAI
@@ -170,7 +170,7 @@ This was less obvious to me than with curl fields.
 
 - The switch to a robust strategy happens at quite low field std, and saturates at stds not much higher. 
 
-##### Trained with BCS-0.75
+##### Trained with BCS-75
 
 ###### Train std 0.0
 ![[file-20241216103201955.png]]
@@ -215,7 +215,7 @@ This was less obvious to me than with curl fields.
 
 - The max forward force is ~identical both with and without evaluation curl. This suggests an initial open-loop difference in strategy due to context input.
 
-##### BCS-0.75
+##### BCS-75
 ###### No disturbance
 ![[file-20241214110545881.png]]
 

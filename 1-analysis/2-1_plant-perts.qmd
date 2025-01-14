@@ -98,7 +98,7 @@ from rnns_learn_robust_motor_policies.measures import (
 )
 from rnns_learn_robust_motor_policies.misc import log_version_info, lohi
 from rnns_learn_robust_motor_policies.train_setup_part2 import (
-    setup_task_model_pairs, 
+    setup_task_model_pair, 
 )
 from rnns_learn_robust_motor_policies.plot import (
     add_endpoint_traces,
@@ -113,7 +113,7 @@ from rnns_learn_robust_motor_policies.post_training import setup_replicate_info
 from rnns_learn_robust_motor_policies.setup_utils import (
     get_base_task,
     convert_tasks_to_small,
-    query_and_load_models,
+    query_and_load_model,
     set_model_noise,
     setup_models_only,
 )
@@ -213,9 +213,9 @@ key_init, key_train, key_eval = jr.split(key, 3)
 ## Load and adjust trained models
 
 ```{python}
-models_base, model_info, replicate_info, n_replicates_included = query_and_load_models(
+models_base, model_info, replicate_info, n_replicates_included = query_and_load_model(
     db_session,
-    setup_task_model_pairs,
+    setup_task_model_pair,
     params_query=dict(
         origin=TRAIN_NB_ID,
         disturbance_type=disturbance_type_load,
@@ -560,7 +560,7 @@ figs = jt.map(
 
 ```{python}
 for path, fig in tqdm(figs_flatten_with_paths(figs)):
-    add_endpoint_traces(fig, POS_ENDPOINTS_ALIGNED['small'], xaxis='x1', yaxis='y1')
+    # add_endpoint_traces(fig, POS_ENDPOINTS_ALIGNED['small'], xaxis='x1', yaxis='y1')
     
     fig_parameters = dict(
         training_method=training_method,

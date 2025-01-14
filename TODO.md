@@ -117,6 +117,7 @@ Out of [[methods#Training methods|these]]. This is unclear.
 
 ## Database
 
+- [ ] Linking table that maintains foreign key relationships between evaluation records and model records; i.e. currently we store multiple model hashes in a `list[str]` column of the evals table, since an eval can depend on multiple models. But it doesn’t make sense to have an arbitrary number of foreign key columns in this table. Instead, the linking table would have a single entry for each eval-model dependency relation (i.e. a single eval record that refers to the hashes of 5 model records, corresponds to 5 records in the linking table).
 - [ ] Function which deletes/archives any .eqx files for which the database record is missing – this will allow us to delete database records to “delete” models, then use this function to clean up afterwards
 ### Model-per-file serialisation
 
@@ -127,12 +128,12 @@ Currently, my model saving and loading process is oriented around entire trainin
 - When we load models for analysis, we end up with a `TrainStdDict`, i.e. model records map one-to-one with `TrainStdDict`s.
 - It is difficult to load and analyze across the values of hyperparameters other than training disturbance std, e.g. noise level, weight of one of the cost terms, …
 
-I have found myself wanting to analyze across noise level, weight of one of the cost terms, …
+*But I have found myself wanting to analyze across noise level, weight of one of the cost terms, …*
 
 #### What would be better?
 
 - instead of a `TrainStdDict` we will have a `NoiseLevelDict`, `CostWeightDict`, … 
-- The model pytree’s type (e.g. `TrainStdDict`) would need to be made explicit in the code for the particular analysis, and we should not explicitly type variables as `TrainStdDict` in e.g. `query_and_load_models`
+- The model pytree’s type (e.g. `TrainStdDict`) would need to be made explicit in the code for the particular analysis, and we should not explicitly type as `TrainStdDict` in e.g. `query_and_load_models`
 - A single model would be serialised per `.eqx` file
 - Model records would refer to individual models, and no record of the structure of training runs would be implicitly preserved in the models table.'
 
@@ -144,11 +145,14 @@ I have found myself wanting to analyze across noise level, weight of one of the 
 
 ##### Challenges
 
-- Convert the old “models” table (i.e. load each training run `.eqx` and split it into multiple records with their own `.eqx` files)
-- Update `query_and_load_models`: currently we pass the values of some model record fields, and check them one-to-one to find a match. Thus `disturbance_std_load` is a list of float, which is matched exactly with a list of float in the “models” table. **Instead, any sequences found in `query_and_load_models` should be interpreted as “map over the models table, loading multiple records, over this spread of values”.** For now, I think it is sufficient that we assume that if any lists are present, they are all the same length, and that we’re only loading a single spread (though multiple hyperparameter values may vary across individual models).
-- `setup_task_model_pairs` should only take a single `disturbance_std`, and should not return a `TrainStdDict`
-- Search repo for `TrainStdDict` to find other code that may need to be changed.
-- Records in the eval table correspond to runs of an analysis notebook. The analysis may be across several single models. Currently, the eval and figure records each have a single foreign reference to the hash of the training run (i.e. model record). Instead, we would need several such references. I don’t think these can be kept as multiple foreign SQL keys. **Instead, we may need some kind of [linking table](https://stackoverflow.com/a/20572207).** A simpler solution is just store the model hashes in a list-of-string column, and forego the foreign key features, which are mostly a convenience at this point.
+Search repo for `TrainStdDict` to find other code that may need to be changed.
+
+- [x] ~~Update `query_and_load_models`~~: currently we pass the values of some model record fields, and check them one-to-one to find a match. Thus `disturbance_std_load` is a list of float, which is matched exactly with a list of float in the “models” table. **Instead, any sequences found in `query_and_load_models` should be interpreted as “map over the models table, loading multiple records, over this spread of values”.** For now, I think it is sufficient that we assume that if any lists are present, they are all the same length, and that we’re only loading a single spread (though multiple hyperparameter values may vary across individual models).
+	- **No, this shouldn’t be in `query_and_load_models`**. Instead, we should query and return a single model, and then map over this function in the notebook itself. Thus any logic about loading/handling multiple models for the purpose of an analysis, is done in the notebook.
+- [x] `setup_task_model_pairs` should only take a single `disturbance_std`, and should not return a `TrainStdDict`
+- [x] Records in the eval table correspond to runs of an analysis notebook. The analysis may be across several single models. Currently, the eval and figure records each have a single foreign reference to the hash of the training run (i.e. model record). Instead, we would need several such references. I don’t think these can be kept as multiple foreign SQL keys. ~~**Instead, we may need some kind of [linking table](https://stackoverflow.com/a/20572207).**~~ (I’m not doing this, for now.) A simpler solution is just store the model hashes in a list-of-string column, and forego the foreign key features, which are mostly a convenience at this point.
+- ~~Convert the old “models” table (i.e. load each training run `.eqx` and split it into multiple records with their own `.eqx` files)~~
+- [x] Update the main loop in `post_training`
 ### Figures
 
 - [ ] Return records as a dataframe 
@@ -170,6 +174,7 @@ It might also make sense to automatically save evaluated states to disk, and to 
 ## Formatting
 
 - [ ] Show trial, replicate, condition info in hoverinfo of individual *aligned* trajectories
+- [ ] **Fix `add_endpoint_traces`**. Or was that feature part of the new trajectory plotter? If the latter, update notebooks 1-1 and 1-2 to use the feature
 
 ## Meetings
 

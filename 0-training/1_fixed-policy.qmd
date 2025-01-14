@@ -67,7 +67,7 @@ from rnns_learn_robust_motor_policies.database import (
 from rnns_learn_robust_motor_policies.misc import log_version_info
 from rnns_learn_robust_motor_policies.setup_utils import get_readout_norm_loss
 from rnns_learn_robust_motor_policies.train_setup_part1 import (
-    setup_task_model_pairs,
+    setup_task_model_pair,
 )
 from rnns_learn_robust_motor_policies.tree_utils import pp
 from rnns_learn_robust_motor_policies.types import TaskModelPair
@@ -76,6 +76,7 @@ from rnns_learn_robust_motor_policies.train_setup import (
     iterations_to_save_model_parameters,
     make_delayed_cosine_schedule,
 )
+from rnns_learn_robust_motor_policies.types import TrainStdDict
 ```
 
 Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
@@ -107,12 +108,16 @@ n_steps = 100
 dt = 0.05
 
 n_batches_baseline = 0
-n_batches_condition = 10000
+n_batches_condition = 500
 batch_size = 250
 learning_rate_0 = 0.01
-constant_lr_iterations = 2000 # Number of initial training iterations to hold lr constant
+constant_lr_iterations = 0  # Number of initial training iterations to hold lr constant
 cosine_annealing_alpha = 1.0  # Max learning rate factor decrease during cosine annealing 
 weight_decay = 0
+
+# scales the weight on the control force (i.e. network output) loss term
+# (for supplementary analysis)
+control_loss_scale = 0.1
 
 # Force the Frobenius norm of the readout weight matrix to be close (squared error) to this value
 readout_norm_value = 2.0
@@ -153,24 +158,30 @@ key_init, key_train, key_eval = jr.split(key, 3)
 if not disturbance_type in ['curl', 'constant']:
     raise ValueError(f"Unknown disturbance type: {disturbance_type}")
 
-task_model_pairs = setup_task_model_pairs(
-    n_replicates=n_replicates,
-    dt=dt,
-    hidden_size=hidden_size,
-    n_steps=n_steps,
-    feedback_delay_steps=feedback_delay_steps,
-    feedback_noise_std=feedback_noise_std,
-    motor_noise_std=motor_noise_std,
-    disturbance_type=disturbance_type,
-    disturbance_stds=disturbance_stds[disturbance_type],
-    intervention_scaleup_batches=intervention_scaleup_batches,
-    key=key_init,    
+task_model_pairs = jt.map(
+    lambda disturbance_std: setup_task_model_pair(
+        n_replicates=n_replicates,
+        dt=dt,
+        hidden_size=hidden_size,
+        n_steps=n_steps,
+        feedback_delay_steps=feedback_delay_steps,
+        feedback_noise_std=feedback_noise_std,
+        motor_noise_std=motor_noise_std,
+        disturbance_type=disturbance_type,
+        disturbance_std=disturbance_std,
+        intervention_scaleup_batches=intervention_scaleup_batches,
+        control_loss_scale=control_loss_scale,
+        key=key_init, 
+    ),
+    TrainStdDict(zip(
+        disturbance_stds[disturbance_type], 
+        disturbance_stds[disturbance_type],
+    )),
 )
 
 # The task without training perturbations
 task_baseline = task_model_pairs[0].task
 ```
-
 
 ## Training setup
 
@@ -293,7 +304,7 @@ training_hyperparameters = dict(
 ```
 
 ```{python}
-model_hyperparameters = dict(
+model_hyperparameters_func = lambda disturbance_std: dict(
     n_replicates=n_replicates,
     hidden_size=hidden_size,
     feedback_delay_steps=feedback_delay_steps,
@@ -302,16 +313,16 @@ model_hyperparameters = dict(
     dt=dt,
     n_steps=n_steps,
     disturbance_type=disturbance_type,
-    disturbance_stds=disturbance_stds[disturbance_type],
+    disturbance_std=disturbance_std,
     readout_norm_loss_weight=readout_norm_loss_weight,
     readout_norm_value=readout_norm_value,
     intervention_scaleup_batches=intervention_scaleup_batches,
+    control_loss_scale=control_loss_scale,
 )
 ```
 
 ```{python}
 train_histories_hyperparameters=dict(
-    disturbance_stds=disturbance_stds,
     n_batches=n_batches,
     batch_size=batch_size,
     n_replicates=n_replicates,
@@ -322,16 +333,21 @@ train_histories_hyperparameters=dict(
 )
 ```
 
+Create a database record for each ensemble of models trained (i.e. one per disturbance std).
+
 ```{python}
-model_record = save_model_and_add_record(
-    db_session,
-    origin=TRAIN_NB_ID,
-    model=trained_models,
-    model_hyperparameters=model_hyperparameters,
-    other_hyperparameters=training_hyperparameters,
-    train_history=train_histories,
-    train_history_hyperparameters=train_histories_hyperparameters,
-    version_info=version_info,
-)
+model_records = TrainStdDict({
+    disturbance_std: save_model_and_add_record(
+        db_session,
+        origin=TRAIN_NB_ID,
+        model=models,
+        model_hyperparameters=model_hyperparameters_func(disturbance_std),
+        other_hyperparameters=training_hyperparameters,
+        train_history=train_histories,
+        train_history_hyperparameters=train_histories_hyperparameters,
+        version_info=version_info,
+    )
+    for disturbance_std, models in trained_models.items()
+})
 ```
 

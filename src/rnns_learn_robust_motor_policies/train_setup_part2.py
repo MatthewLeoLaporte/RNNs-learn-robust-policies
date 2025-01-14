@@ -107,7 +107,7 @@ def disturbance(disturbance_type, field_std, p_perturbed, method):
     )
 
 
-def setup_task_model_pairs(
+def setup_task_model_pair(
     training_methods: Optional[Sequence[TrainingMethodLabel]] = None, 
     *,
     n_replicates,
