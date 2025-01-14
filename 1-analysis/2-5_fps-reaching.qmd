@@ -100,9 +100,11 @@ from rnns_learn_robust_motor_policies.colors import (
 from rnns_learn_robust_motor_policies.constants import (
     EVAL_REACH_LENGTH,
     INTERVENOR_LABEL,
+    REPLICATE_CRITERION,
     WORKSPACE,
 )
 from rnns_learn_robust_motor_policies.database import (
+    ModelRecord,
     get_db_session,
     get_model_record,
     add_evaluation,
@@ -175,9 +177,9 @@ db_session = get_db_session()
 #| tags: [parameters]
 
 # Specify which trained models to load 
+disturbance_stds_load = [0.0, 0.5, 1.0, 1.5]
 training_methods_load = ["bcs", "pai-asf"]
 disturbance_type_load: Literal['curl', 'constant'] = 'curl'
-disturbance_stds_load = [0.0, 0.5, 1.0, 1.5]
 feedback_noise_std_load = 0.01
 motor_noise_std_load = 0.01
 feedback_delay_steps = 0
@@ -236,6 +238,19 @@ conditions_colors_tuples = plc.convert_colors_to_same_type(
 )[0]
 ```
 
+```{python}
+params_load_func = lambda disturbance_train_std: dict(
+    origin=TRAIN_NB_ID,
+    training_methods=training_methods_load,
+    disturbance_std=disturbance_train_std,
+    disturbance_type=disturbance_type_load,
+    feedback_noise_std=feedback_noise_std_load,
+    motor_noise_std=motor_noise_std_load,
+    feedback_delay_steps=feedback_delay_steps,
+    hidden_size=hidden_size,
+)
+```
+
 ### RNG setup
 
 ```{python}
@@ -246,30 +261,28 @@ key_init, key_train, key_eval = jr.split(key, 3)
 ## Load and adjust trained models
 
 ```{python}
-models_load, model_info, replicate_info, n_replicates_included = query_and_load_model(
-    db_session,
-    setup_task_model_pair,
-    params_query=dict(
-        origin=TRAIN_NB_ID,
-        training_methods=training_methods_load,
-        disturbance_type=disturbance_type_load,
-        disturbance_stds=disturbance_stds_load,
-        feedback_noise_std=feedback_noise_std_load,
-        motor_noise_std=motor_noise_std_load,
-        feedback_delay_steps=feedback_delay_steps,
-        hidden_size=hidden_size,
-    ),
-    noise_stds=dict(
-        feedback=feedback_noise_std,
-        motor=motor_noise_std,
-    ),
-    tree_inclusions={
-        TrainStdDict: None,
-        TrainingMethodDict: training_methods,
-    },
-    exclude_underperformers_by=exclude_underperformers_by,
-    exclude_method='best-only',
-)
+models_load, model_info, replicate_info, n_replicates_included = tree_unzip(TrainStdDict({
+    disturbance_std: query_and_load_model(
+        db_session,
+        setup_task_model_pair,
+        params_query=params_load_func(disturbance_std),
+        noise_stds=dict(
+            feedback=feedback_noise_std,
+            motor=motor_noise_std,
+        ),
+        exclude_underperformers_by=REPLICATE_CRITERION,
+        exclude_method='best_only',
+    )
+    for disturbance_std in disturbance_stds_load
+}))
+
+best_replicate, included_replicates = tree_unzip(TrainStdDict({
+    std: (
+        replicate_info[std]['best_replicates'][REPLICATE_CRITERION],
+        replicate_info[std]['included_replicates'][REPLICATE_CRITERION],
+    ) 
+    for std in disturbance_stds_load
+}))
 ```
 
 Load the readout weights into their own variable, for ease of reference.
@@ -288,17 +301,37 @@ We will either be evaluating on specific disturbance types and noise conditions,
 keeping the same conditions used during training.
 
 ```{python}
-eval_parameters = use_record_params_where_none(
-    dict(
-        disturbance_type=disturbance_type,
-        feedback_noise_std=feedback_noise_std,
-        motor_noise_std=motor_noise_std,
-    ), 
+all_eval_parameters = jt.map(
+    lambda record: use_record_params_where_none(
+        dict(
+            disturbance_type=disturbance_type,
+            feedback_noise_std=feedback_noise_std,
+            motor_noise_std=motor_noise_std,
+        ), 
+        record,
+    ),
     model_info,
+    is_leaf=is_type(ModelRecord),
 )
+```
+
+All the relevant model info (e.g. noise stds) except disturbance std should be the same across models, at this point. Assert that this is the case, and keep the parameters for only one of the models.
+
+```{python}
+all_eval_params_flat =[tuple(d.items()) for d in all_eval_parameters.values()]
+
+assert len(set(all_eval_params_flat)) == 1
+
+eval_parameters = all_eval_parameters[disturbance_stds_load[0]]
+
+# Later, use this to access the values of hyperparameters, assuming they 
+# are shared between models (e.g. `model_info_0.n_steps`)
+model_info_0 = model_info[disturbance_stds_load[0]]
 
 disturbance_type = eval_parameters["disturbance_type"]
 ```
+
+Are any of the system noise scales non-zero?
 
 ```{python}
 any_system_noise = any(jt.leaves((
@@ -331,7 +364,7 @@ eval_parameters |= dict(
 eval_info = add_evaluation(
     db_session,
     origin=NB_ID,
-    model_hash=model_info.hash,
+    models=model_info,
     eval_parameters=eval_parameters,
     version_info=version_info,
 )
@@ -367,7 +400,7 @@ See notebook 1-2a for some explanation of the parameter choices here.
 # Also add the intervenors to the trained models
 task_base, all_models = schedule_intervenor(
     get_base_task(
-        model_info.n_steps,
+        model_info_0.n_steps,
         validation_params=dict(
             eval_grid_n=n_grid,
             eval_n_directions=n_directions,
@@ -398,7 +431,7 @@ all_tasks = ContextInputDict({
             'context': TrialSpecDependency(
                 get_context_input_func(
                     context_input, 
-                    model_info.n_steps - 1, 
+                    model_info_0.n_steps - 1, 
                     task_base.n_validation_trials
                 ),
             ),
@@ -496,7 +529,7 @@ Perform PCA on all the hidden states together, for all context inputs and reach 
 # Calculate the PCs starting midway through the trial, to prefer the goal plane.
 # This is just to make the plots clearer; statistically it might not be as good. 
 i_step_pca_start = 50
-n_steps = model_info.n_steps
+n_steps = model_info_0.n_steps
 
 hidden_for_pca = hidden[..., i_step_pca_start - n_steps:, :].reshape(-1, hidden_size)
 pca2 = PCA(n_components=2).fit(hidden_for_pca)

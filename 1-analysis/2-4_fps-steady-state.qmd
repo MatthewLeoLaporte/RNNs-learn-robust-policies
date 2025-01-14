@@ -82,8 +82,12 @@ from rnns_learn_robust_motor_policies.colors import (
     MEAN_LIGHTEN_FACTOR,
     get_colors_dicts,
 )
-from rnns_learn_robust_motor_policies.constants import WORKSPACE
+from rnns_learn_robust_motor_policies.constants import (
+    REPLICATE_CRITERION,
+    WORKSPACE,
+)
 from rnns_learn_robust_motor_policies.database import (
+    ModelRecord,
     get_db_session,
     get_model_record,
     add_evaluation,
@@ -150,9 +154,9 @@ db_session = get_db_session()
 #| tags: [parameters]
 
 # Specify which trained models to load 
+disturbance_stds_load = [0.4, 0.8, 1.2]
 training_methods_load = ['amplitude', 'std']
 disturbance_type_load: Literal['curl', 'constant'] = 'curl'
-disturbance_stds_load = [0.4, 0.8, 1.2]
 feedback_noise_std_load = 0.0
 motor_noise_std_load = 0.0
 feedback_delay_steps = 0
@@ -193,6 +197,19 @@ assert eval_grid_n % 2 == 1, (
 exclude_underperformers_by = 'best_total_loss'
 ```
 
+```{python}
+params_load_func = lambda disturbance_train_std: dict(
+    origin=TRAIN_NB_ID,
+    training_methods=training_methods_load,
+    disturbance_std=disturbance_train_std,
+    disturbance_type=disturbance_type_load,
+    feedback_noise_std=feedback_noise_std_load,
+    motor_noise_std=motor_noise_std_load,
+    feedback_delay_steps=feedback_delay_steps,
+    hidden_size=hidden_size,
+)
+```
+
 ### Colors setup
 
 ```{python}
@@ -211,30 +228,28 @@ key_init, key_train, key_eval = jr.split(key, 3)
 ## Load and adjust trained models
 
 ```{python}
-all_models, model_info, replicate_info, n_replicates_included = query_and_load_model(
-    db_session,
-    setup_task_model_pair,
-    params_query=dict(
-        origin=TRAIN_NB_ID,
-        training_methods=training_methods_load,
-        disturbance_type=disturbance_type_load,
-        disturbance_stds=disturbance_stds_load,
-        feedback_noise_std=feedback_noise_std_load,
-        motor_noise_std=motor_noise_std_load,
-        feedback_delay_steps=feedback_delay_steps,
-        hidden_size=hidden_size,
-    ),
-    noise_stds=dict(
-        feedback=feedback_noise_std,
-        motor=motor_noise_std,
-    ),
-    tree_inclusions={
-        TrainStdDict: None,
-        TrainingMethodDict: training_methods,
-    },
-    exclude_underperformers_by=exclude_underperformers_by,
-    exclude_method='nan',
-)
+all_models, model_info, replicate_info, n_replicates_included = tree_unzip(TrainStdDict({
+    disturbance_std: query_and_load_model(
+        db_session,
+        setup_task_model_pair,
+        params_query=params_load_func(disturbance_std),
+        noise_stds=dict(
+            feedback=feedback_noise_std,
+            motor=motor_noise_std,
+        ),
+        exclude_underperformers_by=REPLICATE_CRITERION,
+        exclude_method='nan',
+    )
+    for disturbance_std in disturbance_stds_load
+}))
+
+best_replicate, included_replicates = tree_unzip(TrainStdDict({
+    std: (
+        replicate_info[std]['best_replicates'][REPLICATE_CRITERION],
+        replicate_info[std]['included_replicates'][REPLICATE_CRITERION],
+    ) 
+    for std in disturbance_stds_load
+}))
 ```
 
 ## Some helpful function
@@ -277,15 +292,35 @@ def take_non_nan(arr, axis=1):
 We will either be evaluating on specific disturbance types and noise conditions, or if none are specified here,
 keeping the same conditions used during training.
 
-```{python}
-eval_parameters = use_record_params_where_none(
-    dict(
-        feedback_noise_std=feedback_noise_std,
-        motor_noise_std=motor_noise_std,
-    ), 
+```{python} 
+all_eval_parameters = jt.map(
+    lambda record: use_record_params_where_none(
+        dict(
+            feedback_noise_std=feedback_noise_std,
+            motor_noise_std=motor_noise_std,
+        ), 
+        record,
+    ),
     model_info,
+    is_leaf=is_type(ModelRecord),
 )
 ```
+
+All the relevant model info (e.g. noise stds) except disturbance std should be the same across models, at this point. Assert that this is the case, and keep the parameters for only one of the models.
+
+```{python}
+all_eval_params_flat =[tuple(d.items()) for d in all_eval_parameters.values()]
+
+assert len(set(all_eval_params_flat)) == 1
+
+eval_parameters = all_eval_parameters[disturbance_stds_load[0]]
+
+# Later, use this to access the values of hyperparameters, assuming they 
+# are shared between models (e.g. `model_info_0.n_steps`)
+model_info_0 = model_info[disturbance_stds_load[0]]
+```
+
+Are any of the system noise scales non-zero?
 
 ```{python}
 any_system_noise = any(jt.leaves((
@@ -310,7 +345,7 @@ eval_parameters |= dict(
 eval_info = add_evaluation(
     db_session,
     origin=NB_ID,
-    model_hash=model_info.hash,
+    models=model_info,
     eval_parameters=eval_parameters,
     version_info=version_info,
 )
@@ -336,7 +371,7 @@ EVAL_REACH_LENGTH = 0.0
 task = SimpleReaches(
     loss_func=simple_reach_loss(),
     workspace=WORKSPACE, 
-    n_steps=model_info.n_steps,
+    n_steps=model_info_0.n_steps,
     eval_grid_n=eval_grid_n,
     eval_n_directions=EVAL_N_DIRECTIONS,
     eval_reach_length=EVAL_REACH_LENGTH,  
@@ -359,7 +394,7 @@ all_tasks = ContextInputDict({
         task, 
         {
             'context': TrialSpecDependency(get_context_input_func(
-                context_input, model_info.n_steps, task.n_validation_trials
+                context_input, model_info_0.n_steps, task.n_validation_trials
             ))
         },
     )
@@ -374,7 +409,7 @@ def evaluate_all_states():
     # Normally this should return a TrainStdDict of ContextInputDict of SimpleFeedbackState
     return jt.map(
         lambda models: jt.map(
-            lambda task: task.eval_ensemble(models, model_info.n_replicates, key=key_eval),
+            lambda task: task.eval_ensemble(models, model_info_0.n_replicates, key=key_eval),
             # lambda task: task.eval(model, key=key_eval),
             all_tasks,
             is_leaf=is_module,
@@ -410,7 +445,7 @@ all_states_hidden = exclude_nan_replicates(jt.map(
 ))
 
 all_states_hidden_flat = jnp.concatenate(jt.leaves(
-    jt.map(lambda states: jnp.reshape(states, (-1, model_info.hidden_size)), all_states_hidden)  
+    jt.map(lambda states: jnp.reshape(states, (-1, model_info_0.hidden_size)), all_states_hidden)  
 ))
 ```
 
@@ -558,7 +593,7 @@ def get_ss_fps_at_positions(
     candidates = jt.map(
         lambda states: jnp.reshape(
             states.net.hidden, 
-            (model_info.n_replicates, -1, model_info.hidden_size),
+            (model_info_0.n_replicates, -1, model_info_0.hidden_size),
         )[:, ::stride_candidates],
         all_states,
         is_leaf=is_module,
@@ -1000,10 +1035,10 @@ print(plot_id)
 for path, fig in tqdm(figs_flatten_with_paths(eigval_figs)):
     fig_params = dict(
         training_method=path[0].key,
-        disturbance_type_train=model_info.disturbance_type,
+        disturbance_type_train=disturbance_type_load,
         disturbance_train_std=path[1].key,
         # Save the number of points per color, as usual
-        n=model_info.hidden_size * model_info.n_replicates * eval_grid_n ** 2,
+        n=model_info_0.hidden_size * model_info_0.n_replicates * eval_grid_n ** 2,
     )
     
     add_evaluation_figure(db_session, eval_info, fig, plot_id, **fig_params)
@@ -1044,9 +1079,9 @@ print(plot_id)
 for path, fig in tqdm(figs_flatten_with_paths(eigval_figs)):
     fig_params = dict(
         training_method=path[0].key,
-        disturbance_type_train=model_info.disturbance_type,
+        disturbance_type_train=disturbance_type_load,
         disturbance_train_std=path[1].key,
-        n=model_info.hidden_size * len(context_inputs) * eval_grid_n ** 2,
+        n=model_info_0.hidden_size * len(context_inputs) * eval_grid_n ** 2,
     )
     
     add_evaluation_figure(db_session, eval_info, fig, plot_id, **fig_params)
@@ -1082,9 +1117,9 @@ print(plot_id)
 for path, fig in tqdm(figs_flatten_with_paths(eigval_figs)):
     fig_params = dict(
         training_method=path[0].key,
-        disturbance_type_train=model_info.disturbance_type,
+        disturbance_type_train=disturbance_type_load,
         disturbance_train_std=path[1].key,
-        n=model_info.hidden_size * len(context_inputs) * model_info.n_replicates,
+        n=model_info_0.hidden_size * len(context_inputs) * model_info_0.n_replicates,
     )
     
     add_evaluation_figure(db_session, eval_info, fig, plot_id, **fig_params)
@@ -1217,13 +1252,13 @@ def get_fps_at_positions_with_fb_perts(
     # candidates = jt.map(
     #     lambda fps: jnp.reshape(
     #         fps, 
-    #         (model_info.n_replicates, -1, model_info.hidden_size),
+    #         (model_info_0.n_replicates, -1, model_info_0.hidden_size),
     #     )[:, ::stride_candidates],
     #     all_ss_fps,
     #     is_leaf=is_module,
     # )
 
-    keys = jr.split(key_eval, (model_info.n_replicates, len(positions)))
+    keys = jr.split(key_eval, (model_info_0.n_replicates, len(positions)))
 
     return tree_map_tqdm(
         lambda models, candidates_by_context: ContextInputDict({

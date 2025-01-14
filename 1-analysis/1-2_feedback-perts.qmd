@@ -75,8 +75,12 @@ from rnns_learn_robust_motor_policies.colors import (
     get_colors_dicts,
     get_colors_dicts_from_discrete,
 )
-from rnns_learn_robust_motor_policies.constants import WORKSPACE
+from rnns_learn_robust_motor_policies.constants import (
+    REPLICATE_CRITERION,
+    WORKSPACE,
+)
 from rnns_learn_robust_motor_policies.database import (
+    ModelRecord,
     add_evaluation,
     add_evaluation_figure,
     get_db_session,
@@ -155,15 +159,15 @@ We may want to specify 1) which trained models to load, by their parameters, and
 ```{python}
 #| tags: [parameters]
 # Specify which trained models to load 
+disturbance_stds_load = [0, 0.5, 1.0, 1.5]
 disturbance_type_load: Literal['curl', 'constant'] = 'curl'
 feedback_noise_std_load = 0.01
 motor_noise_std_load = 0.01
 feedback_delay_steps_load = 0
-hidden_size = 100
+hidden_size = 50
 where_train_strs = ["step.net.hidden", "step.net.readout"]
 readout_norm_loss_weight = 0.0
 readout_norm_value = 2.0
-disturbance_stds_load = [0, 0.5, 1.0, 1.5]
 
 # Specify model parameters to use for analysis (None -> use training value)
 # disturbance_type: Optional[Literal['curl', 'constant']] = None
@@ -192,22 +196,19 @@ if motor_noise_std is not None:
 See further below for parameter-based loading of models, as well as the code that modifies the models prior to analysis.
 
 ```{python}
-# TODO 
-# TODO Maybe do this for all the notebooks.
-# TODO
-
-params_load = dict(
+params_load_func = lambda disturbance_std_load: dict(
+    origin=TRAIN_NB_ID,
     hidden_size=hidden_size,
     disturbance_type=disturbance_type_load,
-    disturbance_stds=disturbance_stds_load,
+    disturbance_std=disturbance_std_load,
     feedback_noise_std=feedback_noise_std_load,
     motor_noise_std=motor_noise_std_load,
     feedback_delay_steps=feedback_delay_steps_load,
-    readout_norm_loss_weight=readout_norm_loss_weight,
-    readout_norm_value=readout_norm_value,
-    control_loss_scale=control_loss_scale,
-    intervention_scaleup_batches=[0,0],
-    state_reset_iterations=[],
+    # readout_norm_loss_weight=readout_norm_loss_weight,
+    # readout_norm_value=readout_norm_value,
+    # control_loss_scale=control_loss_scale,
+    # intervention_scaleup_batches=[0,0],
+    # state_reset_iterations=[],
 )
 ```
 
@@ -253,19 +254,27 @@ plotly_vscode_latex_fix()
 ## Load and adjust trained models
 
 ```{python}
-models_base, model_info, replicate_info, n_replicates_included = query_and_load_model(
-    db_session,
-    setup_task_model_pair,
-    params_query=dict(origin=TRAIN_NB_ID) | params_load,
-    noise_stds=dict(
-        feedback=feedback_noise_std,
-        motor=motor_noise_std,
-    ),
-    tree_inclusions={
-        TrainStdDict: None,
-    },
-    exclude_underperformers_by="best_total_loss",
-)
+models_base, model_info, replicate_info, n_replicates_included = tree_unzip(TrainStdDict({
+    disturbance_std: query_and_load_model(
+        db_session,
+        setup_task_model_pair,
+        params_query=params_load_func(disturbance_std),
+        noise_stds=dict(
+            feedback=feedback_noise_std,
+            motor=motor_noise_std,
+        ),
+        exclude_underperformers_by=REPLICATE_CRITERION,
+    )
+    for disturbance_std in disturbance_stds_load
+}))
+
+best_replicate, included_replicates = tree_unzip(TrainStdDict({
+    std: (
+        replicate_info[std]['best_replicates'][REPLICATE_CRITERION],
+        replicate_info[std]['included_replicates'][REPLICATE_CRITERION],
+    ) 
+    for std in disturbance_stds_load
+}))
 ```
 
 ## Sort out the evaluation parameters and create a database record
@@ -274,11 +283,34 @@ We will either be evaluating on specific disturbance types and noise conditions,
 keeping the same conditions used during training.
 
 ```{python}
-eval_parameters = use_record_params_where_none(dict(
-    feedback_noise_std=feedback_noise_std,
-    motor_noise_std=motor_noise_std,
-), model_info)
+all_eval_parameters = jt.map(
+    lambda record: use_record_params_where_none(
+        dict(
+            feedback_noise_std=feedback_noise_std,
+            motor_noise_std=motor_noise_std,
+        ), 
+        record,
+    ),
+    model_info,
+    is_leaf=is_type(ModelRecord),
+)
 ```
+
+All the relevant model info (e.g. noise stds) except disturbance std should be the same across models, at this point. Assert that this is the case, and keep the parameters for only one of the models.
+
+```{python}
+all_eval_params_flat =[tuple(d.items()) for d in all_eval_parameters.values()]
+
+assert len(set(all_eval_params_flat)) == 1
+
+eval_parameters = all_eval_parameters[disturbance_stds_load[0]]
+
+# Later, use this to access the values of hyperparameters, assuming they 
+# are shared between models (e.g. `model_info_0.n_steps`)
+model_info_0 = model_info[disturbance_stds_load[0]]
+```
+
+Are any of the system noise scales non-zero?
 
 ```{python}
 any_system_noise = any(jt.leaves((
@@ -308,9 +340,9 @@ eval_parameters |= dict(
 ```{python}
 eval_info = add_evaluation(
     db_session,
-    model_hash=model_info.hash,
-    eval_parameters=eval_parameters,
     origin=NB_ID,
+    models=model_info,
+    eval_parameters=eval_parameters,
     version_info=version_info,
 )
 ```
@@ -324,7 +356,7 @@ eval_info = add_evaluation(
 task = SimpleReaches(
     loss_func=simple_reach_loss(),
     workspace=WORKSPACE, 
-    n_steps=model_info.n_steps,
+    n_steps=model_info_0.n_steps,
     eval_grid_n=eval_grid_n,
     eval_n_directions=EVAL_N_DIRECTIONS,
     eval_reach_length=EVAL_REACH_LENGTH,  
@@ -381,7 +413,7 @@ all_tasks_imp['xy'], all_models_imp['xy'] = tree_unzip(jt.map(
         task, models_base,
         lambda model: model.step.feedback_channels[0],
         feedback_impulse(
-            model_info.n_steps,
+            model_info_0.n_steps,
             1.0, # impulse_amplitude[ks[0]],
             impulse_duration,
             feedback_var_idxs[ks[0]],  
@@ -416,7 +448,7 @@ all_tasks_imp['rand'], all_models_imp['rand'] = tree_unzip(jt.map(
         task, models_base,
         lambda model: model.step.feedback_channels[0],
         feedback_impulse(  
-            model_info.n_steps,
+            model_info_0.n_steps,
             1.0, #impulse_amplitude[pert_var_names[feedback_var_idx]],
             impulse_duration,
             feedback_var_idx,   
@@ -675,6 +707,7 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
         eval_info,
         fig,
         plot_id,
+        model_records=model_info[disturbance_train_std],
         **fig_parameters,
     )
     
@@ -777,7 +810,7 @@ def get_all_profiles(all_plot, var_label, disturbance_stds=None, colors=None):
             pert_condn: jt.map(
                 lambda var_by_train_condn: fbp.profiles(
                     tree_take(var_by_train_condn, i, -1),
-                    timesteps=jnp.arange(-n_preceding_steps, model_info.n_steps),
+                    timesteps=jnp.arange(-n_preceding_steps, model_info_0.n_steps),
                     mode='std', 
                     varname=fr"${y_axes_labels[i]}$",
                     colors=list(colors.values()),
@@ -879,6 +912,7 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
         eval_info,
         fig,
         plot_id,
+        model_records=model_info[disturbance_train_std],
         **fig_parameters,
     )
     
@@ -968,6 +1002,7 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
         eval_info,
         fig,
         plot_id,
+        model_records=subdict(model_info, lohi(disturbance_stds_load)),
         **fig_parameters,
     )
     
@@ -991,6 +1026,7 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
         eval_info,
         fig,
         plot_id + "/detail",
+        model_records=subdict(model_info, lohi(disturbance_stds_load)),
         **fig_parameters,
     )
     
@@ -1175,6 +1211,7 @@ for i in range(n_impulse_amplitudes):
             eval_info,
             fig,
             plot_id,
+            model_records=model_info,
             **fig_parameters,
         )
 ```
@@ -1236,6 +1273,7 @@ for i in range(n_impulse_amplitudes):
             eval_info,
             fig,
             plot_id,
+            model_records=model_info,
             **fig_parameters,
         )
 ```
@@ -1314,6 +1352,7 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
         eval_info,
         fig,
         plot_id,
+        model_records=model_info,
         **fig_parameters,
     )
 ```

@@ -23,7 +23,6 @@ from rnns_learn_robust_motor_policies.setup_utils import get_base_task
 from rnns_learn_robust_motor_policies.types import TaskModelPair
 
 
-
 disturbance_params = lambda scale_func: {
     'curl': dict(
         amplitude=lambda trial_spec, batch_info, key: scale_func(

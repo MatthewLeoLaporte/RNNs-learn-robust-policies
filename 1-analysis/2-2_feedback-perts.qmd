@@ -79,9 +79,11 @@ from rnns_learn_robust_motor_policies.colors import (
 from rnns_learn_robust_motor_policies.constants import (
     INTERVENOR_LABEL,
     POS_ENDPOINTS_ALIGNED,
+    REPLICATE_CRITERION,
     WORKSPACE,
 )
 from rnns_learn_robust_motor_policies.database import (
+    ModelRecord,
     get_db_session,
     get_model_record,
     add_evaluation,
@@ -171,15 +173,13 @@ db_session = get_db_session()
 #| tags: [parameters]
 
 # Specify which trained models to load 
+disturbance_stds_load = [0.0, 0.5, 1.0, 1.5]
+# disturbance_stds_load = [0.0, 0.01, 0.02, 0.03, 0.04, 0.08, 0.16, 0.32]
 disturbance_type_load: Literal['curl', 'constant'] = 'curl'
 feedback_noise_std_load = 0.01
 motor_noise_std_load = 0.01
 feedback_delay_steps_load = 0
 hidden_size = 100
-
-disturbance_stds_load = [0.0, 0.5, 1.0, 1.5]
-# disturbance_stds_load = [0.0, 0.01, 0.02, 0.03, 0.04, 0.08, 0.16, 0.32]
-training_methods_load = ['bcs', 'pai-asf']
 
 # Specify model parameters to use for analysis (None -> use training value)
 training_method = 'pai-asf'  
@@ -232,6 +232,22 @@ if motor_noise_std is not None:
 
 See further below for parameter-based loading of models, as well as the code that modifies the models prior to analysis.
 
+```{python}
+params_load_func = lambda disturbance_train_std: dict(
+    origin=TRAIN_NB_ID,
+    disturbance_std=disturbance_train_std,
+    disturbance_type=disturbance_type_load,
+    feedback_noise_std=feedback_noise_std_load,
+    motor_noise_std=motor_noise_std_load,
+    feedback_delay_steps=feedback_delay_steps_load,
+    hidden_size=hidden_size,
+    n_batches=10000,
+    learning_rate_0=0.001,
+    # intervention_scaleup_batches=[0, 1000],
+    training_method=training_method,
+)
+```
+
 ### RNG setup
 
 ```{python}
@@ -265,32 +281,27 @@ context_input_colors, context_input_colors_dark = get_colors_dicts(
 ## Load and adjust trained models
 
 ```{python}
-models_base, model_info, replicate_info, n_replicates_included = query_and_load_model(
-    db_session,
-    setup_task_model_pair,
-    params_query=dict(
-        origin=TRAIN_NB_ID,
-        disturbance_type=disturbance_type_load,
-        feedback_noise_std=feedback_noise_std_load,
-        motor_noise_std=motor_noise_std_load,
-        feedback_delay_steps=feedback_delay_steps_load,
-        hidden_size=hidden_size,
-        n_batches=10000,
-        disturbance_stds=disturbance_stds_load,
-        learning_rate_0=0.001,
-        # intervention_scaleup_batches=[0, 1000],
-        training_methods=training_methods_load,
-    ),
-    noise_stds=dict(
-        feedback=feedback_noise_std,
-        motor=motor_noise_std,
-    ),
-    tree_inclusions={
-        TrainStdDict: None,
-        TrainingMethodDict: training_method,
-    },
-    exclude_underperformers_by="best_total_loss",
-)
+models_base, model_info, replicate_info, n_replicates_included = tree_unzip(TrainStdDict({
+    disturbance_std: query_and_load_model(
+        db_session,
+        setup_task_model_pair,
+        params_query=params_load_func(disturbance_std),
+        noise_stds=dict(
+            feedback=feedback_noise_std,
+            motor=motor_noise_std,
+        ),
+        exclude_underperformers_by=REPLICATE_CRITERION,
+    )
+    for disturbance_std in disturbance_stds_load
+}))
+
+best_replicate, included_replicates = tree_unzip(TrainStdDict({
+    std: (
+        replicate_info[std]['best_replicates'][REPLICATE_CRITERION],
+        replicate_info[std]['included_replicates'][REPLICATE_CRITERION],
+    ) 
+    for std in disturbance_stds_load
+}))
 
 models_base = jt.map(
     lambda d: subdict(d, disturbance_train_stds),
@@ -304,15 +315,38 @@ models_base = jt.map(
 We will either be evaluating on specific disturbance types and noise conditions, or if none are specified here,
 keeping the same conditions used during training.
 
+```{python} 
+all_eval_parameters = jt.map(
+    lambda record: use_record_params_where_none(
+        dict(
+            disturbance_type=disturbance_type,
+            feedback_noise_std=feedback_noise_std,
+            motor_noise_std=motor_noise_std,
+        ), 
+        record,
+    ),
+    model_info,
+    is_leaf=is_type(ModelRecord),
+)
+```
+
+All the relevant model info (e.g. noise stds) except disturbance std should be the same across models, at this point. Assert that this is the case, and keep the parameters for only one of the models.
+
 ```{python}
-eval_parameters = use_record_params_where_none(dict(
-    disturbance_type=disturbance_type,
-    feedback_noise_std=feedback_noise_std,
-    motor_noise_std=motor_noise_std,
-), model_info)
+all_eval_params_flat =[tuple(d.items()) for d in all_eval_parameters.values()]
+
+assert len(set(all_eval_params_flat)) == 1
+
+eval_parameters = all_eval_parameters[disturbance_stds_load[0]]
+
+# Later, use this to access the values of hyperparameters, assuming they 
+# are shared between models (e.g. `model_info_0.n_steps`)
+model_info_0 = model_info[disturbance_stds_load[0]]
 
 disturbance_type = eval_parameters["disturbance_type"]
 ```
+
+Are any of the system noise scales non-zero?
 
 ```{python}
 any_system_noise = any(jt.leaves((
@@ -348,9 +382,9 @@ eval_parameters |= dict(
 ```{python}
 eval_info = add_evaluation(
     db_session,
-    model_hash=model_info.hash,
-    eval_parameters=eval_parameters,
     origin=NB_ID,
+    models=model_info,
+    eval_parameters=eval_parameters,
     version_info=version_info,
 )
 ```
@@ -369,7 +403,7 @@ EVAL_REACH_LENGTH = 0.0
 task = SimpleReaches(
     loss_func=simple_reach_loss(),
     workspace=WORKSPACE, 
-    n_steps=model_info.n_steps,
+    n_steps=model_info_0.n_steps,
     eval_grid_n=eval_grid_n,
     eval_n_directions=EVAL_N_DIRECTIONS,
     eval_reach_length=EVAL_REACH_LENGTH,  
@@ -394,7 +428,7 @@ all_tasks_imp, all_models_imp = tree_unzip(jt.map(
         task, models_base,
         lambda model: model.step.feedback_channels[0],
         feedback_impulse(  
-            model_info.n_steps,
+            model_info_0.n_steps,
             1.0, #impulse_amplitude[pert_var_names[feedback_var_idx]],
             impulse_duration,
             feedback_var_idx,   
@@ -433,7 +467,7 @@ all_tasks = jt.map(
             task, 
             {
                 'context': TrialSpecDependency(get_context_input_func(
-                    context_input, model_info.n_steps, task.n_validation_trials
+                    context_input, model_info_0.n_steps, task.n_validation_trials
                 ))
             },
         )
@@ -559,7 +593,7 @@ def get_all_profiles(all_plot, var_label, colors, dict_type, legend_title):
             pert_condn: jt.map(
                 lambda var_by_train_condn: fbp.profiles(
                     tree_take(var_by_train_condn, i, -1),
-                    timesteps=jnp.arange(-n_preceding_steps, model_info.n_steps),
+                    timesteps=jnp.arange(-n_preceding_steps, model_info_0.n_steps),
                     mode='std', 
                     varname=fr"${y_axes_labels[i]}$",
                     colors=list(colors.values()),

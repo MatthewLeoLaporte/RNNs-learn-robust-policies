@@ -4,6 +4,9 @@ updated: 2024-11-13T10:32
 ---
 **See [[results-2|Part 2 results]] for ongoing analysis TODOs.
 
+- [ ] I’m not sure changing the `noise_stds` should be the responsibility of `query_and_load_model`. Otoh, `query_and_load_model` is only used in the scope of this project afaik…
+- [ ] Fix the yaxis range for measure plots in nb 1-2; some of them should display negative values
+- [ ] Move/delete the `exclude_nan_replicates` stuff from 2-4
 - [ ] **Poincare graph - phase portraits** (see work scratch)
 	- http://phaseportrait.blogspot.com/2013/01/discrete-time-phase-portraits.html
 	- for LTI systems, it may make sense to do the discrete → continuous conversion
@@ -117,6 +120,7 @@ Out of [[methods#Training methods|these]]. This is unclear.
 
 ## Database
 
+- [x] Add more relevant properties to record models e.g. `ModelRecord`. For example, `where_train_strs` has to be stored in the database as a `dict[str, list[str]]`, but we might want to 1) load it as `dict[int, list[str]]` since the keys are actually indices of training iterations; or even 2) add a `where_train` property that automatically does the conversion when accessing the value
 - [ ] Linking table that maintains foreign key relationships between evaluation records and model records; i.e. currently we store multiple model hashes in a `list[str]` column of the evals table, since an eval can depend on multiple models. But it doesn’t make sense to have an arbitrary number of foreign key columns in this table. Instead, the linking table would have a single entry for each eval-model dependency relation (i.e. a single eval record that refers to the hashes of 5 model records, corresponds to 5 records in the linking table).
 - [ ] Function which deletes/archives any .eqx files for which the database record is missing – this will allow us to delete database records to “delete” models, then use this function to clean up afterwards
 ### Model-per-file serialisation

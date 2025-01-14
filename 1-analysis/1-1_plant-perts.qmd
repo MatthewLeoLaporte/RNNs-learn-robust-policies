@@ -77,6 +77,7 @@ from rnns_learn_robust_motor_policies.colors import (
 from rnns_learn_robust_motor_policies.constants import (
     INTERVENOR_LABEL,
     POS_ENDPOINTS_ALIGNED,
+    REPLICATE_CRITERION,
 )
 from rnns_learn_robust_motor_policies.database import (
     ModelRecord,
@@ -205,8 +206,6 @@ key_init, key_train, key_eval = jr.split(key, 3)
 ## Load and adjust trained models
 
 ```{python}
-replicate_criterion = "best_total_loss"
-
 models_base, model_info, replicate_info, n_replicates_included = tree_unzip(TrainStdDict({
     disturbance_std: query_and_load_model(
         db_session,
@@ -216,15 +215,15 @@ models_base, model_info, replicate_info, n_replicates_included = tree_unzip(Trai
             feedback=feedback_noise_std,
             motor=motor_noise_std,
         ),
-        exclude_underperformers_by=replicate_criterion,
+        exclude_underperformers_by=REPLICATE_CRITERION,
     )
     for disturbance_std in disturbance_stds_load
 }))
 
 best_replicate, included_replicates = tree_unzip(TrainStdDict({
     std: (
-        replicate_info[std]['best_replicates'][replicate_criterion],
-        replicate_info[std]['included_replicates'][replicate_criterion],
+        replicate_info[std]['best_replicates'][REPLICATE_CRITERION],
+        replicate_info[std]['included_replicates'][REPLICATE_CRITERION],
     ) 
     for std in disturbance_stds_load
 }))

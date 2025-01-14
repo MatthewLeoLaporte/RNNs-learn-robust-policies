@@ -46,6 +46,7 @@ from sqlalchemy.orm import (
 from sqlalchemy.sql.type_api import TypeEngine
 
 from feedbax import is_type, save, tree_zip
+from feedbax.misc import attr_str_tree_to_where_func
 from feedbax._io import arrays_to_lists
 from feedbax._tree import (
     allf,
@@ -81,6 +82,7 @@ class Base(DeclarativeBase):
         dict[str, str]: JSON,
         Sequence[str]: JSON,
         Sequence[int]: JSON,
+        dict[str, Sequence[str]]: JSON,
     }
 
 
@@ -103,7 +105,7 @@ class ModelRecord(Base):
     # migration would handle whatever parameters the user happens to pass, without this.
     disturbance_type: Mapped[str]
     disturbance_std: Mapped[float]
-    where_train_strs: Mapped[Sequence[str]]
+    where_train_strs: Mapped[dict[str, Sequence[str]]]
     n_replicates: Mapped[int]
     n_batches: Mapped[int]
     save_model_parameters: Mapped[Sequence[int]]
@@ -122,6 +124,13 @@ class ModelRecord(Base):
     @hybrid_property
     def train_history_path(self):
         return get_hash_path(MODELS_DIR, self.hash, suffix=TRAIN_HISTORY_FILE_LABEL)
+
+    @hybrid_property 
+    def where_train(self):
+        return {
+            int(i): attr_str_tree_to_where_func(strs) 
+            for i, strs in self.where_train_strs.items()
+        }
     
 
 MODEL_RECORD_BASE_ATTRS = [

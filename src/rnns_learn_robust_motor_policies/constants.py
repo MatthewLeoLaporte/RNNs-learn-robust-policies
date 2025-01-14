@@ -49,3 +49,7 @@ POS_ENDPOINTS_ALIGNED = {
     ])
     for k, params in TASK_EVAL_PARAMS.items()
 }
+
+
+# Criterion by which to exclude model replicates from analysis
+REPLICATE_CRITERION = 'best_total_loss'

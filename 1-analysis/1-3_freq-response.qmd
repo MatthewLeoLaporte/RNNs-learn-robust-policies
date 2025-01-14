@@ -73,8 +73,12 @@ from rnns_learn_robust_motor_policies.colors import (
     get_colors_dicts,
     get_colors_dicts_from_discrete,
 )
-from rnns_learn_robust_motor_policies.constants import WORKSPACE
+from rnns_learn_robust_motor_policies.constants import (
+    REPLICATE_CRITERION,
+    WORKSPACE,
+)
 from rnns_learn_robust_motor_policies.database import (
+    ModelRecord,
     add_evaluation,
     add_evaluation_figure,
     get_db_session,
@@ -146,15 +150,15 @@ We may want to specify 1) which trained models to load, by their parameters, and
 #| tags: [parameters]
 
 # Specify which trained models to load 
+disturbance_stds_load = [0, 0.5, 1.0]
 disturbance_type_load: Literal['curl', 'constant'] = 'curl'
-feedback_noise_std_load = 0.0
-motor_noise_std_load = 0.0
+feedback_noise_std_load = 0.01
+motor_noise_std_load = 0.01
 feedback_delay_steps_load = 0
 hidden_size = 50
 where_train_strs = ["step.net.hidden", "step.net.readout"]
 # readout_norm_loss_weight = 0.0
 # readout_norm_value = 2.0
-disturbance_stds_load = [0, 0.8, 1.6]
 
 # Specify model parameters to use for analysis (None -> use training value)
 # disturbance_type: Optional[Literal['curl', 'constant']] = None
@@ -182,6 +186,22 @@ if motor_noise_std is not None:
 ```
 
 See further below for parameter-based loading of models, as well as the code that modifies the models prior to analysis.
+
+```{python}
+params_load_func = lambda disturbance_std_load: dict(
+    origin=TRAIN_NB_ID,
+    disturbance_type=disturbance_type_load,
+    disturbance_std=disturbance_std_load,
+    feedback_noise_std=feedback_noise_std_load,
+    motor_noise_std=motor_noise_std_load,
+    feedback_delay_steps=feedback_delay_steps_load,
+    hidden_size=hidden_size,
+    # readout_norm_loss_weight=readout_norm_loss_weight,
+    # readout_norm_value=readout_norm_value,
+    intervention_scaleup_batches=[0,0],
+    state_reset_iterations=[],
+)
+```
 
 ### Task parameters
 
@@ -211,37 +231,33 @@ plotly_vscode_latex_fix()
 ## Load and adjust trained models
 
 ```{python}
-models, model_info, replicate_info, n_replicates_included = query_and_load_model(
-    db_session,
-    setup_task_model_pair,
-    params_query=dict(
-        origin=TRAIN_NB_ID,
-        disturbance_type=disturbance_type_load,
-        disturbance_stds=disturbance_stds_load,
-        feedback_noise_std=feedback_noise_std_load,
-        motor_noise_std=motor_noise_std_load,
-        feedback_delay_steps=feedback_delay_steps_load,
-        hidden_size=hidden_size,
-        # readout_norm_loss_weight=readout_norm_loss_weight,
-        # readout_norm_value=readout_norm_value,
-        intervention_scaleup_batches=[0,0],
-        state_reset_iterations=[],
-    ),
-    noise_stds=dict(
-        feedback=feedback_noise_std,
-        motor=motor_noise_std,
-    ),
-    tree_inclusions={
-        TrainStdDict: None,
-    },
-    exclude_underperformers_by="best_total_loss",
-)
+models_base, model_info, replicate_info, n_replicates_included = tree_unzip(TrainStdDict({
+    disturbance_std: query_and_load_model(
+        db_session,
+        setup_task_model_pair,
+        params_query=params_load_func(disturbance_std),
+        noise_stds=dict(
+            feedback=feedback_noise_std,
+            motor=motor_noise_std,
+        ),
+        exclude_underperformers_by=REPLICATE_CRITERION,
+    )
+    for disturbance_std in disturbance_stds_load
+}))
+
+best_replicate, included_replicates = tree_unzip(TrainStdDict({
+    std: (
+        replicate_info[std]['best_replicates'][REPLICATE_CRITERION],
+        replicate_info[std]['included_replicates'][REPLICATE_CRITERION],
+    ) 
+    for std in disturbance_stds_load
+}))
 ```
 
 ```{python}
 models = jt.map(
     lambda m: eqx.tree_at(lambda m: m.n_steps, m, n_steps),
-    models,
+    models_base,
     is_leaf=is_module,
 )
 ```
@@ -252,11 +268,34 @@ We will either be evaluating on specific disturbance types and noise conditions,
 keeping the same conditions used during training.
 
 ```{python}
-eval_parameters = use_record_params_where_none(dict(
-    feedback_noise_std=feedback_noise_std,
-    motor_noise_std=motor_noise_std,
-), model_info)
+all_eval_parameters = jt.map(
+    lambda record: use_record_params_where_none(
+        dict(
+            feedback_noise_std=feedback_noise_std,
+            motor_noise_std=motor_noise_std,
+        ), 
+        record,
+    ),
+    model_info,
+    is_leaf=is_type(ModelRecord),
+)
 ```
+
+All the relevant model info (e.g. noise stds) except disturbance std should be the same across models, at this point. Assert that this is the case, and keep the parameters for only one of the models.
+
+```{python}
+all_eval_params_flat =[tuple(d.items()) for d in all_eval_parameters.values()]
+
+assert len(set(all_eval_params_flat)) == 1
+
+eval_parameters = all_eval_parameters[disturbance_stds_load[0]]
+
+# Later, use this to access the values of hyperparameters, assuming they 
+# are shared between models (e.g. `model_info_0.n_steps`)
+model_info_0 = model_info[disturbance_stds_load[0]]
+```
+
+Are any of the system noise scales non-zero?
 
 ```{python}
 any_system_noise = any(jt.leaves((
@@ -283,9 +322,9 @@ eval_parameters |= dict(
 ```{python}
 eval_info = add_evaluation(
     db_session,
-    model_hash=model_info.hash,
-    eval_parameters=eval_parameters,
     origin=NB_ID,
+    models=model_info,
+    eval_parameters=eval_parameters,
     version_info=version_info,
 )
 ```
@@ -295,7 +334,7 @@ eval_info = add_evaluation(
 ```{python}
 # when coloring by training condition
 disturbance_train_stds_colors, disturbance_train_stds_colors_dark = get_colors_dicts(
-    model_info.disturbance_stds, COLORSCALES['disturbance_train_stds'],
+    disturbance_stds_load, COLORSCALES['disturbance_train_stds'],
 )
 ```
 
@@ -378,7 +417,7 @@ all_freqs, all_gains, all_phases = tree_unzip(jt.map(
         lambda states: frequency_analysis(
             input_where(states, fb_idx),
             output_where(states),
-            model_info.dt,
+            model_info_0.dt,
         ),
         all_states,
         is_leaf=is_module,
@@ -405,7 +444,7 @@ gain_figs = {
             mode='std',
             varname="Gain (dB)",
             colors=list(disturbance_train_stds_colors_dark.values()),
-            # labels=model_info.disturbance_stds,
+            # labels=disturbance_stds_load,
             layout_kws=dict(
                 legend_title="Train<br>field std.",
                 width=600,
@@ -428,7 +467,7 @@ phase_figs = {
             mode='std',
             varname="Phase (rad)",
             colors=list(disturbance_train_stds_colors_dark.values()),
-            # labels=model_info.disturbance_stds,
+            # labels=disturbance_stds_load,
             layout_kws=dict(
                 legend_title="Train<br>field std.",
                 width=600,
@@ -442,4 +481,27 @@ phase_figs = {
     )
     for fb_var in all_freqs
 }
+```
+
+**TODO**: What is the sample size here? Add to figure record.
+
+### Save and record figures
+
+```{python}
+plot_id_func = lambda label: f"bode_{label}/closed_loop_ss"
+
+for figs, label in [(gain_figs, 'gain'), (phase_figs, 'phase')]:
+    for path, fig in figs_flatten_with_paths(figs):
+        fig_parameters = dict(
+            # n=n_dist,
+        )
+        
+        add_evaluation_figure(
+            db_session,
+            eval_info,
+            fig,
+            plot_id_func(label),
+            model_records=model_info,
+            **fig_parameters,
+        )
 ```
