@@ -108,7 +108,7 @@ def disturbance(disturbance_type, field_std, p_perturbed, method):
 
 
 def setup_task_model_pair(
-    training_methods: Optional[Sequence[TrainingMethodLabel]] = None, 
+    training_method: Optional[TrainingMethodLabel] = None, 
     *,
     n_replicates,
     dt,
@@ -118,7 +118,7 @@ def setup_task_model_pair(
     feedback_noise_std,
     motor_noise_std,
     disturbance_type: Literal['constant', 'curl'],
-    disturbance_stds,
+    disturbance_std,
     intervention_scaleup_batches: tuple[int, int],
     p_perturbed,
     key: PRNGKeyArray,
@@ -154,34 +154,26 @@ def setup_task_model_pair(
         motor_noise_std=motor_noise_std,
         key=key,
     )
-        
-    tasks = {
-        method_label: eqx.tree_at(
+    
+    if training_method is not None:
+        task = eqx.tree_at(
             lambda task: task.input_dependencies,
             task_base,
-            dict(context=TrialSpecDependency(context_input_func))
+            dict(context=TrialSpecDependency(CONTEXT_INPUT_FUNCS[training_method]))
         )
-        for method_label, context_input_func in CONTEXT_INPUT_FUNCS.items()
-        if training_methods is None or method_label in training_methods
-    }
+    else:
+        #? In what context do we end up here?
+        task = task_base
     
-    task_model_pairs = TrainingMethodDict({
-        method_label: TrainStdDict({
-            disturbance_std: TaskModelPair(*schedule_intervenor(
-                task, models_base,
-                lambda model: model.step.mechanics,
-                disturbance(
-                    disturbance_type,
-                    disturbance_std, 
-                    p_perturbed,
-                    method_label,
-                ),
-                label=INTERVENOR_LABEL,
-                default_active=False,
-            ))
-            for disturbance_std in disturbance_stds
-        })
-        for method_label, task in tasks.items()
-    })
-    
-    return task_model_pairs
+    return TaskModelPair(*schedule_intervenor(
+        task, models_base,
+        lambda model: model.step.mechanics,
+        disturbance(
+            disturbance_type,
+            disturbance_std, 
+            p_perturbed,
+            training_method,
+        ),
+        label=INTERVENOR_LABEL,
+        default_active=False,
+    ))

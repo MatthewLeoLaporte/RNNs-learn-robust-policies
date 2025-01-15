@@ -4,6 +4,7 @@ updated: 2024-11-13T10:32
 ---
 **See [[results-2|Part 2 results]] for ongoing analysis TODOs.
 
+- [ ] Refactor `train_pair` so it isn’t defined twice, in both training notebooks 1 and 2
 - [ ] I’m not sure changing the `noise_stds` should be the responsibility of `query_and_load_model`. Otoh, `query_and_load_model` is only used in the scope of this project afaik…
 - [ ] Fix the yaxis range for measure plots in nb 1-2; some of them should display negative values
 - [ ] Move/delete the `exclude_nan_replicates` stuff from 2-4

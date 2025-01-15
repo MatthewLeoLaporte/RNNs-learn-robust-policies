@@ -233,9 +233,9 @@ if motor_noise_std is not None:
 See further below for parameter-based loading of models, as well as the code that modifies the models prior to analysis.
 
 ```{python}
-params_load_func = lambda disturbance_train_std: dict(
+params_load = dict(
     origin=TRAIN_NB_ID,
-    disturbance_std=disturbance_train_std,
+    training_method=training_method,
     disturbance_type=disturbance_type_load,
     feedback_noise_std=feedback_noise_std_load,
     motor_noise_std=motor_noise_std_load,
@@ -244,7 +244,6 @@ params_load_func = lambda disturbance_train_std: dict(
     n_batches=10000,
     learning_rate_0=0.001,
     # intervention_scaleup_batches=[0, 1000],
-    training_method=training_method,
 )
 ```
 
@@ -285,7 +284,9 @@ models_base, model_info, replicate_info, n_replicates_included = tree_unzip(Trai
     disturbance_std: query_and_load_model(
         db_session,
         setup_task_model_pair,
-        params_query=params_load_func(disturbance_std),
+        params_query=params_load | dict(
+            disturbance_std=disturbance_std,
+        ),
         noise_stds=dict(
             feedback=feedback_noise_std,
             motor=motor_noise_std,
@@ -699,6 +700,7 @@ for path, fig in figs_flatten_with_paths(figs):
         eval_info,
         fig,
         plot_id,
+        model_records=model_info[train_std],
         **fig_parameters,
     )
     
@@ -876,6 +878,7 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
         eval_info,
         fig,
         plot_id,
+        model_records=model_info,  # IS this correcT? All the models are represented here?
         **fig_parameters,
     )
 ```

@@ -304,7 +304,7 @@ training_hyperparameters = dict(
 ```
 
 ```{python}
-model_hyperparameters_func = lambda disturbance_std: dict(
+model_hyperparameters = dict(
     n_replicates=n_replicates,
     hidden_size=hidden_size,
     feedback_delay_steps=feedback_delay_steps,
@@ -313,7 +313,7 @@ model_hyperparameters_func = lambda disturbance_std: dict(
     dt=dt,
     n_steps=n_steps,
     disturbance_type=disturbance_type,
-    disturbance_std=disturbance_std,
+    # disturbance_std=disturbance_std,
     readout_norm_loss_weight=readout_norm_loss_weight,
     readout_norm_value=readout_norm_value,
     intervention_scaleup_batches=intervention_scaleup_batches,
@@ -341,7 +341,9 @@ model_records = TrainStdDict({
         db_session,
         origin=TRAIN_NB_ID,
         model=models,
-        model_hyperparameters=model_hyperparameters_func(disturbance_std),
+        model_hyperparameters=model_hyperparameters | dict(
+            disturbance_std=disturbance_std,
+        ),
         other_hyperparameters=training_hyperparameters,
         train_history=train_histories,
         train_history_hyperparameters=train_histories_hyperparameters,

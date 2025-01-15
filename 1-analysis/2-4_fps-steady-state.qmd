@@ -198,10 +198,9 @@ exclude_underperformers_by = 'best_total_loss'
 ```
 
 ```{python}
-params_load_func = lambda disturbance_train_std: dict(
+params_load = dict(
     origin=TRAIN_NB_ID,
     training_methods=training_methods_load,
-    disturbance_std=disturbance_train_std,
     disturbance_type=disturbance_type_load,
     feedback_noise_std=feedback_noise_std_load,
     motor_noise_std=motor_noise_std_load,
@@ -228,20 +227,28 @@ key_init, key_train, key_eval = jr.split(key, 3)
 ## Load and adjust trained models
 
 ```{python}
-all_models, model_info, replicate_info, n_replicates_included = tree_unzip(TrainStdDict({
-    disturbance_std: query_and_load_model(
-        db_session,
-        setup_task_model_pair,
-        params_query=params_load_func(disturbance_std),
-        noise_stds=dict(
-            feedback=feedback_noise_std,
-            motor=motor_noise_std,
-        ),
-        exclude_underperformers_by=REPLICATE_CRITERION,
-        exclude_method='nan',
-    )
-    for disturbance_std in disturbance_stds_load
-}))
+all_models, model_info, replicate_info, n_replicates_included = tree_unzip(
+    TrainingMethodDict({
+        method_label: TrainStdDict({
+            disturbance_std: query_and_load_model(
+                db_session,
+                setup_task_model_pair,
+                params_query=params_load | dict(
+                    disturbance_std=disturbance_std,
+                    training_method=method_label,
+                ),
+                noise_stds=dict(
+                    feedback=feedback_noise_std,
+                    motor=motor_noise_std,
+                ),
+                exclude_underperformers_by=REPLICATE_CRITERION,
+                exclude_method='nan',
+            )
+            for disturbance_std in disturbance_stds_load
+        })
+        for method_label in training_methods_load
+    })
+)
 
 best_replicate, included_replicates = tree_unzip(TrainStdDict({
     std: (
@@ -1041,7 +1048,14 @@ for path, fig in tqdm(figs_flatten_with_paths(eigval_figs)):
         n=model_info_0.hidden_size * model_info_0.n_replicates * eval_grid_n ** 2,
     )
     
-    add_evaluation_figure(db_session, eval_info, fig, plot_id, **fig_params)
+    add_evaluation_figure(
+        db_session, 
+        eval_info, 
+        fig, 
+        plot_id, 
+        model_records=model_info[path[0].key][path[1].key],
+        **fig_params,
+    )
     
     print(path[0].key, path[1].key)
     fig.show()
@@ -1084,7 +1098,14 @@ for path, fig in tqdm(figs_flatten_with_paths(eigval_figs)):
         n=model_info_0.hidden_size * len(context_inputs) * eval_grid_n ** 2,
     )
     
-    add_evaluation_figure(db_session, eval_info, fig, plot_id, **fig_params)
+    add_evaluation_figure(
+        db_session, 
+        eval_info, 
+        fig, 
+        plot_id, 
+        model_records=model_info[path[0].key][path[1].key],
+        **fig_params,
+    )
     
     print(path[0].key, path[1].key)
     fig.show()
@@ -1122,7 +1143,14 @@ for path, fig in tqdm(figs_flatten_with_paths(eigval_figs)):
         n=model_info_0.hidden_size * len(context_inputs) * model_info_0.n_replicates,
     )
     
-    add_evaluation_figure(db_session, eval_info, fig, plot_id, **fig_params)
+    add_evaluation_figure(
+        db_session, 
+        eval_info, 
+        fig, 
+        plot_id, 
+        model_records=model_info[path[0].key][path[1].key],
+        **fig_params,
+    )
     
     print(path[0].key, path[1].key)
     fig.show()
