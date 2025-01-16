@@ -50,6 +50,14 @@ Discuss how partitioning of activity between the null and potent spaces may be a
 
 This deserves further attention in future work.
 
+### Interpretation of fixed points
+
+#### And their Jacobians
+
+It makes technical sense to treat a linearization of a *steady state* fixed point as the actual dynamics of the system, when noise is not high.
+
+When the system is in an unsteady closed loop state (e.g. on its way to a target position) but we compute the fixed points as though the system is in a steady state (or, in open loop) then the fixed points we calculate are not necessarily ever reached by the system in practice. The system is merely falling toward those fixed points, from some point in state space. 
+
 ### Types of perturbations studied
 
 ##### Why not accelerant/retardant fields, or random velocity-dependent fields?
