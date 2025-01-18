@@ -125,6 +125,9 @@ from rnns_learn_robust_motor_policies.state_utils import (
     orthogonal_field,
     vmap_eval_ensemble,
 )
+from rnns_learn_robust_motor_policies.train_setup import (
+    train_pair,
+)
 from rnns_learn_robust_motor_policies.tree_utils import (
     pp,
     subdict, 

@@ -1,70 +1,26 @@
----
-jupyter: python3
----
+#!/usr/bin/env python
+# coding: utf-8
 
-```{python}
-TRAIN_NB_ID = "2"
-```
+# ---
+# jupyter: python3
+# ---
+
+# In[ ]:
+
+
+NB_ID = "2"
+
 
 # Training models for Part 2
-
-In this notebook, we train models similarly to [Part 1](1-1_train.qmd). Most of the details of the models and the training process are identical, and they will not be explained again here.
-
-However, instead of training separate models on different amplitudes of perturbation, we instead train a single model, and give it contextual information about the presence/amplitude of the current disturbance. Since the direction of the disturbance remains unknown to the model, it must still learn a robust policy (rather than an adaptation), but we expect it to learn to modulate the robustness (vs. efficiency) of its policy based on the contextual information. 
-
-If that is the case, then following training, we should be able to control the robustness of the model's policy by adjusting the value of the contextual input. 
-
-:::{note}
-Because different types of perturbations (e.g. curl force fields vs. random constant force fields) may induce different robust policies, it may also make sense to provide a second contextual input which indicates the type of the current disturbance. In principle this input should be categorical, however we could indicate it probabilistically (e.g. 0 -> curl, 1 -> random, 0.5 -> 50% chance of curl, vs. random) and this might allow us to interpolate between the two policies as well. 
-
-However, in this notebook we will only train on the first contextual input.
-::: 
-
-## Approach to training
-
-We will try at least two different approaches:
-
-1. The contextual input is provided as 0 (no perturbation) or 1 (perturbation), regardless of the exact amplitude of the perturbation.
-2. The contextual input is provided as the amplitude (though not the direction) of the perturbation for the same trial.
-
-Note:
-
-- We must decide on a standard deviation of the perturbation amplitude, for perturbed trials. This will be held constant for each trained model; i.e. we may still have multiple trained models/conditions, one for each different stds of perturbation amplitude.
-- In 1, clearly some trials should not have a perturbation at all.
-- In 2, we may also decide to include some simply unperturbed trials, in which case the contextual input will certainly be 0. However this may be unnecessary, as even if all of the trials are perturbed, many of the perturbations will have small amplitude (given that the mean amplitude is 0).
-
-There is a third approach, which may be worth trying, and which might avoid the need to train the network on multiple conditions:
-
-3. The contextual input is provided as the standard deviation of the distribution from which the perturbation amplitude is drawn, rather than the exact amplitude; and this std is itself drawn from another distribution, either for each trial or for each batch of trials.
-
-In that case, the contextual input is more of an indirect measure of uncertainty (i.e. the probability that the network will experience a large perturbation on this trial), whereas in 2 it is a more direct measure of degree of robustness needed, and in 1 it is an indirect measure but anchored to a given perturbation distribution.
-
-## General predictions
-
-The contextual input will be continuous, so that even in the case of 1, after training we could still set it to 0.5 and reasonably expect to observe a "half-robust" policy.
-
-Assuming that sufficient robustness to larger perturbations versus smaller perturbations means scaling the *same kind of policy*, rather than that a structural change to the policy is necessary to deal with a larger versus a smaller perturbation, then we may be able to train a network on a single condition using approach 1 or 2, i.e. with a single std of perturbation amplitude, and obtain a similar result (modulo the scaling of the contextual input) as if we had trained on a different std of perturbation amplitude. For example, if using approach 1 we train network A on std 1.0 and network B on std 2.0, then after training we may find that network B with contextual input 0.5 behaves similarly to network A with input 1.0 (assuming linearity for the sake of illustration).
-
-Likewise, we may be able to achieve generalization of robustness to perturbations which are rare or absent in the training set, due to their large amplitudes, by extrapolating the value of the contextual input to larger values than seen in the training set.
-
-I suspect approaches 2 and 3 will differ somewhat because of less precise information being available to the network in 3; however it is possible that this will only matter very early in the trials, when the network has not had time to receive feedback to indicate the magnitude of the disturbance.
-
-
+ 
 ## Environment setup
 
-```{python}
-%load_ext autoreload
-%autoreload 2
-```
 
-```{python}
 import os
 
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
-```
 
 
-```{python}
 from functools import partial
 from typing import Any, Literal, Optional
 
@@ -114,28 +70,20 @@ from rnns_learn_robust_motor_policies.types import (
     TrainingMethodDict,
     TrainStdDict,
 )
-```
 
-Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
 
-```{python}
+# Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
 version_info = log_version_info(
     jax, eqx, optax, git_modules=(feedbax, rnns_learn_robust_motor_policies)
 )
-```
+
 
 ### Initialize model database connection
 
-```{python}
 db_session = get_db_session()
-```
+
 
 ### Hyperparameters
-
-These are parameters that can be [varied](https://quarto.org/docs/computations/parameters.html) through the command line interface to Quarto. 
-
-```{python}
-#| tags: [parameters]
 
 disturbance_type: Literal['curl', 'constant'] = 'curl'  
 feedback_delay_steps = 0
@@ -191,28 +139,15 @@ disturbance_stds = {
     'curl': [0.0, 0.5, 1.0, 1.5],
     'constant': [0.0, 0.01, 0.02, 0.03, 0.04, 0.08, 0.16, 0.32],
 }
-```
+
 
 ### RNG setup
-
-```{python}
 key = jr.PRNGKey(PROJECT_SEED)
 key_init, key_train, key_eval = jr.split(key, 3)
-```
+
 
 ## Set up models and tasks for the different training variants
 
-We need to define:
-
-1. The type of disturbance, which is chosen as a hyperparameter earlier in this notebook;
-2. The disturbance amplitudes to train -- each resulting in a distinct trained model;
-3. For each training variant, the probability that each trial will be perturbed;
-4. The form of the context input to the neural network; 
-5. Finally, the task-model pairs that will be trained on each disturbance amplitude, for each training variant.
-
-Some of these (e.g. the form of the context input, `CONTEXT_INPUT_FUNCS`) are defined once and for all in the project module `train_setup_part2.py`.
-
-```{python}
 task_model_pairs = TrainingMethodDict({
     method_label: jt.map(
         lambda disturbance_std: setup_task_model_pair(
@@ -240,11 +175,10 @@ task_model_pairs = TrainingMethodDict({
 
 # The task without training perturbations
 # task_baseline = task_model_pairs[0].task
-```
+
 
 ## Training setup
 
-```{python}
 optimizer_class = partial(
     optax.adamw,
     weight_decay=weight_decay,
@@ -252,9 +186,7 @@ optimizer_class = partial(
 
 n_batches = n_batches_baseline + n_batches_condition
 save_model_parameters = iterations_to_save_model_parameters(n_batches)
-```
 
-```{python}
 schedule = make_delayed_cosine_schedule(
     learning_rate_0, 
     constant_lr_iterations, 
@@ -268,16 +200,13 @@ trainer = TaskTrainer(
     ),
     checkpointing=True,
 )
-```
 
-```{python}
 readout_norm_loss = readout_norm_loss_weight * get_readout_norm_loss(readout_norm_value)
 loss_func = simple_reach_loss() + readout_norm_loss
-```
+
 
 ## Examine the distributions of field strengths in training batches
 
-```{python}
 keys_example_trials = jr.split(key_train, batch_size)
 
 example_batches = jt.map(
@@ -285,9 +214,8 @@ example_batches = jt.map(
     task_model_pairs,
     is_leaf=is_type(TaskModelPair),
 )
-```
 
-```{python}
+
 # from feedbax.task import TaskTrialSpec
 
 # def plot_curl_amplitudes(trial_specs):
@@ -320,12 +248,10 @@ example_batches = jt.map(
 #     example_batches,
 #     is_leaf=is_type(TaskTrialSpec)
 # ) 
-```
 
 
 ## Train the task-model pairs
 
-```{python}
 train_params = dict(
     ensembled=True,
     loss_func=loss_func,
@@ -343,11 +269,11 @@ trained_models, train_histories = tree_unzip(tree_map_tqdm(
     label="Training all pairs",
     is_leaf=is_type(TaskModelPair),
 ))
-```
+
 
 ## Save the models with their parameters on the final iteration
 
-```{python}
+
 save_model_parameters_all = concat_save_iterations(
     save_model_parameters, 
     (n_batches_baseline, n_batches_condition),
@@ -369,9 +295,7 @@ training_hyperparameters = dict(
     state_reset_iterations=state_reset_iterations.tolist(),
     p_perturbed=p_perturbed,
 )
-```
 
-```{python}
 model_hyperparameters = dict(
     n_replicates=n_replicates,
     hidden_size=hidden_size,
@@ -387,9 +311,7 @@ model_hyperparameters = dict(
     intervention_scaleup_batches=intervention_scaleup_batches,
     p_perturbed=p_perturbed,
 )
-```
 
-```{python}
 train_histories_hyperparameters = dict(
     disturbance_stds=disturbance_stds[disturbance_type],
     n_batches=n_batches,
@@ -400,14 +322,12 @@ train_histories_hyperparameters = dict(
     readout_norm_loss_weight=readout_norm_loss_weight,
     readout_norm_value=readout_norm_value,
 )
-```
 
-```{python}
 model_record = TrainingMethodDict({
     method_label: TrainStdDict({
         disturbance_std: save_model_and_add_record(
             db_session,
-            origin=TRAIN_NB_ID,
+            origin=NB_ID,
             model=models,
             model_hyperparameters=model_hyperparameters | dict(
                 disturbance_std=disturbance_std,
@@ -422,4 +342,4 @@ model_record = TrainingMethodDict({
     })
     for method_label in training_methods
 })
-```
+

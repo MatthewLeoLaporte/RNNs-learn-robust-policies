@@ -6,10 +6,10 @@ updated: 2024-11-13T10:32
 
 - [x] Refactor `train_pair` so it isn’t defined twice, in both training notebooks 1 and 2
 - [ ] I’m not sure changing the `noise_stds` should be the responsibility of `query_and_load_model`. Otoh, `query_and_load_model` is only used in the scope of this project afaik…
-- [ ] ~~Move/delete the `exclude_nan_replicates` stuff from 2-4~~ Not yet. Though I did modify it a bit.
+
 ## Efficiency
 
-- [ ] Maybe save a separate model table record in the database, for each *separate* disturbance std during training. This will:
+- [x] Maybe save a separate model table record in the database, for each *separate* disturbance std during training. This will:
 	- Prevent us from saving the same trained model multiple times because e.g. once we trained three runs `[0, 0.1, 1]` and another time two runs `[0, 0.1]`.
 	- Force us to use the multi-loading logic in the analyses notebooks (i.e. load db entry with std 0, and db entry with std 0.1, and compare); note that this kind of logic will be necessary anyway for some of the supplementary analyses (e.g. noise comparisons).
 	- Note that the foreign refs in the eval and fig tables would change into sets/lists, which is probably as it should be.
@@ -33,16 +33,24 @@ Don’t worry about refactoring functions found in the notebooks, for now.
 
 **Keep the notebooks** for historical/educational purposes; however they **may go out of sync** with the scripts.
 
-- [ ] Decide between argparse, and `main` functions that take a bunch of parameters (probably the latter.)
+- [x] Decide between argparse, and `main` functions that take a bunch of parameters (probably the latter.)
 - [ ] Convert notebooks into modules
 	- Markdown becomes comments as needed, but exclude all lengthy explanations.
 	- A bit of refactoring may be helpful. For example, if a notebook contains three major analyses and generates respective sets of figures, then we might have three functions in the converted script that define the individual analyses. The `main` loop calls each of them.
+
 #### Batch scripts
 
 - [ ] Add YAML files indicating the spreads of models to train for part 1 and 2
 - [ ] Add batch script which runs a given script based on a given YAML file
 	- For that, we need a common interface, i.e. we won’t need a different batch script for part 1 versus part 2.
 
+
+> [!NOTE]+
+> How do we encode the spreads? 
+> 
+> I want to avoid encoding *all* the parameters, for all the runs. 
+> 
+> What is the best way to 
 #### Challenges
 
 - it is different to debug scripts, since we have to re-run them each time we run into an error, unless we already have the relevant breakpoint set and are using the debugger
@@ -65,6 +73,25 @@ Don’t worry about refactoring functions found in the notebooks, for now.
 	- at start of trial?
 
 ### Network perturbations
+
+#### Individual unit stimulation
+
+Perturb the activity of units in the network, one at a time:
+
+- [ ] at steady state
+- [ ] during reaches
+
+If during reaches, then we could stimulate at multiple times during the reach, to see how tuning changes.
+
+#### Individual unit ablation
+
+- [ ] Fix the activity of a unit to 0.
+
+#### Eigenvectors
+
+- [ ] At steady state, perturb the network by the eigenvectors of its Jacobian 
+	- [ ] Hessian?
+- [ ] 
 
 ### Fixed points
 

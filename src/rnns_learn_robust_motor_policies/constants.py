@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any
 
 import jax.numpy as jnp
@@ -7,6 +8,8 @@ from feedbax.intervene import (
     FixedField, 
 )
 
+
+# CONFIG_DIR = Path('../config')
 
 INTERVENOR_LABEL = "DisturbanceField"
 DISTURBANCE_CLASSES = {

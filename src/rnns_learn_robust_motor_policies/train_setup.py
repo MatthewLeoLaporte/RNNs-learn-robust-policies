@@ -1,9 +1,17 @@
 from collections.abc import Sequence
+from typing import Optional
 
 import jax.numpy as jnp
-from jaxtyping import Array 
+import jax.random as jr
+from jaxtyping import Array, PRNGKeyArray
 import numpy as np
 import optax
+
+from feedbax import tree_concatenate
+from feedbax.task import AbstractTask
+from feedbax.train import TaskTrainer
+
+from rnns_learn_robust_motor_policies.types import TaskModelPair
 
 
 """
@@ -38,3 +46,48 @@ def concat_save_iterations(iterations: Array, n_batches_seq: Sequence[int]):
     return jnp.concatenate([
         iterations[iterations < n] + total for n, total in zip(n_batches_seq, total_batches)
     ])
+    
+
+def train_pair(
+    trainer: TaskTrainer, 
+    n_batches: int,
+    pair: TaskModelPair, 
+    task_baseline: Optional[AbstractTask] = None,
+    n_batches_baseline: int = 0,
+    *,
+    key: PRNGKeyArray,
+    **kwargs,
+):   
+    key0, key1 = jr.split(key, 2)
+    
+    if n_batches_baseline > 0 and task_baseline is not None:
+        pretrained, pretrain_history, opt_state = trainer(
+            task_baseline,
+            pair.model,
+            n_batches=n_batches_baseline, 
+            run_label="Baseline training",
+            key=key0,
+            **kwargs,
+        )
+    else: 
+        pretrained = pair.model
+        pretrain_history = None
+        opt_state = None
+    
+    trained, train_history, _ = trainer(
+        pair.task, 
+        pretrained,
+        opt_state=opt_state,
+        n_batches=n_batches, 
+        idx_start=n_batches_baseline,
+        run_label="Condition training",
+        key=key1,
+        **kwargs,
+    )
+    
+    if pretrain_history is None:
+        train_history_all = train_history
+    else:
+        train_history_all = tree_concatenate([pretrain_history, train_history])
+    
+    return trained, train_history_all

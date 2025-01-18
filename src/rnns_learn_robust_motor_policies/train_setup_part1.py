@@ -82,7 +82,7 @@ def setup_task_model_pair(
     models = get_ensemble(
         point_mass_nn,
         task_base,
-        n_ensemble=n_replicates,
+        n=n_replicates,
         dt=dt,
         mass=MASS,
         hidden_size=hidden_size, 

@@ -126,7 +126,7 @@ from rnns_learn_robust_motor_policies.state_utils import (
 from rnns_learn_robust_motor_policies.tree_utils import (
     pp,
     subdict, 
-    take_single_replicate,
+    take_replicate,
 )
 from rnns_learn_robust_motor_policies.types import (
     ContextInputDict,
@@ -268,11 +268,7 @@ If `exclude_method='nan'`, then the excluded replicates will still be
 ```{python}
 def exclude_nan_replicates(tree, axis=0):
     return jt.map(
-        lambda replicate_idxs, subtree: jt.map(
-             # TODO Use `take` with `axis`!
-            lambda arr: arr[replicate_idxs], 
-            subtree,
-        ),
+        take_replicate,
         replicate_info['included_replicates'][exclude_underperformers_by],
         tree,
     )

@@ -149,7 +149,7 @@ from rnns_learn_robust_motor_policies.state_utils import (
 from rnns_learn_robust_motor_policies.tree_utils import (
     pp,
     subdict, 
-    take_single_replicate,
+    take_replicate,
 )
 from rnns_learn_robust_motor_policies.types import (
     ContextInputDict,

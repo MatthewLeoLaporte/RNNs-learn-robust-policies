@@ -77,10 +77,10 @@ get_readout_norm_loss = lambda value: ModelLoss(
 
 def setup_train_histories(
     models_tree,
+    *,
     n_batches,
     batch_size,
     n_replicates,
-    *,
     where_train_strs,
     save_model_parameters,
     readout_norm_value=None,
@@ -129,6 +129,27 @@ def setup_train_histories(
         ),
         models_tree,
         is_leaf=is_module,
+    )
+
+
+def dictmerge(*dicts):
+    return {k: v for d in dicts for k, v in d.items()}
+
+
+def train_histories_hps_select(train_hps, model_hps): 
+    return dictmerge(
+        subdict(train_hps, [
+            "n_batches",
+            "batch_size",
+            "n_replicates",
+            "where_train_strs",
+            "save_model_parameters",
+        ]),
+        subdict(model_hps, [
+            "disturbance_type",
+            "feedback_delay_steps",
+            "feedback_noise_std",
+        ]),
     )
 
 
@@ -493,4 +514,5 @@ def query_and_load_model(
             raise ValueError("No replicates met inclusion criteria for at least one model variant")
     
     return model, model_info, replicate_info, n_replicates_included
-    
+
+

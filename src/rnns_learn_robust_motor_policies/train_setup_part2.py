@@ -144,7 +144,7 @@ def setup_task_model_pair(
         point_mass_nn,
         task_base,
         n_extra_inputs=1,  # Contextual input
-        n_ensemble=n_replicates,
+        n=n_replicates,
         dt=dt,
         mass=MASS,
         hidden_size=hidden_size, 
