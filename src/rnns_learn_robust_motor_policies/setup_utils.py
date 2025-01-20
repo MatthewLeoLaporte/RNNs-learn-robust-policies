@@ -49,7 +49,7 @@ from rnns_learn_robust_motor_policies.database import (
 from rnns_learn_robust_motor_policies.misc import (
     take_model,
 )
-from rnns_learn_robust_motor_policies.tree_utils import subdict
+from rnns_learn_robust_motor_policies.tree_utils import dictmerge, subdict
 from rnns_learn_robust_motor_policies.types import (
     TrainStdDict,
 )
@@ -132,20 +132,16 @@ def setup_train_histories(
     )
 
 
-def dictmerge(*dicts):
-    return {k: v for d in dicts for k, v in d.items()}
-
-
 def train_histories_hps_select(train_hps, model_hps): 
     return dictmerge(
         subdict(train_hps, [
             "n_batches",
             "batch_size",
-            "n_replicates",
             "where_train_strs",
             "save_model_parameters",
         ]),
         subdict(model_hps, [
+            "n_replicates",
             "disturbance_type",
             "feedback_delay_steps",
             "feedback_noise_std",

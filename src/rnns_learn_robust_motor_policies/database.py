@@ -63,6 +63,7 @@ from rnns_learn_robust_motor_policies import (
     REPLICATE_INFO_FILE_LABEL,
     TRAIN_HISTORY_FILE_LABEL, 
 )
+from rnns_learn_robust_motor_policies.tree_utils import pp
 
 
 MODELS_TABLE_NAME = 'models'
@@ -461,11 +462,13 @@ def save_model_and_add_record(
     """Save model files with hash-based names and add database record."""
     (
         model_hyperparameters, 
+        other_hyperparameters,
         train_history_hyperparameters, 
         replicate_info_hyperparameters,
     ) = arrays_to_lists(
         (
             model_hyperparameters, 
+            other_hyperparameters,
             train_history_hyperparameters, 
             replicate_info_hyperparameters,
         )

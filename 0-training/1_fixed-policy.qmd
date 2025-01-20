@@ -248,10 +248,10 @@ trained_models, train_histories = tree_unzip(tree_map_tqdm(
 ## Save the models with their parameters on the final iteration
 
 ```{python}
-save_model_parameters_all = concat_save_iterations(
-    save_model_parameters, 
-    (n_batches_baseline, n_batches_condition),
-)
+# save_model_parameters_all = concat_save_iterations(
+#     save_model_parameters, 
+#     (n_batches_baseline, n_batches_condition),
+# )
 
 where_train_strs = jt.map(where_func_to_labels, where_train)
 

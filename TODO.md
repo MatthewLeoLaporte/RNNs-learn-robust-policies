@@ -4,6 +4,7 @@ updated: 2024-11-13T10:32
 ---
 **See [[results-2|Part 2 results]] for ongoing analysis TODOs.
 
+- [ ] Stop using `tmp` in figures dir
 - [x] Refactor `train_pair` so it isn’t defined twice, in both training notebooks 1 and 2
 - [ ] I’m not sure changing the `noise_stds` should be the responsibility of `query_and_load_model`. Otoh, `query_and_load_model` is only used in the scope of this project afaik…
 
@@ -50,7 +51,13 @@ Don’t worry about refactoring functions found in the notebooks, for now.
 > 
 > I want to avoid encoding *all* the parameters, for all the runs. 
 > 
-> What is the best way to 
+> Could stick to the pattern I used for `query_and_load_models`: a single number means the value is constant, whereas a sequence of numbers indicates a spread. All the sequences in a given config, must have the same length (i.e. we are encoding just one spread). 
+> 
+> Alternatively, we might encode multiple spreads by assuming that any sequence indicates a different dimension of variation. This could make more sense for the configs for the batch scripts, than for the default configs for the individual notebooks. 
+> 
+> It’s probably fine for this project to stick with single-spread configs. In the batch script configs, we can give a list of multiple single-spread configs (e.g. one single spread over noise, one over delay, one over disturbance std).
+> 
+> However it would be more expressive to be able to use both types. Is there some way to encode this locally in a YAML (or JSON) file?
 #### Challenges
 
 - it is different to debug scripts, since we have to re-run them each time we run into an error, unless we already have the relevant breakpoint set and are using the debugger

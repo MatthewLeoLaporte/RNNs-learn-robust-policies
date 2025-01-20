@@ -27,6 +27,11 @@ def subdict(dct: dict[T, Any], keys: Sequence[T]):
     return type(dct)({k: dct[k] for k in keys})
 
 
+def dictmerge(*dicts: dict) -> dict:
+    """Merges all """
+    return {k: v for d in dicts for k, v in d.items()}
+
+
 def tree_subset_dict_level(tree: PyTree[dict[T, Any]], keys: Sequence[T], dict_type=dict):
     """Maps `subdict` over dicts of a given type"""
     return jt.map(
