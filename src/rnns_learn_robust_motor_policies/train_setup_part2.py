@@ -80,6 +80,14 @@ CONTEXT_INPUT_FUNCS = TrainingMethodDict({
 })
 
 
+# TODO: Move to config yaml
+P_PERTURBED = TrainingMethodDict({
+    "bcs": 0.5,
+    "dai": 1.0,
+    "pai-asf": 1.0,
+})
+
+
 """Either scale the field strength by a constant std, or sample the std for each trial.
 
 Note that in the `"pai-asf"` case the actual field amplitude is still scaled by `field_std`, 
@@ -95,10 +103,10 @@ SCALE_FUNCS = TrainingMethodDict({
 })
 
 
-def disturbance(disturbance_type, field_std, p_perturbed, method):
+def disturbance(disturbance_type, field_std, method):
     return DISTURBANCE_CLASSES[disturbance_type].with_params(
         scale=SCALE_FUNCS[method](field_std),
-        active=disturbance_active[method](p_perturbed[method]),
+        active=disturbance_active[method](P_PERTURBED[method]),
         **disturbance_params[method](
             # TODO: Scaleup
             # partial(batch_scale_up, intervention_scaleup_batches[0], n_batches_scaleup)
@@ -120,7 +128,7 @@ def setup_task_model_pair(
     disturbance_type: Literal['constant', 'curl'],
     disturbance_std,
     intervention_scaleup_batches: tuple[int, int],
-    p_perturbed,
+    # p_perturbed,
     key: PRNGKeyArray,
     **kwargs,
 ):
@@ -171,7 +179,7 @@ def setup_task_model_pair(
         disturbance(
             disturbance_type,
             disturbance_std, 
-            p_perturbed,
+            # p_perturbed,
             training_method,
         ),
         label=INTERVENOR_LABEL,

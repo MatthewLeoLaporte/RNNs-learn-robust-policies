@@ -1,345 +1,320 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# ---
-# jupyter: python3
-# ---
-
-# In[ ]:
-
-
 NB_ID = "2"
 
-
-# Training models for Part 2
- 
 ## Environment setup
 
-
+from collections.abc import Callable, Sequence
 import os
+from pathlib import Path
 
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
-
+import argparse
 from functools import partial
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, Type
+import yaml
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
-import numpy as np
+import jax.tree_util as jtu
+from jaxtyping import PRNGKeyArray, PyTree
 import optax 
-import plotly.graph_objects as go
 
 import feedbax
 from feedbax import (
     is_module,
     is_type,
-    tree_unzip,
+    tree_concatenate,
     tree_map_tqdm,
+    tree_unzip,
 )
-from feedbax.misc import where_func_to_labels
-from feedbax.train import TaskTrainer
+from feedbax.loss import AbstractLoss, ModelLoss
+from feedbax.misc import where_func_to_labels, attr_str_tree_to_where_func
+from feedbax.train import TaskTrainer, TaskTrainerHistory
 from feedbax.xabdeef.losses import simple_reach_loss
 
-import rnns_learn_robust_motor_policies 
+import rnns_learn_robust_motor_policies
 from rnns_learn_robust_motor_policies import PROJECT_SEED
-from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL
 from rnns_learn_robust_motor_policies.database import (
     get_db_session,
     save_model_and_add_record,
 )
-from rnns_learn_robust_motor_policies.misc import log_version_info
+from rnns_learn_robust_motor_policies.misc import log_version_info, subdict
 from rnns_learn_robust_motor_policies.setup_utils import (
     get_readout_norm_loss,
+    train_histories_hps_select,
 )
-from rnns_learn_robust_motor_policies.train_setup_part2 import (
-    TrainingMethodLabel,
-    setup_task_model_pair, 
+from rnns_learn_robust_motor_policies.train_setup_part1 import (
+    setup_task_model_pair,
 )
-from rnns_learn_robust_motor_policies.tree_utils import pp, subdict
-from rnns_learn_robust_motor_policies.types import TaskModelPair
+from rnns_learn_robust_motor_policies.tree_utils import deep_update, pp
+from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainingMethodDict
 from rnns_learn_robust_motor_policies.train_setup import (
     concat_save_iterations,
     iterations_to_save_model_parameters,
     make_delayed_cosine_schedule,
+    train_pair,
 )
-from rnns_learn_robust_motor_policies.types import (
-    TrainingMethodDict,
-    TrainStdDict,
-)
+from rnns_learn_robust_motor_policies.types import TrainStdDict
 
 
-# Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
-version_info = log_version_info(
-    jax, eqx, optax, git_modules=(feedbax, rnns_learn_robust_motor_policies)
-)
+## Create model-task pairings for different disturbance conditions
 
 
-### Initialize model database connection
-
-db_session = get_db_session()
+CONFIG_DIR = Path('../config')
 
 
-### Hyperparameters
-
-disturbance_type: Literal['curl', 'constant'] = 'curl'  
-feedback_delay_steps = 0
-feedback_noise_std = 0.01
-motor_noise_std = 0.01
-hidden_size = 100
-n_replicates = 5
-n_steps = 100
-dt = 0.05
-
-n_batches_baseline = 0
-n_batches_condition = 500
-batch_size = 250
-learning_rate_0 = 0.001
-constant_lr_iterations = 0 # Number of initial training iterations to hold lr constant
-cosine_annealing_alpha = 1.0  # Max learning rate factor decrease during cosine annealing 
-weight_decay = 0
-
-# Force the Frobenius norm of the readout weight matrix to be close (squared error) to this value
-readout_norm_value = 2.0
-readout_norm_loss_weight = 0.0
-
-# TODO: Implement this for part 2!
-n_scaleup_batches = 1000
-intervention_scaleup_batches = (n_batches_baseline, n_batches_baseline + n_scaleup_batches)
-
-# reset the optimizer state at these iterations
-state_reset_iterations = jnp.array([])
-
-# change which parameters are trained, after a given number of iterations
-where_train = {
-    0: lambda model: (
-        model.step.net.hidden,
-        model.step.net.readout, 
-    ),
-    # stop training the readout 
-    # 1000: lambda model: model.step.net.hidden,
-}
-
-training_methods: list[TrainingMethodLabel] = ["bcs"]#, "pai-asf"]
-
-p_perturbed = {
-    "bcs": 0.5,
-    # The rest don't do anything atm, even if they're <1
-    "dai": 1.0,  
-    "pai-asf": 1.0,  
-}
-
-# Define the disturbance amplitudes to train, depending on disturbance type
-# NOTE: Only one of these disturbance types is trained per notebook run; see the parameters cell above
-disturbance_stds = {
-    # 'curl': [1.0],
-    'curl': [0.0, 0.5, 1.0, 1.5],
-    'constant': [0.0, 0.01, 0.02, 0.03, 0.04, 0.08, 0.16, 0.32],
-}
+def load_default_config(nb_id: str) -> dict:
+    """Load config from file or use defaults"""
+    return load_config(CONFIG_DIR / f"{nb_id}.yml")
 
 
-### RNG setup
-key = jr.PRNGKey(PROJECT_SEED)
-key_init, key_train, key_eval = jr.split(key, 3)
+def load_config(path: str | Path) -> dict:
+    with open(path) as f:
+        config = yaml.safe_load(f)
+    return config
 
 
-## Set up models and tasks for the different training variants
+def construct_spread_dict(
+    name: str,
+    func: Callable[[], Any],
+    keys: Sequence[Any],
+):
+    return dict(zip(
+        keys, 
+        map(
+            lambda k: func(**{name: k}), 
+            keys,
+        )
+    ))
+    # return jt.map(
+    #     lambda k: func(**{name: k}),
+    #     dict_type(zip(keys, keys)),
+    # )
+    
+    
+def train_setup(
+    train_hps: dict,
+) -> tuple[TaskTrainer, AbstractLoss]:
+    optimizer_class = partial(
+        optax.adamw,
+        weight_decay=train_hps['weight_decay'],
+    ) 
 
-task_model_pairs = TrainingMethodDict({
-    method_label: jt.map(
-        lambda disturbance_std: setup_task_model_pair(
-            n_replicates=n_replicates,
-            training_method=method_label,
-            dt=dt,
-            hidden_size=hidden_size,
-            n_steps=n_steps,
-            feedback_delay_steps=feedback_delay_steps,
-            feedback_noise_std=feedback_noise_std,
-            motor_noise_std=motor_noise_std,
-            disturbance_type=disturbance_type,
-            disturbance_std=disturbance_std,
-            intervention_scaleup_batches=intervention_scaleup_batches,
-            p_perturbed=p_perturbed,
-            key=key_init,
+    schedule = make_delayed_cosine_schedule(
+        train_hps['learning_rate_0'], 
+        train_hps['constant_lr_iterations'], 
+        train_hps['n_batches_baseline'] + train_hps['n_batches_condition'], 
+        train_hps['cosine_annealing_alpha'],
+    ) 
+
+    trainer = TaskTrainer(
+        optimizer=optax.inject_hyperparams(optimizer_class)(
+            learning_rate=schedule,
         ),
-        TrainStdDict(zip(
-            disturbance_stds[disturbance_type], 
-            disturbance_stds[disturbance_type],
-        )),
+        checkpointing=True,
     )
-    for method_label in training_methods
-})
-
-# The task without training perturbations
-# task_baseline = task_model_pairs[0].task
-
-
-## Training setup
-
-optimizer_class = partial(
-    optax.adamw,
-    weight_decay=weight_decay,
-)
-
-n_batches = n_batches_baseline + n_batches_condition
-save_model_parameters = iterations_to_save_model_parameters(n_batches)
-
-schedule = make_delayed_cosine_schedule(
-    learning_rate_0, 
-    constant_lr_iterations, 
-    n_batches, 
-    cosine_annealing_alpha,
-) 
-
-trainer = TaskTrainer(
-    optimizer=optax.inject_hyperparams(optimizer_class)(
-        learning_rate=schedule
-    ),
-    checkpointing=True,
-)
-
-readout_norm_loss = readout_norm_loss_weight * get_readout_norm_loss(readout_norm_value)
-loss_func = simple_reach_loss() + readout_norm_loss
-
-
-## Examine the distributions of field strengths in training batches
-
-keys_example_trials = jr.split(key_train, batch_size)
-
-example_batches = jt.map(
-    lambda pair: jax.vmap(pair.task.get_train_trial_with_intervenor_params)(keys_example_trials),
-    task_model_pairs,
-    is_leaf=is_type(TaskModelPair),
-)
-
-
-# from feedbax.task import TaskTrialSpec
-
-# def plot_curl_amplitudes(trial_specs):
-#     fig = go.Figure(layout=dict(
-#         width=500,
-#         height=400,
-#     ))
-#     # Assume these are constant over each trial
-#     amplitude, scale, active = (
-#         trial_specs.intervene[INTERVENOR_LABEL].amplitude[:, 0],
-#         trial_specs.intervene[INTERVENOR_LABEL].scale[:, 0],
-#         trial_specs.intervene[INTERVENOR_LABEL].active[:, 0],
-#     )
-#     field_amp = active * scale * amplitude
-#     fig.add_trace(
-#         go.Histogram(
-#             x=field_amp,
-#             xbins=dict(
-#                 start=-4, 
-#                 end=4,
-#                 size=0.3,
-#             )
-#         )
-#     )
-#     return fig
     
+    loss_func = simple_reach_loss()
     
-# field_amp_figs = jt.map(
-#     plot_curl_amplitudes,
-#     example_batches,
-#     is_leaf=is_type(TaskTrialSpec)
-# ) 
+    if all(k in train_hps for k in ('readout_norm_loss_weight', 'readout_norm_value')):
+        readout_norm_loss = (
+            train_hps['readout_norm_loss_weight'] 
+            * get_readout_norm_loss(train_hps['readout_norm_value'])
+        )
+        loss_func = loss_func + readout_norm_loss
+    
+    return trainer, loss_func
 
 
-## Train the task-model pairs
-
-train_params = dict(
-    ensembled=True,
-    loss_func=loss_func,
-    where_train=where_train,
-    batch_size=batch_size, 
-    log_step=500,
-    save_model_parameters=save_model_parameters,
-    state_reset_iterations=state_reset_iterations,
-    # disable_tqdm=True,
-)
-
-trained_models, train_histories = tree_unzip(tree_map_tqdm(
-    partial(train_pair, trainer, n_batches, **train_params),
-    task_model_pairs,
-    label="Training all pairs",
-    is_leaf=is_type(TaskModelPair),
-))
+def flatten_with_paths(tree, is_leaf=None):
+    return jax.tree_util.tree_flatten_with_path(tree, is_leaf=is_leaf)
 
 
-## Save the models with their parameters on the final iteration
+def index_multi(seq, *args):
+    if args == ():
+        return seq
+    return index_multi(seq[args[0]], *args[1:])
 
 
-save_model_parameters_all = concat_save_iterations(
-    save_model_parameters, 
-    (n_batches_baseline, n_batches_condition),
-)
+def hps_given_path(path, model_hps, train_hps):
+    # This is specific to notebook 2.
+    # For training notebook 1, we only have `model_hps |= dict(disturbance_std=path[0])`.
+    # In principle we might want to infer this from the structure of the PyTree itself,
+    # except that provides insufficient information to properly name the hyperparameters.
+    # One alternative is to make a constant (common) mapping from node types to 
+    # hyperparameter names. For example, `TrainStdDict -> 'disturbance_std'` or 
+    # `TrainingMethodDict -> 'train_method'`. But how can we infer whether it should be 
+    # added to `train_hps`, versus `model_hps`? Or should we just add these kwargs to 
+    # BOTH of them?
+    model_hps |= dict(disturbance_std=path[1].key)
+    train_hps |= dict(train_method=path[0].key)
+    return model_hps, train_hps
 
-where_train_strs = jt.map(where_func_to_labels, where_train)
 
-training_hyperparameters = dict(
-    learning_rate_0=learning_rate_0,
-    constant_lr_iterations=constant_lr_iterations,
-    cosine_annealing_alpha=cosine_annealing_alpha,
-    weight_decay=weight_decay,
-    n_batches=n_batches,
-    n_batches_condition=n_batches_condition,
-    n_batches_baseline=n_batches_baseline,
-    batch_size=batch_size,
-    save_model_parameters=save_model_parameters.tolist(),
-    where_train_strs=where_func_to_labels(where_train[0]),
-    state_reset_iterations=state_reset_iterations.tolist(),
-    p_perturbed=p_perturbed,
-)
-
-model_hyperparameters = dict(
-    n_replicates=n_replicates,
-    hidden_size=hidden_size,
-    feedback_delay_steps=feedback_delay_steps,
-    feedback_noise_std=feedback_noise_std,
-    motor_noise_std=motor_noise_std,
-    dt=dt,
-    n_steps=n_steps,
-    disturbance_type=disturbance_type,
-    # disturbance_std=disturbance_std,
-    readout_norm_loss_weight=readout_norm_loss_weight,
-    readout_norm_value=readout_norm_value,
-    intervention_scaleup_batches=intervention_scaleup_batches,
-    p_perturbed=p_perturbed,
-)
-
-train_histories_hyperparameters = dict(
-    disturbance_stds=disturbance_stds[disturbance_type],
-    n_batches=n_batches,
-    batch_size=batch_size,
-    n_replicates=n_replicates,
-    where_train_strs=where_func_to_labels(where_train[0]),
-    save_model_parameters=save_model_parameters.tolist(),
-    readout_norm_loss_weight=readout_norm_loss_weight,
-    readout_norm_value=readout_norm_value,
-)
-
-model_record = TrainingMethodDict({
-    method_label: TrainStdDict({
-        disturbance_std: save_model_and_add_record(
+def save_all_models(
+    db_session,
+    all_models: PyTree[eqx.Module, 'T'], 
+    train_hps: dict, 
+    model_hps: dict, 
+    all_train_histories: Optional[PyTree[TaskTrainerHistory, 'T']] = None,
+    **kwargs,
+):
+    model_records_flat = []
+    
+    path_vals, treedef = jtu.tree_flatten_with_path(all_models, is_leaf=is_module)
+    
+    for path, models in path_vals:
+        
+        # # TODO: These two lines depend on the structure of the `all_models` tree
+        # # i.e. we should turn this into a function that can be swapped out
+        # # Also, we should not hardcode the names of the variables
+        # model_hps |= dict(disturbance_std=path[1])
+        # train_hps |= dict(train_method=path[0])
+        
+        # DONE:
+        model_hps_i, train_hps_i = hps_given_path(path, model_hps, train_hps)
+        
+        model_record = save_model_and_add_record(
             db_session,
             origin=NB_ID,
             model=models,
-            model_hyperparameters=model_hyperparameters | dict(
-                disturbance_std=disturbance_std,
-                training_method=method_label,
+            model_hyperparameters=model_hps_i,
+            other_hyperparameters=train_hps_i,
+            # Assume all the pytree levels are dicts
+            train_history=index_multi(all_train_histories, *[p.key for p in path[:-1]]),
+            train_history_hyperparameters=train_histories_hps_select(
+                train_hps_i, 
+                model_hps_i,
             ),
-            other_hyperparameters=training_hyperparameters,
-            train_history=train_histories,
-            train_history_hyperparameters=train_histories_hyperparameters,
-            version_info=version_info,
+            **kwargs,
         )
-        for disturbance_std, models in trained_models[method_label].items()
-    })
-    for method_label in training_methods
-})
+        
+        model_records_flat.append(model_record)
+    
+    model_records = jt.unflatten(treedef, model_records_flat)
+    return model_records
 
+
+def process_hps(config: dict):
+    model_hps = config['model']
+    train_hps = config['training']
+    disturbance = config['disturbance']
+    
+    ## Compute any extra dependencies 
+    ## and add to the hyperparameters for model construction
+    intervention_scaleup_batches = (
+        train_hps['n_batches_baseline'],
+        train_hps['n_batches_baseline'] + train_hps['n_scaleup_batches'],
+    )
+    
+    # Update with missing arguments to `setup_task_model_pair` and `train_setup`, respectively
+    model_hps |= dict(
+        disturbance_type=disturbance['type'],
+        intervention_scaleup_batches=intervention_scaleup_batches,
+    )
+    train_hps['n_batches'] = train_hps['n_batches_baseline'] + train_hps['n_batches_condition']
+    train_hps['save_model_parameters'] = iterations_to_save_model_parameters(
+        train_hps['n_batches']
+    )
+    
+    return model_hps, train_hps, disturbance    
+
+
+def main(config: dict, key: PRNGKeyArray):
+    key_init, key_train, key_eval = jr.split(key, 3)
+    
+    model_hps, train_hps, disturbance = process_hps(config)
+    
+    # TODO: Refactor this into a function, and then I think the only difference between part 1 and part 2
+    # is 1) that function, and 2) `hps_given_path`, if we are using it. All the other differences are taken 
+    # care of by `setup_task_model_pair`
+    ## Construct a model (ensemble) for each value of the disturbance std
+    task_model_pairs = TrainingMethodDict({
+        method_label: TrainStdDict(construct_spread_dict(
+            'disturbance_std',
+            partial(
+                setup_task_model_pair, 
+                **model_hps | dict(training_method=method_label), 
+                key=key_init,
+            ),
+            disturbance['stds'][disturbance['type']],  # The sequence of stds for the given disturbance type
+        ))
+        for method_label in train_hps['methods']
+    })
+    
+    trainer, loss_func = train_setup(train_hps)
+    
+    # Convert string representations of where-functions to actual functions.
+    # 
+    #   - Strings are easy to serialize, or to specify in config files; functions are not.
+    #   - These where-functions are for selecting the trainable nodes in the pytree of model 
+    #     parameters.
+    #
+    where_train = {
+        i: attr_str_tree_to_where_func(strs) 
+        for i, strs in train_hps['where_train_strs'].items()
+    }
+    
+    ## Train all the models.
+    # Organize the constant arguments for the calls to `train_pair`
+    train_args = dict(
+        ensembled=True,
+        loss_func=loss_func,
+        # TODO: Is this correct? Or should we pass the task for the respective training method?
+        task_baseline=jt.leaves(task_model_pairs, is_leaf=is_type(TrainStdDict))[0][0].task, 
+        where_train=where_train,
+        batch_size=train_hps['batch_size'], 
+        log_step=500,
+        save_model_parameters=train_hps['save_model_parameters'],
+        state_reset_iterations=train_hps['state_reset_iterations'],
+        # disable_tqdm=True,
+    )
+
+    # The imported `train_pair` function actually runs the trainer
+    trained_models, train_histories = tree_unzip(tree_map_tqdm(
+        partial(train_pair, trainer, train_hps['n_batches'], key=key_train, **train_args),
+        task_model_pairs,
+        label="Training all pairs",
+        is_leaf=is_type(TaskModelPair),
+    ))
+    
+    ## Create a database record for each ensemble of models trained (i.e. one per disturbance std).   
+    # Save the models and training histories to disk.
+    model_records = save_all_models(
+        db_session,
+        trained_models,
+        train_hps,
+        model_hps,
+        train_histories,
+    )
+    
+    return model_records
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="Process some files.")
+    parser.add_argument("--config", type=str, default=None)
+    args = parser.parse_args()
+    
+    version_info = log_version_info(
+        jax, eqx, optax, git_modules=(feedbax, rnns_learn_robust_motor_policies),
+    )
+    
+    db_session = get_db_session()
+    
+    default_config = load_default_config(NB_ID)
+    
+    if args.config is not None:
+        config = deep_update(default_config, load_config(args.config))
+    else:
+        config = default_config
+    
+    key = jr.PRNGKey(PROJECT_SEED)
+    
+    model_records = main(config, key)

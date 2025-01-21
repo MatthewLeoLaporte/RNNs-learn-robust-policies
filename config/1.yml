@@ -13,7 +13,6 @@ model:
     motor_noise_std: 0.01
     dt: 0.05
     n_steps: 100
-    # intervention_scaleup_batches: intervention_scaleup_batches
     control_loss_scale: 0.1
 
 training:

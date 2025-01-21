@@ -24,6 +24,7 @@ import jax.tree as jt
 from jaxtyping import PRNGKeyArray, PyTree
 import optax 
 
+import feedbax
 from feedbax import (
     is_module,
     is_type,
@@ -36,6 +37,7 @@ from feedbax.misc import where_func_to_labels, attr_str_tree_to_where_func
 from feedbax.train import TaskTrainer
 from feedbax.xabdeef.losses import simple_reach_loss
 
+import rnns_learn_robust_motor_policies
 from rnns_learn_robust_motor_policies import PROJECT_SEED
 from rnns_learn_robust_motor_policies.database import (
     get_db_session,
@@ -156,9 +158,7 @@ def save_model_spread(
     return model_records
 
 
-def main(config: dict, key: PRNGKeyArray):
-    key_init, key_train, key_eval = jr.split(key, 3)
-    
+def process_hps(config: dict):
     model_hps = config['model']
     train_hps = config['training']
     disturbance = config['disturbance']
@@ -180,6 +180,14 @@ def main(config: dict, key: PRNGKeyArray):
         train_hps['n_batches']
     )
     
+    return model_hps, train_hps, disturbance    
+
+
+def main(config: dict, key: PRNGKeyArray):
+    key_init, key_train, key_eval = jr.split(key, 3)
+    
+    model_hps, train_hps, disturbance = process_hps(config)
+    
     ## Construct a model (ensemble) for each value of the disturbance std
     task_model_pairs = TrainStdDict(construct_spread_dict(
         'disturbance_std',
@@ -195,7 +203,7 @@ def main(config: dict, key: PRNGKeyArray):
     
     # Convert string representations of where-functions to actual functions.
     # 
-    #   - Strings are easy to serialize, or specify in config files; functions are not.
+    #   - Strings are easy to serialize, or to specify in config files; functions are not.
     #   - These where-functions are for selecting the trainable nodes in the pytree of model 
     #     parameters.
     #
@@ -225,12 +233,6 @@ def main(config: dict, key: PRNGKeyArray):
         label="Training all pairs",
         is_leaf=is_type(TaskModelPair),
     ))
-
-    # TODO: Why is this here?
-    # save_model_parameters_all = concat_save_iterations(
-    #     save_model_parameters, 
-    #     (train_hps['n_batches_baseline'], train_hps['n_batches_condition']),
-    # )
     
     ## Create a database record for each ensemble of models trained (i.e. one per disturbance std).   
     # Save the models and training histories to disk.
@@ -250,7 +252,9 @@ if __name__ == '__main__':
     parser.add_argument("--config", type=str, default=None)
     args = parser.parse_args()
     
-    version_info = log_version_info(jax, eqx, optax)
+    version_info = log_version_info(
+        jax, eqx, optax, git_modules=(feedbax, rnns_learn_robust_motor_policies),
+    )
     
     db_session = get_db_session()
     
