@@ -14,6 +14,7 @@ from ipywidgets import HTML
 from IPython.display import display
 import jax.numpy as jnp
 import jax.tree as jt
+import jax.tree_util as jtu
 
 from feedbax import (
     is_type, 
@@ -45,11 +46,20 @@ from rnns_learn_robust_motor_policies.constants import (
 )
 from rnns_learn_robust_motor_policies.database import (
     get_model_record,
+    save_model_and_add_record,
 )
+from rnns_learn_robust_motor_policies.loss import get_readout_norm_loss
 from rnns_learn_robust_motor_policies.misc import (
     take_model,
 )
-from rnns_learn_robust_motor_policies.tree_utils import dictmerge, subdict
+from rnns_learn_robust_motor_policies.train_setup import (
+    iterations_to_save_model_parameters,
+)
+from rnns_learn_robust_motor_policies.tree_utils import (
+    dictmerge, 
+    index_multi,
+    subdict,
+)
 from rnns_learn_robust_motor_policies.types import (
     TrainStdDict,
 )
@@ -66,13 +76,6 @@ def get_base_task(
         n_steps=n_steps,
         **validation_params, 
     )
-
-
-readout_norm_func = lambda weights: jnp.linalg.norm(weights, axis=(-2, -1), ord='fro')
-get_readout_norm_loss = lambda value: ModelLoss(
-    "readout_norm",
-    lambda model: (readout_norm_func(model.step.net.readout.weight) - value) ** 2
-)
 
 
 def setup_train_histories(
@@ -512,3 +515,100 @@ def query_and_load_model(
     return model, model_info, replicate_info, n_replicates_included
 
 
+def process_hps(config: dict):
+    model_hps = config['model']
+    train_hps = config['training']
+    disturbance = config['disturbance']
+    
+    ## Compute any extra dependencies 
+    ## and add to the hyperparameters for model construction
+    intervention_scaleup_batches = (
+        train_hps['n_batches_baseline'],
+        train_hps['n_batches_baseline'] + train_hps['n_scaleup_batches'],
+    )
+    
+    # Update with missing arguments to `setup_task_model_pair` and `train_setup`, respectively
+    model_hps |= dict(
+        disturbance_type=disturbance['type'],
+        intervention_scaleup_batches=intervention_scaleup_batches,
+    )
+    train_hps['n_batches'] = train_hps['n_batches_baseline'] + train_hps['n_batches_condition']
+    train_hps['save_model_parameters'] = iterations_to_save_model_parameters(
+        train_hps['n_batches']
+    )
+    
+    return model_hps, train_hps, disturbance  
+
+
+def save_all_models(
+    db_session,
+    origin: str,
+    all_models: PyTree[eqx.Module, 'T'], 
+    train_hps: dict, 
+    model_hps: dict, 
+    hps_given_path: Callable[[tuple, dict, dict], tuple[dict, dict]], 
+    all_train_histories: Optional[PyTree[TaskTrainerHistory, 'T']] = None,
+    **kwargs,
+):
+    model_records_flat = []
+    
+    path_vals, treedef = jtu.tree_flatten_with_path(all_models, is_leaf=is_module)
+    
+    for path, models in path_vals:
+        idxs = [p.key for p in path[:-1]]
+        
+        model_hps_i, train_hps_i = hps_given_path(path, model_hps, train_hps)
+        
+        model_record = save_model_and_add_record(
+            db_session,
+            origin=origin,
+            model=models,
+            model_hyperparameters=model_hps_i,
+            other_hyperparameters=train_hps_i,
+            # Assume all the pytree levels are dicts
+            train_history=index_multi(all_train_histories, *idxs),
+            train_history_hyperparameters=train_histories_hps_select(
+                train_hps_i, 
+                model_hps_i,
+            ),
+            **kwargs,
+        )
+        
+        model_records_flat.append(model_record)
+    
+    model_records = jt.unflatten(treedef, model_records_flat)
+    return model_records
+
+
+def train_setup(
+    train_hps: dict,
+) -> tuple[TaskTrainer, AbstractLoss]:
+    optimizer_class = partial(
+        optax.adamw,
+        weight_decay=train_hps['weight_decay'],
+    ) 
+
+    schedule = make_delayed_cosine_schedule(
+        train_hps['learning_rate_0'], 
+        train_hps['constant_lr_iterations'], 
+        train_hps['n_batches_baseline'] + train_hps['n_batches_condition'], 
+        train_hps['cosine_annealing_alpha'],
+    ) 
+
+    trainer = TaskTrainer(
+        optimizer=optax.inject_hyperparams(optimizer_class)(
+            learning_rate=schedule,
+        ),
+        checkpointing=True,
+    )
+    
+    loss_func = simple_reach_loss()
+    
+    if all(k in train_hps for k in ('readout_norm_loss_weight', 'readout_norm_value')):
+        readout_norm_loss = (
+            train_hps['readout_norm_loss_weight'] 
+            * get_readout_norm_loss(train_hps['readout_norm_value'])
+        )
+        loss_func = loss_func + readout_norm_loss
+    
+    return trainer, loss_func

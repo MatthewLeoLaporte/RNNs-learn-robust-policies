@@ -5,141 +5,52 @@ NB_ID = "2"
 
 ## Environment setup
 
-from collections.abc import Callable, Sequence
 import os
-from pathlib import Path
 
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
 import argparse
 from functools import partial
-from typing import Any, Literal, Optional, Type
-import yaml
 
 import equinox as eqx
 import jax
-import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
-import jax.tree_util as jtu
-from jaxtyping import PRNGKeyArray, PyTree
+from jaxtyping import PRNGKeyArray
 import optax 
 
 import feedbax
 from feedbax import (
-    is_module,
     is_type,
-    tree_concatenate,
     tree_map_tqdm,
     tree_unzip,
 )
-from feedbax.loss import AbstractLoss, ModelLoss
-from feedbax.misc import where_func_to_labels, attr_str_tree_to_where_func
-from feedbax.train import TaskTrainer, TaskTrainerHistory
-from feedbax.xabdeef.losses import simple_reach_loss
+from feedbax.misc import attr_str_tree_to_where_func
 
 import rnns_learn_robust_motor_policies
 from rnns_learn_robust_motor_policies import PROJECT_SEED
+from rnns_learn_robust_motor_policies.config import load_config, load_default_config
 from rnns_learn_robust_motor_policies.database import (
     get_db_session,
-    save_model_and_add_record,
 )
-from rnns_learn_robust_motor_policies.misc import log_version_info, subdict
+from rnns_learn_robust_motor_policies.misc import log_version_info
 from rnns_learn_robust_motor_policies.setup_utils import (
-    get_readout_norm_loss,
-    train_histories_hps_select,
+    process_hps,
+    save_all_models,
 )
 from rnns_learn_robust_motor_policies.train_setup_part1 import (
     setup_task_model_pair,
 )
-from rnns_learn_robust_motor_policies.tree_utils import deep_update, pp
+from rnns_learn_robust_motor_policies.tree_utils import (
+    deep_update, 
+    map_kwargs_to_dict,
+)
 from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainingMethodDict
 from rnns_learn_robust_motor_policies.train_setup import (
-    concat_save_iterations,
-    iterations_to_save_model_parameters,
-    make_delayed_cosine_schedule,
     train_pair,
+    train_setup,
 )
 from rnns_learn_robust_motor_policies.types import TrainStdDict
-
-
-## Create model-task pairings for different disturbance conditions
-
-
-CONFIG_DIR = Path('../config')
-
-
-def load_default_config(nb_id: str) -> dict:
-    """Load config from file or use defaults"""
-    return load_config(CONFIG_DIR / f"{nb_id}.yml")
-
-
-def load_config(path: str | Path) -> dict:
-    with open(path) as f:
-        config = yaml.safe_load(f)
-    return config
-
-
-def construct_spread_dict(
-    name: str,
-    func: Callable[[], Any],
-    keys: Sequence[Any],
-):
-    return dict(zip(
-        keys, 
-        map(
-            lambda k: func(**{name: k}), 
-            keys,
-        )
-    ))
-    # return jt.map(
-    #     lambda k: func(**{name: k}),
-    #     dict_type(zip(keys, keys)),
-    # )
-    
-    
-def train_setup(
-    train_hps: dict,
-) -> tuple[TaskTrainer, AbstractLoss]:
-    optimizer_class = partial(
-        optax.adamw,
-        weight_decay=train_hps['weight_decay'],
-    ) 
-
-    schedule = make_delayed_cosine_schedule(
-        train_hps['learning_rate_0'], 
-        train_hps['constant_lr_iterations'], 
-        train_hps['n_batches_baseline'] + train_hps['n_batches_condition'], 
-        train_hps['cosine_annealing_alpha'],
-    ) 
-
-    trainer = TaskTrainer(
-        optimizer=optax.inject_hyperparams(optimizer_class)(
-            learning_rate=schedule,
-        ),
-        checkpointing=True,
-    )
-    
-    loss_func = simple_reach_loss()
-    
-    if all(k in train_hps for k in ('readout_norm_loss_weight', 'readout_norm_value')):
-        readout_norm_loss = (
-            train_hps['readout_norm_loss_weight'] 
-            * get_readout_norm_loss(train_hps['readout_norm_value'])
-        )
-        loss_func = loss_func + readout_norm_loss
-    
-    return trainer, loss_func
-
-
-def flatten_with_paths(tree, is_leaf=None):
-    return jax.tree_util.tree_flatten_with_path(tree, is_leaf=is_leaf)
-
-
-def index_multi(seq, *args):
-    if args == ():
-        return seq
-    return index_multi(seq[args[0]], *args[1:])
 
 
 def hps_given_path(path, model_hps, train_hps):
@@ -152,78 +63,10 @@ def hps_given_path(path, model_hps, train_hps):
     # `TrainingMethodDict -> 'train_method'`. But how can we infer whether it should be 
     # added to `train_hps`, versus `model_hps`? Or should we just add these kwargs to 
     # BOTH of them?
-    model_hps |= dict(disturbance_std=path[1].key)
-    train_hps |= dict(train_method=path[0].key)
-    return model_hps, train_hps
-
-
-def save_all_models(
-    db_session,
-    all_models: PyTree[eqx.Module, 'T'], 
-    train_hps: dict, 
-    model_hps: dict, 
-    all_train_histories: Optional[PyTree[TaskTrainerHistory, 'T']] = None,
-    **kwargs,
-):
-    model_records_flat = []
-    
-    path_vals, treedef = jtu.tree_flatten_with_path(all_models, is_leaf=is_module)
-    
-    for path, models in path_vals:
-        
-        # # TODO: These two lines depend on the structure of the `all_models` tree
-        # # i.e. we should turn this into a function that can be swapped out
-        # # Also, we should not hardcode the names of the variables
-        # model_hps |= dict(disturbance_std=path[1])
-        # train_hps |= dict(train_method=path[0])
-        
-        # DONE:
-        model_hps_i, train_hps_i = hps_given_path(path, model_hps, train_hps)
-        
-        model_record = save_model_and_add_record(
-            db_session,
-            origin=NB_ID,
-            model=models,
-            model_hyperparameters=model_hps_i,
-            other_hyperparameters=train_hps_i,
-            # Assume all the pytree levels are dicts
-            train_history=index_multi(all_train_histories, *[p.key for p in path[:-1]]),
-            train_history_hyperparameters=train_histories_hps_select(
-                train_hps_i, 
-                model_hps_i,
-            ),
-            **kwargs,
-        )
-        
-        model_records_flat.append(model_record)
-    
-    model_records = jt.unflatten(treedef, model_records_flat)
-    return model_records
-
-
-def process_hps(config: dict):
-    model_hps = config['model']
-    train_hps = config['training']
-    disturbance = config['disturbance']
-    
-    ## Compute any extra dependencies 
-    ## and add to the hyperparameters for model construction
-    intervention_scaleup_batches = (
-        train_hps['n_batches_baseline'],
-        train_hps['n_batches_baseline'] + train_hps['n_scaleup_batches'],
+    return (
+        model_hps | dict(disturbance_std=path[1].key),
+        train_hps | dict(train_method=path[0].key),
     )
-    
-    # Update with missing arguments to `setup_task_model_pair` and `train_setup`, respectively
-    model_hps |= dict(
-        disturbance_type=disturbance['type'],
-        intervention_scaleup_batches=intervention_scaleup_batches,
-    )
-    train_hps['n_batches'] = train_hps['n_batches_baseline'] + train_hps['n_batches_condition']
-    train_hps['save_model_parameters'] = iterations_to_save_model_parameters(
-        train_hps['n_batches']
-    )
-    
-    return model_hps, train_hps, disturbance    
 
 
 def main(config: dict, key: PRNGKeyArray):
@@ -236,13 +79,14 @@ def main(config: dict, key: PRNGKeyArray):
     # care of by `setup_task_model_pair`
     ## Construct a model (ensemble) for each value of the disturbance std
     task_model_pairs = TrainingMethodDict({
-        method_label: TrainStdDict(construct_spread_dict(
-            'disturbance_std',
+        # `map_kwargs_to_dict` passes the `disturbance_std` value to `setup_task_model_pair`
+        method_label: TrainStdDict(map_kwargs_to_dict(
             partial(
                 setup_task_model_pair, 
                 **model_hps | dict(training_method=method_label), 
                 key=key_init,
             ),
+            'disturbance_std',
             disturbance['stds'][disturbance['type']],  # The sequence of stds for the given disturbance type
         ))
         for method_label in train_hps['methods']
@@ -288,9 +132,11 @@ def main(config: dict, key: PRNGKeyArray):
     # Save the models and training histories to disk.
     model_records = save_all_models(
         db_session,
+        NB_ID,
         trained_models,
         train_hps,
         model_hps,
+        hps_given_path,
         train_histories,
     )
     

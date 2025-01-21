@@ -1,7 +1,8 @@
 from collections.abc import Callable, Mapping
 from typing import Any, TypeVar, Sequence
 
-import equinox as eqx 
+import equinox as eqx
+import jax as jax 
 import jax.tree as jt
 from jaxtyping import Array, PyTree
 import plotly.graph_objects as go
@@ -32,6 +33,28 @@ def dictmerge(*dicts: dict) -> dict:
     return {k: v for d in dicts for k, v in d.items()}
 
 
+# TODO: This exists because I was thinking of generalizing the way that
+# the model PyTree is constructed in training notebook 2. If that doesn't get done, 
+# then it would make sense to just do a dict comprehension explicitly when 
+# constructing the `task_model_pairs` dict, instead of making an 
+# opaque call to this function.
+def map_kwargs_to_dict(
+    func: Callable[..., Any],  #! kwargs only
+    keyword: str,
+    values: Sequence[Any],
+):
+    """Given a function that takes optional kwargs, evaluate the function over 
+    a sequence of values of a single kwarg
+    """
+    return dict(zip(
+        values, 
+        map(
+            lambda value: func(**{keyword: value}), 
+            values,
+        )
+    ))
+
+
 def tree_subset_dict_level(tree: PyTree[dict[T, Any]], keys: Sequence[T], dict_type=dict):
     """Maps `subdict` over dicts of a given type"""
     return jt.map(
@@ -39,6 +62,17 @@ def tree_subset_dict_level(tree: PyTree[dict[T, Any]], keys: Sequence[T], dict_t
         tree,
         is_leaf=is_type(dict_type),
     )
+    
+
+def flatten_with_paths(tree, is_leaf=None):
+    return jax.tree_util.tree_flatten_with_path(tree, is_leaf=is_leaf)
+
+
+def index_multi(obj, *idxs):
+    """Index zero or more times into a Python object."""
+    if not idxs:
+        return obj
+    return index_multi(obj[idxs[0]], *idxs[1:])
 
 
 def pp(tree):
