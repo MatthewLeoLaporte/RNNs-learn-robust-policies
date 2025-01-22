@@ -1,7 +1,7 @@
 from pathlib import Path 
 import yaml
 
-from rnns_learn_robust_motor_policies.constants import CONFIG_DIR
+from rnns_learn_robust_motor_policies import CONFIG_DIR
 
 
 def load_default_config(nb_id: str) -> dict:

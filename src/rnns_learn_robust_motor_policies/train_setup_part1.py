@@ -19,8 +19,8 @@ from rnns_learn_robust_motor_policies.constants import (
     MASS,
 )
 from rnns_learn_robust_motor_policies.misc import vector_with_gaussian_length
-from rnns_learn_robust_motor_policies.setup_utils import get_base_task
-from rnns_learn_robust_motor_policies.types import TaskModelPair
+from rnns_learn_robust_motor_policies.setup_utils import get_base_task, get_train_pairs_by_disturbance_std
+from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainStdDict
 
 
 disturbance_params = lambda scale_func: {
@@ -141,4 +141,25 @@ def setup_model_parameter_histories(
     return model_parameter_histories
 
 
+def custom_hps_given_path(path: tuple, hps: dict):
+    """Given the path of a pair in the task-model PyTree, construct the custom hyperparams for that pair.
+    
+    In principle we might want to infer this from the structure of the task-model PyTree;
+    i.e. if we can map `TrainStdDict` to `"std": "disturbance"` then we can automatically 
+    infer to insert `disturbance_std=<level of TrainStdDict>` into the `hps['model']` update. 
+    Though it would then be best to keep the hps as a single dict, i.e. hps['model'] and 
+    hps['train'], 
+    """
+    hps = dict(hps)
+    hps['model'] = hps['model'] | dict(disturbance_std=path[0].key)
+    return hps
 
+
+def get_train_pairs(hps, key):
+    """Given hyperparams and a particular task-model pair setup function, return the PyTree of task-model pairs.
+    
+    Here in Part 1 this is trivial since we're only training a single `TrainStdDict` of models.
+    """
+    return get_train_pairs_by_disturbance_std(
+        setup_task_model_pair, hps['model'], hps['disturbance'], key
+    )

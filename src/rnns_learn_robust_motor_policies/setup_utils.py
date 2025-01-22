@@ -4,7 +4,6 @@ from pathlib import Path
 import time
 from typing import Any, Literal, Optional
 import fnmatch
-import html
 import json 
 import os
 
@@ -15,28 +14,30 @@ from IPython.display import display
 import jax.numpy as jnp
 import jax.tree as jt
 import jax.tree_util as jtu
+from jaxtyping import PRNGKeyArray
 
 from feedbax import (
     is_type, 
     is_module, 
     load, 
     tree_set_scalar,
-    tree_take, 
-    tree_take_multi,
 )
-from feedbax.intervene import AbstractIntervenor
-from feedbax.loss import AbstractLoss, ModelLoss
+from feedbax.loss import AbstractLoss
 from feedbax.misc import attr_str_tree_to_where_func
 from feedbax.noise import Multiplicative, Normal
 from feedbax.task import SimpleReaches
-from feedbax.train import TaskTrainerHistory, init_task_trainer_history
+from feedbax.train import (
+    TaskTrainer,
+    TaskTrainerHistory, 
+    init_task_trainer_history,
+)
 from feedbax._tree import (
-    apply_to_filtered_leaves, 
     tree_zip_named, 
     tree_unzip,
 )
 from feedbax.xabdeef.losses import simple_reach_loss
 from jaxtyping import PyTree
+import optax
 
 from rnns_learn_robust_motor_policies import MODELS_DIR
 from rnns_learn_robust_motor_policies.constants import (
@@ -54,10 +55,12 @@ from rnns_learn_robust_motor_policies.misc import (
 )
 from rnns_learn_robust_motor_policies.train_setup import (
     iterations_to_save_model_parameters,
+    make_delayed_cosine_schedule,
 )
 from rnns_learn_robust_motor_policies.tree_utils import (
     dictmerge, 
     index_multi,
+    map_kwargs_to_dict,
     subdict,
 )
 from rnns_learn_robust_motor_policies.types import (
@@ -76,6 +79,30 @@ def get_base_task(
         n_steps=n_steps,
         **validation_params, 
     )
+    
+    
+def get_train_pairs_by_disturbance_std(
+    setup_task_model_pair: Callable, 
+    model_hps: dict, 
+    disturbance: dict, 
+    key: PRNGKeyArray, 
+    model_hps_update: Optional[dict] = None,
+):
+    if model_hps_update is None:
+        model_hps_update = dict()
+    
+    disturbance_stds = disturbance['stds'][disturbance['type']]
+    
+    task_model_pairs = TrainStdDict(map_kwargs_to_dict(
+        partial(
+            setup_task_model_pair, 
+            **model_hps | model_hps_update, 
+            key=key,
+        ),
+        'disturbance_std',
+        disturbance_stds,  
+    ))
+    return task_model_pairs
 
 
 def setup_train_histories(
@@ -135,15 +162,15 @@ def setup_train_histories(
     )
 
 
-def train_histories_hps_select(train_hps, model_hps): 
+def train_histories_hps_select(hps: dict) -> dict: 
     return dictmerge(
-        subdict(train_hps, [
+        subdict(hps['train'], [
             "n_batches",
             "batch_size",
             "where_train_strs",
             "save_model_parameters",
         ]),
-        subdict(model_hps, [
+        subdict(hps['model'], [
             "n_replicates",
             "disturbance_type",
             "feedback_delay_steps",
@@ -515,41 +542,40 @@ def query_and_load_model(
     return model, model_info, replicate_info, n_replicates_included
 
 
-def process_hps(config: dict):
-    model_hps = config['model']
-    train_hps = config['training']
-    disturbance = config['disturbance']
-    
-    ## Compute any extra dependencies 
-    ## and add to the hyperparameters for model construction
-    intervention_scaleup_batches = (
-        train_hps['n_batches_baseline'],
-        train_hps['n_batches_baseline'] + train_hps['n_scaleup_batches'],
-    )
-    
+def process_hps(hps: dict):
+    """Resolve any dependencies and do any clean-up or validation of hyperparameters."""
+    # Make a copy, to avoid in-place modification of the argument
+    hps = dict(hps)
+
     # Update with missing arguments to `setup_task_model_pair` and `train_setup`, respectively
-    model_hps |= dict(
-        disturbance_type=disturbance['type'],
-        intervention_scaleup_batches=intervention_scaleup_batches,
+    hps['model'] |= dict(
+        disturbance_type=hps['disturbance']['type'],
+        intervention_scaleup_batches=(
+            hps['train']['n_batches_baseline'],
+            hps['train']['n_batches_baseline'] + hps['train']['n_scaleup_batches'],
+        ),
     )
-    train_hps['n_batches'] = train_hps['n_batches_baseline'] + train_hps['n_batches_condition']
-    train_hps['save_model_parameters'] = iterations_to_save_model_parameters(
-        train_hps['n_batches']
+    hps['train']['n_batches'] = hps['train']['n_batches_baseline'] + hps['train']['n_batches_condition']
+    hps['train']['save_model_parameters'] = iterations_to_save_model_parameters(
+        hps['train']['n_batches']
     )
     
-    return model_hps, train_hps, disturbance  
+    return hps
 
-
+# TODO: Probably move this to `train.py`; when else do we save models like this?
 def save_all_models(
     db_session,
     origin: str,
     all_models: PyTree[eqx.Module, 'T'], 
-    train_hps: dict, 
-    model_hps: dict, 
-    hps_given_path: Callable[[tuple, dict, dict], tuple[dict, dict]], 
+    hps: dict, 
+    custom_hps_given_path: Callable[[tuple, dict], dict], 
     all_train_histories: Optional[PyTree[TaskTrainerHistory, 'T']] = None,
     **kwargs,
 ):
+    """Saves a PyTree of models to disk, and the models table of the database.
+    
+    Optionally also stores all the training histories of the models.
+    """
     model_records_flat = []
     
     path_vals, treedef = jtu.tree_flatten_with_path(all_models, is_leaf=is_module)
@@ -557,20 +583,20 @@ def save_all_models(
     for path, models in path_vals:
         idxs = [p.key for p in path[:-1]]
         
-        model_hps_i, train_hps_i = hps_given_path(path, model_hps, train_hps)
+        hps_i = custom_hps_given_path(path, hps)
+        
+        from rnns_learn_robust_motor_policies.tree_utils import pp
+        pp(hps_i)
         
         model_record = save_model_and_add_record(
             db_session,
             origin=origin,
             model=models,
-            model_hyperparameters=model_hps_i,
-            other_hyperparameters=train_hps_i,
+            model_hyperparameters=hps_i['model'],
+            other_hyperparameters=hps_i['train'],
             # Assume all the pytree levels are dicts
             train_history=index_multi(all_train_histories, *idxs),
-            train_history_hyperparameters=train_histories_hps_select(
-                train_hps_i, 
-                model_hps_i,
-            ),
+            train_history_hyperparameters=train_histories_hps_select(hps_i),
             **kwargs,
         )
         

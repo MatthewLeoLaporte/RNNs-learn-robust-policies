@@ -9,8 +9,6 @@ from feedbax.intervene import (
 )
 
 
-# CONFIG_DIR = Path('../config')
-
 INTERVENOR_LABEL = "DisturbanceField"
 DISTURBANCE_CLASSES = {
     'curl': CurlField,

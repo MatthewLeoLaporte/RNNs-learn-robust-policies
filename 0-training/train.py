@@ -1,12 +1,10 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-NB_ID = "1"
-
-## Environment setup
-
+from collections.abc import Callable
 import os
 from pathlib import Path
+from typing import Optional
 
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
@@ -39,65 +37,71 @@ from rnns_learn_robust_motor_policies.setup_utils import (
     process_hps,
     save_all_models,
 )
-from rnns_learn_robust_motor_policies.train_setup_part1 import (
-    setup_task_model_pair,
-)
 from rnns_learn_robust_motor_policies.tree_utils import (
-    deep_update, 
-    map_kwargs_to_dict,
+    deep_update,
 )
 from rnns_learn_robust_motor_policies.types import TaskModelPair
 from rnns_learn_robust_motor_policies.train_setup import (
     train_pair,
     train_setup,
 )
+from rnns_learn_robust_motor_policies.train_setup_part1 import (
+    custom_hps_given_path as custom_hps_given_path_1,
+    get_train_pairs as get_train_pairs_1,
+)
+from rnns_learn_robust_motor_policies.train_setup_part2 import (
+    custom_hps_given_path as custom_hps_given_path_2,
+    get_train_pairs as get_train_pairs_2,
+)
 from rnns_learn_robust_motor_policies.types import TrainStdDict
 
 
-CONFIG_DIR = Path('../config')
+# These are the different types of training run, i.e. respective to parts/phases of the study.
+# TODO: Eliminate `custom_hps_given_path` completely
+VARIANTS = {
+    1: (get_train_pairs_1, custom_hps_given_path_1), 
+    2: (get_train_pairs_2, custom_hps_given_path_2),   
+}
+# The training logic is identical except importantly for the function `get_train_pairs`, which 
+# determines the structure of the PyTree of task-model tuples, which of course may vary between 
+# training experiments.
 
 
-def hps_given_path(path, model_hps, train_hps):
-    # This is specific to notebook 1.
-    return (
-        model_hps | dict(disturbance_std=path[0]),
-        train_hps,
-    )
+def load_hps(config_path: str | Path) -> dict:
+    """Given a path to a YAML config..."""
+    config = load_config(config_path)
+    # Load the defaults and update with the user-specified config
+    default_config = load_default_config(config['id'])
+    config = deep_update(default_config, config)
+    # Make corrections and add in any derived values.
+    hps = process_hps(config)  
+    return hps
 
 
-def construct_model_pytree(model_hps, disturbance, key):
-    task_model_pairs = TrainStdDict(map_kwargs_to_dict(
-        partial(
-            setup_task_model_pair, 
-            **model_hps, 
-            key=key,
-        ),
-        'disturbance_std',
-        disturbance['stds'][disturbance['type']],  # The sequence of stds for the given disturbance type
-    ))
-    return task_model_pairs
-
-
-def main(config: dict, key: PRNGKeyArray):
+def train_and_save_models(
+    db_session,
+    config_path: str | Path, 
+    key: PRNGKeyArray,
+):
+    """Given a path to a YAML config, execute the respective training run.
+    
+    The config must have a top-level key `id` whose positive integer value 
+    indicates which training experiment to run. 
+    """
     key_init, key_train, key_eval = jr.split(key, 3)
     
-    model_hps, train_hps, disturbance = process_hps(config)
-
-    # TODO: Refactor this into a function, and then I think the only difference between part 1 and part 2
-    # is 1) that function, and 2) `hps_given_path`, if we are using it. All the other differences are taken 
-    # care of by `setup_task_model_pair`
-    ## Construct a model (ensemble) for each value of the disturbance std
-    task_model_pairs = TrainStdDict(map_kwargs_to_dict(
-        partial(
-            setup_task_model_pair, 
-            **model_hps, 
-            key=key_init,
-        ),
-        'disturbance_std',
-        disturbance['stds'][disturbance['type']],  # The sequence of stds for the given disturbance type
-    ))
+    hps = load_hps(config_path)
     
-    trainer, loss_func = train_setup(train_hps)
+    # from rnns_learn_robust_motor_policies.tree_utils import pp
+    # pp(hps)
+    # raise RuntimeError
+    
+    # User specifies which variant to run using the `id` key
+    get_train_pairs, custom_hps_given_path = VARIANTS[hps['id']]
+    
+    task_model_pairs = get_train_pairs(hps, key_init)
+    
+    trainer, loss_func = train_setup(hps['train'])
     
     # Convert string representations of where-functions to actual functions.
     # 
@@ -107,7 +111,7 @@ def main(config: dict, key: PRNGKeyArray):
     #
     where_train = {
         i: attr_str_tree_to_where_func(strs) 
-        for i, strs in train_hps['where_train_strs'].items()
+        for i, strs in hps['train']['where_train_strs'].items()
     }
     
     ## Train all the models.
@@ -118,16 +122,17 @@ def main(config: dict, key: PRNGKeyArray):
         # TODO: Is this correct? Or should we pass the task for the respective training method?
         task_baseline=jt.leaves(task_model_pairs, is_leaf=is_type(TrainStdDict))[0][0].task, 
         where_train=where_train,
-        batch_size=train_hps['batch_size'], 
+        batch_size=hps['train']['batch_size'], 
         log_step=500,
-        save_model_parameters=train_hps['save_model_parameters'],
-        state_reset_iterations=train_hps['state_reset_iterations'],
+        save_model_parameters=hps['train']['save_model_parameters'],
+        state_reset_iterations=hps['train']['state_reset_iterations'],
         # disable_tqdm=True,
     )
 
     # The imported `train_pair` function actually runs the trainer
     trained_models, train_histories = tree_unzip(tree_map_tqdm(
-        partial(train_pair, trainer, train_hps['n_batches'], key=key_train, **train_args),
+        #! Use the same PRNG key for all training runs
+        partial(train_pair, trainer, hps['train']['n_batches'], key=key_train, **train_args),
         task_model_pairs,
         label="Training all pairs",
         is_leaf=is_type(TaskModelPair),
@@ -137,11 +142,10 @@ def main(config: dict, key: PRNGKeyArray):
     # Save the models and training histories to disk.
     model_records = save_all_models(
         db_session,
-        NB_ID,
+        hps['id'],
         trained_models,
-        train_hps,
-        model_hps,
-        hps_given_path,
+        hps,
+        custom_hps_given_path,
         train_histories,
     )
     
@@ -149,8 +153,8 @@ def main(config: dict, key: PRNGKeyArray):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Process some files.")
-    parser.add_argument("--config", type=str, default=None)
+    parser = argparse.ArgumentParser(description="Train some models on some tasks based on a config file.")
+    parser.add_argument("config_path", type=str)
     args = parser.parse_args()
     
     version_info = log_version_info(
@@ -159,13 +163,10 @@ if __name__ == '__main__':
     
     db_session = get_db_session()
     
-    default_config = load_default_config(NB_ID)
-    
-    if args.config is not None:
-        config = deep_update(default_config, load_config(args.config))
-    else:
-        config = default_config
-    
     key = jr.PRNGKey(PROJECT_SEED)
     
-    model_records = main(config, key)
+    model_records = train_and_save_models(
+        db_session, 
+        args.config_path, 
+        key,
+    )
