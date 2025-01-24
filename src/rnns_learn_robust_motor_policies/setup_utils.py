@@ -27,7 +27,6 @@ from feedbax.misc import attr_str_tree_to_where_func
 from feedbax.noise import Multiplicative, Normal
 from feedbax.task import SimpleReaches
 from feedbax.train import (
-    TaskTrainer,
     TaskTrainerHistory, 
     init_task_trainer_history,
 )
@@ -37,14 +36,12 @@ from feedbax._tree import (
 )
 from feedbax.xabdeef.losses import simple_reach_loss
 from jaxtyping import PyTree
-import optax
 
 from rnns_learn_robust_motor_policies import MODELS_DIR
 from rnns_learn_robust_motor_policies.constants import (
     TASK_EVAL_PARAMS,
     N_STEPS,
     WORKSPACE,
-    get_iterations_to_save_model_parameters,
 )
 from rnns_learn_robust_motor_policies.database import (
     get_model_record,
@@ -64,6 +61,17 @@ from rnns_learn_robust_motor_policies.types import (
     TrainStdDict,
     TrainingMethodDict,
 )
+
+
+# If we construct the pytree of task-model pairs out of these, then in
+# `training.train_and_save_models` we can use `fill_out_hps` to automatically
+# add to the hyperparameters, key-value pairs where the key corresponds to the 
+# dict subtype, and the value corresponds to the key of the respective pair 
+# within the dict.
+TYPE_HP_KEY_MAPPING = {
+    TrainingMethodDict: ("train", "train_method"),
+    TrainStdDict: ("model", "disturbance_std"),
+}
 
 
 def get_base_task(
@@ -540,34 +548,8 @@ def query_and_load_model(
     return model, model_info, replicate_info, n_replicates_included
 
 
-def process_hps(hps: dict):
-    """Resolve any dependencies and do any clean-up or validation of hyperparameters."""
-    # Make a copy, to avoid in-place modification of the argument
-    hps = dict(hps)
-
-    # Update with missing arguments to `setup_task_model_pair` and `train_setup`, respectively
-    hps['model'] |= dict(
-        disturbance_type=hps['disturbance']['type'],
-        intervention_scaleup_batches=(
-            hps['train']['n_batches_baseline'],
-            hps['train']['n_batches_baseline'] + hps['train']['n_scaleup_batches'],
-        ),
-    )
-    hps['train']['n_batches'] = hps['train']['n_batches_baseline'] + hps['train']['n_batches_condition']
-    hps['train']['save_model_parameters'] = get_iterations_to_save_model_parameters(
-        hps['train']['n_batches']
-    )
-    
-    return hps
-
-
-TYPE_HP_KEY_MAPPING = {
-    TrainingMethodDict: ("train", "train_method"),
-    TrainStdDict: ("model", "disturbance_std"),
-}
-
-
 def update_hps_given_tree_path(hps: dict, path: tuple, types: Sequence) -> dict:
+    """Given the path of a task-model pair in the training PyTree, """
     hps = dict(hps)
     for node_key, type_ in zip(path, types):
         hps_key, hps_subkey = TYPE_HP_KEY_MAPPING[type_]
@@ -613,5 +595,3 @@ def save_all_models(
     
     model_records = jt.unflatten(treedef, model_records_flat)
     return model_records
-
-

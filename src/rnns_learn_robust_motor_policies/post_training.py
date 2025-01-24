@@ -4,6 +4,7 @@ from functools import partial
 import logging
 from pathlib import Path
 from typing import Any, Sequence
+import jax
 import numpy as np
 from sqlalchemy.orm import Session
 
@@ -73,8 +74,8 @@ logger = logging.getLogger(__name__)
 
 # The setup/deserialisation depends on where/how the model was trained
 SETUP_FUNCS = {
-    '1': setup_task_model_pair_p1,
-    '2': setup_task_model_pair_p2,
+    1: setup_task_model_pair_p1,
+    2: setup_task_model_pair_p2,
 }
 
 
@@ -93,7 +94,7 @@ def load_data(model_record: ModelRecord):
     
     models, model_hyperparameters = load_with_hyperparameters(
         model_record.path, 
-        partial(setup_models_only, SETUP_FUNCS[origin]),
+        partial(setup_models_only, SETUP_FUNCS[int(origin)]),
     )
     logger.debug(f"Loaded model hyperparameters: {model_hyperparameters}")
     
@@ -540,7 +541,7 @@ def process_model_record(
     
     # Get respective validation tasks for each model
     tasks = setup_tasks_only(
-        SETUP_FUNCS[origin], 
+        SETUP_FUNCS[int(origin)], 
         key=jr.PRNGKey(0), 
         **model_hyperparams,
     )
