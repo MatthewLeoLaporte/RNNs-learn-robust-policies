@@ -1,8 +1,10 @@
 id: 2
 
+methods: ['bcs'] #, 'pai-asf']
+
 disturbance:
   stds: 
-    curl: [0, 0.5, 1.0, 1.5]
+    curl: [0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5]
     constant: [0.0, 0.01, 0.02, 0.03, 0.04, 0.08, 0.16, 0.32]  # [0, 0.01, 0.1, 1]
 
   type: curl
@@ -18,7 +20,6 @@ model:
   control_loss_scale: 0.1
 
 train:
-  methods: ['bcs'] #, 'pai-asf']
   learning_rate_0: 0.01
   n_batches_condition: 50
   n_batches_baseline: 0

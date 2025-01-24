@@ -460,6 +460,7 @@ def save_model_and_add_record(
     version_info: Optional[Dict[str, str]] = None,
 ) -> ModelRecord:
     """Save model files with hash-based names and add database record."""
+    
     (
         model_hyperparameters, 
         other_hyperparameters,

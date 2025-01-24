@@ -188,14 +188,6 @@ def setup_task_model_pair(
     ))
 
 
-def custom_hps_given_path(path: tuple, hps: dict) -> dict:
-    """Analogous to `rnns_learn_robust_motor_policies.train_setup_part1.custom_cps_given_path`, from Part 1"""
-    hps = dict(hps)
-    hps['model'] |= dict(disturbance_std=path[1].key)
-    hps['train'] |= dict(train_method=path[0].key)
-    return hps
-
-
 def get_train_pairs(hps, key):
     """Given hyperparams and a particular task-model pair setup function, return the PyTree of task-model pairs."""
     get_train_pairs_partial = partial(
@@ -208,5 +200,5 @@ def get_train_pairs(hps, key):
     
     return TrainingMethodDict({
         method_label: get_train_pairs_partial(dict(training_method=method_label))
-        for method_label in hps['train']['methods']
+        for method_label in hps['methods']
     })

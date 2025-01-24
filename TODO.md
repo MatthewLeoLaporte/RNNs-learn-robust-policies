@@ -4,11 +4,13 @@ updated: 2024-11-13T10:32
 ---
 **See [[results-2|Part 2 results]] for ongoing analysis TODOs.
 
-- [ ] **Fix the Equinox warning constantly raised by the training script!**
-- [ ] **Modify `train_and_save_models` so that we only train the models that haven’t already been trained (i.e. not already in db)**. I think we can just do a model-wise check to perform an equinox partition, since the training loop uses `jt.map` which skips `None` leaves
-- [ ] **Move `train_and_save_models` to `train_utils`**
-- [ ] maybe rename `train_utils` to `train`
-- [ ] **Eliminate `custom_hps_given_path**
+- [ ] DEcide on some key results to mention/include in NCM abstract
+- [ ] Try training a significantly larger network in part 2 and see if the context 0 curves overlap
+- [ ] Organize src into subpackages
+- [x] **Modify `train_and_save_models` so that we only train the models that haven’t already been trained (i.e. not already in db)**. I think we can just do a model-wise check to perform an equinox partition, since the training loop uses `jt.map` which skips `None` leaves
+- [x] **Move `train_and_save_models` to `train_utils`**
+- [x] maybe rename `train_utils` to `train`
+- [x] **Eliminate `custom_hps_given_path**
 
 - [ ] Stop using `tmp` in figures dir
 - [x] Refactor `train_pair` so it isn’t defined twice, in both training notebooks 1 and 2
@@ -88,6 +90,7 @@ Don’t worry about refactoring functions found in the notebooks, for now.
 
 ### Network perturbations
 
+
 #### Individual unit stimulation
 
 Perturb the activity of units in the network, one at a time:
@@ -97,6 +100,22 @@ Perturb the activity of units in the network, one at a time:
 
 If during reaches, then we could stimulate at multiple times during the reach, to see how tuning changes.
 
+Example methods:
+
+- Perturb a single unit in all the different contexts (e.g. force field strength), resulting in a bunch of different responses for different contexts/context combinations for a single unit
+- Observe qualitatively what changes between context. For example, if context only changes the amplitude of the stimulation response but not the direction, then we will boil each response (set of states) to a single number. So we will have one number (e.g. relative amplitude) for each context/context combination; i.e. N numbers for N contexts.
+- Do e.g. linear regression to turn N numbers to M numbers, where M is the number of context variables (i.e. get trends for each context variable)
+- Repeat this for all the other units
+- Now we can e.g. do a scatter plot of the regression parameters across all the units
+
+##### Non-zero-force steady states
+
+**There are also non-zero-force steady states (e.g. the steady states in constant-field trials).**
+
+- If you apply a static force to the limb, and the network has to output a constant force to maintain steady state
+- The perturbation responses are probably state-dependent
+- Steve has done this sort of thing; Gunnar thinks this may reveal something about… gain modulation? But he seemed unsure
+
 #### Individual unit ablation
 
 - [ ] Fix the activity of a unit to 0.
@@ -105,7 +124,8 @@ If during reaches, then we could stimulate at multiple times during the reach, t
 
 - [ ] At steady state, perturb the network by the eigenvectors of its Jacobian 
 	- [ ] Hessian?
-- [ ] 
+
+Run this in different positions in the workspace to see if it is state dependent
 
 ### Fixed points
 
@@ -263,6 +283,54 @@ It might also make sense to automatically save evaluated states to disk, and to 
 
 - [ ] Write a `tree_stack` that works with models – can’t just use `apply_to_filtered_leaves` since the shape of the output is changed wrt the input 
 - [ ] Try vmapping over `schedule_intervenor`, to get batch dimensions in models and tasks. Batched tasks seems like a missing link to making some of the analyses easier to write.
+
+### Equinox warning
+
+This appears to be related to `train_step` inside of `eqx.filter_value_and_grad` in `feedbax.train`. I tried replacing all the nearby jax.vmap calls with `filter_vmap` but the warning remains
+
+`````
+UserWarning: 
+Possibly assigning a JAX-transformed callable as an attribute on
+equinox._ad._ValueAndGradWrapper. This will not have any of its parameters updated.
+
+For example, the following code is buggy:
+```python
+class MyModule(eqx.Module):
+vmap_linear: Callable
+
+def __init__(self, ...):
+    self.vmap_linear = jax.vmap(eqx.nn.Linear(...))
+
+def __call__(self, ...):
+    ... = self.vmap_linear(...)
+```
+This is because the callable returned from `jax.vmap` is *not* a PyTree. This means that
+the parameters inside the `eqx.nn.Linear` layer will not receive gradient updates.
+
+You can most easily fix this either by applying the wrapper at `__call__` time:
+```python
+class MyModule(eqx.Module):
+linear: Callable
+
+def __init__(self, ...):
+    self.linear = eqx.nn.Linear(...)
+
+def __call__(self, ...):
+    ... = jax.vmap(self.linear)(...)
+```
+or by using `eqx.filter_vmap` instead (which *does* return a PyTree):
+```python
+class MyModule(eqx.Module):
+vmap_linear: Callable
+
+def __init__(self, ...):
+    self.vmap_linear = eqx.filter_vmap(eqx.nn.Linear(...))
+
+def __call__(self, ...):
+    ... = self.vmap_linear(...)
+```
+`````
+
 ## Meetings
 
 - [ ] Schedule a [[02 Questions#Steve|meeting]] with Steve. For one, ask about sensory perturbations in human tasks – do they see oscillations (i.e. going from straight to “loopy”, like we see in the control vs. robust networks)

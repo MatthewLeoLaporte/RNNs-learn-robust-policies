@@ -90,7 +90,10 @@ from feedbax.xabdeef.losses import simple_reach_loss
 
 import rnns_learn_robust_motor_policies 
 from rnns_learn_robust_motor_policies import PROJECT_SEED
-from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL
+from rnns_learn_robust_motor_policies.constants import (
+    INTERVENOR_LABEL,
+    get_iterations_to_save_model_parameters,
+)
 from rnns_learn_robust_motor_policies.database import (
     get_db_session,
     save_model_and_add_record,
@@ -107,7 +110,6 @@ from rnns_learn_robust_motor_policies.tree_utils import pp, subdict
 from rnns_learn_robust_motor_policies.types import TaskModelPair
 from rnns_learn_robust_motor_policies.train_setup import (
     concat_save_iterations,
-    iterations_to_save_model_parameters,
     make_delayed_cosine_schedule,
 )
 from rnns_learn_robust_motor_policies.types import (
@@ -251,7 +253,7 @@ optimizer_class = partial(
 )
 
 n_batches = n_batches_baseline + n_batches_condition
-save_model_parameters = iterations_to_save_model_parameters(n_batches)
+save_model_parameters = get_iterations_to_save_model_parameters(n_batches)
 ```
 
 ```{python}

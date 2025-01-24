@@ -19,6 +19,7 @@ from rnns_learn_robust_motor_policies.constants import EVAL_REACH_LENGTH
 frob = lambda x: jnp.linalg.norm(x, axis=(-1, -2), ord='fro')
 
 
+# TODO: Rename to Effector, or something
 class ResponseVar(str, Enum):
     """Variables available in response state."""
     POSITION = 'pos'

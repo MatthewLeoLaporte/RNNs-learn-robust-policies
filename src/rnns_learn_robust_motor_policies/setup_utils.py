@@ -44,6 +44,7 @@ from rnns_learn_robust_motor_policies.constants import (
     TASK_EVAL_PARAMS,
     N_STEPS,
     WORKSPACE,
+    get_iterations_to_save_model_parameters,
 )
 from rnns_learn_robust_motor_policies.database import (
     get_model_record,
@@ -53,10 +54,6 @@ from rnns_learn_robust_motor_policies.loss import get_readout_norm_loss
 from rnns_learn_robust_motor_policies.misc import (
     take_model,
 )
-from rnns_learn_robust_motor_policies.train_setup import (
-    iterations_to_save_model_parameters,
-    make_delayed_cosine_schedule,
-)
 from rnns_learn_robust_motor_policies.tree_utils import (
     dictmerge, 
     index_multi,
@@ -65,6 +62,7 @@ from rnns_learn_robust_motor_policies.tree_utils import (
 )
 from rnns_learn_robust_motor_policies.types import (
     TrainStdDict,
+    TrainingMethodDict,
 )
 
 
@@ -87,7 +85,7 @@ def get_train_pairs_by_disturbance_std(
     disturbance: dict, 
     key: PRNGKeyArray, 
     model_hps_update: Optional[dict] = None,
-):
+) -> TrainStdDict:
     if model_hps_update is None:
         model_hps_update = dict()
     
@@ -556,20 +554,34 @@ def process_hps(hps: dict):
         ),
     )
     hps['train']['n_batches'] = hps['train']['n_batches_baseline'] + hps['train']['n_batches_condition']
-    hps['train']['save_model_parameters'] = iterations_to_save_model_parameters(
+    hps['train']['save_model_parameters'] = get_iterations_to_save_model_parameters(
         hps['train']['n_batches']
     )
     
     return hps
 
+
+TYPE_HP_KEY_MAPPING = {
+    TrainingMethodDict: ("train", "train_method"),
+    TrainStdDict: ("model", "disturbance_std"),
+}
+
+
+def update_hps_given_tree_path(hps: dict, path: tuple, types: Sequence) -> dict:
+    hps = dict(hps)
+    for node_key, type_ in zip(path, types):
+        hps_key, hps_subkey = TYPE_HP_KEY_MAPPING[type_]
+        hps[hps_key] = hps[hps_key] | {hps_subkey: node_key.key} 
+    return hps
+        
+
 # TODO: Probably move this to `train.py`; when else do we save models like this?
 def save_all_models(
     db_session,
     origin: str,
-    all_models: PyTree[eqx.Module, 'T'], 
-    hps: dict, 
-    custom_hps_given_path: Callable[[tuple, dict], dict], 
-    all_train_histories: Optional[PyTree[TaskTrainerHistory, 'T']] = None,
+    models: PyTree[eqx.Module, 'T'], 
+    hps: PyTree[dict, 'T'], 
+    train_histories: Optional[PyTree[TaskTrainerHistory, 'T']] = None,
     **kwargs,
 ):
     """Saves a PyTree of models to disk, and the models table of the database.
@@ -578,24 +590,21 @@ def save_all_models(
     """
     model_records_flat = []
     
-    path_vals, treedef = jtu.tree_flatten_with_path(all_models, is_leaf=is_module)
+    path_vals, treedef = jtu.tree_flatten_with_path(models, is_leaf=is_module)
     
-    for path, models in path_vals:
-        idxs = [p.key for p in path[:-1]]
+    for path, model in path_vals:
+        idxs = [p.key for p in path]
         
-        hps_i = custom_hps_given_path(path, hps)
-        
-        from rnns_learn_robust_motor_policies.tree_utils import pp
-        pp(hps_i)
+        hps_i = index_multi(hps, *idxs)
         
         model_record = save_model_and_add_record(
             db_session,
             origin=origin,
-            model=models,
+            model=model,
             model_hyperparameters=hps_i['model'],
             other_hyperparameters=hps_i['train'],
             # Assume all the pytree levels are dicts
-            train_history=index_multi(all_train_histories, *idxs),
+            train_history=index_multi(train_histories, *idxs),
             train_history_hyperparameters=train_histories_hps_select(hps_i),
             **kwargs,
         )
@@ -606,35 +615,3 @@ def save_all_models(
     return model_records
 
 
-def train_setup(
-    train_hps: dict,
-) -> tuple[TaskTrainer, AbstractLoss]:
-    optimizer_class = partial(
-        optax.adamw,
-        weight_decay=train_hps['weight_decay'],
-    ) 
-
-    schedule = make_delayed_cosine_schedule(
-        train_hps['learning_rate_0'], 
-        train_hps['constant_lr_iterations'], 
-        train_hps['n_batches_baseline'] + train_hps['n_batches_condition'], 
-        train_hps['cosine_annealing_alpha'],
-    ) 
-
-    trainer = TaskTrainer(
-        optimizer=optax.inject_hyperparams(optimizer_class)(
-            learning_rate=schedule,
-        ),
-        checkpointing=True,
-    )
-    
-    loss_func = simple_reach_loss()
-    
-    if all(k in train_hps for k in ('readout_norm_loss_weight', 'readout_norm_value')):
-        readout_norm_loss = (
-            train_hps['readout_norm_loss_weight'] 
-            * get_readout_norm_loss(train_hps['readout_norm_value'])
-        )
-        loss_func = loss_func + readout_norm_loss
-    
-    return trainer, loss_func

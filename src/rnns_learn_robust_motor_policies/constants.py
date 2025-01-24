@@ -1,7 +1,7 @@
-from pathlib import Path
 from typing import Any
 
 import jax.numpy as jnp
+import numpy as np
 
 from feedbax.intervene import (
     CurlField, 
@@ -54,3 +54,16 @@ POS_ENDPOINTS_ALIGNED = {
 
 # Criterion by which to exclude model replicates from analysis
 REPLICATE_CRITERION = 'best_total_loss'
+
+"""
+Define the training iterations on which to retain the model weights:
+Every iteration until iteration 10, then every 10 until 100, every 100 until 1000, etc.
+"""
+def get_iterations_to_save_model_parameters(n_batches):
+    save_iterations = jnp.concatenate([jnp.array([0])] + 
+        [
+            jnp.arange(10 ** i, 10 ** (i + 1), 10 ** i)
+            for i in range(0, int(np.log10(n_batches)) + 1)
+        ]
+    )
+    return save_iterations[save_iterations < n_batches]

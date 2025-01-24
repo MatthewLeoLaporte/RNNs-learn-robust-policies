@@ -1,4 +1,4 @@
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from typing import Any, TypeVar, Sequence
 
 import equinox as eqx
@@ -7,7 +7,7 @@ import jax.tree as jt
 from jaxtyping import Array, PyTree
 import plotly.graph_objects as go
 
-from feedbax import is_module, tree_take
+from feedbax import is_module, tree_take, tree_key_tuples
 from feedbax._tree import anyf, is_type
 from feedbax.intervene import AbstractIntervenor
 
@@ -53,6 +53,43 @@ def map_kwargs_to_dict(
             values,
         )
     ))
+
+
+def falsef(x):
+    return False
+
+    
+def tree_level_types(tree: PyTree, is_leaf=falsef) -> list[type]:
+    """Given a PyTree, return a PyTree of the types of each node along the path to the first leaf."""
+    treedef = jt.structure(tree)
+    
+    subtreedef = treedef
+    types = []
+    
+    while any(subtreedef.children()):
+        node_data = subtreedef.node_data()
+        if node_data is not None:
+            if is_leaf(node_data[0]):
+                break
+            types.append(node_data[0])
+        subtreedef = subtreedef.children()[0]
+    
+    return types
+
+
+def tree_map_with_keys(func, tree: PyTree, *rest, is_leaf=None, **kwargs):
+    """Maps `func` over a PyTree, returning a PyTree of the results and the paths to the leaves.
+    
+    The first argument of `func` must be the path
+    """
+    return jt.map(
+        func,
+        tree,
+        tree_key_tuples(tree, is_leaf=is_leaf),
+        *rest,
+        is_leaf=is_leaf,
+        **kwargs,
+    )
 
 
 def tree_subset_dict_level(tree: PyTree[dict[T, Any]], keys: Sequence[T], dict_type=dict):
