@@ -9,7 +9,7 @@ from feedbax.bodies import SimpleFeedback
 from feedbax.nn import NetworkState
 from feedbax.task import SimpleReaches
 
-from rnns_learn_robust_motor_policies.fp_finder import (
+from rnns_learn_robust_motor_policies.analysis.fp_finder import (
     FixedPointFinder,
     fp_adam_optimizer,
     take_top_fps,

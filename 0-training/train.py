@@ -21,7 +21,7 @@ from rnns_learn_robust_motor_policies.database import (
     get_db_session,
 )
 from rnns_learn_robust_motor_policies.misc import log_version_info
-from rnns_learn_robust_motor_policies.train import (
+from rnns_learn_robust_motor_policies.training import (
     train_and_save_models,
 )
 

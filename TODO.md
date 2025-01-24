@@ -4,9 +4,8 @@ updated: 2024-11-13T10:32
 ---
 **See [[results-2|Part 2 results]] for ongoing analysis TODOs.
 
-- [ ] DEcide on some key results to mention/include in NCM abstract
 - [ ] Try training a significantly larger network in part 2 and see if the context 0 curves overlap
-- [ ] Organize src into subpackages
+- [x] Organize src into subpackages
 - [x] **Modify `train_and_save_models` so that we only train the models that haven’t already been trained (i.e. not already in db)**. I think we can just do a model-wise check to perform an equinox partition, since the training loop uses `jt.map` which skips `None` leaves
 - [x] **Move `train_and_save_models` to `train_utils`**
 - [x] maybe rename `train_utils` to `train`

@@ -22,7 +22,7 @@ from feedbax.xabdeef.losses import simple_reach_loss
 
 from rnns_learn_robust_motor_policies.config import load_config, load_default_config
 from rnns_learn_robust_motor_policies.database import ModelRecord, get_record
-from rnns_learn_robust_motor_policies.loss import get_readout_norm_loss
+from rnns_learn_robust_motor_policies.training.loss import get_readout_norm_loss
 from rnns_learn_robust_motor_policies.setup_utils import (
     process_hps, 
     save_all_models, 
@@ -35,33 +35,25 @@ from rnns_learn_robust_motor_policies.tree_utils import (
 )
 from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainStdDict
 
-from rnns_learn_robust_motor_policies.train_setup_part1 import (
+from rnns_learn_robust_motor_policies.training.part1_fixed import (
     get_train_pairs as get_train_pairs_1,
 )
-from rnns_learn_robust_motor_policies.train_setup_part2 import (
+from rnns_learn_robust_motor_policies.training.part2_context import (
     get_train_pairs as get_train_pairs_2,
 )
-
-
-### 
-import traceback
-import warnings
-import sys
-
-def warn_with_traceback(message, category, filename, lineno, file=None, line=None):
-
-    log = file if hasattr(file,'write') else sys.stderr
-    traceback.print_stack(file=log)
-    log.write(warnings.formatwarning(message, category, filename, lineno, line))
-
-warnings.showwarning = warn_with_traceback
-###
 
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 # Prevent alembic from polluting the console with routine migration logs
 logging.getLogger('alembic.runtime.migration').setLevel(logging.WARNING)
+
+
+# These are the different types of training run, i.e. respective to parts/phases of the study.
+EXPERIMENTS = {
+    1: get_train_pairs_1, 
+    2: get_train_pairs_2,   
+}
 
 
 def make_delayed_cosine_schedule(init_lr, constant_steps, total_steps, alpha=0.001):
@@ -97,11 +89,17 @@ def load_hps(config_path: str | Path) -> dict:
     return hps
 
 
-# These are the different types of training run, i.e. respective to parts/phases of the study.
-EXPERIMENTS = {
-    1: get_train_pairs_1, 
-    2: get_train_pairs_2,   
-}
+def fill_out_hps(hps_common: dict, task_model_pairs: PyTree[TaskModelPair, 'T']) -> PyTree[dict, 'T']:
+    level_types = tree_level_types(task_model_pairs)
+    return jt.map(
+        lambda _, path: update_hps_given_tree_path(
+            hps_common, 
+            path, 
+            level_types,
+        ),
+        task_model_pairs, tree_key_tuples(task_model_pairs, is_leaf=is_type(TaskModelPair)),
+        is_leaf=is_type(TaskModelPair),
+    )
 
 
 def does_model_record_exist(db_session, hyperparameters):
@@ -150,17 +148,85 @@ def skip_already_trained(
     return task_model_pairs
 
 
-def fill_out_hps(hps_common: dict, task_model_pairs: PyTree[TaskModelPair, 'T']) -> PyTree[dict, 'T']:
-    level_types = tree_level_types(task_model_pairs)
-    return jt.map(
-        lambda _, path: update_hps_given_tree_path(
-            hps_common, 
-            path, 
-            level_types,
+def train_setup(
+    train_hps: dict,
+) -> tuple[TaskTrainer, AbstractLoss]:
+    """Given the training hyperparameters, return a trainer object and loss function."""
+    optimizer_class = partial(
+        optax.adamw,
+        weight_decay=train_hps['weight_decay'],
+    ) 
+
+    schedule = make_delayed_cosine_schedule(
+        train_hps['learning_rate_0'], 
+        train_hps['constant_lr_iterations'], 
+        train_hps['n_batches_baseline'] + train_hps['n_batches_condition'], 
+        train_hps['cosine_annealing_alpha'],
+    ) 
+
+    trainer = TaskTrainer(
+        optimizer=optax.inject_hyperparams(optimizer_class)(
+            learning_rate=schedule,
         ),
-        task_model_pairs, tree_key_tuples(task_model_pairs, is_leaf=is_type(TaskModelPair)),
-        is_leaf=is_type(TaskModelPair),
+        checkpointing=True,
     )
+    
+    loss_func = simple_reach_loss()
+    
+    if all(k in train_hps for k in ('readout_norm_loss_weight', 'readout_norm_value')):
+        readout_norm_loss = (
+            train_hps['readout_norm_loss_weight'] 
+            * get_readout_norm_loss(train_hps['readout_norm_value'])
+        )
+        loss_func = loss_func + readout_norm_loss
+    
+    return trainer, loss_func
+
+
+def train_pair(
+    trainer: TaskTrainer, 
+    pair: TaskModelPair, 
+    n_batches: int,
+    task_baseline: Optional[AbstractTask] = None,
+    n_batches_baseline: int = 0,
+    *,
+    key: PRNGKeyArray,
+    **kwargs,
+):   
+    """Given a trainer instance and a task-model pair, train the model for a given number of batches."""
+    key0, key1 = jr.split(key, 2)
+    
+    if n_batches_baseline > 0 and task_baseline is not None:
+        pretrained, pretrain_history, opt_state = trainer(
+            task_baseline,
+            pair.model,
+            n_batches=n_batches_baseline, 
+            run_label="Baseline training",
+            key=key0,
+            **kwargs,
+        )
+    else: 
+        pretrained = pair.model
+        pretrain_history = None
+        opt_state = None
+    
+    trained, train_history, _ = trainer(
+        pair.task, 
+        pretrained,
+        opt_state=opt_state,
+        n_batches=n_batches, 
+        idx_start=n_batches_baseline,
+        run_label="Condition training",
+        key=key1,
+        **kwargs,
+    )
+    
+    if pretrain_history is None:
+        train_history_all = train_history
+    else:
+        train_history_all = tree_concatenate([pretrain_history, train_history])
+    
+    return trained, train_history_all
 
 
 def train_and_save_models(
@@ -217,8 +283,8 @@ def train_and_save_models(
     trained_models, train_histories = tree_unzip(tree_map_tqdm(
         lambda pair, hps: train_pair(
             trainer, 
-            hps_common['train']['n_batches'], 
             pair,
+            hps_common['train']['n_batches'], 
             key=key_train,  #! Use the same PRNG key for all training runs
             ensembled=True,
             loss_func=loss_func,
@@ -248,80 +314,6 @@ def train_and_save_models(
     return model_records
     
 
-def train_pair(
-    trainer: TaskTrainer, 
-    n_batches: int,
-    pair: TaskModelPair, 
-    task_baseline: Optional[AbstractTask] = None,
-    n_batches_baseline: int = 0,
-    *,
-    key: PRNGKeyArray,
-    **kwargs,
-):   
-    key0, key1 = jr.split(key, 2)
-    
-    if n_batches_baseline > 0 and task_baseline is not None:
-        pretrained, pretrain_history, opt_state = trainer(
-            task_baseline,
-            pair.model,
-            n_batches=n_batches_baseline, 
-            run_label="Baseline training",
-            key=key0,
-            **kwargs,
-        )
-    else: 
-        pretrained = pair.model
-        pretrain_history = None
-        opt_state = None
-    
-    trained, train_history, _ = trainer(
-        pair.task, 
-        pretrained,
-        opt_state=opt_state,
-        n_batches=n_batches, 
-        idx_start=n_batches_baseline,
-        run_label="Condition training",
-        key=key1,
-        **kwargs,
-    )
-    
-    if pretrain_history is None:
-        train_history_all = train_history
-    else:
-        train_history_all = tree_concatenate([pretrain_history, train_history])
-    
-    return trained, train_history_all
 
 
-def train_setup(
-    train_hps: dict,
-) -> tuple[TaskTrainer, AbstractLoss]:
-    optimizer_class = partial(
-        optax.adamw,
-        weight_decay=train_hps['weight_decay'],
-    ) 
 
-    schedule = make_delayed_cosine_schedule(
-        train_hps['learning_rate_0'], 
-        train_hps['constant_lr_iterations'], 
-        train_hps['n_batches_baseline'] + train_hps['n_batches_condition'], 
-        train_hps['cosine_annealing_alpha'],
-    ) 
-
-    trainer = TaskTrainer(
-        optimizer=optax.inject_hyperparams(optimizer_class)(
-            learning_rate=schedule,
-        ),
-        checkpointing=True,
-    )
-    
-    loss_func = simple_reach_loss()
-    
-    if all(k in train_hps for k in ('readout_norm_loss_weight', 'readout_norm_value')):
-        readout_norm_loss = (
-            train_hps['readout_norm_loss_weight'] 
-            * get_readout_norm_loss(train_hps['readout_norm_value'])
-        )
-        loss_func = loss_func + readout_norm_loss
-    
-    return trainer, loss_func

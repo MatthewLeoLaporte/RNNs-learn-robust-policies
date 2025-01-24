@@ -50,7 +50,7 @@ from rnns_learn_robust_motor_policies.database import (
     get_model_record,
     save_model_and_add_record,
 )
-from rnns_learn_robust_motor_policies.loss import get_readout_norm_loss
+from rnns_learn_robust_motor_policies.training.loss import get_readout_norm_loss
 from rnns_learn_robust_motor_policies.misc import (
     take_model,
 )

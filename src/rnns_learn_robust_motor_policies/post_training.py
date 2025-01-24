@@ -49,15 +49,15 @@ from rnns_learn_robust_motor_policies.setup_utils import (
     setup_tasks_only,
     setup_replicate_info,
 )
-from rnns_learn_robust_motor_policies.state_utils import (
+from rnns_learn_robust_motor_policies.analysis.state_utils import (
     get_aligned_vars,
     get_pos_endpoints,
     vmap_eval_ensemble,
 )
-from rnns_learn_robust_motor_policies.train_setup_part1 import (
+from rnns_learn_robust_motor_policies.training.part1_fixed import (
     setup_task_model_pair as setup_task_model_pair_p1,
 )
-from rnns_learn_robust_motor_policies.train_setup_part2 import (
+from rnns_learn_robust_motor_policies.training.part2_context import (
     setup_task_model_pair as setup_task_model_pair_p2
 )
 from rnns_learn_robust_motor_policies.types import TrainStdDict
