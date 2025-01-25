@@ -1,0 +1,6 @@
+
+# Relative paths are relative to this YAML file
+db_dir: /tmp/rnns_learn_robust_motor_policies/db
+models_dir: /tmp/rnns_learn_robust_motor_policies/models
+figs_dir: /tmp/rnns_learn_robust_motor_policies/figures
+quarto_outputs: /tmp/rnns_learn_robust_motor_policies/quarto_outputs

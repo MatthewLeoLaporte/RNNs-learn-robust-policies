@@ -1,5 +1,0 @@
-paths:
-  # Relative paths will be taken with respect to this YAML file
-  db_dir: db
-  models_dir: models
-  figs_base_dir: figures

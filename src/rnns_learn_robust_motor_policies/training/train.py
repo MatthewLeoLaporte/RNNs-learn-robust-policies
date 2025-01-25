@@ -24,10 +24,9 @@ from feedbax.xabdeef.losses import simple_reach_loss
 from rnns_learn_robust_motor_policies.config import load_config, load_default_config
 from rnns_learn_robust_motor_policies.constants import get_iterations_to_save_model_parameters
 from rnns_learn_robust_motor_policies.database import ModelRecord, get_record, save_model_and_add_record
-from rnns_learn_robust_motor_policies.post_training import process_model_record
+from rnns_learn_robust_motor_policies.post_training import process_model_post_training
 from rnns_learn_robust_motor_policies.training.loss import get_readout_norm_loss
 from rnns_learn_robust_motor_policies.setup_utils import (
-    save_all_models,
     train_histories_hps_select, 
     update_hps_given_tree_path,
 )
@@ -46,19 +45,16 @@ from rnns_learn_robust_motor_policies.training.part2_context import (
 )
 
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-# Prevent alembic from polluting the console with routine migration logs
-logging.getLogger('alembic.runtime.migration').setLevel(logging.WARNING)
-
-
+LOG_STEP = 500
 # These are the different types of training run, i.e. respective to parts/phases of the study.
 EXPERIMENTS = {
     1: get_train_pairs_1, 
     2: get_train_pairs_2,   
 }
 
-LOG_STEP = 500
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 def train_setup(
@@ -224,7 +220,7 @@ def train_and_save_models(
             train_history_hyperparameters=train_histories_hps_select(hps),
         )
         if postprocess:
-            process_model_record(
+            process_model_post_training(
                 db_session,
                 model_record,
                 n_std_exclude,
@@ -243,7 +239,7 @@ def train_and_save_models(
         is_leaf=is_type(TaskModelPair),
     ))
     
-    return model_records
+    return trained_models, train_histories, model_records
     
 
 def concat_save_iterations(iterations: Array, n_batches_seq: Sequence[int]):
@@ -346,7 +342,7 @@ def skip_already_trained(
         if n_skip:
             logger.info(
                 f"Skipping training of {n_skip} models whose hyperparameters "
-                "match already-trained models in the database"
+                "match models already in the database"
             )
     
     return task_model_pairs

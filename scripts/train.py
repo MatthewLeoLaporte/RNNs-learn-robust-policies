@@ -43,7 +43,7 @@ if __name__ == '__main__':
     parser.add_argument("--untrained-only", action='store_false', help="Only train models which appear not to have been trained yet.")
     parser.add_argument("--postprocess", action='store_false', help="Postprocess each model after training.")
     parser.add_argument("--n-std-exclude", type=int, default=2, help="In postprocessing, exclude model replicates with n_std greater than this value.")
-    parser.add_argument("--save-figures", action='store_false', help="Save figures in postprocessing.")
+    parser.add_argument("--save-figures", action='store_true', help="Save figures in postprocessing.")
     args = parser.parse_args()
     
     version_info = log_version_info(

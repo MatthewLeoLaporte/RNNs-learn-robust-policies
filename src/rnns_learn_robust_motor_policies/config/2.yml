@@ -3,11 +3,9 @@ id: 2
 methods: ['bcs', 'pai-asf']
 
 disturbance:
-  stds: 
-    curl: [0, 0.5] #, 1.0, 1.5]
-    constant: [0.0, 0.01, 0.02, 0.03, 0.04, 0.08, 0.16, 0.32]  # [0, 0.01, 0.1, 1]
-
   type: curl
+  stds: [0, 0.5] #, 1.0, 1.5]
+    # constant: [0.0, 0.01, 0.02, 0.03, 0.04, 0.08, 0.16, 0.32]  # [0, 0.01, 0.1, 1]
 
 model:
   n_replicates: 5

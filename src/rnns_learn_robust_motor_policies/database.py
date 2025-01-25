@@ -228,12 +228,32 @@ def update_table_schema(engine, table_name: str, columns: Dict[str, Any]):
     Base.metadata.create_all(engine)  # Recreate tables with new schema
             
 
-def init_db(db_path: str = "sqlite:///models.db"):
+def init_db_session(db_path: str = "sqlite:///models.db"):
+    """Opens a session to an SQLite database.
+    
+    If the database/file does not exist, it will be created. 
+    
+    !!! dev
+        If any of the tables in the database contain columns which are not found in the
+        definition of their respective SQLAlchemy models (e.g. `ModelRecord` for the
+        models table), dynamically add those column(s) to the model class(es) upon
+        starting.
+        
+        During development I paired this with `update_table_schema` to automatically add 
+        columns to the tables, when previously unseen hyperparameters were passed by the user.
+        
+        At first I was mildly concerned that this would lead to some corruption or other 
+        problems due to (say) accidentally breaking the schema, but I have had no problems 
+        yet. 
+        
+        TODO: Still, the list of known columns is at this point pretty static for this project,
+        so I could explicitly add all of them to the model classes.
+    """
     engine = create_engine(db_path)
     Base.metadata.create_all(engine)
     
+    # Dynamically add missing columns to the table record classes
     inspector = inspect(engine)
-    
     for table_name in inspector.get_table_names():
         existing_columns = inspector.get_columns(table_name)
         
@@ -255,12 +275,11 @@ def init_db(db_path: str = "sqlite:///models.db"):
     return sessionmaker(bind=engine)()
 
 
-def get_db_session(key: str = "main"):
-    """Create a database session for the project database with the given key."""
-    return init_db(f"sqlite:///{DB_DIR}/{key}.db")
+def get_db_session(name: str = "main"):
+    """Create a database session for the project database with the given name."""
+    return init_db_session(f"sqlite:///{DB_DIR}/{name}.db")
     
-
-
+    
 def hash_file(path: Path) -> str:
     """Generate MD5 hash of file."""
     md5 = hashlib.md5()

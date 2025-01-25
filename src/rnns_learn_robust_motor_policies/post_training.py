@@ -507,7 +507,7 @@ def compute_replicate_info(
     return replicate_info, best_models
     
 
-def process_model_record(
+def process_model_post_training(
     session: Session,
     model_record: ModelRecord,
     n_std_exclude: float,
@@ -521,14 +521,12 @@ def process_model_record(
         return
     
     origin = str(model_record.origin)
-    # TODO: Either ignore the typing here, or make these columns explicit in `ModelRecord`
     where_train = jt.map(
         attr_str_tree_to_where_func,
         model_record.where_train_strs,
         is_leaf=is_type(list),
     )
     # where_train = attr_str_tree_to_where_func(tuple(set(jt.leaves(model_record.where_train_strs))))
-    disturbance_type = str(model_record.disturbance_type)
     n_replicates = int(model_record.n_replicates)       
     save_model_parameters = jnp.array(model_record.save_model_parameters)
     
@@ -626,7 +624,7 @@ def main(
         task = progress.add_task("Processing...", total=len(model_records))
         for model_record in model_records:
             try:
-                process_model_record(
+                process_model_post_training(
                     session,
                     model_record,
                     n_std_exclude,

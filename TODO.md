@@ -5,21 +5,21 @@ updated: 2024-11-13T10:32
 **See [[results-2|Part 2 results]] for ongoing analysis TODOs.
 
 - [ ] **Try training a significantly larger network in part 2 and see if the context 0 curves overlap**
-- [x] Save each model (ensemble) after training it; don’t wait until the end of the script
-- [x] Postprocess each model immediately after training
-- [x] Organize src into subpackages
-- [x] **Modify `train_and_save_models` so that we only train the models that haven’t already been trained (i.e. not already in db)**. I think we can just do a model-wise check to perform an equinox partition, since the training loop uses `jt.map` which skips `None` leaves
-- [x] **Move `train_and_save_models` to `train_utils`**
-- [x] maybe rename `train_utils` to `train`
-- [x] **Eliminate `custom_hps_given_path**
+- [ ] Docstrings in part1_fixed
 
-- [ ] Stop using `tmp` in figures dir
-- [x] Refactor `train_pair` so it isn’t defined twice, in both training notebooks 1 and 2
-- [ ] I’m not sure changing the `noise_stds` should be the responsibility of `query_and_load_model`. Otoh, `query_and_load_model` is only used in the scope of this project afaik…
-
-### Organization
-
+- [ ] Use rich progress bar for CLI?
+- [ ] Convert notebooks for part 1
+- [ ] Batch script for part 1
 - [ ] Clean up `setup_utils.py`
+- [x] Maybe don’t get `REPO_ROOT` in `__init__.py`
+	- Alternative 1
+		- the user passes the default config directory when calling the relevant scripts
+	- 2
+		- the user *optionally* passes the default config dir, and if not, it defaults 
+- Either: 
+	- [ ] Loop over disturbance type (as well as std) in training, and list both disturbance types in the config YAML; or
+	- [x] Only define default disturbance_stds for a single disturbance type, in the training config YAML; different disturbance types and stds are passing in by the user, or a batch script
+	- **I think I prefer the second one**
 
 ## Efficiency
 
@@ -287,7 +287,8 @@ It might also make sense to automatically save evaluated states to disk, and to 
 
 - [ ] Write a `tree_stack` that works with models – can’t just use `apply_to_filtered_leaves` since the shape of the output is changed wrt the input 
 - [ ] Try vmapping over `schedule_intervenor`, to get batch dimensions in models and tasks. Batched tasks seems like a missing link to making some of the analyses easier to write.
-
+- [ ] Stop using `tmp` in figures dir
+- [ ] I’m not sure changing the `noise_stds` should be the responsibility of `query_and_load_model`. Otoh, `query_and_load_model` is only used in the scope of this project afaik…
 ### Equinox warning
 
 This appears to be related to `train_step` inside of `eqx.filter_value_and_grad` in `feedbax.train`. I tried replacing all the nearby jax.vmap calls with `filter_vmap` but the warning remains

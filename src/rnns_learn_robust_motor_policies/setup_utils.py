@@ -13,7 +13,6 @@ from ipywidgets import HTML
 from IPython.display import display
 import jax.numpy as jnp
 import jax.tree as jt
-import jax.tree_util as jtu
 from jaxtyping import PRNGKeyArray
 
 from feedbax import (
@@ -45,7 +44,6 @@ from rnns_learn_robust_motor_policies.constants import (
 )
 from rnns_learn_robust_motor_policies.database import (
     get_model_record,
-    save_model_and_add_record,
 )
 from rnns_learn_robust_motor_policies.training.loss import get_readout_norm_loss
 from rnns_learn_robust_motor_policies.misc import (
@@ -53,7 +51,6 @@ from rnns_learn_robust_motor_policies.misc import (
 )
 from rnns_learn_robust_motor_policies.tree_utils import (
     dictmerge, 
-    index_multi,
     map_kwargs_to_dict,
     subdict,
 )
@@ -96,9 +93,7 @@ def get_train_pairs_by_disturbance_std(
 ) -> TrainStdDict:
     if model_hps_update is None:
         model_hps_update = dict()
-    
-    disturbance_stds = disturbance['stds'][disturbance['type']]
-    
+
     task_model_pairs = TrainStdDict(map_kwargs_to_dict(
         partial(
             setup_task_model_pair, 
@@ -106,8 +101,9 @@ def get_train_pairs_by_disturbance_std(
             key=key,
         ),
         'disturbance_std',
-        disturbance_stds,  
+        disturbance['stds'],  
     ))
+    
     return task_model_pairs
 
 
@@ -178,9 +174,9 @@ def train_histories_hps_select(hps: dict) -> dict:
         ]),
         subdict(hps['model'], [
             "n_replicates",
-            "disturbance_type",
-            "feedback_delay_steps",
-            "feedback_noise_std",
+            # "disturbance_type",
+            # "feedback_delay_steps",
+            # "feedback_noise_std",
         ]),
     )
 
@@ -417,7 +413,7 @@ def setup_replicate_info(models, n_replicates, *, key):
 
     
 def query_and_load_model(
-    db_session,
+    db_session,  # TODO: Type?
     setup_task_model_pair: Callable,
     params_query: dict[str, Any],
     noise_stds: Optional[dict[Literal['feedback', 'motor'], Optional[float]]] = None,
@@ -425,7 +421,7 @@ def query_and_load_model(
     exclude_underperformers_by: Optional[str] = None,
     exclude_method: Literal['nan', 'remove', 'best-only'] = 'nan',
 ):
-    """Query the models table in the project database and return the loaded and processed models.
+    """Query the models table in the project database and return the loaded and processed model( replicates).
     
     Arguments:
         db_session: The SQLAlchemy database session
@@ -557,41 +553,3 @@ def update_hps_given_tree_path(hps: dict, path: tuple, types: Sequence) -> dict:
     return hps
         
 
-# TODO: Probably move this to `train.py`; when else do we save models like this?
-def save_all_models(
-    db_session,
-    origin: str,
-    models: PyTree[eqx.Module, 'T'], 
-    hps: PyTree[dict, 'T'], 
-    train_histories: Optional[PyTree[TaskTrainerHistory, 'T']] = None,
-    **kwargs,
-):
-    """Saves a PyTree of models to disk, and the models table of the database.
-    
-    Optionally also stores all the training histories of the models.
-    """
-    model_records_flat = []
-    
-    path_vals, treedef = jtu.tree_flatten_with_path(models, is_leaf=is_module)
-    
-    for path, model in path_vals:
-        idxs = [p.key for p in path]
-        
-        hps_i = index_multi(hps, *idxs)
-        
-        model_record = save_model_and_add_record(
-            db_session,
-            origin=origin,
-            model=model,
-            model_hyperparameters=hps_i['model'],
-            other_hyperparameters=hps_i['train'],
-            # Assume all the pytree levels are dicts
-            train_history=index_multi(train_histories, *idxs),
-            train_history_hyperparameters=train_histories_hps_select(hps_i),
-            **kwargs,
-        )
-        
-        model_records_flat.append(model_record)
-    
-    model_records = jt.unflatten(treedef, model_records_flat)
-    return model_records

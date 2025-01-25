@@ -117,7 +117,7 @@ def disturbance(disturbance_type, field_std, method):
 
 
 def setup_task_model_pair(
-    training_method: Optional[TrainingMethodLabel] = None, 
+    train_method: Optional[TrainingMethodLabel] = None, 
     *,
     n_replicates,
     dt,
@@ -164,11 +164,11 @@ def setup_task_model_pair(
         key=key,
     )
     
-    if training_method is not None:
+    if train_method is not None:
         task = eqx.tree_at(
             lambda task: task.input_dependencies,
             task_base,
-            dict(context=TrialSpecDependency(CONTEXT_INPUT_FUNCS[training_method]))
+            dict(context=TrialSpecDependency(CONTEXT_INPUT_FUNCS[train_method]))
         )
     else:
         #? In what context do we end up here?
@@ -181,7 +181,7 @@ def setup_task_model_pair(
             disturbance_type,
             disturbance_std, 
             # p_perturbed,
-            training_method,
+            train_method,
         ),
         label=INTERVENOR_LABEL,
         default_active=False,
@@ -199,6 +199,6 @@ def get_train_pairs(hps, key):
     )
     
     return TrainingMethodDict({
-        method_label: get_train_pairs_partial(dict(training_method=method_label))
+        method_label: get_train_pairs_partial(dict(train_method=method_label))
         for method_label in hps['methods']
     })
