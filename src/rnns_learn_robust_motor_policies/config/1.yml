@@ -2,7 +2,7 @@ id: 1
 
 disturbance:
   types: [curl, constant]
-  stds: [0, 0.5, 1.0, 1.5]
+  stds: [0, 0.5, 1.0, 1.5]  # TODO: Rename to just `std`, assuming this key isn't special re: pytrees
     # constant: [0, 0.01, 0.1, 1]
 
 model:

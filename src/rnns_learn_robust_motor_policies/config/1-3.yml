@@ -1,0 +1,34 @@
+id: 3
+
+#  Hyperparameters that uniquely identify the model(s)/training run(s) to analyze
+load:  
+  id: 1
+
+  disturbance:  # during training
+    type: curl
+    stds: [0.0, 0.5, 1.0]  # list -> load multiple models
+    
+  model:  # 
+    hidden_size: 50
+    feedback_noise_std: 0.01
+    motor_noise_std: 0.01
+    feedback_delay_steps: 0
+    where_train_strs: 
+      0: ['step.net.hidden', 'step.net.readout']
+  
+eval: 
+  n: 50
+  grid_n: 10
+
+disturbance:
+  # null -> same as during training, e.g. load.disturbance.type in this case
+  type: null 
+  amplitude: [0, 0.5, 1.0, 2.0, 4.0] 
+
+model:
+  n_steps: 200
+  feedback_noise_std: null
+  motor_noise_std: null
+  
+  
+  

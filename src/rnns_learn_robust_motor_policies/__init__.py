@@ -9,8 +9,8 @@ from rnns_learn_robust_motor_policies.config import load_named_config
 from rnns_learn_robust_motor_policies.misc import load_yaml
 # from rnns_learn_robust_motor_policies.training import train_and_save_models
 
-PROJECT_SEED = 5566
-
+prng_config = load_named_config('prng')
+PROJECT_SEED: int = prng_config['seed']
 
 # Directory configuration
 paths = load_named_config('paths')
@@ -25,7 +25,7 @@ for d in (DB_DIR, MODELS_DIR, FIGS_BASE_DIR, QUARTO_OUT_DIR):
 
 # Labels for constructing and parsing file names
 MODEL_FILE_LABEL = "trained_models"
-BEST_MODEL_FILE_LABEL = f"{MODEL_FILE_LABEL}_best_params"
+BEST_MODEL_FILE_LABEL = f"{MODEL_FILE_LABEL}__best_params"
 HYPERPARAMS_FILE_LABEL = "hyperparameters"
 REPLICATE_INFO_FILE_LABEL = "replicate_info"
 TRAIN_HISTORY_FILE_LABEL = "train_history"

@@ -3,7 +3,8 @@ from copy import deepcopy
 from functools import partial
 import logging
 from pathlib import Path
-from typing import Optional
+from types import SimpleNamespace
+from typing import Any, Optional, TypeAlias
 
 import equinox as eqx
 import jax.numpy as jnp
@@ -31,7 +32,8 @@ from rnns_learn_robust_motor_policies.setup_utils import (
     update_hps_given_tree_path,
 )
 from rnns_learn_robust_motor_policies.tree_utils import (
-    deep_update, 
+    deep_update,
+    dict_to_namespace, 
     pp,
     tree_level_types, 
 )
@@ -146,6 +148,7 @@ def train_and_save_models(
     postprocess: bool = True,
     n_std_exclude: int = 2,  # re: postprocessing
     save_figures: bool = True,  # re: postprocessing
+    version_info: Optional[dict[str, str]] = None,
 ):
     """Given a path to a YAML config, execute the respective training run.
     
@@ -154,10 +157,10 @@ def train_and_save_models(
     """
     key_init, key_train, key_eval = jr.split(key, 3)
     
-    hps_common = load_hps(config_path)
+    hps_common: SimpleNamespace = load_hps(config_path)
     
     # User specifies which variant to run using the `id` key
-    get_train_pairs = EXPERIMENTS[hps_common['id']]
+    get_train_pairs = EXPERIMENTS[hps_common.train_id]
     
     task_model_pairs = get_train_pairs(hps_common, key_init)
     
@@ -212,12 +215,13 @@ def train_and_save_models(
         )
         model_record = save_model_and_add_record(
             db_session,
-            origin=hps['id'],
+            origin=hps['train_id'],
             model=trained_model,
             model_hyperparameters=hps['model'],
             other_hyperparameters=hps['train'],
             train_history=train_history,
             train_history_hyperparameters=train_histories_hps_select(hps),
+            version_info=version_info,
         )
         if postprocess:
             process_model_post_training(
@@ -270,14 +274,16 @@ def process_hps(hps: dict):
     return hps
     
 
-def load_hps(config_path: str | Path) -> dict:
+def load_hps(config_path: str | Path) -> SimpleNamespace:
     """Given a path to a YAML hyperparameters file, load and prepare them prior to training."""
-    config = load_config(config_path)
+    config = load_config(str(config_path))
     # Load the defaults and update with the user-specified config
-    default_config = load_default_config(config['id'])
+    default_config = load_default_config(config['train_id'])
     config = deep_update(default_config, config)
-    # Make corrections and add in any derived values.
-    hps = process_hps(config)  
+    # 1) Make corrections and add in any derived values;
+    # 2) Convert to a (nested) SimpleNamespace instead of a dict,
+    #    so we can refer to keys as attributes
+    hps = dict_to_namespace(process_hps(config))
     return hps
 
 
@@ -288,7 +294,6 @@ def fill_out_hps(hps_common: dict, task_model_pairs: PyTree[TaskModelPair, 'T'])
     This works because `task_model_pairs` is a tree of dicts, where each level of the tree is a different 
     dict subtype, and where the keys are the values of hyperparameters. Each dict subtype has a fixed 
     mapping to a particular 
-    
     """
     level_types = tree_level_types(task_model_pairs)
     return jt.map(
@@ -322,7 +327,7 @@ def skip_already_trained(
         lambda _, hps: does_model_record_exist(
             db_session, 
             hps['model'] | hps['train'] | dict(
-                origin=hps['id'],
+                origin=hps['train_id'],
                 is_path_defunct=False,
             ),
         ),   

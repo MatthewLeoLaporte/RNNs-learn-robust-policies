@@ -2,7 +2,6 @@ import argparse
 from collections.abc import Callable
 from functools import partial
 import logging
-from pathlib import Path
 from typing import Any, Sequence
 import jax
 import numpy as np
@@ -12,9 +11,7 @@ import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
-from jaxtyping import Array, Int, PyTree, Shaped
-import pandas as pd
-import plotly.express as px
+from jaxtyping import Array, Int, PyTree
 import plotly.graph_objects as go
 from rich.progress import Progress
 from rich.logging import RichHandler
@@ -29,18 +26,16 @@ from feedbax import (
 )
 from feedbax.misc import attr_str_tree_to_where_func
 import feedbax.plotly as fbp 
-from feedbax.train import TaskTrainerHistory, WhereFunc, _get_trainable_params_superset
+from feedbax.train import TaskTrainerHistory, WhereFunc
 from feedbax._tree import filter_spec_leaves, tree_labels
 
 from rnns_learn_robust_motor_policies.database import (
-    Base,
     ModelRecord, 
     MODEL_RECORD_BASE_ATTRS,
     add_evaluation,
     add_evaluation_figure,
     get_db_session, 
     query_model_records,
-    record_to_dict,
     save_model_and_add_record,
 )
 from rnns_learn_robust_motor_policies.misc import log_version_info
@@ -48,19 +43,13 @@ from rnns_learn_robust_motor_policies.setup_utils import (
     setup_train_histories,
     setup_models_only,
     setup_tasks_only,
-    setup_replicate_info,
 )
 from rnns_learn_robust_motor_policies.analysis.state_utils import (
     get_aligned_vars,
     get_pos_endpoints,
     vmap_eval_ensemble,
 )
-from rnns_learn_robust_motor_policies.training.part1_fixed import (
-    setup_task_model_pair as setup_task_model_pair_p1,
-)
-from rnns_learn_robust_motor_policies.training.part2_context import (
-    setup_task_model_pair as setup_task_model_pair_p2
-)
+from rnns_learn_robust_motor_policies.training import TRAINPAIR_SETUP_FUNCS
 from rnns_learn_robust_motor_policies.types import TrainStdDict
 
 
@@ -70,13 +59,6 @@ logging.basicConfig(
     handlers=[RichHandler(level="NOTSET")],
 )
 logger = logging.getLogger(__name__)
-
-
-# The setup/deserialisation depends on where/how the model was trained
-SETUP_FUNCS = {
-    1: setup_task_model_pair_p1,
-    2: setup_task_model_pair_p2,
-}
 
 
 # Number of trials to evaluate when deciding which replicates to exclude
@@ -94,7 +76,7 @@ def load_data(model_record: ModelRecord):
     
     models, model_hyperparameters = load_with_hyperparameters(
         model_record.path, 
-        partial(setup_models_only, SETUP_FUNCS[int(origin)]),
+        partial(setup_models_only, TRAINPAIR_SETUP_FUNCS[int(origin)]),
     )
     logger.debug(f"Loaded model hyperparameters: {model_hyperparameters}")
     
@@ -253,7 +235,9 @@ def get_best_models(
 
 
 # TODO
-#! This no longer works because the model records are 
+#! This no longer works because the model records are kept and post-processed individually.
+#! It probably makes sense to move this to an analysis script since it involves loading 
+#! a spread of training conditions (e.g. disturbance_std, as here)
 # def get_replicate_distribution_figure(
 #     measure: TrainStdDict[float, Shaped[Array, 'replicates']], 
 #     yaxis_title="",
@@ -539,7 +523,7 @@ def process_model_post_training(
     
     # Get respective validation tasks for each model
     tasks = setup_tasks_only(
-        SETUP_FUNCS[int(origin)], 
+        TRAINPAIR_SETUP_FUNCS[int(origin)], 
         key=jr.PRNGKey(0), 
         **model_hyperparams,
     )

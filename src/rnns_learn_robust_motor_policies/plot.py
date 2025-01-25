@@ -256,8 +256,6 @@ def get_violins(
     
     return fig
 
-
-
 # TODO
 # TODO: annotate types
 # TODO

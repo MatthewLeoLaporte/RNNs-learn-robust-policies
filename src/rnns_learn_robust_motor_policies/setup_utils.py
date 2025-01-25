@@ -108,6 +108,8 @@ def get_train_pairs_by_disturbance_std(
 
 
 def setup_train_histories(
+        attr_str_tree_to_where_func, 
+        where_train_strs,
     models_tree,
     *,
     n_batches,
@@ -131,8 +133,6 @@ def setup_train_histories(
     """   
     # Assume that where funcs may be lists (normally defined as tuples, but retrieved through sqlite JSON)
     where_train = jt.map(
-        attr_str_tree_to_where_func, 
-        where_train_strs,
         is_leaf=is_type(list),
     )
     
@@ -308,7 +308,7 @@ def filename_join(strs, joinwith="__"):
 
 def set_model_noise(
     model, 
-    noise_stds: dict[Literal['feedback', 'motor'], Optional[float]], 
+    noise_stds: dict[Literal['feedback', 'motor'] | str, Optional[float]], 
     enable_noise: bool = True,
 ):
     """Change the system noise strength of a model."""
@@ -416,7 +416,7 @@ def query_and_load_model(
     db_session,  # TODO: Type?
     setup_task_model_pair: Callable,
     params_query: dict[str, Any],
-    noise_stds: Optional[dict[Literal['feedback', 'motor'], Optional[float]]] = None,
+    noise_stds: Optional[dict[Literal['feedback', 'motor'] | str, Optional[float]]] = None,
     tree_inclusions: Optional[dict[type, Optional[Any | Sequence | Callable]]] = None,
     exclude_underperformers_by: Optional[str] = None,
     exclude_method: Literal['nan', 'remove', 'best-only'] = 'nan',

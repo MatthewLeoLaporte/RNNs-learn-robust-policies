@@ -1,10 +1,8 @@
+#!/usr/bin/env python
 """From the command line, train some models by loading a config and passing to `train_and_save_models`.
 
 Takes a single positional argument: the path to the YAML config.
 """
-
-#!/usr/bin/env python
-# coding: utf-8
 
 import os
 
@@ -23,13 +21,9 @@ import feedbax
 import rnns_learn_robust_motor_policies
 from rnns_learn_robust_motor_policies import PROJECT_SEED
 
-from rnns_learn_robust_motor_policies.database import (
-    get_db_session,
-)
+from rnns_learn_robust_motor_policies.database import get_db_session
 from rnns_learn_robust_motor_policies.misc import log_version_info
-from rnns_learn_robust_motor_policies.training import (
-    train_and_save_models,
-)
+from rnns_learn_robust_motor_policies.training import train_and_save_models
 
 
 # TODO: Figure out why the warning from this module appears.
@@ -62,4 +56,5 @@ if __name__ == '__main__':
         postprocess=args.postprocess,
         n_std_exclude=args.n_std_exclude,
         save_figures=args.save_figures,
+        version_info=version_info,
     )

@@ -11,6 +11,8 @@ updated: 2024-11-13T10:32
 - [ ] Convert notebooks for part 1
 - [ ] Batch script for part 1
 - [ ] Clean up `setup_utils.py`
+- [x] Pass version info through the call to `train_and_save_models` and to the `ModelRecord` instantiation, in the `train` script.
+- [x] Move `PROJECT_SEED` value into key `seed` in `config/prng.yml`.
 - [x] Maybe don’t get `REPO_ROOT` in `__init__.py`
 	- Alternative 1
 		- the user passes the default config directory when calling the relevant scripts
@@ -285,6 +287,7 @@ It might also make sense to automatically save evaluated states to disk, and to 
 - [ ] **Fix `add_endpoint_traces`**. Or was that feature part of the new trajectory plotter? If the latter, update notebooks 1-1 and 1-2 to use the feature
 ## Debris
 
+- [ ] Separate train and eval seeds in `prng.yml` 
 - [ ] Write a `tree_stack` that works with models – can’t just use `apply_to_filtered_leaves` since the shape of the output is changed wrt the input 
 - [ ] Try vmapping over `schedule_intervenor`, to get batch dimensions in models and tasks. Batched tasks seems like a missing link to making some of the analyses easier to write.
 - [ ] Stop using `tmp` in figures dir

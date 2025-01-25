@@ -1,10 +1,11 @@
 from collections.abc import Callable
+from types import SimpleNamespace
 from typing import Any, TypeVar, Sequence
 
 import equinox as eqx
 import jax as jax 
 import jax.tree as jt
-from jaxtyping import Array, PyTree
+from jaxtyping import Array, ArrayLike, PyTree
 import plotly.graph_objects as go
 
 from feedbax import is_module, tree_take, tree_key_tuples
@@ -13,6 +14,25 @@ from feedbax.intervene import AbstractIntervenor
 
 
 T = TypeVar("T")
+
+
+def dict_to_namespace(d: dict) -> SimpleNamespace:
+    """Convert a nested dictionary to a nested SimpleNamespace."""
+    return _convert_value(d)
+
+
+def _convert_value(value: Any) -> Any:
+    """Recursively convert dictionary values to SimpleNamespace."""
+    if isinstance(value, dict):
+        return SimpleNamespace(**{
+            k: _convert_value(v)
+            for k, v in value.items()
+        })
+    elif isinstance(value, ArrayLike) or isinstance(value, str):
+        pass
+    elif isinstance(value, PyTree):
+        return jt.map(_convert_value, value, is_leaf=is_type(dict))
+    return value
 
 
 def swap_model_trainables(model: PyTree[..., "T"], trained: PyTree[..., "T"], where_train: Callable):

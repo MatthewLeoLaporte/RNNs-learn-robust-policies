@@ -21,7 +21,7 @@ def get_user_config_dir():
         return Path(env_config_dir).expanduser() 
 
 
-def load_config(path: Path):
+def load_config(path: str):
     with open(path) as f:
         return yaml.safe_load(f)
 

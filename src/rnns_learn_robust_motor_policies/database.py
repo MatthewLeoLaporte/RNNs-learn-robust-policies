@@ -820,8 +820,6 @@ def archive_orphaned_records(session: Session) -> None:
         logger.error(f"Error archiving orphaned records: {e}")
         raise
 
-
-
 RecordDict = make_named_dict_subclass("RecordDict")
 ColumnTuple = make_named_tuple_subclass("ColumnTuple")
 

@@ -140,8 +140,6 @@ def setup_model_parameter_histories(
     
     return model_parameter_histories
 
-
-
 def get_train_pairs(hps, key):
     """Given hyperparams and a particular task-model pair setup function, return the PyTree of task-model pairs.
     
