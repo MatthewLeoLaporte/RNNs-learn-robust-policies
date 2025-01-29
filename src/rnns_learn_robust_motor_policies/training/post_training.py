@@ -19,9 +19,9 @@ from rich.logging import RichHandler
 from feedbax import (
     is_module, 
     is_type,
-    load_with_hyperparameters, 
     tree_stack, 
     tree_take_multi,
+    load_with_hyperparameters,
     tree_unzip,
 )
 from feedbax.misc import attr_str_tree_to_where_func
@@ -34,9 +34,10 @@ from rnns_learn_robust_motor_policies.database import (
     MODEL_RECORD_BASE_ATTRS,
     add_evaluation,
     add_evaluation_figure,
-    get_db_session, 
+    get_db_session,
     query_model_records,
     save_model_and_add_record,
+    load_tree_with_hps,
 )
 from rnns_learn_robust_motor_policies.misc import log_version_info
 from rnns_learn_robust_motor_policies.setup_utils import (
@@ -49,9 +50,14 @@ from rnns_learn_robust_motor_policies.analysis.state_utils import (
     get_pos_endpoints,
     vmap_eval_ensemble,
 )
-from rnns_learn_robust_motor_policies.training import TRAINPAIR_SETUP_FUNCS
 from rnns_learn_robust_motor_policies.types import TrainStdDict
 
+from rnns_learn_robust_motor_policies.training.part1_fixed import (
+    setup_task_model_pair as setup_task_model_pair_p1,
+)
+from rnns_learn_robust_motor_policies.training.part2_context import (
+    setup_task_model_pair as setup_task_model_pair_p2
+)
 
 logging.basicConfig(
     format='(%(name)-20s) %(message)s', 
@@ -61,6 +67,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+# Deserialisation depends on where/how the model was trained.
+# Define these here because they are only really used here, even though
+# philosophically they better might be in `training/__init__.py`
+TRAINPAIR_SETUP_FUNCS = {
+    1: setup_task_model_pair_p1,
+    2: setup_task_model_pair_p2,
+}
+
+
 # Number of trials to evaluate when deciding which replicates to exclude
 N_TRIALS_VAL = 5
 
@@ -68,29 +83,29 @@ N_TRIALS_VAL = 5
 def load_data(model_record: ModelRecord):
     """Loads models, hyperparameters and training histories from files."""
     # Load model and associated data
-    origin = str(model_record.origin)
+    expt_id = str(model_record.expt_id)
     
     if not model_record.path.exists() or not model_record.train_history_path.exists():
         logger.error(f"Model or training history file not found for {model_record.hash}")
         return
     
-    models, model_hyperparameters = load_with_hyperparameters(
+    models, hps = load_tree_with_hps(
         model_record.path, 
-        partial(setup_models_only, TRAINPAIR_SETUP_FUNCS[int(origin)]),
+        partial(setup_models_only, TRAINPAIR_SETUP_FUNCS[int(expt_id)]),
     )
-    logger.debug(f"Loaded model hyperparameters: {model_hyperparameters}")
+    logger.debug(f"Loaded models")
     
-    train_histories, train_history_hyperparameters = load_with_hyperparameters(
+    train_histories, train_history_hps = load_tree_with_hps(
         model_record.train_history_path,
         partial(setup_train_histories, models),
     )
-    logger.debug(f"Loaded train history hyperparameters: {train_history_hyperparameters}")
+    logger.debug(f"Loaded train histories")
     
     return (
         models, 
-        model_hyperparameters, 
+        hps, 
         train_histories, 
-        train_history_hyperparameters,
+        train_history_hps,
     )
 
 
@@ -190,7 +205,7 @@ def get_best_models(
     if isinstance(where_train, dict):
         where_train_idxs = _get_most_recent_idxs(
             [int(k) for k in where_train.keys()],
-            model_record.n_batches,        
+            model_record.train_n_batches,        
         )
         get_where_train = lambda idx: where_train[str(where_train_idxs[idx])]
     else:
@@ -504,28 +519,33 @@ def process_model_post_training(
         logger.info(f"Model {model_record.hash} has been processed previously and process_all is false; skipping")
         return
     
-    origin = str(model_record.origin)
+    expt_id = str(model_record.expt_id)
     where_train = jt.map(
         attr_str_tree_to_where_func,
-        model_record.where_train_strs,
+        model_record.train_where,
         is_leaf=is_type(list),
     )
-    # where_train = attr_str_tree_to_where_func(tuple(set(jt.leaves(model_record.where_train_strs))))
+    # where_train = attr_str_tree_to_where_func(tuple(set(jt.leaves(model_record.train_where))))
     n_replicates = int(model_record.n_replicates)       
-    save_model_parameters = jnp.array(model_record.save_model_parameters)
+    save_model_parameters = jnp.array(model_record.train_save_model_parameters)
     
     all_data = load_data(model_record)
     
     if all_data is None:
         return
     else:
-        models, model_hyperparams, train_histories, train_history_hyperparams = all_data
+        (
+            models, 
+            hps, 
+            train_histories, 
+            train_history_hyperparams,
+        ) = all_data
     
     # Get respective validation tasks for each model
     tasks = setup_tasks_only(
-        TRAINPAIR_SETUP_FUNCS[int(origin)], 
+        TRAINPAIR_SETUP_FUNCS[int(expt_id)], 
+        hps,
         key=jr.PRNGKey(0), 
-        **model_hyperparams,
     )
     
     # Compute replicate info``
@@ -550,14 +570,10 @@ def process_model_post_training(
         
         new_record = save_model_and_add_record(
             session,
-            str(model_record.origin),
             best_models,
-            model_hyperparams,
-            record_hyperparameters | dict(n_std_exclude=n_std_exclude),
+            hps | dict(n_std_exclude=n_std_exclude),
             train_history=train_histories,
-            train_history_hyperparameters=train_history_hyperparams,
             replicate_info=replicate_info,
-            replicate_info_hyperparameters=dict(n_replicates=n_replicates),
             version_info=log_version_info(jax, eqx),
         )
         
@@ -575,7 +591,7 @@ def process_model_post_training(
             n_evals=N_TRIALS_VAL,
             # n_std_exclude=n_std_exclude,  # Not relevant to the figures that are generated?
         ),
-        origin="post_training",
+        expt_id="post_training",
     )
     
     if save_figures:

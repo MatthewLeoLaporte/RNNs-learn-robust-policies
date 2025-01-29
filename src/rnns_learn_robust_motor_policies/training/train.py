@@ -3,7 +3,6 @@ from copy import deepcopy
 from functools import partial
 import logging
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Optional, TypeAlias
 
 import equinox as eqx
@@ -14,7 +13,12 @@ from jaxtyping import Array, PRNGKeyArray, PyTree
 import numpy as np
 import optax
 
-from feedbax import tree_concatenate, tree_unzip, tree_map_tqdm, is_type, tree_key_tuples
+from feedbax import (
+    tree_concatenate, 
+    tree_unzip, 
+    tree_map_tqdm, 
+    is_type,
+)
 from feedbax._io import arrays_to_lists
 from feedbax.loss import AbstractLoss
 from feedbax.misc import attr_str_tree_to_where_func
@@ -22,20 +26,16 @@ from feedbax.task import AbstractTask
 from feedbax.train import TaskTrainer
 from feedbax.xabdeef.losses import simple_reach_loss
 
-from rnns_learn_robust_motor_policies.config import load_config, load_default_config
-from rnns_learn_robust_motor_policies.constants import get_iterations_to_save_model_parameters
 from rnns_learn_robust_motor_policies.database import ModelRecord, get_record, save_model_and_add_record
-from rnns_learn_robust_motor_policies.post_training import process_model_post_training
-from rnns_learn_robust_motor_policies.training.loss import get_readout_norm_loss
-from rnns_learn_robust_motor_policies.setup_utils import (
-    train_histories_hps_select, 
-    update_hps_given_tree_path,
+from rnns_learn_robust_motor_policies.hyperparams import (
+    TreeNamespace, 
+    load_hps,
+    namespace_to_dict, 
+    promote_model_hps, 
+    fill_out_hps,
 )
 from rnns_learn_robust_motor_policies.tree_utils import (
-    deep_update,
-    dict_to_namespace, 
-    pp,
-    tree_level_types, 
+    pp, 
 )
 from rnns_learn_robust_motor_policies.types import TaskModelPair
 
@@ -46,13 +46,18 @@ from rnns_learn_robust_motor_policies.training.part2_context import (
     get_train_pairs as get_train_pairs_2,
 )
 
+from .loss import get_readout_norm_loss
+from .post_training import process_model_post_training
 
-LOG_STEP = 500
+
 # These are the different types of training run, i.e. respective to parts/phases of the study.
 EXPERIMENTS = {
     1: get_train_pairs_1, 
     2: get_train_pairs_2,   
 }
+
+# TODO: Move to config
+LOG_STEP = 500
 
 
 logger = logging.getLogger(__name__)
@@ -60,19 +65,19 @@ logger.setLevel(logging.DEBUG)
 
 
 def train_setup(
-    train_hps: dict,
+    train_hps: TreeNamespace,
 ) -> tuple[TaskTrainer, AbstractLoss]:
     """Given the training hyperparameters, return a trainer object and loss function."""
     optimizer_class = partial(
         optax.adamw,
-        weight_decay=train_hps['weight_decay'],
+        weight_decay=train_hps.weight_decay,
     ) 
 
     schedule = make_delayed_cosine_schedule(
-        train_hps['learning_rate_0'], 
-        train_hps['constant_lr_iterations'], 
-        train_hps['n_batches_baseline'] + train_hps['n_batches_condition'], 
-        train_hps['cosine_annealing_alpha'],
+        train_hps.learning_rate_0, 
+        train_hps.constant_lr_iterations, 
+        train_hps.n_batches_baseline + train_hps.n_batches_condition, 
+        train_hps.cosine_annealing_alpha,
     ) 
 
     trainer = TaskTrainer(
@@ -84,10 +89,13 @@ def train_setup(
     
     loss_func = simple_reach_loss()
     
-    if all(k in train_hps for k in ('readout_norm_loss_weight', 'readout_norm_value')):
+    if all(
+        getattr(train_hps , k, None) is not None
+        for k in ('readout_norm_loss_weight', 'readout_norm_value')
+    ):
         readout_norm_loss = (
-            train_hps['readout_norm_loss_weight'] 
-            * get_readout_norm_loss(train_hps['readout_norm_value'])
+            train_hps.readout_norm_loss_weight 
+            * get_readout_norm_loss(train_hps.readout_norm_value)
         )
         loss_func = loss_func + readout_norm_loss
     
@@ -140,6 +148,19 @@ def train_pair(
     return trained, train_history_all
 
 
+def where_strs_to_funcs(where_strs: Sequence[str] | dict[int, Sequence[str]]):
+    if isinstance(where_strs, dict):
+        return {
+            i: attr_str_tree_to_where_func(strs) 
+            # TODO: Let the user pass a single sequence, instead of a dict of them
+            for i, strs in where_strs.items()
+        }
+    elif isinstance(where_strs, Sequence):
+        return attr_str_tree_to_where_func(where_strs)
+    else:
+        raise ValueError("`where_strs` must be a sequence or dict of sequences")
+
+
 def train_and_save_models(
     db_session,
     config_path: str | Path, 
@@ -157,17 +178,17 @@ def train_and_save_models(
     """
     key_init, key_train, key_eval = jr.split(key, 3)
     
-    hps_common: SimpleNamespace = load_hps(config_path)
-    
+    hps_common: TreeNamespace = load_hps(config_path)
+
     # User specifies which variant to run using the `id` key
-    get_train_pairs = EXPERIMENTS[hps_common.train_id]
+    get_train_pairs = EXPERIMENTS[hps_common.expt_id]
     
     task_model_pairs = get_train_pairs(hps_common, key_init)
     
     # Get one set of complete hyperparameters for each task-model pair
     # (Add in the hyperparameters corresponding to the pytree levels)
     #? We might also do this inside `get_train_pairs`, and avoid needing to re-parse the 
-    #? PyTree structure of `task_model_pairs` here. (See `setup_utils.TYPE_HP_KEY_MAPPING`)
+    #? PyTree structure of `task_model_pairs` here. (See `hyperparams.TYPE_HP_KEY_MAPPING`)
     all_hps = fill_out_hps(hps_common, task_model_pairs)
 
     if untrained_only:
@@ -180,18 +201,7 @@ def train_and_save_models(
     # TODO: Also get `trainer`, `loss_func`, ... as trees like `task_model_pairs`
     # Otherwise certain hyperparameters (e.g. learning rate) will be constant 
     # when the user might expect them to vary due to their config file. 
-    trainer, loss_func = train_setup(hps_common['train'])
-    
-    # Convert string representations of where-functions to actual functions.
-    # 
-    #   - Strings are easy to serialize, or to specify in config files; functions are not.
-    #   - These where-functions are for selecting the trainable nodes in the pytree of model 
-    #     parameters.
-    #
-    where_train = {
-        i: attr_str_tree_to_where_func(strs) 
-        for i, strs in hps_common['train']['where_train_strs'].items()
-    }
+    trainer, loss_func = train_setup(hps_common.train)
     
     ## Train and save all the models.
     # TODO: Is this correct? Or should we pass the task for the respective training method?
@@ -201,26 +211,23 @@ def train_and_save_models(
         trained_model, train_history = train_pair(
             trainer, 
             pair,
-            hps['train']['n_batches'], 
+            hps.train.n_batches, 
             key=key_train,  #! Use the same PRNG key for all training runs
             ensembled=True,
             loss_func=loss_func,
             task_baseline=task_baseline,  
-            where_train=where_train,
-            batch_size=hps['train']['batch_size'], 
+            where_train=where_strs_to_funcs(hps.train.where),
+            batch_size=hps.train.batch_size, 
             log_step=LOG_STEP,
-            save_model_parameters=hps['train']['save_model_parameters'],
-            state_reset_iterations=hps['train']['state_reset_iterations'],
+            save_model_parameters=hps.train.save_model_parameters,
+            state_reset_iterations=hps.train.state_reset_iterations,
             # disable_tqdm=True,
         )
         model_record = save_model_and_add_record(
             db_session,
-            origin=hps['train_id'],
-            model=trained_model,
-            model_hyperparameters=hps['model'],
-            other_hyperparameters=hps['train'],
+            trained_model,
+            hps,
             train_history=train_history,
-            train_history_hyperparameters=train_histories_hps_select(hps),
             version_info=version_info,
         )
         if postprocess:
@@ -253,60 +260,6 @@ def concat_save_iterations(iterations: Array, n_batches_seq: Sequence[int]):
     ])
 
 
-def process_hps(hps: dict):
-    """Resolve any dependencies and do any clean-up or validation of hyperparameters, prior to training."""
-    # Avoid in-place modification 
-    hps = deepcopy(hps)
-
-    # Update with missing arguments to `setup_task_model_pair` and `train_setup`, respectively
-    hps['model'] |= dict(
-        disturbance_type=hps['disturbance']['type'],
-        intervention_scaleup_batches=(
-            hps['train']['n_batches_baseline'],
-            hps['train']['n_batches_baseline'] + hps['train']['n_scaleup_batches'],
-        ),
-    )
-    hps['train']['n_batches'] = hps['train']['n_batches_baseline'] + hps['train']['n_batches_condition']
-    hps['train']['save_model_parameters'] = get_iterations_to_save_model_parameters(
-        hps['train']['n_batches']
-    )
-
-    return hps
-    
-
-def load_hps(config_path: str | Path) -> SimpleNamespace:
-    """Given a path to a YAML hyperparameters file, load and prepare them prior to training."""
-    config = load_config(str(config_path))
-    # Load the defaults and update with the user-specified config
-    default_config = load_default_config(config['train_id'])
-    config = deep_update(default_config, config)
-    # 1) Make corrections and add in any derived values;
-    # 2) Convert to a (nested) SimpleNamespace instead of a dict,
-    #    so we can refer to keys as attributes
-    hps = dict_to_namespace(process_hps(config))
-    return hps
-
-
-def fill_out_hps(hps_common: dict, task_model_pairs: PyTree[TaskModelPair, 'T']) -> PyTree[dict, 'T']:
-    """Given a common set of hyperparameters and a tree of task-model pairs, create a matching tree of 
-    pair-specific hyperparameters.
-    
-    This works because `task_model_pairs` is a tree of dicts, where each level of the tree is a different 
-    dict subtype, and where the keys are the values of hyperparameters. Each dict subtype has a fixed 
-    mapping to a particular 
-    """
-    level_types = tree_level_types(task_model_pairs)
-    return jt.map(
-        lambda _, path: update_hps_given_tree_path(
-            hps_common, 
-            path, 
-            level_types,
-        ),
-        task_model_pairs, tree_key_tuples(task_model_pairs, is_leaf=is_type(TaskModelPair)),
-        is_leaf=is_type(TaskModelPair),
-    )
-
-
 def does_model_record_exist(db_session, hyperparameters):
     try: 
         existing_record = get_record(db_session, ModelRecord, **hyperparameters)
@@ -319,17 +272,26 @@ def skip_already_trained(
     db_session, 
     task_model_pairs: PyTree[TaskModelPair, 'T'], 
     all_hps: PyTree[dict, 'T'],
-    notify: bool = True,
 ):
+    """Replace leaves in the tree of training pairs with None, where those models were already trained.
+    
+    Optionally 
+    """
     all_hps = arrays_to_lists(all_hps)
     
+    def get_query_hps(hps: TreeNamespace) -> TreeNamespace:
+        hps = deepcopy(hps)
+        # flatten the `model` key into the top level
+        
+        hps.is_path_defunct = False
+        hps = promote_model_hps(hps)
+ 
+        return hps
+        
     record_exists = jt.map(
         lambda _, hps: does_model_record_exist(
             db_session, 
-            hps['model'] | hps['train'] | dict(
-                origin=hps['train_id'],
-                is_path_defunct=False,
-            ),
+            namespace_to_dict(get_query_hps(hps)),
         ),   
         task_model_pairs, all_hps,
          is_leaf=is_type(TaskModelPair),
@@ -341,15 +303,12 @@ def skip_already_trained(
         is_leaf=is_type(TaskModelPair),
     )
     
-    if notify:
-        pairs_to_skip_flat = jt.leaves(pairs_to_skip, is_leaf=is_type(TaskModelPair))
-        n_skip = len(pairs_to_skip_flat)
-        if n_skip:
-            logger.info(
-                f"Skipping training of {n_skip} models whose hyperparameters "
-                "match models already in the database"
-            )
-    
+    pairs_to_skip_flat = jt.leaves(pairs_to_skip, is_leaf=is_type(TaskModelPair))
+    logger.info(
+        f"Skipping training of {len(pairs_to_skip_flat)} models whose hyperparameters "
+        "match models already in the database"
+    )
+
     return task_model_pairs
 
 

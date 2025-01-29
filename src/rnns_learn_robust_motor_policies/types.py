@@ -1,7 +1,9 @@
 from collections import namedtuple
+from functools import partial
 from typing import Dict, Generic, TypeVar
 
 import jax.tree_util as jtu
+import yaml
 
 
 TaskModelPair = namedtuple("TaskModelPair", ["task", "model"])
@@ -61,7 +63,10 @@ class TrainingMethodDict(CustomDict[K, V], Generic[K, V]):
 
 class FPDict(CustomDict[K, V], Generic[K, V]):
     ...
-    
+
+class TrainWhereDict(CustomDict[K, V], Generic[K, V]):
+    ...
+
     
 _custom_dict_classes = (
     TrainStdDict, 
@@ -70,6 +75,7 @@ _custom_dict_classes = (
     ContextInputDict, 
     TrainingMethodDict,
     FPDict,
+    TrainWhereDict,
 )
 
 
@@ -85,11 +91,27 @@ def _get_dict_unflatten(cls):
     return dict_unflatten
 
 
+def _yaml_dicttype_representer(cls: type[dict], dumper, data):
+    return dumper.represent_mapping(f"!{cls.__name__}", data)
+
+
+def _yaml_dicttype_constructor(cls: type[dict], loader, node):
+    return cls(loader.construct_mapping(node))
+
+
 for cls in _custom_dict_classes:
     jtu.register_pytree_with_keys(
         cls, 
         _dict_flatten_with_keys, 
         _get_dict_unflatten(cls),
+    )
+
+    # Add YAML representers and constructors to enable writing/reading
+    # of special dict types to/from YAML.
+    yaml.add_representer(cls, partial(_yaml_dicttype_representer, cls))    
+    yaml.SafeLoader.add_constructor(
+        f"!{cls.__name__}",
+        partial(_yaml_dicttype_constructor, cls), 
     )
     
 
@@ -104,3 +126,10 @@ for cls in (ImpulseAmpTuple,):
         lambda x: (x, None), 
         lambda _, children: cls(children)  # type: ignore
     ) 
+  
+
+
+
+
+            
+  

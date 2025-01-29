@@ -5,6 +5,7 @@ import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
+from jaxtyping import PRNGKeyArray
 
 from feedbax import get_ensemble, is_module
 from feedbax.intervene import schedule_intervenor
@@ -18,6 +19,7 @@ from rnns_learn_robust_motor_policies.constants import (
     INTERVENOR_LABEL, 
     MASS,
 )
+from rnns_learn_robust_motor_policies.hyperparams import TreeNamespace
 from rnns_learn_robust_motor_policies.misc import vector_with_gaussian_length
 from rnns_learn_robust_motor_policies.setup_utils import get_base_task, get_train_pairs_by_disturbance_std
 from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainStdDict
@@ -39,23 +41,10 @@ disturbance_params = lambda scale_func: {
 }
 
 
-def setup_task_model_pair(
-    *,
-    n_replicates,
-    dt,
-    hidden_size,
-    n_steps,
-    feedback_delay_steps,
-    feedback_noise_std,
-    motor_noise_std,
-    disturbance_type: Literal['constant', 'curl'],
-    disturbance_std,
-    intervention_scaleup_batches: tuple[int, int],
-    control_loss_scale: float,
-    key,
-    **kwargs,
-):
-    n_batches_scaleup = intervention_scaleup_batches[1] - intervention_scaleup_batches[0]
+def setup_task_model_pair(hps: TreeNamespace, *, key):
+    """Returns a skeleton PyTree for reloading trained models."""      
+    scaleup_batches = hps.train.intervention_scaleup_batches
+    n_batches_scaleup = scaleup_batches[1] - scaleup_batches[0]
     if n_batches_scaleup > 0:
         def batch_scale_up(batch_start, n_batches, batch_info, x):
             progress = jax.nn.relu(batch_info.current - batch_start) / n_batches
@@ -71,41 +60,41 @@ def setup_task_model_pair(
     loss_func = eqx.tree_at(
         lambda loss_func: loss_func.weights['nn_output'],
         loss_func,
-        control_loss_scale * loss_func.weights['nn_output'],
+        hps.model.control_loss_scale * loss_func.weights['nn_output'],
     )
     
     task_base = get_base_task(
-        n_steps=n_steps,
+        n_steps=hps.model.n_steps,
         loss_func=loss_func,
     )
     
     models = get_ensemble(
         point_mass_nn,
         task_base,
-        n=n_replicates,
-        dt=dt,
+        n=hps.model.n_replicates,
+        dt=hps.model.dt,
         mass=MASS,
-        hidden_size=hidden_size, 
-        n_steps=n_steps,
-        feedback_delay_steps=feedback_delay_steps,
-        feedback_noise_std=feedback_noise_std,
-        motor_noise_std=motor_noise_std,
+        hidden_size=hps.model.hidden_size, 
+        n_steps=hps.model.n_steps,
+        feedback_delay_steps=hps.model.feedback_delay_steps,
+        feedback_noise_std=hps.model.feedback_noise_std,
+        motor_noise_std=hps.model.motor_noise_std,
         key=key,
     )
     
     def disturbance(field_std, active=True):
-        return DISTURBANCE_CLASSES[disturbance_type].with_params(
+        return DISTURBANCE_CLASSES[hps.disturbance.type].with_params(
             scale=field_std,
             active=active,
             **disturbance_params(
-                partial(batch_scale_up, intervention_scaleup_batches[0], n_batches_scaleup)
-            )[disturbance_type],
+                partial(batch_scale_up, scaleup_batches[0], n_batches_scaleup)
+            )[hps.disturbance.type],
         )
         
     return TaskModelPair(*schedule_intervenor(
         task_base, models,
         lambda model: model.step.mechanics,
-        disturbance(disturbance_std),
+        disturbance(hps.disturbance.std),
         label=INTERVENOR_LABEL,
         default_active=False,
     ))
@@ -140,11 +129,12 @@ def setup_model_parameter_histories(
     
     return model_parameter_histories
 
-def get_train_pairs(hps, key):
+
+def get_train_pairs(hps: TreeNamespace, key: PRNGKeyArray):
     """Given hyperparams and a particular task-model pair setup function, return the PyTree of task-model pairs.
     
     Here in Part 1 this is trivial since we're only training a single `TrainStdDict` of models.
     """
     return get_train_pairs_by_disturbance_std(
-        setup_task_model_pair, hps['model'], hps['disturbance'], key
+        setup_task_model_pair, hps, key=key
     )

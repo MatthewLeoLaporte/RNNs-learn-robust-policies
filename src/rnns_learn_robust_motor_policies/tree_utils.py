@@ -1,4 +1,5 @@
 from collections.abc import Callable
+import logging
 from types import SimpleNamespace
 from typing import Any, TypeVar, Sequence
 
@@ -16,23 +17,7 @@ from feedbax.intervene import AbstractIntervenor
 T = TypeVar("T")
 
 
-def dict_to_namespace(d: dict) -> SimpleNamespace:
-    """Convert a nested dictionary to a nested SimpleNamespace."""
-    return _convert_value(d)
-
-
-def _convert_value(value: Any) -> Any:
-    """Recursively convert dictionary values to SimpleNamespace."""
-    if isinstance(value, dict):
-        return SimpleNamespace(**{
-            k: _convert_value(v)
-            for k, v in value.items()
-        })
-    elif isinstance(value, ArrayLike) or isinstance(value, str):
-        pass
-    elif isinstance(value, PyTree):
-        return jt.map(_convert_value, value, is_leaf=is_type(dict))
-    return value
+logger = logging.getLogger(__name__)
 
 
 def swap_model_trainables(model: PyTree[..., "T"], trained: PyTree[..., "T"], where_train: Callable):
@@ -49,7 +34,6 @@ def subdict(dct: dict[T, Any], keys: Sequence[T]):
 
 
 def dictmerge(*dicts: dict) -> dict:
-    """Merges all """
     return {k: v for d in dicts for k, v in d.items()}
 
 
@@ -169,3 +153,7 @@ def deep_update(d1, d2):
         else:
             d1[k] = v
     return d1
+
+
+def is_dict_with_int_keys(d: dict) -> bool:
+    return isinstance(d, dict) and len(d) > 0 and all(isinstance(k, int) for k in d.keys())

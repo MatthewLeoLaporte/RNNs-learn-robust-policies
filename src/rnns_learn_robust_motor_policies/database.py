@@ -4,7 +4,7 @@ Database tools for cataloguing trained models and notebook evaluations/figures.
 Written with the help of Claude 3.5 Sonnet.
 """ 
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime
 import logging
 from pathlib import Path
@@ -15,6 +15,8 @@ import uuid
 
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+import equinox as eqx
+import jax.random as jr
 import jax.tree as jt
 from jaxtyping import PyTree
 import matplotlib.figure as mplf
@@ -54,6 +56,7 @@ from feedbax._tree import (
     make_named_dict_subclass,
     make_named_tuple_subclass,
 )
+import yaml
 
 from rnns_learn_robust_motor_policies import (
     DB_DIR, 
@@ -63,7 +66,8 @@ from rnns_learn_robust_motor_policies import (
     REPLICATE_INFO_FILE_LABEL,
     TRAIN_HISTORY_FILE_LABEL, 
 )
-from rnns_learn_robust_motor_policies.tree_utils import pp
+from rnns_learn_robust_motor_policies.hyperparams import TreeNamespace, dict_to_namespace, flatten_hps, load_hps, namespace_to_dict, take_train_histories_hps
+from rnns_learn_robust_motor_policies.tree_utils import is_dict_with_int_keys, pp
 
 
 MODELS_TABLE_NAME = 'models'
@@ -83,6 +87,7 @@ class Base(DeclarativeBase):
         dict[str, str]: JSON,
         Sequence[str]: JSON,
         Sequence[int]: JSON,
+        Sequence[float]: JSON,
         dict[str, Sequence[str]]: JSON,
     }
 
@@ -96,7 +101,7 @@ class ModelRecord(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     hash: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    origin: Mapped[str]
+    expt_id: Mapped[str]
     is_path_defunct: Mapped[bool] = mapped_column(default=False)
     postprocessed: Mapped[bool] = mapped_column(default=False)
     has_replicate_info: Mapped[bool]
@@ -104,12 +109,12 @@ class ModelRecord(Base):
     
     # Explicitly define some parameter columns to avoid typing issues, though our dynamic column 
     # migration would handle whatever parameters the user happens to pass, without this.
+    n_replicates: Mapped[int]
     disturbance_type: Mapped[str]
     disturbance_std: Mapped[float]
-    where_train_strs: Mapped[dict[str, Sequence[str]]]
-    n_replicates: Mapped[int]
-    n_batches: Mapped[int]
-    save_model_parameters: Mapped[Sequence[int]]
+    train_where: Mapped[dict[str, Sequence[str]]]
+    train_n_batches: Mapped[int]
+    train_save_model_parameters: Mapped[Sequence[int]]
     
     @hybrid_property
     def path(self):
@@ -130,12 +135,12 @@ class ModelRecord(Base):
     def where_train(self):
         return {
             int(i): attr_str_tree_to_where_func(strs) 
-            for i, strs in self.where_train_strs.items()
+            for i, strs in self.train_where.items()
         }
     
 
 MODEL_RECORD_BASE_ATTRS = [
-    'id', 'hash', 'created_at', 'origin', 'is_path_defunct', 'has_replicate_info'
+    'id', 'hash', 'created_at', 'expt_id', 'is_path_defunct', 'has_replicate_info'
 ]
     
     
@@ -149,7 +154,7 @@ class EvaluationRecord(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     hash: Mapped[str] = mapped_column(unique=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
-    origin: Mapped[Optional[str]]
+    expt_id: Mapped[Optional[str]]
     # model_hash: Mapped[Optional[str]] = mapped_column(ForeignKey(f'{MODELS_TABLE_NAME}.hash'))
     model_hashes: Mapped[Optional[Sequence[str]]] = mapped_column(nullable=True)
     archived: Mapped[bool] = mapped_column(default=False)
@@ -183,6 +188,7 @@ class FigureRecord(Base):
     # These are also redundant, and can be inferred from `evaluation_hash`
     disturbance_type: Mapped[str] = mapped_column(nullable=True)
     disturbance_std: Mapped[float] = mapped_column(nullable=True)
+    disturbance_stds: Mapped[Sequence[float]] = mapped_column(nullable=True)
 
 
 TABLE_NAME_TO_MODEL = {
@@ -292,18 +298,6 @@ def hash_file(path: Path) -> str:
 def generate_temp_path(directory: Path, prefix: str = "temp_", suffix: str = ".eqx") -> Path:
     """Generate a temporary file path."""
     return directory / f"{prefix}{uuid.uuid4()}{suffix}"
-
-
-def save_with_hash(tree: PyTree, directory: Path, hyperparameters: Optional[Dict] = None) -> tuple[str, Path]:
-    """Save object to temporary file, compute hash, and move to final location."""
-    temp_path = generate_temp_path(directory)
-    save(temp_path, tree, hyperparameters=hyperparameters)
-    
-    file_hash = hash_file(temp_path)
-    final_path = get_hash_path(directory, file_hash)
-    temp_path.rename(final_path)
-    
-    return file_hash, final_path
 
 
 def query_model_records(
@@ -466,69 +460,104 @@ def check_model_files(
         raise e
 
 
+HPS_SERIALISATION_SEP_CHAR = chr(29)  # ASCII group separator character
+
+
+def yaml_dump(data: Any) -> str:
+    return yaml.dump(data) + f"\n{HPS_SERIALISATION_SEP_CHAR}"
+
+
+def save_tree(tree: PyTree, directory: Path, hps: TreeNamespace = TreeNamespace()) -> tuple[str, Path]:
+    """Save object to temporary file, compute hash, and move to final location."""
+    
+    temp_path = generate_temp_path(directory)
+    save(temp_path, tree, hyperparameters=namespace_to_dict(hps), dump_func=yaml_dump)
+    
+    #? Alternatively, could compute on (a subset of) hyperparameters, if we don't want the hash 
+    #? to depend on certain things (e.g. version info)
+    file_hash = hash_file(temp_path)
+    final_path = get_hash_path(directory, file_hash)
+    temp_path.rename(final_path)
+    
+    return file_hash, final_path
+
+
+def _read_until_special(file, special_char):
+    result = []
+    for line in file:
+        if line.strip().decode('ascii') == special_char:   
+            return ''.join(result)
+        result.append(line.decode('ascii'))
+    raise ValueError("Malformed serialisation!")
+    
+
+def load_tree_with_hps(
+    path: Path, 
+    setup_tree_func: Callable,
+    **kwargs,
+) -> tuple[PyTree, TreeNamespace]:
+    """Similar to `feedbax.load_with_hyperparameters, but for namespace-based hyperparameters"""
+    with open(path, "rb") as f:
+        hps_dict = yaml.safe_load(_read_until_special(f, HPS_SERIALISATION_SEP_CHAR))
+    
+        hps = dict_to_namespace(hps_dict, to_type=TreeNamespace, exclude=is_dict_with_int_keys)
+    
+        tree = setup_tree_func(hps, key=jr.PRNGKey(0))
+        tree = eqx.tree_deserialise_leaves(f, tree, **kwargs)
+    
+    return tree, hps
+
+
 def save_model_and_add_record(
     session: Session,
-    origin: str,
     model: Any,
-    model_hyperparameters: Dict[str, Any],
-    other_hyperparameters: Dict[str, Any],
+    hps: TreeNamespace,
     train_history: Optional[Any] = None,
-    train_history_hyperparameters: Optional[Dict[str, Any]] = None,
     replicate_info: Optional[Any] = None,
-    replicate_info_hyperparameters: Optional[Dict[str, Any]] = None,
     version_info: Optional[Dict[str, str]] = None,
 ) -> ModelRecord:
     """Save model files with hash-based names and add database record."""
     
-    (
-        model_hyperparameters, 
-        other_hyperparameters,
-        train_history_hyperparameters, 
-        replicate_info_hyperparameters,
-    ) = arrays_to_lists(
-        (
-            model_hyperparameters, 
-            other_hyperparameters,
-            train_history_hyperparameters, 
-            replicate_info_hyperparameters,
-        )
-    )
+    hps = arrays_to_lists(hps)
     
-    hyperparameters = model_hyperparameters | other_hyperparameters | dict(version_info=version_info)
-    
+    hps_dict = namespace_to_dict(hps)
+    record_hps = flatten_hps(hps) | dict(version_info=version_info)
+    record_params = namespace_to_dict(record_hps)
+
     # Save model and get hash-based filename
-    model_hash, model_path = save_with_hash(model, MODELS_DIR, hyperparameters)
+    # TODO: Optionally, let the hash/existence checks be independent of `version_info`
+    # i.e. so we don't retrain models just because Equinox got a minor update or something
+    # (alternatively, could just fix the package versions for the project)
+    model_hash, _ = save_tree(model, MODELS_DIR, hps)
     
     # Save associated files if provided
     if train_history is not None:
-        assert train_history_hyperparameters is not None, (
-            "If saving training histories, must provide hyperparameters for deserialisation!"
-        )
+        # train_history_params = namespace_to_dict(take_train_histories_hps(hps))
+        train_history_path = get_hash_path(MODELS_DIR, model_hash, suffix=TRAIN_HISTORY_FILE_LABEL)
         save(
-            get_hash_path(MODELS_DIR, model_hash, suffix=TRAIN_HISTORY_FILE_LABEL), 
+            train_history_path, 
             train_history,
-            hyperparameters=train_history_hyperparameters,
+            hps_dict,
+            dump_func=yaml_dump,
         )
         
     if replicate_info is not None:
-        assert replicate_info_hyperparameters is not None, (
-            "If saving training histories, must provide hyperparameters for deserialisation!"
-        )
+        replicate_info_path = get_hash_path(MODELS_DIR, model_hash, suffix=REPLICATE_INFO_FILE_LABEL)
         save(
-            get_hash_path(MODELS_DIR, model_hash, suffix=REPLICATE_INFO_FILE_LABEL), 
+            replicate_info_path, 
             replicate_info,
-            hyperparameters=replicate_info_hyperparameters,
+            hps_dict,
+            dump_func=yaml_dump,
         )
         
-    update_table_schema(session.bind, MODELS_TABLE_NAME, hyperparameters)    
+    update_table_schema(session.bind, MODELS_TABLE_NAME, record_params)    
     
     # Create database record
     model_record = ModelRecord(
         hash=model_hash,
-        origin=origin,
         is_path_defunct=False, 
         has_replicate_info=replicate_info is not None,
-        **hyperparameters,
+        **record_params,
     )
     
     # Delete existing record with same hash, if it exists
@@ -546,7 +575,7 @@ def save_model_and_add_record(
 def generate_eval_hash(
     model_hashes: Optional[Sequence[str]], 
     eval_params: Dict[str, Any],
-    origin: Optional[str] = None,
+    expt_id: Optional[str] = None,
 ) -> str:
     """Generate a hash for a notebook evaluation based on model hash and parameters.
     
@@ -561,7 +590,7 @@ def generate_eval_hash(
     
     eval_str = "_".join([
         model_str,
-        f"{origin or 'None'}",
+        f"{expt_id or 'None'}",
         f"{json.dumps(eval_params, sort_keys=True)}",
     ])
     return hashlib.md5(eval_str.encode()).hexdigest()
@@ -571,7 +600,7 @@ def add_evaluation(
     session: Session,
     models: Optional[PyTree[ModelRecord]],  # Changed from ModelRecord to Optional[int]
     eval_parameters: Dict[str, Any],
-    origin: Optional[str] = None,
+    expt_id: Optional[str] = None,
     version_info: Optional[dict[str, str]] = None,
 ) -> EvaluationRecord:
     """Create new notebook evaluation record.
@@ -579,7 +608,7 @@ def add_evaluation(
     Args:
         session: Database session
         model_id: ID of the model used (None for training notebooks)
-        origin: ID of the notebook being evaluated
+        expt_id: ID of the notebook being evaluated
         eval_parameters: Parameters used for evaluation
     """
     eval_parameters = arrays_to_lists(eval_parameters)
@@ -593,7 +622,7 @@ def add_evaluation(
     eval_hash = generate_eval_hash(
         model_hashes=model_hashes,
         eval_params=eval_parameters,
-        origin=origin,
+        expt_id=expt_id,
     )
     
     # Migrate the evaluations table so it has all the necessary columns
@@ -615,7 +644,7 @@ def add_evaluation(
         eval_record = EvaluationRecord(
             hash=eval_hash,
             model_hashes=model_hashes,  # Can be None
-            origin=origin,
+            expt_id=expt_id,
             version_info_eval=version_info,
             **eval_parameters,
         )

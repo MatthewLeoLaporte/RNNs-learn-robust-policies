@@ -1,4 +1,5 @@
 from collections.abc import Callable, Sequence
+from copy import deepcopy
 from functools import partial
 from pathlib import Path
 import time
@@ -45,30 +46,17 @@ from rnns_learn_robust_motor_policies.constants import (
 from rnns_learn_robust_motor_policies.database import (
     get_model_record,
 )
+from rnns_learn_robust_motor_policies.hyperparams import TreeNamespace
 from rnns_learn_robust_motor_policies.training.loss import get_readout_norm_loss
 from rnns_learn_robust_motor_policies.misc import (
     take_model,
 )
 from rnns_learn_robust_motor_policies.tree_utils import (
-    dictmerge, 
-    map_kwargs_to_dict,
     subdict,
 )
 from rnns_learn_robust_motor_policies.types import (
     TrainStdDict,
-    TrainingMethodDict,
 )
-
-
-# If we construct the pytree of task-model pairs out of these, then in
-# `training.train_and_save_models` we can use `fill_out_hps` to automatically
-# add to the hyperparameters, key-value pairs where the key corresponds to the 
-# dict subtype, and the value corresponds to the key of the respective pair 
-# within the dict.
-TYPE_HP_KEY_MAPPING = {
-    TrainingMethodDict: ("train", "train_method"),
-    TrainStdDict: ("model", "disturbance_std"),
-}
 
 
 def get_base_task(
@@ -82,43 +70,36 @@ def get_base_task(
         n_steps=n_steps,
         **validation_params, 
     )
-    
-    
+     
 def get_train_pairs_by_disturbance_std(
     setup_task_model_pair: Callable, 
-    model_hps: dict, 
-    disturbance: dict, 
+    hps: TreeNamespace,
+    *,
     key: PRNGKeyArray, 
+    #! I think this might be useless now:
     model_hps_update: Optional[dict] = None,
 ) -> TrainStdDict:
     if model_hps_update is None:
         model_hps_update = dict()
+        
+    def get_pair(disturbance_std):
+        hps_i = deepcopy(hps)
+        hps_i.disturbance.std = disturbance_std
+        return setup_task_model_pair(hps_i, key=key)
 
-    task_model_pairs = TrainStdDict(map_kwargs_to_dict(
-        partial(
-            setup_task_model_pair, 
-            **model_hps | model_hps_update, 
-            key=key,
-        ),
-        'disturbance_std',
-        disturbance['stds'],  
-    ))
+    task_model_pairs = TrainStdDict({
+        std: get_pair(std)
+        #! Assume that `hps.disturbance.std` is a sequence
+        for std in hps.disturbance.std
+    })
     
     return task_model_pairs
 
 
 def setup_train_histories(
-        attr_str_tree_to_where_func, 
-        where_train_strs,
     models_tree,
+    hps: TreeNamespace,
     *,
-    n_batches,
-    batch_size,
-    n_replicates,
-    where_train_strs,
-    save_model_parameters,
-    readout_norm_value=None,
-    readout_norm_loss_weight=None,
     key,
 ) -> dict[float, TaskTrainerHistory]:
     """Returns a skeleton PyTree for the training histories (losses, parameter history, etc.)
@@ -133,28 +114,33 @@ def setup_train_histories(
     """   
     # Assume that where funcs may be lists (normally defined as tuples, but retrieved through sqlite JSON)
     where_train = jt.map(
+        attr_str_tree_to_where_func, 
+        hps.train.where,
         is_leaf=is_type(list),
     )
     
     loss_func = simple_reach_loss()
-    if readout_norm_loss_weight is not None:
-        assert readout_norm_value is not None, (
+    if getattr(hps.train, 'readout_norm_loss_weight', None) is not None:
+        assert getattr(hps.train, 'readout_norm_value', None) is not None, (
             "readout_norm_value must be provided if readout_norm_loss_weight is not None"
         )
-        loss_func_validation = loss_func + readout_norm_loss_weight * get_readout_norm_loss(readout_norm_value)
+        loss_func_validation = loss_func + (
+            hps.train.readout_norm_loss_weight 
+            * get_readout_norm_loss(hps.train.readout_norm_value)
+        )
     else:
         loss_func_validation = loss_func
     
     return jt.map(
         lambda models: init_task_trainer_history(
             loss_func,
-            n_batches,
-            n_replicates,
+            hps.train.n_batches,
+            hps.model.n_replicates,
             ensembled=True,
             ensemble_random_trials=False,
-            save_model_parameters=jnp.array(save_model_parameters),
+            save_model_parameters=jnp.array(hps.train.save_model_parameters),
             save_trial_specs=None,
-            batch_size=batch_size,
+            batch_size=hps.train.batch_size,
             loss_func_validation=loss_func_validation,
             model=models,
             where_train=where_train,  
@@ -162,25 +148,8 @@ def setup_train_histories(
         models_tree,
         is_leaf=is_module,
     )
-
-
-def train_histories_hps_select(hps: dict) -> dict: 
-    return dictmerge(
-        subdict(hps['train'], [
-            "n_batches",
-            "batch_size",
-            "where_train_strs",
-            "save_model_parameters",
-        ]),
-        subdict(hps['model'], [
-            "n_replicates",
-            # "disturbance_type",
-            # "feedback_delay_steps",
-            # "feedback_noise_std",
-        ]),
-    )
-
-
+    
+    
 def get_latest_matching_file(directory: str, pattern: str) -> Optional[str]:
     """
     Returns the filename of the latest file in the given directory that matches the given pattern.
@@ -349,16 +318,16 @@ def set_model_noise(
     return model
     
 
-def setup_models_only(task_model_pair_setup_func, **kwargs):
+def setup_models_only(task_model_pair_setup_func, *args, **kwargs):
     """Given a function that returns task-model pairs, just get the models."""
-    task_model_pairs = task_model_pair_setup_func(**kwargs)
+    task_model_pairs = task_model_pair_setup_func(*args, **kwargs)
     _, models = tree_unzip(task_model_pairs)
     return models    
 
 
-def setup_tasks_only(task_model_pair_setup_func, **kwargs):
+def setup_tasks_only(task_model_pair_setup_func, *args, **kwargs):
     """Given a function that returns task-model pairs, just get the tasks."""
-    task_model_pairs = task_model_pair_setup_func(**kwargs)
+    task_model_pairs = task_model_pair_setup_func(*args, **kwargs)
     tasks, _ = tree_unzip(task_model_pairs)
     return tasks
 
@@ -380,7 +349,7 @@ def convert_tasks_to_small(tasks):
 MEASURES_TO_RATE = ('end_pos_error',)
 
 
-def setup_replicate_info(models, n_replicates, *, key):
+def setup_replicate_info(models, hps, *, key):
     """Returns a skeleton PyTree for loading the replicate info"""
     
     def models_tree_with_value(value):
@@ -400,7 +369,7 @@ def setup_replicate_info(models, n_replicates, *, key):
     return {
         info_label: models_tree_with_value(value)
         for info_label, value in dict(
-            best_save_idx=jnp.zeros(n_replicates, dtype=int),
+            best_save_idx=jnp.zeros(hps.model.n_replicates, dtype=int),
             best_saved_iteration_by_replicate=[0] * n_replicates,
             losses_at_best_saved_iteration=jnp.zeros(n_replicates, dtype=float),
             losses_at_final_saved_iteration=jnp.zeros(n_replicates, dtype=float),
@@ -410,7 +379,7 @@ def setup_replicate_info(models, n_replicates, *, key):
         best_replicates=get_measure_dict(0),
         included_replicates=get_measure_dict(jnp.ones(n_replicates, dtype=bool)),
     )
-
+    
     
 def query_and_load_model(
     db_session,  # TODO: Type?
@@ -544,12 +513,5 @@ def query_and_load_model(
     return model, model_info, replicate_info, n_replicates_included
 
 
-def update_hps_given_tree_path(hps: dict, path: tuple, types: Sequence) -> dict:
-    """Given the path of a task-model pair in the training PyTree, """
-    hps = dict(hps)
-    for node_key, type_ in zip(path, types):
-        hps_key, hps_subkey = TYPE_HP_KEY_MAPPING[type_]
-        hps[hps_key] = hps[hps_key] | {hps_subkey: node_key.key} 
-    return hps
         
 

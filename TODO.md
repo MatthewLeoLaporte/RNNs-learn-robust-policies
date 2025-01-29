@@ -7,21 +7,21 @@ updated: 2024-11-13T10:32
 - [ ] **Try training a significantly larger network in part 2 and see if the context 0 curves overlap**
 - [ ] Docstrings in part1_fixed
 
-- [ ] Use rich progress bar for CLI?
-- [ ] Convert notebooks for part 1
-- [ ] Batch script for part 1
+- [ ] **Use rich progress bar for CLI?**
+- [ ] Batch script for part 1src/rnns_learn_robust_motor_policies/config/1.yml
 - [ ] Clean up `setup_utils.py`
-- [x] Pass version info through the call to `train_and_save_models` and to the `ModelRecord` instantiation, in the `train` script.
-- [x] Move `PROJECT_SEED` value into key `seed` in `config/prng.yml`.
-- [x] Maybe don’t get `REPO_ROOT` in `__init__.py`
-	- Alternative 1
-		- the user passes the default config directory when calling the relevant scripts
-	- 2
-		- the user *optionally* passes the default config dir, and if not, it defaults 
-- Either: 
-	- [ ] Loop over disturbance type (as well as std) in training, and list both disturbance types in the config YAML; or
-	- [x] Only define default disturbance_stds for a single disturbance type, in the training config YAML; different disturbance types and stds are passing in by the user, or a batch script
-	- **I think I prefer the second one**
+
+### Convert notebooks for part 1
+
+#### Hyperparameter data structure
+
+I am using `SimpleNamespace`, though it might be better to use `namedtuple`.
+
+I can turn `SimpleNamespace` into a PyTree, however this would be automatic with `namedtuple`.
+
+Also, using `jt.map` is not ideal for replacing null values with defaults, if we allow for partial configs (i.e. if not every config file needs to have all the same keys as all the other config files of the same kind, even if they are assigned `null` and never used) then the pytree structures will not match. 
+
+With `namedtuple`, the user could use partial configs, but needs to specify in the project code the structure of every kind of config file (e.g. training, or analysis). Then the loaded hps would contain unused information. Though, perhaps we could use `namedtuple` and `jt.map` to get the updated hyperparameters, and then just recursively `subdict` out the parameters that appear in the defaults for that kind of config.
 
 ## Efficiency
 

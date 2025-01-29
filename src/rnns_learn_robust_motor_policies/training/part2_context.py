@@ -1,5 +1,5 @@
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from functools import partial
 from typing import Literal, Optional, TypeAlias
 
@@ -7,24 +7,22 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp 
 import jax.random as jr
-import jax.tree as jt
 from jaxtyping import PRNGKeyArray
 
-from feedbax import get_ensemble, tree_unzip
+from feedbax import get_ensemble
 from feedbax.intervene import schedule_intervenor
-from feedbax.task import SimpleReaches, TrialSpecDependency
+from feedbax.task import TrialSpecDependency
 from feedbax.xabdeef.models import point_mass_nn
-from feedbax.xabdeef.losses import simple_reach_loss
 
+from rnns_learn_robust_motor_policies.hyperparams import TreeNamespace
 from rnns_learn_robust_motor_policies.misc import vector_with_gaussian_length, get_field_amplitude
 from rnns_learn_robust_motor_policies.constants import (
     DISTURBANCE_CLASSES,
     INTERVENOR_LABEL, 
-    MASS, 
-    WORKSPACE,
+    MASS,
 )
 from rnns_learn_robust_motor_policies.setup_utils import get_base_task, get_train_pairs_by_disturbance_std
-from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainStdDict, TrainingMethodDict
+from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainingMethodDict
 
 
 TrainingMethodLabel: TypeAlias = Literal["bcs", "dai", "pai-asf", "pai-n"]
@@ -117,26 +115,17 @@ def disturbance(disturbance_type, field_std, method):
 
 
 def setup_task_model_pair(
-    train_method: Optional[TrainingMethodLabel] = None, 
+    hps: TreeNamespace = TreeNamespace(),
     *,
-    n_replicates,
-    dt,
-    hidden_size,
-    n_steps,
-    feedback_delay_steps,
-    feedback_noise_std,
-    motor_noise_std,
-    disturbance_type: Literal['constant', 'curl'],
-    disturbance_std,
-    intervention_scaleup_batches: tuple[int, int],
-    # p_perturbed,
     key: PRNGKeyArray,
     **kwargs,
 ):
-    """Returns a skeleton PyTree for reloading trained models."""
+    """Returns a skeleton PyTree for reloading trained models."""   
+    hps = hps | kwargs
     
-    # TODO: Implement scale-up 
-    n_batches_scaleup = intervention_scaleup_batches[1] - intervention_scaleup_batches[0]
+    # TODO: Implement scale-up for this experiment
+    scaleup_batches = hps.train.intervention_scaleup_batches
+    n_batches_scaleup = scaleup_batches[1] - scaleup_batches[0]
     if n_batches_scaleup > 0:
         def batch_scale_up(batch_start, n_batches, batch_info, x):
             progress = jax.nn.relu(batch_info.current - batch_start) / n_batches
@@ -147,28 +136,28 @@ def setup_task_model_pair(
         def batch_scale_up(batch_start, n_batches, batch_info, x):
             return x
 
-    task_base = get_base_task(n_steps=n_steps)
+    task_base = get_base_task(n_steps=hps.model.n_steps)
     
     models_base = get_ensemble(
         point_mass_nn,
         task_base,
         n_extra_inputs=1,  # Contextual input
-        n=n_replicates,
-        dt=dt,
+        n=hps.model.n_replicates,
+        dt=hps.model.dt,
         mass=MASS,
-        hidden_size=hidden_size, 
-        n_steps=n_steps,
-        feedback_delay_steps=feedback_delay_steps,
-        feedback_noise_std=feedback_noise_std,
-        motor_noise_std=motor_noise_std,
+        hidden_size=hps.model.hidden_size, 
+        n_steps=hps.model.n_steps,
+        feedback_delay_steps=hps.model.feedback_delay_steps,
+        feedback_noise_std=hps.model.feedback_noise_std,
+        motor_noise_std=hps.model.motor_noise_std,
         key=key,
     )
     
-    if train_method is not None:
+    if hps.train.method is not None:
         task = eqx.tree_at(
             lambda task: task.input_dependencies,
             task_base,
-            dict(context=TrialSpecDependency(CONTEXT_INPUT_FUNCS[train_method]))
+            dict(context=TrialSpecDependency(CONTEXT_INPUT_FUNCS[hps.train.method]))
         )
     else:
         #? In what context do we end up here?
@@ -178,27 +167,27 @@ def setup_task_model_pair(
         task, models_base,
         lambda model: model.step.mechanics,
         disturbance(
-            disturbance_type,
-            disturbance_std, 
+            hps.disturbance.type,
+            hps.disturbance.std, 
             # p_perturbed,
-            train_method,
+            hps.train.method,
         ),
         label=INTERVENOR_LABEL,
         default_active=False,
     ))
 
 
-def get_train_pairs(hps, key):
+def get_train_pairs(hps: TreeNamespace, key: PRNGKeyArray):
     """Given hyperparams and a particular task-model pair setup function, return the PyTree of task-model pairs."""
+    
     get_train_pairs_partial = partial(
         get_train_pairs_by_disturbance_std, 
         setup_task_model_pair, 
-        hps['model'], 
-        hps['disturbance'], 
-        key,  # Use the same PRNG key for all training methods
+        key=key,  # Use the same PRNG key for all training methods
     )
     
     return TrainingMethodDict({
-        method_label: get_train_pairs_partial(dict(train_method=method_label))
-        for method_label in hps['methods']
+        method_label: get_train_pairs_partial(hps | dict(train=dict(method=method_label)))
+        #! Assume `hps.method` is a list of training method labels
+        for method_label in hps.train.method
     })
