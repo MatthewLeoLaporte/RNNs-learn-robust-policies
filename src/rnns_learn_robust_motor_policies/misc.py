@@ -19,10 +19,10 @@ import pandas as pd
 from rich.logging import RichHandler
 import yaml
 
-from feedbax import tree_take, is_type
 from feedbax.misc import git_commit_id
-from feedbax._tree import apply_to_filtered_leaves
 from feedbax.intervene import AbstractIntervenor, CurlFieldParams, FixedFieldParams
+from jax_cookbook import is_type
+import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.tree_utils import subdict
 
@@ -221,16 +221,16 @@ def squareform_pdist(xs: Float[Array, "points dims"], ord: int | str | None = 2)
 
 
 def take_model(*args, **kwargs): 
-    """Performs `tree_take` on a feedbax model.
+    """Performs `jtree.take` on a feedbax model.
     
-    It is currently necessary to use this in place of `tree_take` when 
+    It is currently necessary to use this in place of `jtree.take` when 
     the model contains intervenors with arrays, since those arrays may 
     not have the same batch (e.g. replicate) dimensions as the other 
     model arrays.
     """
-    return apply_to_filtered_leaves(
+    return jtree.filter_wrap(
         lambda x: not is_type(AbstractIntervenor)(x), 
         is_leaf=is_type(AbstractIntervenor),
-    )(tree_take)(
+    )(jtree.take)(
         *args, **kwargs
     )

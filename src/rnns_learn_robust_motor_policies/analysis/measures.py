@@ -10,8 +10,8 @@ import jax.numpy as jnp
 import jax.tree as jt
 from jaxtyping import Array, Float, PyTree
 
-from feedbax import is_type
 from feedbax.bodies import SimpleFeedbackState
+from jax_cookbook import is_type
 
 from rnns_learn_robust_motor_policies.constants import EVAL_REACH_LENGTH
 

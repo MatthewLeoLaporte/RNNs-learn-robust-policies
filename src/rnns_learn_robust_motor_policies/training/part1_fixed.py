@@ -7,12 +7,12 @@ import jax.random as jr
 import jax.tree as jt
 from jaxtyping import PRNGKeyArray
 
-from feedbax import get_ensemble, is_module
 from feedbax.intervene import schedule_intervenor
 from feedbax.misc import attr_str_tree_to_where_func
 from feedbax.train import filter_spec_leaves
 from feedbax.xabdeef.models import point_mass_nn
 from feedbax.xabdeef.losses import simple_reach_loss
+from jax_cookbook.tree import get_ensemble
 
 from rnns_learn_robust_motor_policies.constants import (
     DISTURBANCE_CLASSES, 
@@ -98,36 +98,6 @@ def setup_task_model_pair(hps: TreeNamespace, *, key):
         label=INTERVENOR_LABEL,
         default_active=False,
     ))
-
-
-def setup_model_parameter_histories(
-    models_tree,
-    *,
-    where_train_strs,
-    save_model_parameters,
-    key,
-):
-    n_save_steps = len(save_model_parameters)
-    where_train = attr_str_tree_to_where_func(where_train_strs)
-    
-    models_parameters = jt.map(
-        lambda models: eqx.filter(eqx.filter(
-            models, 
-            filter_spec_leaves(models, where_train),
-        ), eqx.is_array),
-        models_tree,
-        is_leaf=is_module,
-    )
-    
-    model_parameter_histories = jt.map(
-        lambda x: (
-            jnp.empty((n_save_steps,) + x.shape)
-            if eqx.is_array(x) else x
-        ),
-        models_parameters,
-    )
-    
-    return model_parameter_histories
 
 
 def get_train_pairs(hps: TreeNamespace, key: PRNGKeyArray):

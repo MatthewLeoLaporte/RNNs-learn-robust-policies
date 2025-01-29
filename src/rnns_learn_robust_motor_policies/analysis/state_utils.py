@@ -6,9 +6,9 @@ import jax.random as jr
 import jax.tree as jt
 from jaxtyping import Array, Float
 
-from feedbax import is_type, is_module
 from feedbax.intervene import AbstractIntervenor
-from feedbax._tree import tree_infer_batch_size
+import jax_cookbook.tree as jtree
+from jax_cookbook import is_type, is_module
 
 
 def angle_between_vectors(v2, v1):
@@ -121,7 +121,7 @@ def _get_eval_ensemble(models, task):
     def eval_ensemble(key):
         return task.eval_ensemble(
             models,
-            n_replicates=tree_infer_batch_size(models, exclude=is_type(AbstractIntervenor)),
+            n_replicates=jtree.infer_batch_size(models, exclude=is_type(AbstractIntervenor)),
             # Each member of the model ensemble will be evaluated on the same trials
             ensemble_random_trials=False,
             key=key,

@@ -13,22 +13,19 @@ from jaxtyping import Array, PRNGKeyArray, PyTree
 import numpy as np
 import optax
 
-from feedbax import (
-    tree_concatenate, 
-    tree_unzip, 
-    tree_map_tqdm, 
-    is_type,
-)
 from feedbax._io import arrays_to_lists
 from feedbax.loss import AbstractLoss
 from feedbax.misc import attr_str_tree_to_where_func
 from feedbax.task import AbstractTask
 from feedbax.train import TaskTrainer
 from feedbax.xabdeef.losses import simple_reach_loss
+import jax_cookbook.tree as jtree
+from jax_cookbook import is_type
 
 from rnns_learn_robust_motor_policies.database import ModelRecord, get_record, save_model_and_add_record
 from rnns_learn_robust_motor_policies.hyperparams import (
-    TreeNamespace, 
+    TreeNamespace,
+    flatten_hps, 
     load_hps,
     namespace_to_dict, 
     promote_model_hps, 
@@ -143,7 +140,7 @@ def train_pair(
     if pretrain_history is None:
         train_history_all = train_history
     else:
-        train_history_all = tree_concatenate([pretrain_history, train_history])
+        train_history_all = jtree.concatenate([pretrain_history, train_history])
     
     return trained, train_history_all
 
@@ -192,11 +189,13 @@ def train_and_save_models(
     all_hps = fill_out_hps(hps_common, task_model_pairs)
 
     if untrained_only:
+        # TODO: Optionally do post-processing for models that were previously trained, but not post-processed
         task_model_pairs = skip_already_trained(db_session, task_model_pairs, all_hps)
         
     if not any(jt.leaves(task_model_pairs, is_leaf=is_type(TaskModelPair))):
         logger.info("No models to train. Exiting.")
-        return jt.map(lambda _: None, task_model_pairs, is_leaf=is_type(TaskModelPair))
+        # return jt.map(lambda _: None, task_model_pairs, is_leaf=is_type(TaskModelPair))
+        return None, None, None
     
     # TODO: Also get `trainer`, `loss_func`, ... as trees like `task_model_pairs`
     # Otherwise certain hyperparameters (e.g. learning rate) will be constant 
@@ -242,7 +241,7 @@ def train_and_save_models(
         return trained_model, train_history, model_record
         
 
-    trained_models, train_histories, model_records = tree_unzip(tree_map_tqdm(
+    trained_models, train_histories, model_records = jtree.unzip(jtree.map_tqdm(
         train_and_save_pair,
         task_model_pairs, 
         all_hps,
@@ -263,7 +262,9 @@ def concat_save_iterations(iterations: Array, n_batches_seq: Sequence[int]):
 def does_model_record_exist(db_session, hyperparameters):
     try: 
         existing_record = get_record(db_session, ModelRecord, **hyperparameters)
-    except AttributeError:
+    except AttributeError as e:
+        raise e
+        
         existing_record = None
     return existing_record is not None
 
@@ -284,6 +285,7 @@ def skip_already_trained(
         # flatten the `model` key into the top level
         
         hps.is_path_defunct = False
+        hps.postprocessed = False
         hps = promote_model_hps(hps)
  
         return hps
@@ -291,7 +293,7 @@ def skip_already_trained(
     record_exists = jt.map(
         lambda _, hps: does_model_record_exist(
             db_session, 
-            namespace_to_dict(get_query_hps(hps)),
+            namespace_to_dict(flatten_hps(get_query_hps(hps))),
         ),   
         task_model_pairs, all_hps,
          is_leaf=is_type(TaskModelPair),

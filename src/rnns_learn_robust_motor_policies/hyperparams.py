@@ -8,11 +8,12 @@ from types import SimpleNamespace
 from typing import Any, Optional, TypeVar
 
 import equinox as eqx
-from feedbax._tree import is_type
 import jax.tree as jt
-from feedbax import is_type, tree_key_tuples, tree_labels
 import jax.tree_util as jtu
 from jaxtyping import ArrayLike, PyTree
+
+from jax_cookbook import is_type
+import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.config import load_config, load_default_config
 from rnns_learn_robust_motor_policies.constants import get_iterations_to_save_model_parameters
@@ -185,7 +186,7 @@ def flatten_hps(
     hps = promote_model_hps(hps)
 
     return TreeNamespace(**dict(zip(
-        jt.leaves(tree_labels(hps, join_with='_', is_leaf=is_leaf)),
+        jt.leaves(jtree.labels(hps, join_with='_', is_leaf=is_leaf)),
         jt.leaves(hps, is_leaf=is_leaf),
     )))
 
@@ -214,7 +215,7 @@ def fill_out_hps(hps_common: TreeNamespace, task_model_pairs: PyTree[TaskModelPa
             path,
             level_types,
         ),
-        task_model_pairs, tree_key_tuples(task_model_pairs, is_leaf=is_type(TaskModelPair)),
+        task_model_pairs, jtree.key_tuples(task_model_pairs, is_leaf=is_type(TaskModelPair)),
         is_leaf=is_type(TaskModelPair),
     )
 

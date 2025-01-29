@@ -9,10 +9,9 @@ import jax.tree as jt
 from jaxtyping import Array, ArrayLike, PyTree
 import plotly.graph_objects as go
 
-from feedbax import is_module, tree_take, tree_key_tuples
-from feedbax._tree import anyf, is_type
 from feedbax.intervene import AbstractIntervenor
-
+from jax_cookbook import anyf, is_module, is_type
+import jax_cookbook.tree as jtree
 
 T = TypeVar("T")
 
@@ -89,7 +88,7 @@ def tree_map_with_keys(func, tree: PyTree, *rest, is_leaf=None, **kwargs):
     return jt.map(
         func,
         tree,
-        tree_key_tuples(tree, is_leaf=is_leaf),
+        jtree.key_tuples(tree, is_leaf=is_leaf),
         *rest,
         is_leaf=is_leaf,
         **kwargs,
@@ -136,7 +135,7 @@ def take_replicate(i, tree: PyTree[Array, 'T']) -> PyTree[Array, 'T']:
             is_leaf=is_type(AbstractIntervenor),
         ),
     )
-    return eqx.combine(intervenors, tree_take(other, i))
+    return eqx.combine(intervenors, jtree.take(other, i))
 
 
 def deep_update(d1, d2):

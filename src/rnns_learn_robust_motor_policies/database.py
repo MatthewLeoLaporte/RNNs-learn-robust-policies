@@ -12,6 +12,7 @@ from typing import Literal, Optional, Dict, Any, TypeVar
 import hashlib
 import json
 import uuid
+import yaml
 
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
@@ -47,16 +48,16 @@ from sqlalchemy.orm import (
 )
 from sqlalchemy.sql.type_api import TypeEngine
 
-from feedbax import is_type, save, tree_zip
 from feedbax.misc import attr_str_tree_to_where_func
-from feedbax._io import arrays_to_lists
-from feedbax._tree import (
+from jax_cookbook import (
     allf,
+    arrays_to_lists,
+    is_type, 
     is_not_type,
-    make_named_dict_subclass,
-    make_named_tuple_subclass,
+    save,
 )
-import yaml
+import jax_cookbook.tree as jtree
+
 
 from rnns_learn_robust_motor_policies import (
     DB_DIR, 
@@ -316,7 +317,15 @@ def query_model_records(
         
     return query_records(session, ModelRecord, filters, match_all)
 
+class AlwaysEquatesFalse:
+    """Objects of this class always compare `False` for equality, except against themselves."""
+    def __eq__(self, other):
+        return isinstance(other, AlwaysEquatesFalse)
 
+    def __req__(self, other):
+        return isinstance(other, AlwaysEquatesFalse)
+    
+    
 def query_records(
     session: Session,
     record_type: str | type[BaseT],
@@ -337,7 +346,8 @@ def query_records(
     
     if filters:
         conditions = [
-            getattr(model_class, key) == value 
+            # If the column is not found, that counts as `False`
+            getattr(model_class, key, AlwaysEquatesFalse()) == value 
             for key, value in filters.items()
         ]
         
@@ -849,8 +859,8 @@ def archive_orphaned_records(session: Session) -> None:
         logger.error(f"Error archiving orphaned records: {e}")
         raise
 
-RecordDict = make_named_dict_subclass("RecordDict")
-ColumnTuple = make_named_tuple_subclass("ColumnTuple")
+RecordDict = jtree.make_named_dict_subclass("RecordDict")
+ColumnTuple = jtree.make_named_tuple_subclass("ColumnTuple")
 
 
 def record_to_dict(record: Base) -> dict[str, Any]:

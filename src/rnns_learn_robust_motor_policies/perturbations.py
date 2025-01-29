@@ -8,7 +8,7 @@ import jax.random as jr
 from jaxtyping import Array, PRNGKeyArray
 
 from feedbax.intervene.schedule import TimeSeriesParam
-from feedbax._tree import is_type
+from jax_cookbook import is_type
 
 
 def random_unit_vector(key, dim):

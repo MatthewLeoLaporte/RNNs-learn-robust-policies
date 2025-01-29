@@ -10,8 +10,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from sklearn.decomposition import PCA
 
-from feedbax import is_type
 import feedbax.plotly as fbp
+from jax_cookbook import is_type
 
 from rnns_learn_robust_motor_policies.plot_utils import (
     add_context_annotation,

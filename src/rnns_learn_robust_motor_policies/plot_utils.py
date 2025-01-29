@@ -16,8 +16,8 @@ import plotly.colors as plc
 import plotly.graph_objects as go
 import pyperclip as clip
 
-from feedbax import is_type
 import feedbax.plot as fbp
+from jax_cookbook import is_type
 
 from rnns_learn_robust_motor_policies.setup_utils import filename_join
 

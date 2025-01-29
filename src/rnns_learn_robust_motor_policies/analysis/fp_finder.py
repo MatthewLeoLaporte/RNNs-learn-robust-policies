@@ -4,7 +4,7 @@ Derived from the JAX [implementation](https://github.com/google-research/computa
 of Fixed Point Finder, by David Sussillo et al.
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from functools import partial
 import logging
 from typing import Literal, Optional
@@ -12,20 +12,13 @@ from typing import Literal, Optional
 import equinox as eqx
 from equinox import Module
 import jax
-from jax.example_libraries import optimizers
 import jax.numpy as jnp 
-import jax.random as jr 
 import jax.tree as jt
 from jaxtyping import Array, Bool, Float, PRNGKeyArray, PyTree
-from matplotlib import pyplot as plt
 import numpy as np
 import optax
-import plotly.graph_objects as go
-from scipy.spatial.distance import pdist, squareform
-from sklearn.decomposition import PCA
 
-from feedbax import is_module
-import feedbax.plotly as fbp
+from jax_cookbook import is_module
 
 from rnns_learn_robust_motor_policies.misc import squareform_pdist
 

@@ -16,18 +16,11 @@ import plotly.graph_objects as go
 from rich.progress import Progress
 from rich.logging import RichHandler
 
-from feedbax import (
-    is_module, 
-    is_type,
-    tree_stack, 
-    tree_take_multi,
-    load_with_hyperparameters,
-    tree_unzip,
-)
 from feedbax.misc import attr_str_tree_to_where_func
 import feedbax.plotly as fbp 
 from feedbax.train import TaskTrainerHistory, WhereFunc
-from feedbax._tree import filter_spec_leaves, tree_labels
+import jax_cookbook.tree as jtree
+from jax_cookbook import is_module, is_type
 
 from rnns_learn_robust_motor_policies.database import (
     ModelRecord, 
@@ -109,7 +102,7 @@ def load_data(model_record: ModelRecord):
     )
 
 
-# TODO: map over this entire function and use `tree_unzip` on the result,
+# TODO: map over this entire function and use `jtree.unzip` on the result,
 # instead of mapping multiple times inside this function
 def get_best_iterations_and_losses(
     train_histories: PyTree[TaskTrainerHistory], 
@@ -218,18 +211,18 @@ def get_best_models(
     # became trainable later (i.e. resulting in the final values) and this may have 
     # affected the final loss.
     # TODO: Similarly, I think this might fail if two replicates differ in whether a parameter 
-    # was trainable at the best iteration; we'll end up trying to do a `tree_stack` on pytrees
+    # was trainable at the best iteration; we'll end up trying to do a `jtree.stack` on pytrees
     # where some array leaves are sometimes `None`. The solution to this is the same as the 
     # solution above: we need to select the best version of parameters that were trainable 
     # *at any point*
-    best_saved_parameters = tree_stack([
+    best_saved_parameters = jtree.stack([
         # Select the best parameters for each replicate, for all train histories
         jt.map(
-            lambda train_history, best_idxs: tree_take_multi(
+            lambda train_history, best_idxs: jtree.take_multi(
                 # Filter out the parameters that were not trainable at the best iteration
                 eqx.filter(
                     train_history.model_parameters, 
-                    filter_spec_leaves(
+                    jtree.filter_spec_leaves(
                         train_history.model_parameters, 
                         get_where_train(save_model_parameters[int(best_idxs[i])]),
                     ),
@@ -432,12 +425,12 @@ def save_training_figures(
                 lambda fig, train_std: save_and_add_figure(
                     fig, plot_id, variant_label, train_std
                 ),
-                # TODO: WHY is tree_labels here?
-                fig_set, tree_labels(fig_set, join_with="_", is_leaf=is_type(go.Figure)),
+                # TODO: WHY is jtree.labels here?
+                fig_set, jtree.labels(fig_set, join_with="_", is_leaf=is_type(go.Figure)),
                 is_leaf=is_type(go.Figure),
             ),
             figs,
-            tree_labels(figs, join_with="_", is_leaf=is_type(TrainStdDict, go.Figure)),
+            jtree.labels(figs, join_with="_", is_leaf=is_type(TrainStdDict, go.Figure)),
             is_leaf=is_type(TrainStdDict, go.Figure),
         )
 
@@ -465,7 +458,7 @@ def compute_replicate_info(
         **get_measures_to_rate(models, tasks),
     )
     
-    best_replicates, included_replicates = tree_unzip(jt.map(
+    best_replicates, included_replicates = jtree.unzip(jt.map(
         partial(get_best_and_included, n_std_exclude=n_std_exclude),
         measures,
     ))

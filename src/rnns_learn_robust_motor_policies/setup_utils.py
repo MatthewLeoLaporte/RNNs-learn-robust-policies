@@ -14,14 +14,8 @@ from ipywidgets import HTML
 from IPython.display import display
 import jax.numpy as jnp
 import jax.tree as jt
-from jaxtyping import PRNGKeyArray
+from jaxtyping import PRNGKeyArray, PyTree
 
-from feedbax import (
-    is_type, 
-    is_module, 
-    load, 
-    tree_set_scalar,
-)
 from feedbax.loss import AbstractLoss
 from feedbax.misc import attr_str_tree_to_where_func
 from feedbax.noise import Multiplicative, Normal
@@ -30,12 +24,9 @@ from feedbax.train import (
     TaskTrainerHistory, 
     init_task_trainer_history,
 )
-from feedbax._tree import (
-    tree_zip_named, 
-    tree_unzip,
-)
 from feedbax.xabdeef.losses import simple_reach_loss
-from jaxtyping import PyTree
+from jax_cookbook import is_module, is_type, load
+import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies import MODELS_DIR
 from rnns_learn_robust_motor_policies.constants import (
@@ -296,7 +287,7 @@ def set_model_noise(
         motor=lambda model: model.step.efferent_channel.noise_func,
     )
     
-    pairs, LeafTuple = tree_zip_named(
+    pairs, LeafTuple = jtree.zip_named(
         noise_func=noise_funcs,
         where=wheres, 
         is_leaf=is_module,
@@ -321,14 +312,14 @@ def set_model_noise(
 def setup_models_only(task_model_pair_setup_func, *args, **kwargs):
     """Given a function that returns task-model pairs, just get the models."""
     task_model_pairs = task_model_pair_setup_func(*args, **kwargs)
-    _, models = tree_unzip(task_model_pairs)
+    _, models = jtree.unzip(task_model_pairs)
     return models    
 
 
 def setup_tasks_only(task_model_pair_setup_func, *args, **kwargs):
     """Given a function that returns task-model pairs, just get the tasks."""
     task_model_pairs = task_model_pair_setup_func(*args, **kwargs)
-    tasks, _ = tree_unzip(task_model_pairs)
+    tasks, _ = jtree.unzip(task_model_pairs)
     return tasks
 
 
@@ -481,7 +472,7 @@ def query_and_load_model(
         
         if exclude_method_ == 'nan':
             def include_func_nan(model, included, best): 
-                return tree_set_scalar(model, jnp.nan, jnp.where(~included)[0])
+                return jtree.set_scalar(model, jnp.nan, jnp.where(~included)[0])
             include_func = include_func_nan
         elif exclude_method_ == 'remove':
             def include_func_remove(model, included, best): 

@@ -20,7 +20,8 @@ import optax
 import plotly
 
 import feedbax
-from feedbax import tree_unzip, is_type
+from jax_cookbook import is_type
+import jax_cookbook.tree as jtree  
 
 import rnns_learn_robust_motor_policies
 from rnns_learn_robust_motor_policies import PROJECT_SEED
@@ -38,7 +39,7 @@ def load_models(db_session, hps: TreeNamespace):
     train_id = int(hps.load.expt_id)
     setup_task_model_pair = TRAINPAIR_SETUP_FUNCS[train_id]
     
-    models_base, model_info, replicate_info, n_replicates_included = tree_unzip(
+    models_base, model_info, replicate_info, n_replicates_included = jtree.unzip(
         TrainStdDict({
             disturbance_std: query_and_load_model(
                 db_session,
@@ -124,7 +125,7 @@ if __name__ == '__main__':
         hps.eval.n_small = 1
 
     # Get indices for taking important subsets of replicates
-    best_replicate, included_replicates = tree_unzip(TrainStdDict({
+    best_replicate, included_replicates = jtree.unzip(TrainStdDict({
         std: (
             replicate_info[std]['best_replicates'][REPLICATE_CRITERION],
             replicate_info[std]['included_replicates'][REPLICATE_CRITERION],
