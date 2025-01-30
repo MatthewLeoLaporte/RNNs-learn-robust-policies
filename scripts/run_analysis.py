@@ -20,7 +20,7 @@ import optax
 import plotly
 
 import feedbax
-from jax_cookbook import is_type
+from jax_cookbook import is_type, is_module
 import jax_cookbook.tree as jtree  
 
 import rnns_learn_robust_motor_policies
@@ -30,9 +30,23 @@ from rnns_learn_robust_motor_policies.database import add_evaluation, get_db_ses
 from rnns_learn_robust_motor_policies.hyperparams import TreeNamespace, flatten_hps, load_hps
 from rnns_learn_robust_motor_policies.misc import log_version_info
 from rnns_learn_robust_motor_policies.training.post_training import TRAINPAIR_SETUP_FUNCS
-from rnns_learn_robust_motor_policies.setup_utils import query_and_load_model
+from rnns_learn_robust_motor_policies.setup_utils import get_base_reaching_task, query_and_load_model
 from rnns_learn_robust_motor_policies.hyperparams import namespace_to_dict
 from rnns_learn_robust_motor_policies.types import TrainStdDict
+
+
+
+ANALYSIS_SETS = {
+    #! "1-1": (setup_func, ALL_ANALYSES), 
+    "1-2": None,
+    "1-3": None,
+    "2-1": None,
+    "2-2": None,
+    "2-3": None,
+    "2-4": None,
+    "2-5": None,
+    "2-6": None,
+}
 
 
 def load_models(db_session, hps: TreeNamespace):
@@ -55,6 +69,9 @@ def load_models(db_session, hps: TreeNamespace):
                     feedback=hps.model.feedback_noise_std,
                     motor=hps.model.motor_noise_std,
                 ),
+                surgeries={
+                    ('n_steps',): hps.model.n_steps,
+                },  
                 exclude_underperformers_by=REPLICATE_CRITERION,
             )
             for disturbance_std in hps.load.disturbance.stds
@@ -81,32 +98,23 @@ def use_load_hps_when_none(hps: TreeNamespace) -> TreeNamespace:
     return hps
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Train some models on some tasks based on a config file.")
-    parser.add_argument("config_path", type=str, help="Path to the config file.")
-    args = parser.parse_args()
-    
-    hps = load_hps(args.config_path)
-    
-    version_info = log_version_info(
-        jax, eqx, optax, plotly, git_modules=(feedbax, rnns_learn_robust_motor_policies),
-    )
+def setup_analysis(
+    db_session, 
+    hps: TreeNamespace,
+):
+    # If some config values (other than those under the `load` key) are unspecified, replace them with 
+    # respective values from the `load` key
+    # e.g. if trained on curl fields and hps.disturbance.type is None, use hps.load.disturbance.type
+    hps = use_load_hps_when_none(hps)
 
-    db_session = get_db_session()
-    
-    key = jr.PRNGKey(PROJECT_SEED)
-    key_init, key_train, key_eval = jr.split(key, 3)
-    
+    # TODO: Get references to the setup/analysis functions for this analysis
+    setup_func, analyses = ANALYSIS_SETS[hps.expt_id]
+
     # Load models
     models_base, model_info, replicate_info, n_replicates_included = load_models(
         db_session,
         hps,
     )
-    
-    # If some config values (other than those under the `load` key) are unspecified, replace them with 
-    # respective values from the `load` key
-    # e.g. if trained on curl fields and hps.disturbance.type is None, use hps.load.disturbance.type
-    hps = use_load_hps_when_none(hps)
     
     # Later, use this to access the values of hyperparameters, assuming they 
     # are shared between models (e.g. `model_info_0.n_steps`)
@@ -121,8 +129,9 @@ if __name__ == '__main__':
         hps.model.motor_noise_std,
     )))
     if not any_system_noise:
-        hps.eval.n = 1
-        hps.eval.n_small = 1
+        hps.eval.n_trials = 1
+        if getattr(hps.eval, 'n_trials_small', None) is not None:
+            hps.eval.n_trials_small = 1
 
     # Get indices for taking important subsets of replicates
     best_replicate, included_replicates = jtree.unzip(TrainStdDict({
@@ -143,8 +152,26 @@ if __name__ == '__main__':
         eval_parameters=namespace_to_dict(flatten_hps(hps)),
         version_info=version_info,
     )
+    
     # TODO: Setup the evaluation tasks
     #! Varies with analysis
+    
+    task_base = get_base_reaching_task(
+        n_steps=hps.model.n_steps, 
+        **getattr(hps, 'task', {})
+    )
+    
+    all_tasks, models = setup_func(models_base, task_base, hps)
+    
+    # # And for convenience:
+    # example_task = {
+    #     key: jt.leaves(tasks, is_leaf=is_module)[0]
+    #     for key, tasks in all_tasks.items()
+    # }
+
+    # trial_specs = jt.map(lambda task: task.validation_trials, example_task, is_leaf=is_module)
+
+    # pos_endpoints = jt.map(get_pos_endpoints, trial_specs, is_leaf=is_module)
     
     # TODO: Set up plots, colors
     #! Varies with spreads (train std, eval amp, etc.)
@@ -157,4 +184,23 @@ if __name__ == '__main__':
     
     # TODO: Individual analyses
     #! Varies
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="Train some models on some tasks based on a config file.")
+    parser.add_argument("config_path", type=str, help="Path to the config file.")
+    args = parser.parse_args()
+    
+    hps = load_hps(args.config_path)
+    
+    version_info = log_version_info(
+        jax, eqx, optax, plotly, git_modules=(feedbax, rnns_learn_robust_motor_policies),
+    )
+
+    db_session = get_db_session()
+    
+    key = jr.PRNGKey(PROJECT_SEED)
+    key_init, key_train, key_eval = jr.split(key, 3)
+    
+    
     

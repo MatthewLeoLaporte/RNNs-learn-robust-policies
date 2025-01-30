@@ -3,15 +3,17 @@ created: 2024-10-04T11:27
 updated: 2024-11-13T10:32
 ---
 **See [[results-2|Part 2 results]] for ongoing analysis TODOs.
-src/rnns_learn_robust_motor_policies/config/1.yml
+
+- [ ] Move `analysis.part1` and `analysis.part2` and the part1 and part 2 files under the `training` subpackage into a separate subpackage for defaults
+
 - [ ] **Try training a significantly larger network in part 2 and see if the context 0 curves overlap**
 - [x] Docstrings in part1_fixed
 
+- [ ] Move the constants out of `constants` and into config files, where possible
 - [ ] **Use rich progress bar for CLI?**
-- [ ] Batch script for part 1src/rnns_learn_robust_motor_policies/config/1.yml
-- [x] Clean up `setup_utils.pysrc/rnns_learn_robust_motor_policies/config/1.yml`
-src/rnns_learn_robust_motor_policies/config/1.yml
-### Convert notebooks for part 1src/rnns_learn_robust_motor_policies/config/1.yml
+- [ ] Batch script for part 1
+- [x] Clean up `setup_utils.py`
+### Convert notebooks for part 1
 
 #### Hyperparameter data structure
 
@@ -19,7 +21,7 @@ I am using `SimpleNamespace`, though it might be better to use `namedtuple`.
 
 I can turn `SimpleNamespace` into a PyTree, however this would be automatic with `namedtuple`.
 
-Also, using `jt.map` is not ideal for replacing null values with defaults, if we allow for partial configs (i.e. if not every config file needs to have all the same keys as all the other config files of the same kind, even if they are assigned `null` and nsrc/rnns_learn_robust_motor_policies/config/1.ymlever used) then the pytree structures will not match. 
+Also, using `jt.map` is not ideal for replacing null values with defaults, if we allow for partial configs (i.e. if not every config file needs to have all the same keys as all the other config files of the same kind, even if they are assigned `null` and never used) then the pytree structures will not match. 
 
 With `namedtuple`, the user could use partial configs, but needs to specify in the project code the structure of every kind of config file (e.g. training, or analysis). Then the loaded hps would contain unused information. Though, perhaps we could use `namedtuple` and `jt.map` to get the updated hyperparameters, and then just recursively `subdict` out the parameters that appear in the defaults for that kind of config.
 
@@ -287,6 +289,8 @@ It might also make sense to automatically save evaluated states to disk, and to 
 - [ ] **Fix `add_endpoint_traces`**. Or was that feature part of the new trajectory plotter? If the latter, update notebooks 1-1 and 1-2 to use the feature
 ## Debris
 
+
+- [ ] Double check that `save_model_and_add_record` is detecting existing records – not just generating a new hash and save a new model even if all the hps match
 - [ ] Separate train and eval seeds in `prng.yml` 
 - [ ] Write a `tree_stack` that works with models – can’t just use `apply_to_filtered_leaves` since the shape of the output is changed wrt the input 
 - [ ] Try vmapping over `schedule_intervenor`, to get batch dimensions in models and tasks. Batched tasks seems like a missing link to making some of the analyses easier to write.

@@ -20,7 +20,11 @@ load:
   
 eval: 
   n: 50
-  grid_n: 10
+  
+task:
+  eval_grid_n: 10
+  eval_n_directions: 1
+  eval_reach_length: 0
 
 disturbance:
   # null -> same as during training, e.g. load.disturbance.type in this case

@@ -19,9 +19,13 @@ load:
       0: ['step.net.hidden', 'step.net.readout']
   
 eval: 
-  n: 5
-  grid_n: 5
-  
+  n_trials: 5
+  # n_trials_small: 5
+
+task:  # Passed to the base task constructor
+  eval_grid_n: 5
+  eval_n_directions: 1
+  eval_reach_length: 0
 
 disturbance:
   # null -> same as during training, e.g. load.disturbance.type in this case
@@ -32,10 +36,12 @@ disturbance:
   n_amplitudes: 3
   start_step: 30
   duration: 5
+  direction: 'rand'  # 'rand' or 'xy'
 
 model:
   feedback_noise_std: null
   motor_noise_std: null
+
   
   
   

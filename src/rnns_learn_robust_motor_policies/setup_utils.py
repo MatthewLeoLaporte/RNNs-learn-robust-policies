@@ -43,6 +43,7 @@ from rnns_learn_robust_motor_policies.misc import (
     take_model,
 )
 from rnns_learn_robust_motor_policies.tree_utils import (
+    at_path,
     subdict,
 )
 from rnns_learn_robust_motor_policies.types import (
@@ -50,16 +51,18 @@ from rnns_learn_robust_motor_policies.types import (
 )
 
 
-def get_base_task(
+def get_base_reaching_task(
     n_steps: int = N_STEPS,
     loss_func: AbstractLoss = simple_reach_loss(),
     validation_params: dict[str, Any] = TASK_EVAL_PARAMS['full'],
+    **kwargs,
 ) -> SimpleReaches:
     return SimpleReaches(
         loss_func=loss_func,
         workspace=WORKSPACE, 
         n_steps=n_steps,
         **validation_params, 
+        **kwargs,
     )
      
 def get_train_pairs_by_disturbance_std(
@@ -361,22 +364,24 @@ def setup_replicate_info(models, hps, *, key):
         info_label: models_tree_with_value(value)
         for info_label, value in dict(
             best_save_idx=jnp.zeros(hps.model.n_replicates, dtype=int),
-            best_saved_iteration_by_replicate=[0] * n_replicates,
-            losses_at_best_saved_iteration=jnp.zeros(n_replicates, dtype=float),
-            losses_at_final_saved_iteration=jnp.zeros(n_replicates, dtype=float),
-            readout_norm=jnp.zeros(n_replicates, dtype=float),
+            best_saved_iteration_by_replicate=[0] * hps.model.n_replicates,
+            losses_at_best_saved_iteration=jnp.zeros(hps.model.n_replicates, dtype=float),
+            losses_at_final_saved_iteration=jnp.zeros(hps.model.n_replicates, dtype=float),
+            readout_norm=jnp.zeros(hps.model.n_replicates, dtype=float),
         ).items()
     } | dict(
         best_replicates=get_measure_dict(0),
-        included_replicates=get_measure_dict(jnp.ones(n_replicates, dtype=bool)),
+        included_replicates=get_measure_dict(jnp.ones(hps.model.n_replicates, dtype=bool)),
     )
     
-    
+
+# TODO: Update docstring
 def query_and_load_model(
     db_session,  # TODO: Type?
     setup_task_model_pair: Callable,
     params_query: dict[str, Any],
     noise_stds: Optional[dict[Literal['feedback', 'motor'] | str, Optional[float]]] = None,
+    surgeries: Optional[dict[tuple, Any]] = None,
     tree_inclusions: Optional[dict[type, Optional[Any | Sequence | Callable]]] = None,
     exclude_underperformers_by: Optional[str] = None,
     exclude_method: Literal['nan', 'remove', 'best-only'] = 'nan',
@@ -387,8 +392,12 @@ def query_and_load_model(
         db_session: The SQLAlchemy database session
         setup_task_model_pair: The function used to setup the task-model PyTree for this 
             part of the project.
-        params_load: The parameters used to query the records of the model table of the database. 
-            If more than one record matches, an error is raised.  
+        params_query: The parameters used to query the records of the model table of the database. 
+            If more than one record matches, an error is raised.
+        noise_stds:   
+        surgeries: Specifies model surgeries to perform. For example, passing 
+            `{('step', 'feedback_channels', 0, 'noise_func', 'std'): 0.1}` means to set the value of 
+            the feedback noise std to 0.1.
         tree_inclusions: Optionally, rules by which to include parts of dict nodes in the loaded 
             PyTree of models. Each rule's key is a dict node type in the PyTree,  
             and the respective values are the node key(s) which should be kept, or a callable that 
@@ -431,6 +440,14 @@ def query_and_load_model(
     
     n_replicates_included = model_info.n_replicates
     
+    if surgeries is not None:
+        for path, value in surgeries.items():
+            model = jt.map(
+                lambda m: eqx.tree_at(at_path(m, path), model, value),
+                model,
+                is_leaf=is_module,
+            )
+    
     if noise_stds is not None:
         # NOTE: Map over `model` as if it is type `PyTree[eqx.Module]`. This may be
         #       vestigial but it's also more general, and isn't costly, so I am leaving it as-is.
@@ -472,7 +489,7 @@ def query_and_load_model(
         
         if exclude_method_ == 'nan':
             def include_func_nan(model, included, best): 
-                return jtree.set_scalar(model, jnp.nan, jnp.where(~included)[0])
+                return jtree.array_set_scalar(model, jnp.nan, jnp.where(~included)[0])
             include_func = include_func_nan
         elif exclude_method_ == 'remove':
             def include_func_remove(model, included, best): 

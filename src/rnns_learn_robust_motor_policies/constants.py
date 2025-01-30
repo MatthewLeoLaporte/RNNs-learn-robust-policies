@@ -16,7 +16,7 @@ DISTURBANCE_CLASSES = {
 }
 
 
-## Model parameters
+## Model parameters  n_grid: 5
 MASS = 1.0
 # Default noise levels
 FB_NOISE_STD = 0.01
@@ -29,6 +29,8 @@ N_STEPS = 100
 WORKSPACE = ((-1., -1.),
              (1., 1.))
 EVAL_REACH_LENGTH = 0.5
+
+# TODO: 
 TASK_EVAL_PARAMS: dict[str, dict[str, Any]] = dict(
     full=dict(
         eval_grid_n=2,

@@ -13,6 +13,8 @@ from feedbax.intervene import AbstractIntervenor
 from jax_cookbook import anyf, is_module, is_type
 import jax_cookbook.tree as jtree
 
+from rnns_learn_robust_motor_policies.hyperparams import TreeNamespace
+
 T = TypeVar("T")
 
 
@@ -156,3 +158,20 @@ def deep_update(d1, d2):
 
 def is_dict_with_int_keys(d: dict) -> bool:
     return isinstance(d, dict) and len(d) > 0 and all(isinstance(k, int) for k in d.keys())
+
+
+def at_path(obj, path):
+    """Navigate to `path` in `obj` and return the value there."""
+    # TODO: Generalize this to use the usual key types from `jax.tree_utils`
+    # We can then create a separate function to translate "simple" representations
+    # like `('step', 'feedback_channels', 0, 'noise_func', 'std')` into paths that use 
+    # e.g. `DictKey`
+    for key in path:
+        if isinstance(obj, (eqx.Module, TreeNamespace)):
+            # Assume the key can be cast to the attribute name (string)
+            obj = getattr(obj, str(key))
+        elif isinstance(obj, (dict, list, tuple)):
+            # Assume the key types match with the tree level types so this doesn't err 
+            obj = obj[key]
+
+    return obj

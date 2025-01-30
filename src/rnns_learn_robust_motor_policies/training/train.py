@@ -31,9 +31,7 @@ from rnns_learn_robust_motor_policies.hyperparams import (
     promote_model_hps, 
     fill_out_hps,
 )
-from rnns_learn_robust_motor_policies.tree_utils import (
-    pp, 
-)
+from rnns_learn_robust_motor_policies.tree_utils import pp
 from rnns_learn_robust_motor_policies.types import TaskModelPair
 
 from rnns_learn_robust_motor_policies.training.part1_fixed import (

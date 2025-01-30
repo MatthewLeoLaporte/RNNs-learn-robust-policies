@@ -21,7 +21,7 @@ from rnns_learn_robust_motor_policies.constants import (
     INTERVENOR_LABEL, 
     MASS,
 )
-from rnns_learn_robust_motor_policies.setup_utils import get_base_task, get_train_pairs_by_disturbance_std
+from rnns_learn_robust_motor_policies.setup_utils import get_base_reaching_task, get_train_pairs_by_disturbance_std
 from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainingMethodDict
 
 
@@ -136,7 +136,7 @@ def setup_task_model_pair(
         def batch_scale_up(batch_start, n_batches, batch_info, x):
             return x
 
-    task_base = get_base_task(n_steps=hps.model.n_steps)
+    task_base = get_base_reaching_task(n_steps=hps.model.n_steps)
     
     models_base = get_ensemble(
         point_mass_nn,
