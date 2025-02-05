@@ -3,6 +3,7 @@ from collections.abc import Callable
 from enum import Enum
 from functools import cached_property, partial, reduce
 from typing import Optional
+
 import equinox as eqx
 from equinox import Module
 from equinox import filter_vmap as vmap
@@ -14,6 +15,7 @@ from feedbax.bodies import SimpleFeedbackState
 from jax_cookbook import is_type
 
 from rnns_learn_robust_motor_policies.constants import EVAL_REACH_LENGTH
+from rnns_learn_robust_motor_policies.types import MeasureDict
 
 
 frob = lambda x: jnp.linalg.norm(x, axis=(-1, -2), ord='fro')
@@ -296,7 +298,7 @@ def set_timesteps(measure: Measure, timesteps) -> Measure:
     )
 
 
-MEASURES = dict(
+MEASURES = MeasureDict(
     max_net_force=max_net_force,
     sum_net_force=sum_net_force,
     max_parallel_force_forward=max_parallel_force,
@@ -322,7 +324,7 @@ MEASURES = dict(
 )
 
 
-MEASURE_LABELS = dict(
+MEASURE_LABELS = MeasureDict(
     max_net_force="Max net control force",
     sum_net_force="Sum net control force",
     max_parallel_force_forward="Max forward force",
@@ -349,6 +351,7 @@ MEASURE_LABELS = dict(
 
 
 def compute_all_measures(measures: PyTree[Measure], all_responses: PyTree[Responses]):
+    """Maps the tree of measures over the tree of response conditions."""
     return jt.map(
         lambda func: jt.map(
             lambda responses: func(responses),

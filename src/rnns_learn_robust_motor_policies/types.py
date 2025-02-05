@@ -61,12 +61,22 @@ class ContextInputDict(CustomDict[K, V], Generic[K, V]):
 class TrainingMethodDict(CustomDict[K, V], Generic[K, V]):
     ...
 
+
 class FPDict(CustomDict[K, V], Generic[K, V]):
     ...
+
 
 class TrainWhereDict(CustomDict[K, V], Generic[K, V]):
     ...
 
+
+class LabelDict(CustomDict[str, V], Generic[V]):
+    ...
+    
+    
+class MeasureDict(CustomDict[str, V], Generic[V]):
+    ...
+    
     
 _custom_dict_classes = (
     TrainStdDict, 
@@ -74,8 +84,10 @@ _custom_dict_classes = (
     PertVarDict, 
     ContextInputDict, 
     TrainingMethodDict,
+    LabelDict,
     FPDict,
     TrainWhereDict,
+    MeasureDict,
 )
 
 
@@ -127,9 +139,18 @@ for cls in (ImpulseAmpTuple,):
         lambda _, children: cls(children)  # type: ignore
     ) 
   
-
-
-
-
+#! TODO: Compute this algorithmically using `camel_to_snake`
+#! (Will also need to rename `TrainStdDict` to `PertStdDict` or something)
+TYPE_LABELS = {
+    TrainStdDict: 'disturbance_std',
+    PertAmpDict: 'disturbance_amplitude',  
+    PertVarDict: 'pert_var', 
+    ContextInputDict: 'context_input', 
+    TrainingMethodDict: 'training_method',
+    LabelDict: 'label',
+    MeasureDict: 'measure',
+    # FPDict: 'fp',
+    # TrainWhereDict: 'train_where',    
+}
             
   

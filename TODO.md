@@ -4,16 +4,16 @@ updated: 2024-11-13T10:32
 ---
 **See [[results-2|Part 2 results]] for ongoing analysis TODOs.
 
-- [ ] Move `analysis.part1` and `analysis.part2` and the part1 and part 2 files under the `training` subpackage into a separate subpackage for defaults
+- [ ] Try training a significantly larger network in part 2 and see if the context 0 curves overlap
+- [ ] Use rich progress bar for CLI?
 
-- [ ] **Try training a significantly larger network in part 2 and see if the context 0 curves overlap**
-- [x] Docstrings in part1_fixed
-
-- [ ] Move the constants out of `constants` and into config files, where possible
-- [ ] **Use rich progress bar for CLI?**
-- [ ] Batch script for part 1
-- [x] Clean up `setup_utils.py`
 ### Convert notebooks for part 1
+
+- [ ] Move `analysis.part1` and `analysis.part2` and the part1 and part 2 files under the `training` subpackage into a separate subpackage for defaults
+- [ ] Move the constants out of `constants` and into config files, where possible
+- [ ] `Colors` object which supplies the colors namespace as a dependency. e.g. `colors.dark.disturbance_std`.
+- [ ] In `types`, make the mapping algorithmic between custom dict types and the column names they map to. Thus `PertVarDict` keys correspond to `pert_var` column values.
+- [ ] Add the calculation of `disturbance.amplitude` when loading hyperparams (e.g. 1-2)
 
 #### Hyperparameter data structure
 
@@ -24,6 +24,20 @@ I can turn `SimpleNamespace` into a PyTree, however this would be automatic with
 Also, using `jt.map` is not ideal for replacing null values with defaults, if we allow for partial configs (i.e. if not every config file needs to have all the same keys as all the other config files of the same kind, even if they are assigned `null` and never used) then the pytree structures will not match. 
 
 With `namedtuple`, the user could use partial configs, but needs to specify in the project code the structure of every kind of config file (e.g. training, or analysis). Then the loaded hps would contain unused information. Though, perhaps we could use `namedtuple` and `jt.map` to get the updated hyperparameters, and then just recursively `subdict` out the parameters that appear in the defaults for that kind of config.
+
+#### Task and model setup
+
+Done, plus or minus any minor bugs I haven’t noticed yet.
+
+#### Evaluate states
+
+**YOU ARE HERE**.
+
+#### Individual analyses
+
+Some of these may depend on certain things we’d like to only calculate once.
+For example, aligned responses. 
+Either we add in one or more extra calculation phases where we can construct an “extra data” namespace which is passed around to the individual analyses. 
 
 ## Efficiency
 

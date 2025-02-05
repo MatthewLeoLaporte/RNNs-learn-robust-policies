@@ -1,3 +1,5 @@
+
+import equinox as eqx
 import jax.numpy as jnp
 import jax.tree as jt 
 
@@ -5,15 +7,18 @@ from feedbax.intervene import schedule_intervenor
 from jax_cookbook import is_type, is_module
 import jax_cookbook.tree as jtree
 
+from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.types import PertVarDict
 from rnns_learn_robust_motor_policies.perturbations import feedback_impulse
 
+
+ALL_ANALYSES = []
 
 PERT_VAR_NAMES = ('pos', 'vel')
 COORD_NAMES = ('x', 'y')
 
 
-def _setup_rand(models_base, task_base, hps):
+def _setup_rand(task_base, models_base, hps):
     """Impulses in random directions, i.e. uniform angles about the effector."""
     all_tasks, all_models = jtree.unzip(jt.map(
         lambda feedback_var_idx: schedule_intervenor(
@@ -43,7 +48,7 @@ def _setup_rand(models_base, task_base, hps):
     return all_tasks, all_models, impulse_directions
 
 
-def _setup_xy(models_base, task_base, hps):
+def _setup_xy(task_base, models_base, hps):
     """Impulses only in the x and y directions."""
     feedback_var_idxs = PertVarDict(zip(PERT_VAR_NAMES, range(len(PERT_VAR_NAMES))))
     coord_idxs = dict(zip(COORD_NAMES, range(len(COORD_NAMES))))
@@ -91,15 +96,15 @@ SETUP_FUNCS_BY_DIRECTION = dict(
 )
 
 
-def setup_tasks_and_models(models_base, task_base, hps):
-
-    # ### Schedule impulse perturbations
+def setup_tasks_and_models(task_base, models_base, hps):
     impulse_amplitudes = jt.map(
         lambda max_amp: jnp.linspace(0, max_amp, hps.disturbance.n_amplitudes + 1)[1:],
         hps.disturbance.amplitude_max,
     )
+    hps.disturbance.amplitude = impulse_amplitudes
 
     impulse_end_step = hps.disturbance.start_step + hps.disturbance.duration
+    # TODO: Move extra info to another function? Or return it here.
     impulse_time_idxs = slice(hps.disturbance.start_step, impulse_end_step)
 
     # For the example trajectories and aligned profiles, we'll only plot one of the impulse amplitudes. 
@@ -110,12 +115,28 @@ def setup_tasks_and_models(models_base, task_base, hps):
     }
 
     all_tasks, all_models, impulse_directions = SETUP_FUNCS_BY_DIRECTION[hps.disturbance.direction](
-        models_base, task_base, hps
+        task_base, models_base, hps
     )
     
-    return all_tasks, all_models
+    return all_tasks, all_models, hps
 
 
+def task_with_imp_amplitude(task, impulse_amplitude):
+    """Returns a task with the given disturbance amplitude."""
+    return eqx.tree_at(
+        lambda task: task.intervention_specs.validation['ConstantInput'].intervenor.params.scale,
+        task,
+        impulse_amplitude,
+    ) 
 
 
-
+def eval_func(models, task, hps, key_eval):
+    """Vmap over impulse amplitude."""
+    return eqx.filter_vmap(
+        lambda amplitude: vmap_eval_ensemble(
+            models, 
+            task_with_imp_amplitude(task, amplitude), 
+            hps,
+            key_eval,
+        )
+    )(hps.disturbance.amplitudes)

@@ -130,10 +130,10 @@ def _get_eval_ensemble(models, task):
 
     
 @eqx.filter_jit
-def vmap_eval_ensemble(models, task, n_trials: int, key):
+def vmap_eval_ensemble(models, task, hps, key):
     """Evaluate an ensemble of models on `n` random repeats of a task's validation set."""
     return eqx.filter_vmap(_get_eval_ensemble(models, task))(
-        jr.split(key, n_trials)
+        jr.split(key, hps.eval_n)
     )
     
     

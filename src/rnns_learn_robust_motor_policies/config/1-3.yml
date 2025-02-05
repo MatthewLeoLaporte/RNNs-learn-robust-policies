@@ -17,14 +17,14 @@ load:
   train:
     where: 
       0: ['step.net.hidden', 'step.net.readout']
+
+eval_n: 50
   
-eval: 
-  n: 50
-  
-task:
-  eval_grid_n: 10
-  eval_n_directions: 1
-  eval_reach_length: 0
+task:  # Passed to the base task constructor
+  full:
+    n_grid: 10
+    n_directions: 1
+    reach_length: 0
 
 disturbance:
   # null -> same as during training, e.g. load.disturbance.type in this case

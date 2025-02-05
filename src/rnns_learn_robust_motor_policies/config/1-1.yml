@@ -23,9 +23,17 @@ load:
     # readout_norm_loss_weight: 0.0
     # readout_norm_value: 2.0
   
-eval: 
-  n_trials: 5
-  n_trials_small: 5
+eval_n: 5
+  
+task:  # Passed to the base task constructor
+  full:
+    n_grid: 2
+    n_directions: 24
+    # reach_length: 0.5
+  small:
+    n_grid: 1
+    n_directions: 7
+    # reach_length: 0.5
 
 disturbance:
   # null -> same as during training, e.g. load.disturbance.type in this case
@@ -37,6 +45,10 @@ model:
   n_steps: null
   feedback_noise_std: null
   motor_noise_std: null
-  
+
+analyses:
+  center_out_sets: 
+    i_replicate: null
+    
   
   

@@ -6,6 +6,9 @@ Takes a single positional argument: the path to the YAML config.
 
 import os
 
+from rnns_learn_robust_motor_policies.analysis._dependencies import compute_dependencies
+
+
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
 import argparse
@@ -25,6 +28,12 @@ import jax_cookbook.tree as jtree
 
 import rnns_learn_robust_motor_policies
 from rnns_learn_robust_motor_policies import PROJECT_SEED
+from rnns_learn_robust_motor_policies.analysis.state_utils import get_pos_endpoints
+from rnns_learn_robust_motor_policies.colors import (
+    COLORSCALES, 
+    get_colors_dicts,
+    get_colors_dicts_from_discrete,
+)
 from rnns_learn_robust_motor_policies.constants import REPLICATE_CRITERION
 from rnns_learn_robust_motor_policies.database import add_evaluation, get_db_session
 from rnns_learn_robust_motor_policies.hyperparams import TreeNamespace, flatten_hps, load_hps
@@ -34,21 +43,9 @@ from rnns_learn_robust_motor_policies.setup_utils import get_base_reaching_task,
 from rnns_learn_robust_motor_policies.hyperparams import namespace_to_dict
 from rnns_learn_robust_motor_policies.types import TrainStdDict
 
+from rnns_learn_robust_motor_policies.analysis import ANALYSIS_SETS
 
-
-ANALYSIS_SETS = {
-    #! "1-1": (setup_func, ALL_ANALYSES), 
-    "1-2": None,
-    "1-3": None,
-    "2-1": None,
-    "2-2": None,
-    "2-3": None,
-    "2-4": None,
-    "2-5": None,
-    "2-6": None,
-}
-
-
+#! TODO: `TrainStdDict` should probably not be hardcoded here? Maybe put in the `setup_tasks_and_models` functions
 def load_models(db_session, hps: TreeNamespace):
     train_id = int(hps.load.expt_id)
     setup_task_model_pair = TRAINPAIR_SETUP_FUNCS[train_id]
@@ -98,6 +95,25 @@ def use_load_hps_when_none(hps: TreeNamespace) -> TreeNamespace:
     return hps
 
 
+def setup_colors(hps):
+    colors = {
+        k: get_colors_dicts(v, COLORSCALES[k])
+        for k, v in dict(
+            trials=range(hps.eval_n),
+            disturbance_train_stds=hps.load.disturbance.std,
+            disturbance_amplitudes=hps.disturbance.amplitude,
+        )
+    }
+    # discrete_colors = {
+    #     k: get_colors_dicts_from_discrete(v, COLORSCALES[k])
+    #     for k, v in dict(
+    #         fb_pert_vars=pert_var_names,
+    #     )
+    # }
+    discrete_colors = {}
+    return colors, discrete_colors
+
+
 def setup_analysis(
     db_session, 
     hps: TreeNamespace,
@@ -107,8 +123,9 @@ def setup_analysis(
     # e.g. if trained on curl fields and hps.disturbance.type is None, use hps.load.disturbance.type
     hps = use_load_hps_when_none(hps)
 
-    # TODO: Get references to the setup/analysis functions for this analysis
-    setup_func, analyses = ANALYSIS_SETS[hps.expt_id]
+    # TODO: Load based on module name (e.g. `"part1.plant_perts"`) rather than id (e.g. `"1-1"`)
+    # (and then remove the `ANALYSIS_SETS` constructions in the analysis subpackages)
+    setup_func, eval_func, analyses = ANALYSIS_SETS[hps.expt_id]
 
     # Load models
     models_base, model_info, replicate_info, n_replicates_included = load_models(
@@ -129,9 +146,7 @@ def setup_analysis(
         hps.model.motor_noise_std,
     )))
     if not any_system_noise:
-        hps.eval.n_trials = 1
-        if getattr(hps.eval, 'n_trials_small', None) is not None:
-            hps.eval.n_trials_small = 1
+        hps.eval_n = 1
 
     # Get indices for taking important subsets of replicates
     best_replicate, included_replicates = jtree.unzip(TrainStdDict({
@@ -153,37 +168,66 @@ def setup_analysis(
         version_info=version_info,
     )
     
-    # TODO: Setup the evaluation tasks
-    #! Varies with analysis
+    def get_task_variant(models_base, **kwargs):
+        task_variant = get_base_reaching_task(
+            n_steps=hps.model.n_steps, 
+            **kwargs,
+        )
     
-    task_base = get_base_reaching_task(
-        n_steps=hps.model.n_steps, 
-        **getattr(hps, 'task', {})
+        tasks, models = setup_func(task_variant, models_base, hps)
+        
+        return tasks, models
+    
+    # Outer level is task variants, inner is the structure returned by `setup_func`
+    # i.e. "task variants" are a way to evaluate different task setups
+    all_tasks, all_models, hps = jtree.unzip({
+        k: get_task_variant(models_base, **task_params)
+        for k, task_params in namespace_to_dict(hps.task).items()
+    })
+    
+    # And for convenience
+    example_task = {
+        key: jt.leaves(tasks_variant, is_leaf=is_module)[0]
+        for key, tasks_variant in all_tasks.items()
+    }
+    example_trial_specs = jt.map(lambda task: task.validation_trials, example_task, is_leaf=is_module)
+    example_pos_endpoints = jt.map(get_pos_endpoints, example_trial_specs, is_leaf=is_module)
+    
+    colors, discrete_colors = setup_colors(hps) 
+    
+    def evaluate_all_states(all_tasks, all_models, hps):
+        return {  # Map over task variants
+            task_variant_label: jt.map(  # Map over task-modelsubtree pairs generated by `schedule_intervenor` for each base task
+                lambda task, models: jt.map(  # Map over base model subtree, for the given base task
+                    lambda model: eval_func(model, task, hps, key_eval),
+                    models,
+                    is_leaf=is_module,
+                ),
+                all_tasks[task_variant_label],
+                all_models[task_variant_label],               
+                is_leaf=is_module,
+            )
+            for task_variant_label in all_tasks
+        }
+
+    all_states_bytes = jtree.struct_bytes(eqx.filter_eval_shape(
+        evaluate_all_states, all_tasks, all_models, hps
+    ))
+    print(f"\n{all_states_bytes / 1e9:.2f} GB of memory estimated to store all states.")
+    
+    all_states = evaluate_all_states(all_tasks, all_models, hps)
+    
+    #! TODO: This should be mapped over `all_states`, if necessary
+    # Each value is a function that is passed `all_states` and returns some data
+    # e.g. the result of `"aligned_vars": get_aligned_vars` will be passed to *all* analyses
+    # This ensures that dependencies are only calculated once
+    dependencies = compute_dependencies(analyses, all_states, hps)
+    
+    all_results = jt.map(
+        lambda analysis: analysis(all_states, hps, **dependencies),
+        analyses, 
+        is_leaf=is_module,
     )
-    
-    all_tasks, models = setup_func(models_base, task_base, hps)
-    
-    # # And for convenience:
-    # example_task = {
-    #     key: jt.leaves(tasks, is_leaf=is_module)[0]
-    #     for key, tasks in all_tasks.items()
-    # }
-
-    # trial_specs = jt.map(lambda task: task.validation_trials, example_task, is_leaf=is_module)
-
-    # pos_endpoints = jt.map(get_pos_endpoints, trial_specs, is_leaf=is_module)
-    
-    # TODO: Set up plots, colors
-    #! Varies with spreads (train std, eval amp, etc.)
-    
-    # TODO: Evaluate all states
-    
-    # TODO: Align variables 
-    # optionally? or we could indicate it somehow as a dependency, e.g. 3 analyses depend on the aligned variables,
-    # but we should only compute them once
-    
-    # TODO: Individual analyses
-    #! Varies
 
 
 if __name__ == '__main__':

@@ -1,12 +1,14 @@
 from collections.abc import Iterable, Iterator, Mapping, Sequence
+from dataclasses import fields
 from datetime import datetime
 import json
 import logging
 from pathlib import Path
 import platform
+import re
 import subprocess
 from types import ModuleType
-from typing import Optional
+from typing import Any, Optional
 
 import equinox as eqx
 import jax
@@ -78,6 +80,16 @@ def lohi(x: Iterable):
         raise ValueError(f"Unsupported type: {type(x)}")
     
     return first, last
+
+
+def camel_to_snake(s: str):
+    """Convert camel case to snake case."""
+    return re.sub(r'(?<!^)(?=[A-Z])', '_', s).lower()
+
+
+def snake_to_camel(s: str):
+    """Convert snake case to camel case."""
+    return ''.join(word.title() for word in s.split('_'))
 
 
 def lomidhi(x: Iterable):
@@ -234,3 +246,15 @@ def take_model(*args, **kwargs):
     )(jtree.take)(
         *args, **kwargs
     )
+    
+    
+def get_dataclass_fields(
+    obj: Any, 
+    exclude: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    """Get the fields of a dataclass object as a dictionary."""
+    return {
+        field.name: getattr(obj, field.name)
+        for field in fields(obj)
+        if field.name not in exclude
+    }
