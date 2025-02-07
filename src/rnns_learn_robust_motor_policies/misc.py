@@ -258,3 +258,8 @@ def get_dataclass_fields(
         for field in fields(obj)
         if field.name not in exclude
     }
+
+
+def filename_join(strs, joinwith="__"):
+    """Helper for formatting filenames from lists of strings."""
+    return joinwith.join(s for s in strs if s)

@@ -14,7 +14,7 @@ from rnns_learn_robust_motor_policies.perturbations import feedback_impulse
 
 ALL_ANALYSES = []
 
-PERT_VAR_NAMES = ('pos', 'vel')
+PERT_VAR_NAMES = ('fb_pos', 'fb_vel')
 COORD_NAMES = ('x', 'y')
 
 

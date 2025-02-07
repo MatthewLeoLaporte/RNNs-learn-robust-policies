@@ -24,13 +24,12 @@ from jax_cookbook import is_type
 
 from rnns_learn_robust_motor_policies.database import ModelRecord, get_record, save_model_and_add_record
 from rnns_learn_robust_motor_policies.hyperparams import (
-    TreeNamespace,
     flatten_hps, 
     load_hps,
-    namespace_to_dict, 
     promote_model_hps, 
     fill_out_hps,
 )
+from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace, namespace_to_dict
 from rnns_learn_robust_motor_policies.tree_utils import pp
 from rnns_learn_robust_motor_policies.types import TaskModelPair
 
@@ -280,12 +279,10 @@ def skip_already_trained(
     
     def get_query_hps(hps: TreeNamespace) -> TreeNamespace:
         hps = deepcopy(hps)
-        # flatten the `model` key into the top level
-        
         hps.is_path_defunct = False
         hps.postprocessed = False
+        # flatten the `model` key into the top level
         hps = promote_model_hps(hps)
- 
         return hps
         
     record_exists = jt.map(
@@ -325,3 +322,5 @@ def make_delayed_cosine_schedule(init_lr, constant_steps, total_steps, alpha=0.0
         schedules=[constant_schedule, cosine_schedule],
         boundaries=[constant_steps]
     )
+    
+    

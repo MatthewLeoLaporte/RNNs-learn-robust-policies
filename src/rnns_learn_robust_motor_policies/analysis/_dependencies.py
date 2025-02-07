@@ -13,14 +13,17 @@ parse the graph.
 Written with the help of Claude 3.5 Sonnet.
 """
 
-from equinox import Module
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
-
-
 from collections import defaultdict
 from typing import Set, Type
 
-from rnns_learn_robust_motor_policies.hyperparams import TreeNamespace
+from equinox import Module
+import jax.tree as jt
+from jaxtyping import PyTree
+
+from jax_cookbook import is_module
+
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
+from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
 
 
 def build_dependency_graph(analyses: list[Type[AbstractAnalysis]]) -> tuple[dict[str, Set[str]], Set[str]]:
@@ -70,7 +73,9 @@ def topological_sort(graph: dict[str, Set[str]], all_deps: Set[str]) -> list[str
 
 def compute_dependencies(
     analyses: list[Type[AbstractAnalysis]],
-    states: Module,
+    models: PyTree[Module],
+    tasks: PyTree[Module],
+    states: PyTree[Module],
     hps: TreeNamespace,
 ) -> dict:
     """Compute all dependencies in correct order."""
@@ -93,6 +98,7 @@ def compute_dependencies(
         dep_class = dep_classes[dep_name]
         # Initialize dependency class and compute
         dep_instance = dep_class()
-        results[dep_name] = dep_instance.compute(states, hps, **results)
+        # Map over pytree of states
+        results[dep_name] = dep_instance.compute(models, tasks, states, hps, **results)
 
     return results

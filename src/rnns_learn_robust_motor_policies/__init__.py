@@ -8,7 +8,6 @@ import plotly.io as pio
 import yaml
 
 from rnns_learn_robust_motor_policies.config import load_named_config
-from rnns_learn_robust_motor_policies.misc import load_yaml
 # from rnns_learn_robust_motor_policies.training import train_and_save_models
 
 

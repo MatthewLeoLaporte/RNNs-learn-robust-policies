@@ -14,7 +14,7 @@ from feedbax.task import TrialSpecDependency
 from feedbax.xabdeef.models import point_mass_nn
 from jax_cookbook.tree import get_ensemble
 
-from rnns_learn_robust_motor_policies.hyperparams import TreeNamespace
+from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
 from rnns_learn_robust_motor_policies.misc import vector_with_gaussian_length, get_field_amplitude
 from rnns_learn_robust_motor_policies.constants import (
     DISTURBANCE_CLASSES,

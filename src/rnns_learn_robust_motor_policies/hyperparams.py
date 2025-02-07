@@ -5,11 +5,9 @@ from copy import deepcopy
 import logging
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Optional, TypeVar
+from typing import Optional, TypeVar
 
-import equinox as eqx
 import jax.tree as jt
-import jax.tree_util as jtu
 from jaxtyping import ArrayLike, PyTree
 
 from jax_cookbook import is_type
@@ -17,6 +15,7 @@ import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.config import load_config, load_default_config
 from rnns_learn_robust_motor_policies.constants import get_iterations_to_save_model_parameters
+from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace, dict_to_namespace
 from rnns_learn_robust_motor_policies.tree_utils import (
     deep_update,
     is_dict_with_int_keys,
@@ -48,74 +47,6 @@ DT = TypeVar("DT", bound=dict)
 
 
 logger = logging.getLogger(__name__)
-
-
-@jtu.register_pytree_with_keys_class
-class TreeNamespace(SimpleNamespace):
-    """A simple namespace that's a PyTree.
-
-    This is useful when we want to attribute-like access to the data in
-    a nested dict. For example, `hyperparameters['train']['n_batches']` 
-    becomes `TreeNamespace(**hyperparameters).train.n_batches`.
-    """
-    def tree_flatten_with_keys(self):
-        children_with_keys = [(jtu.GetAttrKey(k), v) for k, v in self.__dict__.items()]
-        aux_data = self.__dict__.keys()
-        return children_with_keys, aux_data      
-
-    @classmethod
-    def tree_unflatten(cls, aux_data, children):
-        return cls(**dict(zip(aux_data, children)))
-
-    def update_none_leaves(self, other):
-        # I would just use `jt.map` or `eqx.combine` to do this, however I don't want to assume
-        # that `other` will have identical PyTree structure to `self` -- only that it contains at 
-        # least the keys whose values are `None` in `self`.
-        #? Could work on flattened trees.
-        def _update_none_leaves(target: TreeNamespace, source: TreeNamespace) -> TreeNamespace:
-            result = deepcopy(target)
-            source = deepcopy(source)
-
-            for attr_name in vars(result):
-                result_value = getattr(result, attr_name)
-                source_value = getattr(source, attr_name, None)
-
-                if result_value is None:
-                    if source_value is None:
-                        raise ValueError(f"Cannot replace `None` value of key {attr_name}; no matching key available in source")
-                    setattr(result, attr_name, source_value)
-
-                elif isinstance(result_value, TreeNamespace):
-                    if source_value is None:
-                        raise ValueError(f"")
-                    if not isinstance(source_value, TreeNamespace):
-                        raise ValueError(f"Source must contain all the parent keys (but not necessarily all the leaves) of the target")
-                    setattr(result, attr_name, _update_none_leaves(result_value, source_value))
-
-            return result
-        return _update_none_leaves(self, other)
-
-    def __or__(self, other: 'TreeNamespace | dict') -> 'TreeNamespace':
-        """Merge two TreeNamespaces, with values from other taking precedence.
-        
-        Handles nested TreeNamespaces recursively.
-        """
-        result = deepcopy(self)
-        
-        if isinstance(other, dict):
-            other = dict_to_namespace(other, to_type=TreeNamespace, exclude=is_dict_with_int_keys)
-
-        for attr_name, other_value in vars(other).items():
-            self_value = getattr(result, attr_name, None)
-            
-            if isinstance(other_value, TreeNamespace) and isinstance(self_value, TreeNamespace):
-                # Recursively merge nested TreeNamespaces
-                setattr(result, attr_name, self_value | other_value)
-            else:
-                # Simply update, when at least one side isn't a TreeNamespace
-                setattr(result, attr_name, other_value)
-                
-        return result
 
 
 def process_hps(hps: TreeNamespace) -> TreeNamespace:
@@ -163,8 +94,9 @@ def promote_model_hps(hps: TreeNamespace) -> TreeNamespace:
     hps = deepcopy(hps)
     # Bring out the parameters under the `model` key; i.e. "model" won't appear in their flattened keys
     for key in ('model',):
-        if getattr(hps, key, None) is not None:
-            hps.__dict__.update(getattr(hps, key).__dict__)
+        subtree = getattr(hps, key, None)
+        if subtree is not None:
+            hps.__dict__.update(subtree.__dict__)
             delattr(hps, key)
     return hps
 
@@ -235,67 +167,3 @@ def take_train_histories_hps(hps: TreeNamespace) -> TreeNamespace:
     )
 
 
-def _convert_value(value: Any, to_type: type, from_type: type, exclude: Callable) -> Any:
-    recurse_func = lambda x: _convert_value(x, to_type, from_type, exclude)
-    map_recurse_func = lambda tree: jt.map(recurse_func, tree, is_leaf=is_type(from_type))
-
-    if exclude(value):
-        subtrees, treedef = eqx.tree_flatten_one_level(value)
-        subtrees = [map_recurse_func(subtree) for subtree in subtrees]
-        return jt.unflatten(treedef, subtrees)
-    
-    elif isinstance(value, from_type):
-        if isinstance(value, SimpleNamespace):
-            value = vars(value)
-        if not isinstance(value, dict):
-            raise ValueError(f"Expected a dict or namespace, got {type(value)}")
-        
-        return to_type(**{
-            str(k): recurse_func(v) 
-            for k, v in value.items()
-        })
-    
-    elif isinstance(value, (str, ArrayLike, type(None))):
-        return value
-    
-    # Map over any remaining PyTrees, except 
-    elif isinstance(value, PyTree):
-        # `object` is an atomic PyTree, so without this check we'll get infinite recursion
-        if value is not object:
-            return map_recurse_func(value)
-    
-    return value
-
-
-def convert_kwargy_node_type(x, to_type: type, from_type: type, exclude: Callable = lambda x: False):
-    """Convert a nested dictionary to a nested SimpleNamespace.
-
-    !!! dev 
-        This should convert all the dicts to namespaces, even if the dicts are not contiguous all 
-        the way down (e.g. a dict in a list in a list in a dict)
-    """
-    return _convert_value(x, to_type, from_type, exclude)
-
-
-def namespace_to_dict(
-    ns: SimpleNamespace,
-    to_type: type[DT] = dict,
-    exclude: Callable = lambda x: False,
-) -> DT:
-    """Convert a nested SimpleNamespace to a nested dictionary.
-
-    This is the inverse operation of dict_to_namespace.
-    """
-    return convert_kwargy_node_type(ns, to_type=to_type, from_type=SimpleNamespace, exclude=exclude)
-
-
-def dict_to_namespace(
-    d: dict,
-    to_type: type[NT] = SimpleNamespace,
-    exclude: Callable = lambda x: False,
-) -> NT:
-    """Convert a nested dictionary to a nested SimpleNamespace.
-
-    This is the inverse operation of namespace_to_dict.
-    """
-    return convert_kwargy_node_type(d, to_type=to_type, from_type=dict, exclude=exclude)

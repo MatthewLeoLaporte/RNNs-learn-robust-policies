@@ -19,7 +19,7 @@ import pyperclip as clip
 import feedbax.plot as fbp
 from jax_cookbook import is_type
 
-from rnns_learn_robust_motor_policies.setup_utils import filename_join
+from rnns_learn_robust_motor_policies.misc import filename_join
 
 
 def get_savefig_func(fig_dir: Path, suffix=""):

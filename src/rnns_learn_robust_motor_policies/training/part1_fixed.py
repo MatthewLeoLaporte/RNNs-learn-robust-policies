@@ -19,7 +19,7 @@ from rnns_learn_robust_motor_policies.constants import (
     INTERVENOR_LABEL, 
     MASS,
 )
-from rnns_learn_robust_motor_policies.hyperparams import TreeNamespace
+from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
 from rnns_learn_robust_motor_policies.misc import vector_with_gaussian_length
 from rnns_learn_robust_motor_policies.setup_utils import get_base_reaching_task, get_train_pairs_by_disturbance_std
 from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainStdDict

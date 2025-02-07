@@ -12,7 +12,7 @@ from tqdm.auto import tqdm
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.database import add_evaluation_figure
-from rnns_learn_robust_motor_policies.hyperparams import TreeNamespace
+from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
 from rnns_learn_robust_motor_policies.misc import camel_to_snake, get_dataclass_fields
 from rnns_learn_robust_motor_policies.plot_utils import figs_flatten_with_paths
 from rnns_learn_robust_motor_policies.tree_utils import tree_level_types
@@ -29,15 +29,38 @@ class AbstractAnalysis(Module):
     dependencies: AbstractClassVar[dict[str, Callable]]
     conditions: AbstractClassVar[tuple[str, ...]]
     
-    def __call__(self, states: Module, hps: TreeNamespace, **kwargs) -> tuple[PyTree[Array], PyTree[go.Figure]]:
-        result = self.compute(states, hps, **kwargs)
-        figs = self.make_figs(states, hps, result=result, **kwargs)
+    def __call__(
+        self, 
+        models: PyTree[Module], 
+        tasks: PyTree[Module], 
+        states: PyTree[Module], 
+        hps: TreeNamespace,
+        **kwargs,
+    ) -> tuple[PyTree[Array], PyTree[go.Figure]]:
+        result = self.compute(models, tasks, states, hps, **kwargs)
+        figs = self.make_figs(models, tasks, states, hps, result=result, **kwargs)
         return result, figs
         
-    def compute(self, states: Module, hps: TreeNamespace, **kwargs) -> Optional[PyTree[Array]]:
+    def compute(
+        self, 
+        models: PyTree[Module], 
+        tasks: PyTree[Module], 
+        states: PyTree[Module], 
+        hps: TreeNamespace,
+        **kwargs,
+    ) -> Optional[PyTree[Array]]:
         return 
     
-    def make_figs(self, states: PyTree[Module], hps: TreeNamespace, *, result: Optional[Any], **kwargs) -> :
+    def make_figs(
+        self, 
+        models: PyTree[Module], 
+        tasks: PyTree[Module], 
+        states: PyTree[Module], 
+        hps: TreeNamespace,
+        *,
+        result: Optional[Any],
+        **kwargs,
+    ) -> Optional[PyTree[go.Figure]]:
         return 
     
     def _params_to_save(self, hps: TreeNamespace, **kwargs):
@@ -57,8 +80,8 @@ class AbstractAnalysis(Module):
             path_params = dict(zip(param_keys, tuple(jtree.node_key_to_value(p) for p in path)))
             
             params = dict(
-                **path_params,  # Inferred from the figure PyTree structure
-                **self._field_params,  # From the fields of this class
+                **path_params,  # Inferred from the structure of the figs PyTree
+                **self._field_params,  # From the fields of this subclass
                 **self._params_to_save(hps, result=result, **path_params),  # Extras specified by the subclass
                 eval_n=hps.eval_n,  # Some things should always be included?
             )

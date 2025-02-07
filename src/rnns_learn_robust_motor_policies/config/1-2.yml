@@ -9,7 +9,8 @@ load:
     std: [0.0, 0.5, 1.0, 1.5]  # list -> load multiple models
     
   model:  # 
-    hidden_size: 50
+    n_steps: 100  
+    hidden_size: 100
     feedback_noise_std: 0.01
     motor_noise_std: 0.01
     feedback_delay_steps: 0

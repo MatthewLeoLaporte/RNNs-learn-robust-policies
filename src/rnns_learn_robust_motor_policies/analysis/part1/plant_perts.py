@@ -18,15 +18,12 @@ import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
 from rnns_learn_robust_motor_policies.analysis.measures import MEASURES, MEASURE_LABELS, RESPONSE_VAR_LABELS, Measure, Responses, compute_all_measures, output_corr
-from rnns_learn_robust_motor_policies.analysis.state_utils import orthogonal_field, vmap_eval_ensemble
+from rnns_learn_robust_motor_policies.analysis.state_utils import get_aligned_vars, get_pos_endpoints, orthogonal_field, vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.colors import MEAN_LIGHTEN_FACTOR
-from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL
-from rnns_learn_robust_motor_policies.database import add_evaluation_figure
-from rnns_learn_robust_motor_policies.hyperparams import TreeNamespace
+from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL, REPLICATE_CRITERION
+from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
 from rnns_learn_robust_motor_policies.misc import camel_to_snake, lohi
 from rnns_learn_robust_motor_policies.plot import get_measure_replicate_comparisons, get_violins
-from rnns_learn_robust_motor_policies.plot_utils import figs_flatten_with_paths
-from rnns_learn_robust_motor_policies.setup_utils import convert_tasks_to_small
 from rnns_learn_robust_motor_policies.tree_utils import subdict, tree_subset_dict_level
 from rnns_learn_robust_motor_policies.types import LabelDict, MeasureDict, PertAmpDict, TrainStdDict
 
@@ -85,7 +82,7 @@ def setup_tasks_and_models(task_base, models_base, hps):
     # Construct tasks with different amplitudes of disturbance field
     all_tasks, all_models = jtree.unzip(jt.map(
         lambda disturbance_amplitude: schedule_intervenor(
-            task_base, models[0],
+            task_base, models,
             lambda model: model.step.mechanics,
             disturbance(disturbance_amplitude),
             label=INTERVENOR_LABEL,  
@@ -127,12 +124,39 @@ def plot_trajectories(states, *args, colors, **kwargs):
     )
 
 
+WHERE_VARS_TO_ALIGN = lambda states, pos_endpoints: Responses(
+    # Positions with respect to the origin
+    states.mechanics.effector.pos - pos_endpoints[0][..., None, :],
+    states.mechanics.effector.vel,
+    states.efferent.output,
+)
+
+
 class AlignedVars(AbstractAnalysis):
-    dependencies: ClassVar[dict[str, Callable]] = {}
+    """Align spatial variable (e.g. position and velocity) coordinates with the reach direction."""
+    dependencies: ClassVar[dict[str, Callable]] = dict()
     conditions: ClassVar[tuple[str, ...]] = ()
 
-    def __call__(self, states: PyTree[Module], hps: TreeNamespace, **kwargs):
-        raise NotImplementedError
+    def compute(
+        self, 
+        models: PyTree[Module], 
+        tasks: PyTree[Module], 
+        states: PyTree[Module], 
+        hps: TreeNamespace, 
+        *,
+        trial_specs,
+        **kwargs,
+    ):
+        pos_endpoints = jt.map(get_pos_endpoints, trial_specs, is_leaf=is_module)
+        
+        return {
+            variant: jt.map(
+                lambda all_states: get_aligned_vars(all_states, WHERE_VARS_TO_ALIGN, pos_endpoints[variant]),
+                states[variant],
+                is_leaf=is_module,
+            )
+            for variant in states
+        }
 
 
 class BestReplicateStates(AbstractAnalysis):
@@ -144,6 +168,8 @@ class BestReplicateStates(AbstractAnalysis):
     
     def compute(
         self, 
+        models: PyTree[Module],
+        tasks: PyTree[Module], 
         states: PyTree[Module], 
         hps: TreeNamespace, 
         *, 
@@ -164,14 +190,22 @@ class BestReplicateStates(AbstractAnalysis):
         )
 
 
-# "center_out_sets/all_evals_single_replicate"
 class CenterOutByEval(AbstractAnalysis):
     dependencies: ClassVar[dict[str, Callable]] = dict( 
         plot_states=BestReplicateStates,
     )
     conditions: ClassVar[tuple[str, ...]] = ('any_system_noise',)  # Skip this eval comparison, if only one eval
 
-    def make_figs(self, states: PyTree[Module], hps: TreeNamespace, *, plot_states, **kwargs):
+    def make_figs(
+        self, 
+        models: PyTree[Module], 
+        tasks: PyTree[Module], 
+        states: PyTree[Module], 
+        hps: TreeNamespace, 
+        *, 
+        plot_states, 
+        **kwargs,
+    ):
         figs = jt.map(
             partial(
                 plot_trajectories, 
@@ -192,7 +226,6 @@ class CenterOutByEval(AbstractAnalysis):
         )
         
     
-# "center_out_sets/single_eval_single_replicate"
 class CenterOutSingleEval(AbstractAnalysis):
     i_trial: int = 0
     dependencies: ClassVar[dict[str, Callable]] = dict(
@@ -200,7 +233,16 @@ class CenterOutSingleEval(AbstractAnalysis):
     )
     conditions: ClassVar[tuple[str, ...]] = ('any_system_noise',)
 
-    def make_figs(self, states: PyTree[Module], hps: TreeNamespace, *, plot_states, **kwargs):
+    def make_figs(
+        self, 
+        models: PyTree[Module], 
+        tasks: PyTree[Module], 
+        states: PyTree[Module], 
+        hps: TreeNamespace, 
+        *, 
+        plot_states, 
+        **kwargs,
+    ):
         plot_states_i = jtree.take(plot_states, self.i_trial, 0)
 
         figs = jt.map(
@@ -227,7 +269,14 @@ class CenterOutByReplicate(AbstractAnalysis):
     dependencies: ClassVar[dict[str, Callable]] = dict()
     conditions: ClassVar[tuple[str, ...]] = ('any_system_noise',)
 
-    def make_figs(self, states: PyTree[Module], hps: TreeNamespace, **kwargs):
+    def make_figs(
+        self, 
+        models: PyTree[Module], 
+        tasks: PyTree[Module], 
+        states: PyTree[Module], 
+        hps: TreeNamespace, 
+        **kwargs,
+    ):
         plot_states = jtree.take(states, self.i_trial, 0)
 
         figs = jt.map(
@@ -280,12 +329,22 @@ class Aligned_IdxTrial(AbstractAnalysis):
     )
     conditions: ClassVar[tuple[str, ...]] = ()
 
-    def make_figs(self, states: PyTree[Module], hps: TreeNamespace, *, aligned_vars, **kwargs):
+    def make_figs(
+        self, 
+        models: PyTree[Module], 
+        tasks: PyTree[Module], 
+        states: PyTree[Module], 
+        hps: TreeNamespace, 
+        *, 
+        aligned_vars, 
+        colors, 
+        **kwargs,
+    ):
         figs = jt.map(
             partial(
                 plot_condition_trajectories, 
                 legend_title="Trial",
-                colorscale=COLORSCALES['trials'],
+                colorscale=colors.trials,
                 colorscale_axis=0, 
                 curves_mode='lines', 
             ),
@@ -304,12 +363,13 @@ class Aligned_IdxPertAmp(AbstractAnalysis):
     n_curves_max: int = 20
     dependencies: ClassVar[dict[str, Callable]] = dict(
         aligned_vars=AlignedVars,
-        #! colors=Colors,
     )
     conditions: ClassVar[tuple[str, ...]] = ()
 
     def make_figs(
         self, 
+        models: PyTree[Module], 
+        tasks: PyTree[Module], 
         states: PyTree[Module], 
         hps: TreeNamespace, 
         *, 
@@ -345,12 +405,13 @@ class Aligned_IdxTrainStd(AbstractAnalysis):
     n_curves_max: int = 20
     dependencies: ClassVar[dict[str, Callable]] = dict(
         aligned_vars=AlignedVars,
-        #! colors=Colors,
     )
     conditions: ClassVar[tuple[str, ...]] = ()
 
     def make_figs(
         self, 
+        models: PyTree[Module], 
+        tasks: PyTree[Module], 
         states: PyTree[Module], 
         hps: TreeNamespace, 
         *, 
@@ -392,12 +453,13 @@ class VelocityProfiles(AbstractAnalysis):
     """Generates forward and lateral velocity profile figures."""
     dependencies: ClassVar[dict[str, Callable]] = dict(
         aligned_vars=AlignedVars,
-        #! colors=Colors,
     )
     conditions: ClassVar[tuple[str, ...]] = ()
 
     def compute(
         self,
+        models: PyTree[Module], 
+        tasks: PyTree[Module], 
         states: PyTree[Module], 
         hps: TreeNamespace, 
         *, 
@@ -412,10 +474,13 @@ class VelocityProfiles(AbstractAnalysis):
 
     def make_figs(
         self,
+        models: PyTree[Module], 
+        tasks: PyTree[Module], 
         states: PyTree[Module], 
         hps: TreeNamespace, 
         *, 
         result,
+        colors,
         **kwargs,
     ):
         figs = {
@@ -430,7 +495,7 @@ class VelocityProfiles(AbstractAnalysis):
                     mode='std', # or 'curves'
                     n_std_plot=1,
                     hline=dict(y=0, line_color="grey"),
-                    # colors=colors.dark.disturbance_std, #! TODO
+                    colors=colors.dark.disturbance_std, #! TODO
                     # stride_curves=500,
                     # curves_kws=dict(opacity=0.7),
                     layout_kws=dict(
@@ -460,6 +525,8 @@ class Measures(AbstractAnalysis):
 
     def compute(
         self, 
+        models: PyTree[Module], 
+        tasks: PyTree[Module], 
         states: PyTree[Module], 
         hps: TreeNamespace, 
         *, 
@@ -491,6 +558,8 @@ class Measures_ByTrainStd(AbstractAnalysis):
     
     def make_figs(
         self, 
+        models: PyTree[Module], 
+        tasks: PyTree[Module], 
         states: PyTree[Module], 
         hps: TreeNamespace, 
         *, 
@@ -531,12 +600,13 @@ subset_by_train_stds = partial(tree_subset_dict_level, dict_type=TrainStdDict)
 class MeasuresLoHiPertStd(AbstractAnalysis):
     dependencies: ClassVar[dict[str, Callable]] = dict(
         measure_values=Measures,
-        #! replicates_included=IncludedReplicates,
     )
     conditions: ClassVar[tuple[str, ...]] = ()  
     
     def compute(
         self, 
+        models: PyTree[Module], 
+        tasks: PyTree[Module], 
         states: PyTree[Module], 
         hps: TreeNamespace, 
         *, 
@@ -552,21 +622,23 @@ class MeasuresLoHiPertStd(AbstractAnalysis):
 class Measures_CompareReplicatesLoHi(AbstractAnalysis):
     dependencies: ClassVar[dict[str, Callable]] = dict(
         measure_values_lohi_disturbance_std=MeasuresLoHiPertStd,
-        #! replicates_included=IncludedReplicates,
     )
     conditions: ClassVar[tuple[str, ...]] = ()    
 
         
     def make_figs(
         self, 
+        models: PyTree[Module], 
+        tasks: PyTree[Module], 
         states: PyTree[Module], 
         hps: TreeNamespace, 
         *, 
         measure_values_lohi_disturbance_std, 
         colors: TreeNamespace,
-        included_replicates,
+        replicate_info,
         **kwargs,
     ):
+        included_replicates = replicate_info['included_replicates'][REPLICATE_CRITERION]
         replicates_all_lohi_included = jt.reduce(jnp.logical_and, lohi(included_replicates))
         figs = get_one_measure_plot_per_eval_condition(
             get_measure_replicate_comparisons, 
@@ -585,15 +657,16 @@ class Measures_CompareReplicatesLoHi(AbstractAnalysis):
 class Measures_LoHiSummary(AbstractAnalysis):
     dependencies: ClassVar[dict[str, Callable]] = dict(
         measure_values_lohi_disturbance_std=MeasuresLoHiPertStd,
-        #! replicates_included=IncludedReplicates,
     )
     conditions: ClassVar[tuple[str, ...]] = ()  
     
     def compute(
         self, 
+        models: PyTree[Module], 
+        tasks: PyTree[Module], 
         states: PyTree[Module], 
         hps: TreeNamespace, 
-        *, 
+        *,
         measure_values_lohi_disturbance_std, 
         **kwargs,
     ):
@@ -604,6 +677,8 @@ class Measures_LoHiSummary(AbstractAnalysis):
         
     def make_figs(
         self, 
+        models: PyTree[Module], 
+        tasks: PyTree[Module], 
         states: PyTree[Module], 
         hps: TreeNamespace, 
         *, 
@@ -633,12 +708,17 @@ class Measures_LoHiSummary(AbstractAnalysis):
           
 
 class OutputWeightCorrelation(AbstractAnalysis):
-    dependencies: ClassVar[dict[str, Callable]] = dict(
-        colors=Colors,
-    )
+    dependencies: ClassVar[dict[str, Callable]] = dict()
     conditions: ClassVar[tuple[str, ...]] = ()
     
-    def compute(self, states: PyTree[Module], hps: TreeNamespace, **kwargs):
+    def compute(
+        self, 
+        models: PyTree[Module], 
+        tasks: PyTree[Module], 
+        states: PyTree[Module], 
+        hps: TreeNamespace, 
+        **kwargs,
+    ):
         activities = jt.map(
             lambda states: states.net.hidden,
             states['full'],
@@ -666,7 +746,17 @@ class OutputWeightCorrelation(AbstractAnalysis):
         
         return output_corrs
         
-    def make_figs(self, states: PyTree[Module], hps: TreeNamespace, *, result, colors, **kwargs):
+    def make_figs(
+        self, 
+        models: PyTree[Module], 
+        tasks: PyTree[Module], 
+        states: PyTree[Module], 
+        hps: TreeNamespace, 
+        *, 
+        result, 
+        colors, 
+        **kwargs,
+    ):
         assert result is not None
         fig = get_violins(
             result, 
@@ -691,6 +781,8 @@ ALL_ANALYSES = [
     Aligned_IdxPertAmp,
     Aligned_IdxTrainStd,
     VelocityProfiles,
-    Measures_ByTrainStd,
+    # Measures_ByTrainStd,
     # Measures_CompareReplicatesLoHi,
+    Measures_LoHiSummary,
+    # OutputWeightCorrelation,
 ]

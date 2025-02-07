@@ -36,13 +36,14 @@ from rnns_learn_robust_motor_policies.constants import (
 )
 from rnns_learn_robust_motor_policies.database import (
     get_model_record,
+    load_tree_with_hps,
 )
-from rnns_learn_robust_motor_policies.hyperparams import TreeNamespace
 from rnns_learn_robust_motor_policies.training.loss import get_readout_norm_loss
 from rnns_learn_robust_motor_policies.misc import (
     take_model,
 )
 from rnns_learn_robust_motor_policies.tree_utils import (
+    TreeNamespace,
     at_path,
     subdict,
 )
@@ -56,15 +57,15 @@ def get_base_reaching_task(
     loss_func: AbstractLoss = simple_reach_loss(),
     validation_params: dict[str, Any] = TASK_EVAL_PARAMS['full'],
     **kwargs,
-) -> SimpleReaches:
+) -> SimpleReaches:   
     return SimpleReaches(
         loss_func=loss_func,
         workspace=WORKSPACE, 
         n_steps=n_steps,
-        **validation_params, 
-        **kwargs,
+        **validation_params | kwargs,
     )
-     
+
+
 def get_train_pairs_by_disturbance_std(
     setup_task_model_pair: Callable, 
     hps: TreeNamespace,
@@ -264,11 +265,6 @@ def find_unique_filepath(path: str | Path, search_string: str) -> Optional[Path]
         return None
 
 
-def filename_join(strs, joinwith="__"):
-    """Helper for formatting filenames from lists of strings."""
-    return joinwith.join(s for s in strs if s)
-
-
 def set_model_noise(
     model, 
     noise_stds: dict[Literal['feedback', 'motor'] | str, Optional[float]], 
@@ -430,12 +426,16 @@ def query_and_load_model(
         "Model record's replicate_info_path is None, but has_replicate_info==True"
     )
     
-    model: eqx.Module = load(
-        model_info.path, partial(setup_models_only, setup_task_model_pair),
+    model: eqx.Module 
+    hps: TreeNamespace
+    model, hps = load_tree_with_hps(
+        model_info.path, 
+        partial(setup_models_only, setup_task_model_pair),
     )
 
-    replicate_info: PyTree = load(
-        model_info.replicate_info_path, partial(setup_replicate_info, model),
+    replicate_info, _ = load_tree_with_hps(
+        model_info.replicate_info_path, 
+        partial(setup_replicate_info, model),
     )
     
     n_replicates_included = model_info.n_replicates
@@ -443,7 +443,7 @@ def query_and_load_model(
     if surgeries is not None:
         for path, value in surgeries.items():
             model = jt.map(
-                lambda m: eqx.tree_at(at_path(m, path), model, value),
+                lambda m: eqx.tree_at(at_path(path), m, value),
                 model,
                 is_leaf=is_module,
             )

@@ -67,8 +67,14 @@ from rnns_learn_robust_motor_policies import (
     REPLICATE_INFO_FILE_LABEL,
     TRAIN_HISTORY_FILE_LABEL, 
 )
-from rnns_learn_robust_motor_policies.hyperparams import TreeNamespace, dict_to_namespace, flatten_hps, load_hps, namespace_to_dict, take_train_histories_hps
-from rnns_learn_robust_motor_policies.tree_utils import is_dict_with_int_keys, pp
+from rnns_learn_robust_motor_policies.hyperparams import flatten_hps, load_hps, take_train_histories_hps
+from rnns_learn_robust_motor_policies.tree_utils import (
+    TreeNamespace, 
+    dict_to_namespace, 
+    namespace_to_dict,
+    is_dict_with_int_keys, 
+    pp
+)
 
 
 MODELS_TABLE_NAME = 'models'
@@ -418,7 +424,9 @@ def get_model_class(record_type: str | type[BaseT]) -> type[BaseT]:
     return record_type
 
 
-def get_hash_path(directory: Path, hash_: str, suffix: str = '', ext: str = '.eqx') -> Path:
+def get_hash_path(directory: Path, hash_: str, suffix: Optional[str] = None, ext: str = '.eqx') -> Path:
+    if suffix is None:
+        suffix = ''
     components = [hash_, suffix]
     return (directory / "_".join(c for c in components if c)).with_suffix(ext)
 
@@ -474,21 +482,55 @@ HPS_SERIALISATION_SEP_CHAR = chr(29)  # ASCII group separator character
 
 
 def yaml_dump(data: Any) -> str:
+    """Custom YAML dump that ends in a group separator character.
+    
+    The group separator indicates where we should stop reading YAML from the
+    `.eqx` file, and move on to model deserialisation. 
+    
+    Importantly, the string output of `yaml.dump` does not need to be on a single line,
+    for this to work.
+    """
     return yaml.dump(data) + f"\n{HPS_SERIALISATION_SEP_CHAR}"
 
 
-def save_tree(tree: PyTree, directory: Path, hps: TreeNamespace = TreeNamespace()) -> tuple[str, Path]:
-    """Save object to temporary file, compute hash, and move to final location."""
+def save_tree(
+    tree: PyTree, 
+    directory: Path, 
+    hps: TreeNamespace = TreeNamespace(),
+    hash_: Optional[str] = None,
+    suffix: Optional[str] = None,
+    **kwargs,
+) -> tuple[str, Path]:
+    """Save object to file whose name is its hash.
     
-    temp_path = generate_temp_path(directory)
-    save(temp_path, tree, hyperparameters=namespace_to_dict(hps), dump_func=yaml_dump)
+    If `hash_` is passed, save to the file with the corresponding 
+    filename, ending in `suffix`, 
+    """
     
-    #? Alternatively, could compute on (a subset of) hyperparameters, if we don't want the hash 
-    #? to depend on certain things (e.g. version info)
-    file_hash = hash_file(temp_path)
-    final_path = get_hash_path(directory, file_hash)
-    temp_path.rename(final_path)
+    if hash_ is not None:
+        if suffix is None:
+            raise ValueError("If `hash_` is provided, `suffix` must also be provided.")
+        path = get_hash_path(directory, hash_, suffix=suffix, **kwargs) 
+    else:
+        path = generate_temp_path(directory)
+        
+    save(
+        path, 
+        tree, 
+        hyperparameters=namespace_to_dict(hps), 
+        dump_func=yaml_dump,
+    )
     
+    if hash_ is not None:
+        file_hash = hash_
+        final_path = path
+    else:
+        #? Alternatively, could compute hashes on (a subset of) hps, especially if we don't want the hash 
+        #? to depend on certain things (e.g. version info)
+        file_hash = hash_file(path)
+        final_path = get_hash_path(directory, file_hash, **kwargs)
+        path.rename(final_path)
+
     return file_hash, final_path
 
 
@@ -511,7 +553,8 @@ def load_tree_with_hps(
         hps_dict = yaml.safe_load(_read_until_special(f, HPS_SERIALISATION_SEP_CHAR))
     
         hps = dict_to_namespace(hps_dict, to_type=TreeNamespace, exclude=is_dict_with_int_keys)
-    
+        
+        # Initialization key isn't important
         tree = setup_tree_func(hps, key=jr.PRNGKey(0))
         tree = eqx.tree_deserialise_leaves(f, tree, **kwargs)
     
@@ -543,6 +586,7 @@ def save_model_and_add_record(
     # Save associated files if provided
     if train_history is not None:
         # train_history_params = namespace_to_dict(take_train_histories_hps(hps))
+        _ = save_tree(train_history, MODELS_DIR, hps, hash_=model_hash, suffix=TRAIN_HISTORY_FILE_LABEL)
         train_history_path = get_hash_path(MODELS_DIR, model_hash, suffix=TRAIN_HISTORY_FILE_LABEL)
         save(
             train_history_path, 
@@ -654,7 +698,6 @@ def add_evaluation(
         eval_record = EvaluationRecord(
             hash=eval_hash,
             model_hashes=model_hashes,  # Can be None
-            expt_id=expt_id,
             version_info_eval=version_info,
             **eval_parameters,
         )
