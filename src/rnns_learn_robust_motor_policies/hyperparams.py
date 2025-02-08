@@ -76,10 +76,21 @@ def process_hps(hps: TreeNamespace) -> TreeNamespace:
 
 
 def load_hps(config_path: str | Path) -> TreeNamespace:
-    """Given a path to a YAML hyperparameters file, load and prepare them prior to training."""
-    config = load_config(str(config_path))
+    """Given a path to a YAML hyperparameters file, load and prepare them prior to training.
+    
+    If the path is not found, pass it as the experiment id to try to get a default config. 
+    So you can pass e.g. `"1-1"` to load the default hyperparameters for analysis module 1-1. 
+    Note that this is like treating `config_path` as a local path to a YAML file in 
+    `rnns_learn_robust_motor_policies.config`.
+    """
+    try:
+        config = load_config(str(config_path))
+        expt_id = config['expt_id']
+    except FileNotFoundError:
+        config = dict()
+        expt_id = str(config_path)
     # Load the defaults and update with the user-specified config
-    default_config = load_default_config(config['expt_id'])
+    default_config = load_default_config(expt_id)
     config = deep_update(default_config, config)
     # 1) Convert to a (nested) namespace instead of a dict,
     #    so we can refer to keys as attributes

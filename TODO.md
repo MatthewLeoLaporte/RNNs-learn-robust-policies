@@ -9,10 +9,11 @@ updated: 2024-11-13T10:32
 - [ ] Point mass damping
 ### Convert notebooks for part 1
 
+- [x] Maybe analysis variants can be handled by a `ClassVar`, e.g. `variant: str = "small"` tells `AbstractAnalysis.__call__` to pass `hps['small']` to `compute`; thus in `AbstractAnalysis.save` we don’t consider the “variants dict”, which is the outer level of the model/task/state/hps pytrees in `run_analysis`, but only pass the hps for the given variant.
 - [x] Pass `models` to `AbstractAnalysis`, since some analyses will be on the models rather than the states
 - [ ] **Move `analysis.part1` and `analysis.part2` and the part1 and part 2 files into `config` subpackage**
-- [ ] Move the constants out of `constants` and into config files, where possible
-- [ ] ~~**`Colors` object which supplies the colors namespace as a dependency. e.g. `colors.dark.disturbance_std`.**~~
+- [ ] Move the constants out of `constants` and into config files, where possible. Including `REPLICATE_CRITERION`.
+- [ ] **Convert 1-2, and move any shared functions out of 1-1 and into `analysis` or something**
 - [ ] In `types`, make the mapping algorithmic between custom dict types and the column names they map to. Thus `PertVarDict` keys correspond to `pert_var` column values.
 - [ ] Add the calculation of `disturbance.amplitude` when loading hyperparams (e.g. 1-2)
 

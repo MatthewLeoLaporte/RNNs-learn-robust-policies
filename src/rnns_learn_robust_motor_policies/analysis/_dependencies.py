@@ -26,48 +26,53 @@ from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
 from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
 
 
-def build_dependency_graph(analyses: list[Type[AbstractAnalysis]]) -> tuple[dict[str, Set[str]], Set[str]]:
-    """Build adjacency list representation of dependency graph."""
+def build_dependency_graph(analyses: list[Type[AbstractAnalysis]]) -> tuple[dict[str, Set[str]], dict]:
     graph = defaultdict(set)
-    all_deps = set()
-
-    # Collect all dependencies
+    dep_classes = {}
+    
+    def add_deps(analysis_or_dep):
+        for dep_name, dep_class in analysis_or_dep.dependencies.items():
+            # Record the direct mapping
+            dep_classes[dep_name] = dep_class
+            # Add edges for this dependency's dependencies
+            for subdep_name in dep_class.dependencies:
+                graph[dep_name].add(subdep_name)
+            # Recursion will handle subdependencies
+            add_deps(dep_class)
+        
     for analysis in analyses:
-        for dep_name, dep_class in analysis.dependencies.items():
-            graph[dep_class.__name__].add(dep_name)
-            all_deps.add(dep_name)
-
-    return dict(graph), all_deps
+        add_deps(analysis)
+        
+    return dict(graph), dep_classes
 
 
-def topological_sort(graph: dict[str, Set[str]], all_deps: Set[str]) -> list[str]:
-    """Return dependencies in the order they should be computed.
-    """
+def topological_sort(graph: dict[str, Set[str]], dep_classes: dict[str, Type]) -> list[str]:
+    """Return dependencies in order they should be computed."""
     visited = set()
     temp_marks = set()
     order = []
-
+    
     def visit(node: str):
         if node in temp_marks:
             raise ValueError("Circular dependency detected")
         if node in visited:
             return
-
+            
         temp_marks.add(node)
-
+        
         # Visit all dependencies first
         for dep in graph.get(node, set()):
             visit(dep)
-
+            
         temp_marks.remove(node)
         visited.add(node)
         order.append(node)
-
+    
     # Visit all nodes
-    for dep in all_deps:
+    for dep in dep_classes:
         if dep not in visited:
             visit(dep)
-
+            
     return order
 
 
@@ -76,29 +81,25 @@ def compute_dependencies(
     models: PyTree[Module],
     tasks: PyTree[Module],
     states: PyTree[Module],
-    hps: TreeNamespace,
+    hps: PyTree[TreeNamespace],
+    **kwargs,
 ) -> dict:
-    """Compute all dependencies in correct order."""
+    """Compute all dependencies in correct order.
+    
+    Any `kwargs` are provided as baseline dependencies, and included in the returned dict.
+    """
     # Build dependency graph
-    graph, all_deps = build_dependency_graph(analyses)
-
+    graph, dep_classes = build_dependency_graph(analyses)  # Use both return values
+    
     # Get computation order
-    comp_order = topological_sort(graph, all_deps)
-
-    # Map dependency names to their computation classes
-    dep_classes = {
-        dep_name: dep_class
-        for analysis in analyses
-        for dep_name, dep_class in analysis.dependencies.items()
-    }
-
+    comp_order = topological_sort(graph, dep_classes)
+    
     # Compute dependencies in order
-    results = {}
+    results = kwargs
     for dep_name in comp_order:
-        dep_class = dep_classes[dep_name]
+        dep_class = dep_classes[dep_name]  # Now this will work
         # Initialize dependency class and compute
         dep_instance = dep_class()
-        # Map over pytree of states
         results[dep_name] = dep_instance.compute(models, tasks, states, hps, **results)
-
+        
     return results

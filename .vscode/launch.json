@@ -1,0 +1,28 @@
+{
+    // "type": "python",
+    // "request": "launch",
+    // "program": "${file}",
+    // "console": "integratedTerminal",
+    // "cwd": "${fileDirname}",
+    // "env": {
+    //     "PYTHONPATH": "/home/mll/.miniforge3/envs/rbst/bin/python"
+    // },
+    "configurations": [
+        {
+            "name": "Python Debugger: Current File with Arguments",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": ["${command:pickArgs}"]
+        },
+        {
+            "name": "Python Debugger: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "cwd": "${fileDirname}",
+        }
+    ]
+}
