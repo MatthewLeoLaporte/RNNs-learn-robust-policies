@@ -99,6 +99,10 @@ class AbstractAnalysis(Module):
     ) -> Optional[PyTree[go.Figure]]:
         return 
     
+    @property
+    def name(self):
+        return self.__class__.__name__
+    
     def _params_to_save(self, hps: PyTree[TreeNamespace], **kwargs):
         """Additional parameters to save.
         
@@ -118,7 +122,12 @@ class AbstractAnalysis(Module):
             params = dict(
                 **path_params,  # Inferred from the structure of the figs PyTree
                 **self._field_params,  # From the fields of this subclass
-                **self._params_to_save(hps, result=result, **path_params, **dependencies),  # Extras specified by the subclass
+                **self._params_to_save(
+                    hps, 
+                    result=result, 
+                    **path_params, 
+                    **dependencies, # Extras specified by the subclass
+                ),  
                 eval_n=hps.eval_n,  # Some things should always be included?
             )
             

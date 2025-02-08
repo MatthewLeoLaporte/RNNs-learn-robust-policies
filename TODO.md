@@ -6,9 +6,10 @@ updated: 2024-11-13T10:32
 
 - [ ] Try training a significantly larger network in part 2 and see if the context 0 curves overlap
 - [ ] Use rich progress bar for CLI?
-- [ ] Point mass damping
+- [ ] **Point mass damping**
 ### Convert notebooks for part 1
 
+- [ ] **Convert `COLORSCALES` to a `TreeNamespace`, so its structure reflects that of `hps`.**
 - [x] Maybe analysis variants can be handled by a `ClassVar`, e.g. `variant: str = "small"` tells `AbstractAnalysis.__call__` to pass `hps['small']` to `compute`; thus in `AbstractAnalysis.save` we don’t consider the “variants dict”, which is the outer level of the model/task/state/hps pytrees in `run_analysis`, but only pass the hps for the given variant.
 - [x] Pass `models` to `AbstractAnalysis`, since some analyses will be on the models rather than the states
 - [ ] **Move `analysis.part1` and `analysis.part2` and the part1 and part 2 files into `config` subpackage**

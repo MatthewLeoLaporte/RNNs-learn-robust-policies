@@ -384,7 +384,12 @@ class Aligned_IdxPertAmp(AbstractAnalysis):
         aligned_vars, 
         **kwargs,
     ):
-        plot_vars_stacked = jtree.stack(aligned_vars['small'].values())
+        # plot_vars_stacked = jtree.stack(aligned_vars['small'].values())
+        plot_vars_stacked = jt.map(
+            lambda d: jtree.stack(list(d.values())),
+            aligned_vars['small'],
+            is_leaf=is_type(PertAmpDict), 
+        )
 
         figs = jt.map(
             partial(
@@ -426,20 +431,23 @@ class Aligned_IdxTrainStd(AbstractAnalysis):
         aligned_vars, 
         **kwargs,
     ):
-        plot_vars_stacked = PertAmpDict({
-            # concatenate along the replicate axis, which has variable length
-            disturbance_amplitude: jtree.stack(list(vars_.values()))
-            for disturbance_amplitude, vars_ in aligned_vars['small'].items()
-        })
-
-
+        plot_vars_stacked = jt.map(
+            lambda d: jtree.stack(list(d.values())),
+            aligned_vars['small'],
+            is_leaf=is_type(TrainStdDict), 
+        )
+        # plot_vars_stacked = PertAmpDict({
+        #     # concatenate along the replicate axis, which has variable length
+        #     disturbance_amplitude: jtree.stack(list(vars_.values()))
+        #     for disturbance_amplitude, vars_ in aligned_vars['small'].items()
+        # })
         figs = jt.map(
             partial(
                 plot_condition_trajectories, 
                 colorscale=COLORSCALES['disturbance_std'],
                 colorscale_axis=0,
                 legend_title="Train<br>field std.",
-                legend_labels=hps['small'].load.disturbance.std,  #!
+                legend_labels=hps['small'].load.disturbance.std,  
                 curves_mode='lines',
                 var_endpoint_ms=0,
                 scatter_kws=dict(line_width=0.5, opacity=0.3),
@@ -451,7 +459,7 @@ class Aligned_IdxTrainStd(AbstractAnalysis):
         
         return figs
                         
-    def _params_to_save(self, hps: PyTree[TreeNamespace], *, disturbance_std, **kwargs):
+    def _params_to_save(self, hps: PyTree[TreeNamespace], **kwargs):
         return dict(
             # TODO: The number of replicates (`n_replicates_included`) may vary with the disturbance train std!
             # n=min(self.n_curves_max, hps.eval_n * n_replicates_included)  #? n: pytree[int]
@@ -493,7 +501,7 @@ class VelocityProfiles(AbstractAnalysis):
         colors,
         **kwargs,
     ):
-        figs = {
+        figs = PertAmpDict({
             # TODO: Once the mapping between custom dict types and their column names is automatic
             # (e.g. `PertVarDict` will simply map to 'pert_var'), we can construct a `DirectionDict`
             # ad hoc maybe
@@ -505,7 +513,7 @@ class VelocityProfiles(AbstractAnalysis):
                     mode='std', # or 'curves'
                     n_std_plot=1,
                     hline=dict(y=0, line_color="grey"),
-                    colors=colors['full']['disturbance_std']['dark'], 
+                    colors=list(colors['full']['disturbance_std']['dark'].values()), 
                     # stride_curves=500,
                     # curves_kws=dict(opacity=0.7),
                     layout_kws=dict(
@@ -517,7 +525,7 @@ class VelocityProfiles(AbstractAnalysis):
                 for i, label in enumerate(("Forward", "Lateral"))
             })
             for disturbance_amplitude in hps['full'].disturbance.amplitude
-        }
+        })
         return figs
         
     def _params_to_save(self, hps: PyTree[TreeNamespace], *, result, **kwargs):
@@ -613,7 +621,7 @@ class MeasuresLoHiPertStd(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         measure_values=Measures,
     ))
-    variant: ClassVar[Optional[str]] = "full"
+    variant: ClassVar[Optional[str]] = None
     conditions: tuple[str, ...] = ()  
     
     def compute(
@@ -627,8 +635,6 @@ class MeasuresLoHiPertStd(AbstractAnalysis):
         **kwargs,
     ):
         # Map over analysis variants (e.g. full task vs. small task)
-        #! TODO: Maybe variants can be handled by a `ClassVar`, e.g. `variant: str = "small"` tells 
-        # `AbstractAnalysis.__call__` to pass `hps['small']` to `compute`; thus `hps: TreeNamespace`
         return jt.map(
             lambda hps_: subset_by_train_stds(
                 measure_values,
@@ -692,9 +698,12 @@ class Measures_LoHiSummary(AbstractAnalysis):
         measure_values_lohi_disturbance_std, 
         **kwargs,
     ):
+        
         return MeasureDict(**{
-            key: subdict(measure, lohi(hps.disturbance.amplitude))  # type: ignore
-            for key, measure in measure_values_lohi_disturbance_std.items()
+            key: subdict(measure, lohi(hps["full"].disturbance.amplitude))  # type: ignore
+            # MeasuresLoHiPertStd returns `measure_values_lohi_disturbance_std` for all eval variants,
+            # so we choose the right variant
+            for key, measure in measure_values_lohi_disturbance_std["full"].items()
         })
         
     def make_figs(
@@ -706,22 +715,21 @@ class Measures_LoHiSummary(AbstractAnalysis):
         *, 
         result, 
         colors,
-        included_replicates,
         **kwargs,
     ):
-        figs = {
+        figs = MeasureDict(**{
             key: get_violins(
                 measure, 
                 yaxis_title=MEASURE_LABELS[key], 
                 xaxis_title="Train field std.",
-                legend_title="smee",
+                legend_title="TODO",
                 colors=colors['full']['disturbance_amplitude']['dark'],
                 layout_kws=dict(
                     width=300, height=300, 
                 )
             )
             for key, measure in result.items()
-        }
+        })
         return figs
 
     def _params_to_save(self, hps: PyTree[TreeNamespace], *, result, **kwargs):

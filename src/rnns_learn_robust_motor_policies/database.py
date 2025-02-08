@@ -1008,3 +1008,35 @@ def retrieve_figures(
     # TODO: Report # of figures, associated with # of evaluations
     
     return figures, records
+
+
+def record_to_namespace(record: Base) -> TreeNamespace:
+    """Convert an SQLAlchemy record to a TreeNamespace with nested structure.
+    
+    Column names with underscores are converted to nested attributes.
+    For example, 'foo_bar_baz' becomes foo.bar.baz in the namespace.
+    """
+    # Get all column values as a dictionary
+    record_dict = {
+        column_name: getattr(record, column_name) 
+        for column_name in record.__table__.columns.keys()
+    }
+    
+    record_key_paths = [
+        list(column_name.split('_')) for column_name in record_dict.keys()
+    ]
+    
+    nested_dict = dict()
+    
+    def _add_leaf(d, key_path, value):
+        if key_path == ():
+            return value
+        while key_path:
+            key, key_path = key_path[0], key_path[1:]
+            d[key] = _add_leaf(d.get(key, {}), key_path, value)
+        return d
+    
+    for key_path, value in zip(record_key_paths, record_dict.values()):
+        nested_dict = _add_leaf(nested_dict, key_path, value)
+        
+    return dict_to_namespace(nested_dict, to_type=TreeNamespace)

@@ -1,5 +1,7 @@
 #!/usr/bin/env python
-"""From the command line, train some models by loading a config and passing to `train_and_save_models`.
+"""From the command line, train some models according to some configuration. 
+
+Load the config and pass it to `train_and_save_models`.
 
 Takes a single positional argument: the path to the YAML config.
 """
@@ -33,6 +35,9 @@ warnings.filterwarnings("ignore", module="equinox._module")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Train some models on some tasks based on a config file.")
+    # Because of the behaviour of `load_hps`, config_path can also be the `expt_id: str` (i.e. YAML 
+    # filename relative to `../src/rnns_learn_robust_motor_policies/config`) of a default config to load. 
+    # This assumes there is no file whose relative path is identical to that `expt_id`.
     parser.add_argument("config_path", type=str, help="Path to the config file.")
     parser.add_argument("--untrained-only", action='store_false', help="Only train models which appear not to have been trained yet.")
     parser.add_argument("--postprocess", action='store_false', help="Postprocess each model after training.")

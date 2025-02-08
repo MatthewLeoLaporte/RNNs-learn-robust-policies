@@ -29,6 +29,7 @@ from rnns_learn_robust_motor_policies.database import (
     add_evaluation_figure,
     get_db_session,
     query_model_records,
+    record_to_namespace,
     save_model_and_add_record,
     load_tree_with_hps,
 )
@@ -149,9 +150,9 @@ def end_position_error(pos, eval_reach_length=1, last_n_steps=10):
     return error
 
 
-def get_measures_to_rate(models, tasks):
+def get_measures_to_rate(models, tasks, hps):
     all_states = jt.map(
-        lambda model, task: vmap_eval_ensemble(model, task, N_TRIALS_VAL, jr.PRNGKey(0)),
+        lambda model, task: vmap_eval_ensemble(model, task, hps, jr.PRNGKey(0)),
         models, tasks,
         is_leaf=is_module,
     )
@@ -446,6 +447,7 @@ def compute_replicate_info(
     n_replicates, 
     n_std_exclude,
     where_train,
+    hps,
 ):
     best_save_idx, best_saved_iterations, losses_at_best_saved_iteration = \
         get_best_iterations_and_losses(
@@ -455,7 +457,7 @@ def compute_replicate_info(
     # Rate the best total loss, but also some other measures
     measures = dict(
         best_total_loss=losses_at_best_saved_iteration,
-        **get_measures_to_rate(models, tasks),
+        **get_measures_to_rate(models, tasks, hps),
     )
     
     best_replicates, included_replicates = jtree.unzip(jt.map(
@@ -513,6 +515,9 @@ def process_model_post_training(
         return
     
     expt_id = str(model_record.expt_id)
+    
+    # hps = record_to_namespace(model_record)
+    
     where_train = jt.map(
         attr_str_tree_to_where_func,
         model_record.train_where,
@@ -533,7 +538,11 @@ def process_model_post_training(
             train_histories, 
             train_history_hyperparams,
         ) = all_data
-    
+
+    # `vmap_eval_ensemble` will look for this when we try to evaluate the states, however it is not 
+    # part of the model hyperparameters
+    hps.eval_n = N_TRIALS_VAL
+
     # Get respective validation tasks for each model
     tasks = setup_tasks_only(
         TRAINPAIR_SETUP_FUNCS[int(expt_id)], 
@@ -541,7 +550,8 @@ def process_model_post_training(
         key=jr.PRNGKey(0), 
     )
     
-    # Compute replicate info``
+    # Compute replicate info
+    #! TODO: Don't pass things that can be obtained from `hps`: `where_train`, `n_replicates`, `save_model_parameters`
     replicate_info, best_models = compute_replicate_info(
         model_record,
         models,
@@ -551,6 +561,7 @@ def process_model_post_training(
         n_replicates, 
         n_std_exclude, 
         where_train,
+        hps,
     )
     
     try:

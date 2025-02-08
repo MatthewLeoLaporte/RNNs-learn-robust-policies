@@ -2,6 +2,7 @@
 from collections.abc import Callable, Hashable, Sequence
 from typing import ClassVar, Literal, Optional
 
+from equinox import Module
 import jax.tree as jt
 from jaxtyping import PyTree
 import plotly.colors as plc
@@ -18,6 +19,7 @@ MEAN_LIGHTEN_FACTOR = 0.7
 
 
 # Colorscales
+#! TODO: Convert to `TreeNamespace` to reflect the structure of hyperparameters
 COLORSCALES: dict[str, str] = dict(
     context_input='thermal',
     disturbance_amplitude='plotly3',
@@ -26,6 +28,10 @@ COLORSCALES: dict[str, str] = dict(
     reach_condition='phase',
     trial='Tealgrn',
 )
+
+
+# class Color(Module):
+#     pass
 
 
 def setup_colors(hps: TreeNamespace) -> tuple[dict, dict]:
