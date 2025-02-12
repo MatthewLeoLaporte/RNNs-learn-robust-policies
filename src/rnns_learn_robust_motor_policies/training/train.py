@@ -187,7 +187,7 @@ def train_and_save_models(
 
     if untrained_only:
         # TODO: Optionally do post-processing for models that were previously trained, but not post-processed
-        task_model_pairs = skip_already_trained(db_session, task_model_pairs, all_hps)
+        task_model_pairs = skip_already_trained(db_session, task_model_pairs, all_hps, n_std_exclude, save_figures)
         
     if not any(jt.leaves(task_model_pairs, is_leaf=is_type(TaskModelPair))):
         logger.info("No models to train. Exiting.")
@@ -256,20 +256,13 @@ def concat_save_iterations(iterations: Array, n_batches_seq: Sequence[int]):
     ])
 
 
-def does_model_record_exist(db_session, hyperparameters):
-    try: 
-        existing_record = get_record(db_session, ModelRecord, **hyperparameters)
-    except AttributeError as e:
-        raise e
-        
-        existing_record = None
-    return existing_record is not None
-
-
 def skip_already_trained(
     db_session, 
     task_model_pairs: PyTree[TaskModelPair, 'T'], 
     all_hps: PyTree[dict, 'T'],
+    n_std_exclude: int,
+    save_figures: bool,
+    post_process: bool = True,
 ):
     """Replace leaves in the tree of training pairs with None, where those models were already trained.
     
@@ -277,21 +270,29 @@ def skip_already_trained(
     """
     all_hps = arrays_to_lists(all_hps)
     
-    def get_query_hps(hps: TreeNamespace) -> TreeNamespace:
+    def get_query_hps(hps: TreeNamespace, **kwargs) -> TreeNamespace:
         hps = deepcopy(hps)
         hps.is_path_defunct = False
-        hps.postprocessed = False
         # flatten the `model` key into the top level
         hps = promote_model_hps(hps)
+        for k, v in kwargs.items():
+            setattr(hps, k, v)
         return hps
         
-    record_exists = jt.map(
-        lambda _, hps: does_model_record_exist(
+    records = jt.map(
+        lambda _, hps: get_record(
             db_session, 
-            namespace_to_dict(flatten_hps(get_query_hps(hps))),
+            ModelRecord, 
+            **namespace_to_dict(flatten_hps(get_query_hps(hps, postprocessed=False)))
         ),   
         task_model_pairs, all_hps,
          is_leaf=is_type(TaskModelPair),
+    )
+    
+    record_exists = jt.map(
+        lambda x: x is None, 
+        records, 
+        is_leaf=lambda x: x is None or isinstance(x, ModelRecord),
     )
     
     pairs_to_skip, task_model_pairs = eqx.partition(
@@ -305,6 +306,33 @@ def skip_already_trained(
         f"Skipping training of {len(pairs_to_skip_flat)} models whose hyperparameters "
         "match models already in the database"
     )
+    
+    if post_process:  
+        # Find which of the models have already been post-processed
+        records_pp = jt.map(
+            lambda _, hps: get_record(
+                db_session, 
+                ModelRecord, 
+                **namespace_to_dict(flatten_hps(get_query_hps(hps, postprocessed=True)))
+            ),   
+            task_model_pairs, all_hps,
+            is_leaf=is_type(TaskModelPair),
+        )     
+        
+        jt.map(
+            lambda record, record_pp: (
+                process_model_post_training(
+                    db_session,
+                    record,
+                    n_std_exclude,
+                    process_all=True,
+                    save_figures=save_figures,
+                )
+                if record_pp is None else None
+            ),
+            records, records_pp,
+            is_leaf=is_type(ModelRecord),
+        )
 
     return task_model_pairs
 

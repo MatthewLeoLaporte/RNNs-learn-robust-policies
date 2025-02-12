@@ -1,21 +1,37 @@
 
-import equinox as eqx
+from types import MappingProxyType
+from typing import ClassVar, Literal, Optional
 import jax.numpy as jnp
 import jax.tree as jt 
 
-from feedbax.intervene import schedule_intervenor
+import equinox as eqx
 from jax_cookbook import is_type, is_module
 import jax_cookbook.tree as jtree
 
+from feedbax.intervene import schedule_intervenor
+import feedbax.plotly as fbp
+
+from rnns_learn_robust_motor_policies.analysis.analysis import PLANT_VAR_LABELS, WHERE_PLOT_PLANT_VARS, AbstractAnalysis
+from rnns_learn_robust_motor_policies.analysis.measures import Responses
 from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
-from rnns_learn_robust_motor_policies.types import PertVarDict
+from rnns_learn_robust_motor_policies.types import ImpulseAmpTuple, PertVarDict, TrainStdDict
 from rnns_learn_robust_motor_policies.perturbations import feedback_impulse
 
 
-ALL_ANALYSES = []
-
+#! TODO: Move
 PERT_VAR_NAMES = ('fb_pos', 'fb_vel')
 COORD_NAMES = ('x', 'y')
+
+
+components_plot: Literal['xy', 'aligned'] = 'aligned'
+components_labels = dict(
+    xy=COORD_NAMES,
+    aligned=(r'\parallel', r'\bot')
+)
+components_names = dict(
+    xy=COORD_NAMES,
+    aligned=('parallel', 'orthogonal'),
+)
 
 
 def _setup_rand(task_base, models_base, hps):
@@ -96,7 +112,7 @@ SETUP_FUNCS_BY_DIRECTION = dict(
 )
 
 
-def setup_tasks_and_models(task_base, models_base, hps):
+def setup_eval_tasks_and_models(task_base, models_base, hps):
     impulse_amplitudes = jt.map(
         lambda max_amp: jnp.linspace(0, max_amp, hps.disturbance.n_amplitudes + 1)[1:],
         hps.disturbance.amplitude_max,
@@ -140,3 +156,108 @@ def eval_func(models, task, hps, key_eval):
             key_eval,
         )
     )(hps.disturbance.amplitudes)
+    
+    
+
+class SingleImpulseAmplitude(AbstractAnalysis):
+    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType({})
+    variant: ClassVar[Optional[str]] = "full"
+    conditions: tuple[str, ...] = ()
+    i_impulse_amp_plot: int = -1 
+    
+    def compute(self, models, tasks, states, hps, **dependencies):
+        #! This was used in getting `disturbance_amplitude` for `add_evaluation_figure` params; I don't think we need it anymore
+        # impulse_amplitude_plot = {
+        #     pert_var: v[self.i_impulse_amp_plot] for pert_var, v in hps.disturbance.amplitude.items()
+        # }
+        
+        return jt.map(
+            lambda t: t[self.i_impulse_amp_plot],
+            states,
+            is_leaf=is_type(ImpulseAmpTuple),
+        )    
+    
+
+class ExampleTrialSets(AbstractAnalysis):
+    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
+        single_impulse_amp_states=SingleImpulseAmplitude,
+    ))
+    variant: ClassVar[Optional[str]] = "full"
+    conditions: tuple[str, ...] = ()
+    i_trial: int = 0
+    i_replicate: Optional[int] = None
+
+    def compute(self, models, tasks, states, hps, *, single_impulse_amp_states, **dependencies):
+        return jt.map(WHERE_PLOT_PLANT_VARS, states, is_leaf=is_module)
+        
+        # # Split up the impulse amplitudes from array dim 0, into a tuple part of the PyTree,
+        # # and unzip them so `ExamplePlotVars` is on the inside
+        # plot_states = jt.map(
+        #     lambda plot_vars: jtree.unzip(
+        #         jt.map(
+        #             lambda arr: ImpulseAmpTuple(arr),
+        #             plot_vars,
+        #         ),
+        #         ImpulseAmpTuple,
+        #     ),
+        #     plot_states,
+        #     is_leaf=is_type(Responses),
+        # )
+        
+        # # Only plot the strongest impulse amplitude, here
+        # # (This makes the last step kind of superfluous but if we need to change this 
+        # # again later, it might be convenient for the impulse amplitudes to be part of 
+        # # the PyTree structure)
+        # plot_states = jt.map(
+        #     lambda t: t[i_impulse_amp_plot],
+        #     plot_states,
+        #     is_leaf=is_type(ImpulseAmpTuple),
+        # )
+
+    def make_figs(self, models, tasks, states, hps, *, result, replicate_info, **dependencies):
+        
+        if self.i_replicate is None:
+            get_replicate = lambda train_std: replicate_info[train_std]['best_replicate']
+        else:
+            get_replicate = lambda _: self.i_replicate
+            
+        figs = jt.map(  
+            lambda states: TrainStdDict({
+                train_std: fbp.trajectories_2D(
+                    jtree.take_multi(
+                        plot_vars, 
+                        [self.i_trial, get_replicate(train_std)],
+                        [0, 1]
+                    ),
+                    var_labels=PLANT_VAR_LABELS,
+                    axes_labels=('x', 'y'),
+                    curves_mode='markers+lines',
+                    ms=3,
+                    scatter_kws=dict(line_width=0.75),
+                    layout_kws=dict(
+                        width=100 + len(PLANT_VAR_LABELS) * 300,
+                        height=400,
+                        legend_tracegroupgap=1,
+                    ),
+                )
+                for train_std, plot_vars in states.items()
+            }),
+            result,
+            is_leaf=is_type(TrainStdDict),
+        )  
+        return figs
+    
+
+class ResponseTrajectories(AbstractAnalysis):
+    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
+        single_impulse_amp_states=SingleImpulseAmplitude,
+    ))
+    variant: ClassVar[Optional[str]] = "full"
+    conditions: tuple[str, ...] = ()
+    
+    def make_figs(self, models, tasks, states, hps, *, result, **dependencies):
+
+        return figs        
+
+
+ALL_ANALYSES = []

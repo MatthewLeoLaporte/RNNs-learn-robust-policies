@@ -6,12 +6,58 @@ updated: 2024-11-13T10:32
 
 - [ ] Try training a significantly larger network in part 2 and see if the context 0 curves overlap
 - [ ] Use rich progress bar for CLI?
-- [ ] **Point mass damping**
+- [x] **Point mass damping**
+
+### Poster abstract 
+
+> - Ensure your NCM membership is in good standing
+> - Select a Presentation Theme that most closely describes your presentation (see list below)
+> - Prepare to enter your contact name, affiliation/institution name and email address
+> - Prepare an **abstract title** (max 225, incl. spaces, character limit)
+> - Enter **three (3) highlights** of the submission (max 100 characters per highlight)
+> - Include a **justification statement** on why the presentation is relevant to NCM or would be interesting to have as part of the program (max 1300 characters)
+> - Prepare the **abstract** (max 3000 character limit, incl. spaces – approximately **500 words**)
+> - Submit the abstract via NCM’s online abstract management system. Please note, when submitting the abstract cut and paste it from a text editor (ie. notepad, wordpad) to ensure it does not include underlying formatting that may cause errors
+>   
+>   Themes:
+> *Control of Eye and Head Movement  
+> Posture and Gait  
+> Fundamentals of Motor Control  
+> Integrative Control of Movement  
+> Disorders of Motor Control  
+> Adaption and Plasticity in Motor Control  
+> **Theoretical and Computational Motor Control**
+
+### Unit perturbations
+
+See: [[#Individual unit stimulation]].
+
+#### Steady-state
+
+Start with this. 
+
+At steady state, what is the distribution of unit preferences?
+
+How does this depend on the steady-state position? 
+
+#### Unsteady state
+
+How does the distribution of unit preferences at a fixed point, depend on the direction of the position/velocity error?
+
+i.e. “at this FP we are not at steady state, we are outputting a force in some direction to try to reach steady state; in this state, what happens if I perturb a unit?”
+
+This might not make sense, depending on whether we can simply look at instantaneous tuning or not, since we will quickly move away from the FP as multiple time steps pass. 
+#### Reaching
+
+Here, it would be interesting to see how the distribution of preferred directions changes over the trial. 
+
+Presumably it won’t change much if we only look at the instantaneous tuning, since it will mostly depend on the readout.
+
+However, more generally we might expect that more units are tuned in the direction of the current reach near the beginning of the trial, and then in the opposite direction toward the end. 
+
 ### Convert notebooks for part 1
 
 - [ ] **Convert `COLORSCALES` to a `TreeNamespace`, so its structure reflects that of `hps`.**
-- [x] Maybe analysis variants can be handled by a `ClassVar`, e.g. `variant: str = "small"` tells `AbstractAnalysis.__call__` to pass `hps['small']` to `compute`; thus in `AbstractAnalysis.save` we don’t consider the “variants dict”, which is the outer level of the model/task/state/hps pytrees in `run_analysis`, but only pass the hps for the given variant.
-- [x] Pass `models` to `AbstractAnalysis`, since some analyses will be on the models rather than the states
 - [ ] **Move `analysis.part1` and `analysis.part2` and the part1 and part 2 files into `config` subpackage**
 - [ ] Move the constants out of `constants` and into config files, where possible. Including `REPLICATE_CRITERION`.
 - [ ] **Convert 1-2, and move any shared functions out of 1-1 and into `analysis` or something**
@@ -31,10 +77,6 @@ With `namedtuple`, the user could use partial configs, but needs to specify in t
 #### Task and model setup
 
 Done, plus or minus any minor bugs I haven’t noticed yet.
-
-#### Evaluate states
-
-**YOU ARE HERE**.
 
 #### Individual analyses
 
@@ -115,7 +157,6 @@ Don’t worry about refactoring functions found in the notebooks, for now.
 
 ### Network perturbations
 
-
 #### Individual unit stimulation
 
 Perturb the activity of units in the network, one at a time:
@@ -132,6 +173,14 @@ Example methods:
 - Do e.g. linear regression to turn N numbers to M numbers, where M is the number of context variables (i.e. get trends for each context variable)
 - Repeat this for all the other units
 - Now we can e.g. do a scatter plot of the regression parameters across all the units
+- **Are we sticking with a GRU? I assume we are stimulating the candidate vector but the others could be interesting as well.**
+
+> [!NOTE]
+> One thing I'm unsure about: the very first step of stimulation, will that only reveal the readout? 
+> i.e. because there’s no time for recurrent activity so we’ll basically just project out the extra activity in the stimulated unit
+> 
+> Double check this is the case: what is the comp graph between a unit’s activity, and 
+
 
 ##### Non-zero-force steady states
 
@@ -143,7 +192,10 @@ Example methods:
 
 #### Individual unit ablation
 
-- [ ] Fix the activity of a unit to 0.
+Fix the activity of each unit to zero, in turn.
+
+- [ ] Is performance more sensitive to the ablation of some units, than others? 
+- [ ] How does this depend on reach direction? etc?
 
 #### Eigenvectors
 

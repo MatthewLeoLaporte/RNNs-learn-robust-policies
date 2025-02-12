@@ -41,7 +41,7 @@ DIRECTION_IDXS = {
 }
 
 
-Responses = namedtuple('Responses', ('pos', 'vel', 'force'))
+Responses = namedtuple('Responses', ('position', 'velocity', 'force'))
 RESPONSE_VAR_LABELS = Responses('Position', 'Velocity', 'Control force')
 
 # TODO: Don't use namedtuple here? 

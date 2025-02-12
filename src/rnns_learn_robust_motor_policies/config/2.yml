@@ -13,6 +13,7 @@ model:
   motor_noise_std: 0.01
   dt: 0.05
   n_steps: 100
+  damping: 0.05
   control_loss_scale: 1.0
 
 train:  # TODO: Rename to `opt` or `optimization` or something

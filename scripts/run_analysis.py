@@ -53,7 +53,7 @@ from rnns_learn_robust_motor_policies.types import TrainStdDict
 logger = logging.getLogger(os.path.basename(__file__))
 
 
-#! TODO: `TrainStdDict` should probably not be hardcoded here? Maybe put in the `setup_tasks_and_models` functions
+#! TODO: `TrainStdDict` should probably not be hardcoded here? Maybe put in the `setup_eval_tasks_and_models` functions
 def load_models(db_session, hps: TreeNamespace):
     setup_task_model_pair = TRAINPAIR_SETUP_FUNCS[int(hps.load.expt_id)]
     

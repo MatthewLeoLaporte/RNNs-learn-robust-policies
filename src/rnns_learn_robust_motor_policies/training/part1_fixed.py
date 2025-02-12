@@ -74,6 +74,7 @@ def setup_task_model_pair(hps: TreeNamespace, *, key):
         n=hps.model.n_replicates,
         dt=hps.model.dt,
         mass=MASS,
+        damping=hps.model.damping,
         hidden_size=hps.model.hidden_size, 
         n_steps=hps.model.n_steps,
         feedback_delay_steps=hps.model.feedback_delay_steps,

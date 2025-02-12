@@ -323,6 +323,7 @@ def query_model_records(
         
     return query_records(session, ModelRecord, filters, match_all)
 
+
 class AlwaysEquatesFalse:
     """Objects of this class always compare `False` for equality, except against themselves."""
     def __eq__(self, other):
@@ -585,24 +586,25 @@ def save_model_and_add_record(
     
     # Save associated files if provided
     if train_history is not None:
-        # train_history_params = namespace_to_dict(take_train_histories_hps(hps))
         _ = save_tree(train_history, MODELS_DIR, hps, hash_=model_hash, suffix=TRAIN_HISTORY_FILE_LABEL)
-        train_history_path = get_hash_path(MODELS_DIR, model_hash, suffix=TRAIN_HISTORY_FILE_LABEL)
-        save(
-            train_history_path, 
-            train_history,
-            hps_dict,
-            dump_func=yaml_dump,
-        )
+        # train_history_params = namespace_to_dict(take_train_histories_hps(hps))
+        # train_history_path = get_hash_path(MODELS_DIR, model_hash, suffix=TRAIN_HISTORY_FILE_LABEL)
+        # save(
+        #     train_history_path, 
+        #     train_history,
+        #     hps_dict,
+        #     dump_func=yaml_dump,
+        # )
         
     if replicate_info is not None:
-        replicate_info_path = get_hash_path(MODELS_DIR, model_hash, suffix=REPLICATE_INFO_FILE_LABEL)
-        save(
-            replicate_info_path, 
-            replicate_info,
-            hps_dict,
-            dump_func=yaml_dump,
-        )
+        _ = save_tree(replicate_info, MODELS_DIR, hps, hash_=model_hash, suffix=REPLICATE_INFO_FILE_LABEL)
+        # replicate_info_path = get_hash_path(MODELS_DIR, model_hash, suffix=REPLICATE_INFO_FILE_LABEL)
+        # save(
+        #     replicate_info_path, 
+        #     replicate_info,
+        #     hps_dict,
+        #     dump_func=yaml_dump,
+        # )
         
     update_table_schema(session.bind, MODELS_TABLE_NAME, record_params)    
     

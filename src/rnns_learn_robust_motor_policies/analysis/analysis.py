@@ -2,15 +2,19 @@ from abc import abstractmethod
 from collections.abc import Callable
 from functools import cached_property
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 import equinox as eqx
 from equinox import AbstractVar, Module
+import jax.tree as jt
+from jax_cookbook import is_module
 from jaxtyping import PyTree, Array
 import plotly.graph_objects as go
 
 import jax_cookbook.tree as jtree
 
+from rnns_learn_robust_motor_policies.analysis.measures import Responses
+from rnns_learn_robust_motor_policies.analysis.state_utils import get_aligned_vars, get_pos_endpoints
 from rnns_learn_robust_motor_policies.database import add_evaluation_figure
 from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
 from rnns_learn_robust_motor_policies.misc import camel_to_snake, get_dataclass_fields
@@ -23,6 +27,21 @@ if TYPE_CHECKING:
 else:
     from equinox import AbstractClassVar
 
+
+PLANT_VAR_LABELS = ('position', 'velocity', 'force')
+WHERE_PLOT_PLANT_VARS = lambda states: Responses(
+    states.mechanics.effector.pos,
+    states.mechanics.effector.vel,
+    states.efferent.output,
+)
+
+
+WHERE_VARS_TO_ALIGN = lambda states, pos_endpoints: Responses(
+    # Positions with respect to the origin
+    states.mechanics.effector.pos - pos_endpoints[0][..., None, :],
+    states.mechanics.effector.vel,
+    states.efferent.output,
+)
 
 class AbstractAnalysis(Module):
     """Component in an analysis pipeline.
@@ -62,7 +81,7 @@ class AbstractAnalysis(Module):
             that case we could give the condition `"any_system_noise"` to those analyses.
     """
     dependencies: AbstractClassVar[MappingProxyType[str, "type[AbstractAnalysis]"]]
-    variant: AbstractClassVar[Optional[str]]
+    variant: AbstractClassVar[Optional[str]]  #! TODO: Should be an instance var so user can change it
     conditions: AbstractVar[tuple[str, ...]]
     
     def __call__(
@@ -143,5 +162,36 @@ class AbstractAnalysis(Module):
     @cached_property
     def _field_params(self):
         return get_dataclass_fields(self, exclude=('dependencies', 'conditions'))
+
+
+class AlignedVars(AbstractAnalysis):
+    """Align spatial variable (e.g. position and velocity) coordinates with the reach direction."""
+    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
+    variant: ClassVar[Optional[str]] = None
+    conditions: tuple[str, ...] = ()
+
+    def compute(
+        self,
+        models: PyTree[Module],
+        tasks: PyTree[Module],
+        states: PyTree[Module],
+        hps: PyTree[TreeNamespace],
+        *,
+        trial_specs,
+        **kwargs,
+    ):
+        pos_endpoints = jt.map(get_pos_endpoints, trial_specs, is_leaf=is_module)
+
+        return {
+            variant: jt.map(
+                lambda all_states: get_aligned_vars(all_states, WHERE_VARS_TO_ALIGN, pos_endpoints[variant]),
+                states[variant],
+                is_leaf=is_module,
+            )
+            for variant in states
+        }
+
+
+
             
 

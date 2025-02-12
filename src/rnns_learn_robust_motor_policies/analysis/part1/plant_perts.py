@@ -18,8 +18,11 @@ from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
+from rnns_learn_robust_motor_policies.analysis.analysis import WHERE_PLOT
+from rnns_learn_robust_motor_policies.analysis.analysis import VAR_LABELS
+from rnns_learn_robust_motor_policies.analysis.analysis import AlignedVars
 from rnns_learn_robust_motor_policies.analysis.measures import MEASURES, MEASURE_LABELS, RESPONSE_VAR_LABELS, Measure, Responses, compute_all_measures, output_corr
-from rnns_learn_robust_motor_policies.analysis.state_utils import get_aligned_vars, get_pos_endpoints, orthogonal_field, vmap_eval_ensemble
+from rnns_learn_robust_motor_policies.analysis.state_utils import orthogonal_field, vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.colors import MEAN_LIGHTEN_FACTOR, COLORSCALES
 from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL, REPLICATE_CRITERION
 from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
@@ -58,7 +61,7 @@ DISTURBANCE_FUNCS = {
 }
 
 
-def setup_tasks_and_models(task_base, models_base, hps):
+def setup_eval_tasks_and_models(task_base, models_base, hps):
     try:
         disturbance = DISTURBANCE_FUNCS[hps.disturbance.type]
     except KeyError:
@@ -99,14 +102,6 @@ def setup_tasks_and_models(task_base, models_base, hps):
 eval_func = vmap_eval_ensemble
 
 
-WHERE_PLOT = where_plot = lambda states: (
-    states.mechanics.effector.pos,
-    states.mechanics.effector.vel,
-    states.efferent.output,
-)
-VAR_LABELS = ('Position', 'Velocity', 'Control force')
-
-
 def plot_trajectories(states, *args, **kwargs): 
     return fbp.trajectories_2D(
         WHERE_PLOT(states),
@@ -125,42 +120,7 @@ def plot_trajectories(states, *args, **kwargs):
     )
 
 
-WHERE_VARS_TO_ALIGN = lambda states, pos_endpoints: Responses(
-    # Positions with respect to the origin
-    states.mechanics.effector.pos - pos_endpoints[0][..., None, :],
-    states.mechanics.effector.vel,
-    states.efferent.output,
-)
-
-
-class AlignedVars(AbstractAnalysis):
-    """Align spatial variable (e.g. position and velocity) coordinates with the reach direction."""
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
-    variant: ClassVar[Optional[str]] = None
-    conditions: tuple[str, ...] = ()
-
-    def compute(
-        self, 
-        models: PyTree[Module], 
-        tasks: PyTree[Module], 
-        states: PyTree[Module], 
-        hps: PyTree[TreeNamespace], 
-        *,
-        trial_specs,
-        **kwargs,
-    ):
-        pos_endpoints = jt.map(get_pos_endpoints, trial_specs, is_leaf=is_module)
-        
-        return {
-            variant: jt.map(
-                lambda all_states: get_aligned_vars(all_states, WHERE_VARS_TO_ALIGN, pos_endpoints[variant]),
-                states[variant],
-                is_leaf=is_module,
-            )
-            for variant in states
-        }
-
-
+#! TODO: Move
 class BestReplicateStates(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
     variant: ClassVar[Optional[str]] = None
@@ -327,6 +287,7 @@ plot_condition_trajectories = partial(
 )
 
 
+#! TODO: Move
 class Aligned_IdxTrial(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         aligned_vars=AlignedVars,
