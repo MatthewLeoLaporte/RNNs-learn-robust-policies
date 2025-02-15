@@ -6,31 +6,27 @@ updated: 2024-11-13T10:32
 
 - [ ] Try training a significantly larger network in part 2 and see if the context 0 curves overlap
 - [ ] Use rich progress bar for CLI?
-- [x] **Point mass damping**
-
-### Poster abstract 
-
-> - Ensure your NCM membership is in good standing
-> - Select a Presentation Theme that most closely describes your presentation (see list below)
-> - Prepare to enter your contact name, affiliation/institution name and email address
-> - Prepare an **abstract title** (max 225, incl. spaces, character limit)
-> - Enter **three (3) highlights** of the submission (max 100 characters per highlight)
-> - Include a **justification statement** on why the presentation is relevant to NCM or would be interesting to have as part of the program (max 1300 characters)
-> - Prepare the **abstract** (max 3000 character limit, incl. spaces – approximately **500 words**)
-> - Submit the abstract via NCM’s online abstract management system. Please note, when submitting the abstract cut and paste it from a text editor (ie. notepad, wordpad) to ensure it does not include underlying formatting that may cause errors
->   
->   Themes:
-> *Control of Eye and Head Movement  
-> Posture and Gait  
-> Fundamentals of Motor Control  
-> Integrative Control of Movement  
-> Disorders of Motor Control  
-> Adaption and Plasticity in Motor Control  
-> **Theoretical and Computational Motor Control**
 
 ### Unit perturbations
 
 See: [[#Individual unit stimulation]].
+
+#### Summary
+
+(Using part 2 hybrid models, since otherwise there is no basis from comparison between more- and less-robust networks.)
+
+1. Preference analysis
+
+- At steady state, perturb the point mass in center-out directions
+- At the time step of max forward force (max accel.), find the activities of all units
+- Find instantaneous preferences (direction of max activity for each unit; circular distributions of activity for each unit)
+
+2. Unit perturbation analysis
+
+- At steady state, perturb each unit in the network
+- Compare the direction of max acceleration, to the preferred direction of the same unit from 1. Note that the instantaneous preferences may not capture the unit-specific effects on recurrent processing, whereas unit perturbations should induce them.
+- Do the preferred & perturbed directions align more, for low vs. high context inputs? 
+- Also can do other analyses on the perturbed responses...
 
 #### Steady-state
 
@@ -117,8 +113,8 @@ Don’t worry about refactoring functions found in the notebooks, for now.
 
 #### Batch scripts
 
-- [ ] Add YAML files indicating the spreads of models to train for part 1 and 2
-- [ ] Add batch script which runs a given script based on a given YAML file
+- [x] Add YAML files indicating the spreads of models to train for part 1 and 2
+- [x] Add batch script which runs a given script based on a given YAML file
 	- For that, we need a common interface, i.e. we won’t need a different batch script for part 1 versus part 2.
 
 
@@ -156,6 +152,10 @@ Don’t worry about refactoring functions found in the notebooks, for now.
 	- at start of trial?
 
 ### Network perturbations
+
+- Do preference analysis: 
+	- e.g. look at the network activity on a particular timestep (e.g. peak vel/acc)
+- Compare the direction of the preferences with the direction resulting from unit stimulation
 
 #### Individual unit stimulation
 

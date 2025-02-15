@@ -157,7 +157,7 @@ def where_strs_to_funcs(where_strs: Sequence[str] | dict[int, Sequence[str]]):
 
 def train_and_save_models(
     db_session,
-    config_path: str | Path, 
+    hps_common: TreeNamespace, 
     key: PRNGKeyArray,
     untrained_only: bool = True,
     postprocess: bool = True,
@@ -171,8 +171,6 @@ def train_and_save_models(
     indicates which training experiment to run. 
     """
     key_init, key_train, key_eval = jr.split(key, 3)
-    
-    hps_common: TreeNamespace = load_hps(config_path)
 
     # User specifies which variant to run using the `id` key
     get_train_pairs = EXPERIMENTS[hps_common.expt_id]
@@ -186,7 +184,6 @@ def train_and_save_models(
     all_hps = fill_out_hps(hps_common, task_model_pairs)
 
     if untrained_only:
-        # TODO: Optionally do post-processing for models that were previously trained, but not post-processed
         task_model_pairs = skip_already_trained(db_session, task_model_pairs, all_hps, n_std_exclude, save_figures)
         
     if not any(jt.leaves(task_model_pairs, is_leaf=is_type(TaskModelPair))):
@@ -265,8 +262,6 @@ def skip_already_trained(
     post_process: bool = True,
 ):
     """Replace leaves in the tree of training pairs with None, where those models were already trained.
-    
-    Optionally 
     """
     all_hps = arrays_to_lists(all_hps)
     
@@ -290,7 +285,7 @@ def skip_already_trained(
     )
     
     record_exists = jt.map(
-        lambda x: x is None, 
+        lambda x: x is not None, 
         records, 
         is_leaf=lambda x: x is None or isinstance(x, ModelRecord),
     )

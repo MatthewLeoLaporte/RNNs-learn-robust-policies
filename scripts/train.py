@@ -8,6 +8,7 @@ Takes a single positional argument: the path to the YAML config.
 
 import os
 
+
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
 import argparse
@@ -23,6 +24,8 @@ import feedbax
 import rnns_learn_robust_motor_policies
 from rnns_learn_robust_motor_policies import PROJECT_SEED
 
+from rnns_learn_robust_motor_policies.hyperparams import load_hps
+from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
 from rnns_learn_robust_motor_policies.database import get_db_session
 from rnns_learn_robust_motor_policies.misc import log_version_info
 from rnns_learn_robust_motor_policies.training import train_and_save_models
@@ -53,9 +56,11 @@ if __name__ == '__main__':
     
     key = jr.PRNGKey(PROJECT_SEED)
     
+    hps_common: TreeNamespace = load_hps(args.config_path)
+    
     trained_models, train_histories, model_records = train_and_save_models(
         db_session, 
-        args.config_path, 
+        hps_common, 
         key,
         untrained_only=args.untrained_only,
         postprocess=args.postprocess,

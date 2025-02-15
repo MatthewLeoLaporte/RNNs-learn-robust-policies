@@ -1,12 +1,12 @@
-expt_id: 1-2  #!
+expt_id: 2-6
 
 #  Hyperparameters that uniquely identify the model(s)/training run(s) to analyze
 load:  
-  expt_id: 1
+  expt_id: 2
 
   disturbance:  # during training
     type: curl
-    std: [0.0, 0.5, 1.0, 1.5]  # list -> load multiple models
+    std: [0.0, 0.5, 1.0] #!, 1.5]  # list -> load multiple models
     
   model:  # 
     n_steps: 100  
@@ -27,16 +27,20 @@ task:  # Passed to the base task constructor
     eval_n_directions: 1
     eval_reach_length: 0
 
+
 disturbance:
-  # null -> same as during training, e.g. load.disturbance.type in this case
-  type: impulse  # not used for anything but reference
-  # TODO: Add the calculation of `amplitude` when loading hyperparams
-  amplitude_max: 1.0
-  n_amplitudes: 3
-  start_step: 30
-  duration: 5
+  plant:
+    directions: 24
+    amplitude: 1  
+    start_step: 30
+    duration: 5
+  unit:
+    amplitude: 1
+    start_step: 30
+    duration: 5
 
 model:
+  n_steps: null
   feedback_noise_std: null
   motor_noise_std: null
 

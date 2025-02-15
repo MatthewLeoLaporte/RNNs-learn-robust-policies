@@ -92,10 +92,9 @@ def load_hps(config_path: str | Path) -> TreeNamespace:
     # Load the defaults and update with the user-specified config
     default_config = load_default_config(expt_id)
     config = deep_update(default_config, config)
-    # 1) Convert to a (nested) namespace instead of a dict,
-    #    so we can refer to keys as attributes
-    # 2) Make corrections and add in any derived values
+    # Convert to a (nested) namespace instead of a dict, for attribute access
     hps = dict_to_namespace(config, to_type=TreeNamespace, exclude=is_dict_with_int_keys)
+    # Make corrections and add in any derived values
     hps = process_hps(hps)
     return hps
 

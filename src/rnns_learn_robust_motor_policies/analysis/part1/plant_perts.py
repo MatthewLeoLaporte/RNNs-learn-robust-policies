@@ -17,10 +17,7 @@ import feedbax.plotly as fbp
 from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
-from rnns_learn_robust_motor_policies.analysis.analysis import WHERE_PLOT
-from rnns_learn_robust_motor_policies.analysis.analysis import VAR_LABELS
-from rnns_learn_robust_motor_policies.analysis.analysis import AlignedVars
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AlignedVars, WHERE_PLOT_PLANT_VARS, PLANT_VAR_LABELS
 from rnns_learn_robust_motor_policies.analysis.measures import MEASURES, MEASURE_LABELS, RESPONSE_VAR_LABELS, Measure, Responses, compute_all_measures, output_corr
 from rnns_learn_robust_motor_policies.analysis.state_utils import orthogonal_field, vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.colors import MEAN_LIGHTEN_FACTOR, COLORSCALES
@@ -104,14 +101,14 @@ eval_func = vmap_eval_ensemble
 
 def plot_trajectories(states, *args, **kwargs): 
     return fbp.trajectories_2D(
-        WHERE_PLOT(states),
-        var_labels=VAR_LABELS,
+        WHERE_PLOT_PLANT_VARS(states),
+        var_labels=PLANT_VAR_LABELS,
         axes_labels=('x', 'y'),
         colorscale=COLORSCALES['reach_condition'],
         legend_title='Reach direction',
         # scatter_kws=dict(line_width=0.5),
         layout_kws=dict(
-            width=100 + len(VAR_LABELS) * 300,
+            width=100 + len(PLANT_VAR_LABELS) * 300,
             height=400,
             legend_tracegroupgap=1,
         ),

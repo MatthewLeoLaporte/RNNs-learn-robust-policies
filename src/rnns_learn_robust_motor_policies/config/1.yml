@@ -1,9 +1,8 @@
 expt_id: 1
 
 disturbance:
-  type: curl #[curl, constant]
+  type: curl
   std: [0, 0.5, 1.0, 1.5]  
-    # constant: [0, 0.01, 0.1, 1]
 
 model:
     n_replicates: 5
