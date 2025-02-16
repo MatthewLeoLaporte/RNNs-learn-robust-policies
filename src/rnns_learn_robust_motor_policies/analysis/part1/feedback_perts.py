@@ -22,6 +22,8 @@ from rnns_learn_robust_motor_policies.perturbations import feedback_impulse
 PERT_VAR_NAMES = ('fb_pos', 'fb_vel')
 COORD_NAMES = ('x', 'y')
 
+COLOR_FUNCS = dict()
+
 
 components_plot: Literal['xy', 'aligned'] = 'aligned'
 components_labels = dict(
@@ -146,14 +148,14 @@ def task_with_imp_amplitude(task, impulse_amplitude):
     ) 
 
 
-def eval_func(models, task, hps, key_eval):
+def eval_func(key_eval, hps, models, task):
     """Vmap over impulse amplitude."""
     return eqx.filter_vmap(
         lambda amplitude: vmap_eval_ensemble(
+            key_eval,
+            hps,
             models, 
             task_with_imp_amplitude(task, amplitude), 
-            hps,
-            key_eval,
         )
     )(hps.disturbance.amplitudes)
     

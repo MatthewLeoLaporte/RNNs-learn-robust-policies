@@ -70,7 +70,7 @@ def process_hps(hps: TreeNamespace) -> TreeNamespace:
     # Not all experiments will load an existing model 
     if getattr(hps, 'load', None) is not None:        
         if getattr(hps.load, 'train', None) is not None:
-            hps.load.train.where = TrainWhereDict(hps.load.train.where)            
+            hps.load.train.where = TrainWhereDict(hps.load.train.where)         
 
     return hps
 

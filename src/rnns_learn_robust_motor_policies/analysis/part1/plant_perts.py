@@ -57,6 +57,9 @@ DISTURBANCE_FUNCS = {
     ),
 }
 
+# Could specify extra colorscales needed for this analysis
+COLOR_FUNCS = dict()
+
 
 def setup_eval_tasks_and_models(task_base, models_base, hps):
     try:

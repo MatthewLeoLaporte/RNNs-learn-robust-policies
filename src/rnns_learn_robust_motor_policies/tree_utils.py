@@ -211,6 +211,24 @@ class TreeNamespace(SimpleNamespace):
     @classmethod
     def tree_unflatten(cls, aux_data, children):
         return cls(**dict(zip(aux_data, children)))
+    
+    def __repr__(self):
+        return self._repr_with_indent(0)
+        
+    def _repr_with_indent(self, level):
+        INDENT = "  "  # or "\t" for tabs
+        current_indent = INDENT * level
+        attr_strs = []
+        for name, attr in self.__dict__.items():
+            if isinstance(attr, TreeNamespace):
+                attr_repr = attr._repr_with_indent(level + 1)
+            else:
+                attr_repr = repr(attr)
+            attr_strs.append(f"{name}={attr_repr},")
+            
+        return (f"{self.__class__.__name__}(\n" + 
+                '\n'.join(current_indent + INDENT + s for s in attr_strs) +
+                f"\n{current_indent})")
 
     def update_none_leaves(self, other):
         # I would just use `jt.map` or `eqx.combine` to do this, however I don't want to assume

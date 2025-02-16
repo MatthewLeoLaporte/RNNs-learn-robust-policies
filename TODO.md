@@ -5,11 +5,17 @@ updated: 2024-11-13T10:32
 **See [[results-2|Part 2 results]] for ongoing analysis TODOs.
 
 - [ ] Try training a significantly larger network in part 2 and see if the context 0 curves overlap
-- [ ] Use rich progress bar for CLI?
+- [ ] Better CLI progress bars
+- [ ] Solve: Sometimes `AbstractTask.validation_trials` raises a `jax.errors.UnexpectedTracerError`, which suggests there is a side-effect from a compiled function. Strangely, the backtrace points to the `ticks = jax.vmap(...` line in `feedbax.task`. This might only happen when there is only one validation trial.
 
 ### Unit perturbations
 
 See: [[#Individual unit stimulation]].
+
+#### Code 
+
+Ran into an issue with `evaluate_all_states` for analysis 2-6. 
+This is because `all_models` and `all_tasks` have the prefix `[{'full': {'plant_pert': ..., 'unit_stim': ...}}` whereas `all_hps` is only `[{'full': ...}]`. 
 
 #### Summary
 
@@ -173,7 +179,6 @@ Example methods:
 - Do e.g. linear regression to turn N numbers to M numbers, where M is the number of context variables (i.e. get trends for each context variable)
 - Repeat this for all the other units
 - Now we can e.g. do a scatter plot of the regression parameters across all the units
-- **Are we sticking with a GRU? I assume we are stimulating the candidate vector but the others could be interesting as well.**
 
 > [!NOTE]
 > One thing I'm unsure about: the very first step of stimulation, will that only reveal the readout? 

@@ -3,6 +3,8 @@
 from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
 
 
+COLOR_FUNCS = dict()
+
 ALL_ANALYSES = []
 
 

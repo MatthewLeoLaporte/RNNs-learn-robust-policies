@@ -11,7 +11,7 @@ import feedbax.plotly as fbp
 from jax_cookbook import is_type
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
+from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace, dict_to_namespace
 
 
 # How much to darken (<1) or lighten (>1) plots of means, versus plots of individual trials
@@ -19,7 +19,7 @@ MEAN_LIGHTEN_FACTOR = 0.7
 
 
 # Colorscales
-#! TODO: Convert to `TreeNamespace` to reflect the structure of hyperparameters
+#! TODO: Combine with `setup_colors`; pair a colorscale and a variable under a single key
 COLORSCALES: dict[str, str] = dict(
     context_input='thermal',
     disturbance_amplitude='plotly3',
@@ -30,26 +30,25 @@ COLORSCALES: dict[str, str] = dict(
 )
 
 
-# class Color(Module):
-#     pass
+def get_color_vars(var_funcs: dict[str, Callable], hps: TreeNamespace) -> dict[str, Optional[Sequence]]:
+    def _try_get_var(func, hps):
+        try:
+            return func(hps)
+        except AttributeError:
+            return None 
+    return {k: _try_get_var(v, hps) for k, v in var_funcs.items()}
 
 
-def setup_colors(hps: TreeNamespace) -> tuple[dict, dict]:
+def setup_colors(hps: PyTree[TreeNamespace], var_funcs: dict[str, Callable]) -> tuple[dict, dict]:
     """Get all the colorscales we might want for our analyses, given the experiment hyperparameters.
     """
     lighten_factors = dict(normal=1, dark=MEAN_LIGHTEN_FACTOR)
     colors = jt.map(
-        lambda hps: {
+        lambda hps: dict_to_namespace({
             k: get_colors_dicts(v, COLORSCALES[k], lighten_factor=lighten_factors)
-            for k, v in dict(
-                # context_input= 
-                disturbance_amplitude=hps.disturbance.amplitude,
-                disturbance_std=hps.load.disturbance.std,
-                # pert_var=  #? Discrete
-                #  reach_condition=  #? Discrete
-                trial=range(hps.eval_n),  #? Discrete
-            ).items()
-        },
+            for k, v in get_color_vars(var_funcs, hps).items()
+            if v is not None
+        }),
         hps,
         is_leaf=is_type(TreeNamespace),
     )

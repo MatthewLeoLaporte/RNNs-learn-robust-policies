@@ -130,6 +130,7 @@ if __name__ == '__main__':
     # filename relative to `../src/rnns_learn_robust_motor_policies/config`) of a default config to load. 
     # This assumes there is no file whose relative path is identical to that `expt_id`.
     parser.add_argument("--config-path", type=str, default="", help="Path to the config file.")
+    parser.add_argument("--expt-id", type=str, default="", help="Process only this experiment, instead of all of them.")
     parser.add_argument("--untrained-only", action='store_false', help="Only train models which appear not to have been trained yet.")
     parser.add_argument("--postprocess", action='store_false', help="Postprocess each model after training.")
     parser.add_argument("--n-std-exclude", type=int, default=2, help="In postprocessing, exclude model replicates with n_std greater than this value.")
@@ -153,9 +154,13 @@ if __name__ == '__main__':
             
     configs = parse_batch_config(batch_config)
     
-    logger.info(f"Training models for experiments: {', '.join(str(s) for s in configs.keys())}")  # type: ignore
+    if not args.expt_id == "":
+        configs = {args.expt_id: configs[args.expt_id]}      
+    
+    logger.info(f"Training models for experiments: {', '.join(str(s) for s in configs.keys())}")  
     
     # Iterate over each experiment
+    
     for expt_id, expt_configs in configs.items():
     
         # Get defaults for this experiment

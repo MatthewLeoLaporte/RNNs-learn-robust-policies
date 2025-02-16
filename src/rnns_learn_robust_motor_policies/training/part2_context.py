@@ -154,15 +154,14 @@ def setup_task_model_pair(
         key=key,
     )
     
-    if hps.train.method is not None:
+    try:
         task = eqx.tree_at(
             lambda task: task.input_dependencies,
             task_base,
             dict(context=TrialSpecDependency(CONTEXT_INPUT_FUNCS[hps.train.method]))
         )
-    else:
-        #? In what context do we end up here?
-        task = task_base
+    except AttributeError:
+        raise ValueError("No training method label assigned to hps.train.method")
     
     return TaskModelPair(*schedule_intervenor(
         task, models_base,

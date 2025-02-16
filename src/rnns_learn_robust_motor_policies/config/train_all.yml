@@ -1,4 +1,4 @@
-1:
+'1':
   product:  # take the cartesian product of the following sets of runs
     - name: noise_levels
       model:
@@ -21,36 +21,16 @@
             std: 
               value: [0, 0.01, 0.1, 1]
 
-#! Example where we use "cases" on the outside
-# 1:
-#   cases:
-#     - name: basic_models
-#       product:
-#         - name: noise_levels
-#           model:
-#             feedback_noise_std: [0.01, 0.1]
-#             motor_noise_std: [0.01, 0.1]
-#         - name: disturbance_types
-#           cases:
-#             - name: curl
-#               disturbance:
-#                 type: curl
-#                 std: [0.0, 0.5, 1.0, 1.5]
-#             - name: constant
-#               disturbance:
-#                 type: constant
-#                 std: [0, 0.01, 0.1, 1]
-
-2:
+'2':
   product:  # take the cartesian product of the following sets of runs
     - name: noise_levels
       model:
-        feedback_noise_std: [0.01, 0.1]
-        motor_noise_std: [0.01, 0.1]
+        feedback_noise_std: [0.01] #! , 0.1]
+        motor_noise_std: [0.01] #!, 0.1]
       # labels: ["low_noise", "high_noise"]
     - name: feedback_delays
       model:
-        feedback_delay_steps: [0, 2, 4]
+        feedback_delay_steps: [0] #! , 2, 4]
     - name: disturbance_types
       cases:  # run these separately
         - name: curl

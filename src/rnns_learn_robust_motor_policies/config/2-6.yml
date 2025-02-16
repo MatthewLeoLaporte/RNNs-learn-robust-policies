@@ -6,7 +6,8 @@ load:
 
   disturbance:  # during training
     type: curl
-    std: [0.0, 0.5, 1.0] #!, 1.5]  # list -> load multiple models
+    # list -> load multiple models
+    std: [0.5, 1.0, 1.5]  #! 0  
     
   model:  # 
     n_steps: 100  
@@ -18,15 +19,15 @@ load:
   train:
     where: 
       0: ['step.net.hidden', 'step.net.readout']
+    method: 'pai-asf'
 
 eval_n: 5
 
 task:  # Passed to the base task constructor
   full:
-    eval_grid_n: 5
+    eval_grid_n: 1
     eval_n_directions: 1
     eval_reach_length: 0
-
 
 disturbance:
   plant:

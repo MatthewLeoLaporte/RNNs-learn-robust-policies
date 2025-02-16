@@ -27,6 +27,7 @@ from rnns_learn_robust_motor_policies.database import (
     MODEL_RECORD_BASE_ATTRS,
     add_evaluation,
     add_evaluation_figure,
+    check_model_files,
     get_db_session,
     query_model_records,
     record_to_namespace,
@@ -621,6 +622,7 @@ def main(
     session = get_db_session()
     
     # Get all model records
+    check_model_files(session)  # Mark any records with missing model files
     model_records = query_model_records(session)
     logger.info(f"Found {len(model_records)} model records")
     

@@ -318,7 +318,8 @@ def query_model_records(
         filters = {}
         
     if exclude_defunct:
-        check_model_files(session)
+        # Don't check if defunct here, otherwise we'll be checking the 
+        # DB and littering the logs with info from `check_model_files`
         filters['is_path_defunct'] = False
         
     return query_records(session, ModelRecord, filters, match_all)
@@ -410,7 +411,7 @@ def get_model_record(
         ValueError: If multiple matches found
     """
     if exclude_defunct:
-        check_model_files(session)
+        
         filters['is_path_defunct'] = False
         
     return get_record(session, ModelRecord, **filters)
