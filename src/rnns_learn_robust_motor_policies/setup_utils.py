@@ -13,6 +13,7 @@ from ipyfilechooser import FileChooser
 from ipywidgets import HTML
 from IPython.display import display
 import jax.numpy as jnp
+import jax.random as jr
 import jax.tree as jt
 from jaxtyping import PRNGKeyArray, PyTree
 
@@ -381,6 +382,7 @@ def query_and_load_model(
     tree_inclusions: Optional[dict[type, Optional[Any | Sequence | Callable]]] = None,
     exclude_underperformers_by: Optional[str] = None,
     exclude_method: Literal['nan', 'remove', 'best-only'] = 'nan',
+    return_task: bool = False,
 ):
     """Query the models table in the project database and return the loaded and processed model( replicates).
     
@@ -432,6 +434,16 @@ def query_and_load_model(
         model_info.path, 
         partial(setup_models_only, setup_task_model_pair),
     )
+    
+    #! Since `setup_models_only` merely discards the tasks after generation,
+    #! we should be able to return `(task, model), hps` from `load_tree_with_hps`.
+    #! However, 
+    # TODO: If not too difficult, store seed/key value in the `model_record` so we 
+    # obtain the identical task, down to the trials. However, unless we mean to analyze
+    # the training or something, I think this isn't very useful 
+    if return_task: 
+        #! task = setup_tasks_only(setup_task_model_pair, hps, key=jr.PRNGKey(0))
+        ...
 
     replicate_info, _ = load_tree_with_hps(
         model_info.replicate_info_path, 
@@ -518,7 +530,13 @@ def query_and_load_model(
         if any(n < 1 for n in jt.leaves(n_replicates_included)):
             raise ValueError("No replicates met inclusion criteria for at least one model variant")
     
-    return model, model_info, replicate_info, n_replicates_included
+    if return_task:
+        task = setup_tasks_only(setup_task_model_pair, hps, key=jr.PRNGKey(0))
+        tree = (task, model)
+    else:
+        tree = model
+    
+    return tree, model_info, replicate_info, n_replicates_included
 
 
         

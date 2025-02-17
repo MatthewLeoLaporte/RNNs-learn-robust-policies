@@ -53,10 +53,10 @@ logger = logging.getLogger(os.path.basename(__file__))
 
 
 #! TODO: `TrainStdDict` should probably not be hardcoded here? Maybe put in the `setup_eval_tasks_and_models` functions
-def load_models(db_session, hps: TreeNamespace):
+def load_model_and_train_task(db_session, hps: TreeNamespace):
     setup_task_model_pair = TRAINPAIR_SETUP_FUNCS[int(hps.load.expt_id)]
     
-    models_base, model_info, replicate_info, n_replicates_included = jtree.unzip(
+    pairs, model_info, replicate_info, n_replicates_included = jtree.unzip(
         TrainStdDict({
             disturbance_std: query_and_load_model(
                 db_session,
@@ -72,12 +72,15 @@ def load_models(db_session, hps: TreeNamespace):
                     ('n_steps',): hps.model.n_steps,
                 },  
                 exclude_underperformers_by=REPLICATE_CRITERION,
+                return_task=True,
             )
             for disturbance_std in hps.load.disturbance.std
         })
     )
     
-    return models_base, model_info, replicate_info, n_replicates_included
+    tasks_train, models = jtree.unzip(pairs) 
+    
+    return models, model_info, replicate_info, tasks_train, n_replicates_included
 
 
 def copy_delattr(obj: Any, *attr_names: str):
@@ -97,8 +100,10 @@ def use_load_hps_when_none(hps: TreeNamespace) -> TreeNamespace:
     return hps
 
 
-# Default colorscales to try to set up, based on hyperparameters.
-# These are lambdas so we can try to load them one-by-one.
+"""
+Default colorscales to try to set up, based on hyperparameters.
+Values are hyperparameter where-functions so we can try to load them one-by-one.
+"""
 COMMON_COLOR_FUNCS = dict(
     # context_input= 
     disturbance_amplitude=lambda hps: hps.disturbance.amplitude,
@@ -120,13 +125,17 @@ def main(
 
     # TODO: Load based on module name (e.g. `"part1.plant_perts"`) rather than id (e.g. `"1-1"`)
     # (and then remove the `ANALYSIS_SETS` constructions in the analysis subpackages)
-    setup_func, eval_func, analyses, COLOR_FUNCS = ANALYSIS_SETS[hps.expt_id]
+    setup_func, eval_func, analyses, color_funcs = ANALYSIS_SETS[hps.expt_id]
 
     # Load models
-    models_base, model_info, replicate_info, n_replicates_included = load_models(
-        db_session,
-        hps,
-    )
+    models_base, model_info, replicate_info, tasks_base, n_replicates_included = \
+        load_model_and_train_task(db_session, hps)
+        
+    #! For this project, the training task should not vary with the train field std 
+    #! (`models_base` and `tasks_base` are both `TrainStdDict` instances) so we just 
+    #! keep a single one.
+    # TODO:   In the future, could keep the full `tasks_base`, and update `get_task_variant`/`setup_func`
+    task_base = jt.leaves(tasks_base, is_leaf=is_module)[0]
     
     # Later, use this to access the values of hyperparameters, assuming they 
     # are shared between models (e.g. `model_info_0.n_steps`)
@@ -163,27 +172,38 @@ def main(
         eval_parameters=namespace_to_dict(flatten_hps(hps)),
         version_info=version_info,
     )
+
+    def get_task_variant(task_base, models_base, hps, **kwargs):
+        
+        task = task_base
+        
+        for attr_name, attr_value in kwargs.items():
+            task = eqx.tree_at(
+                lambda task: getattr(task, attr_name),
+                task,
+                attr_value,
+            )
     
-    def get_task_variant(models_base, hps, **kwargs):
-        task_variant = get_base_reaching_task(
-            n_steps=hps.model.n_steps, 
-            **kwargs,
-        )
-    
-        tasks, models, hps = setup_func(task_variant, models_base, hps)
+        tasks, models, hps = setup_func(task, models_base, hps)
         
         return tasks, models, hps
     
     # Outer level is task variants, inner is the structure returned by `setup_func`
     # i.e. "task variants" are a way to evaluate different sets of conditions
     all_tasks, all_models, all_hps = jtree.unzip({
-        k: get_task_variant(models_base, hps, **task_params)
+        k: get_task_variant(
+            task_base, 
+            models_base, 
+            hps, 
+            n_steps=hps.model.n_steps,  #? Is this the only one we need to pass explicitly?
+            **task_params,
+        )
         for k, task_params in namespace_to_dict(hps.task).items()
     })
     
     #! Assume that all tasks of the same variant have the same trial structure
-    #! (this is generally true for procedurally generated and non-stochastic reach endpoints, 
-    #!  as in the center-out tasks typically used for analysis)
+    #! This is generally true for procedurally generated and non-stochastic reach endpoints, 
+    #!  as in the center-out tasks typically used for analysis.
     example_task = {
         key: jt.leaves(tasks_variant, is_leaf=is_module)[0]
         for key, tasks_variant in all_tasks.items()
@@ -197,7 +217,7 @@ def main(
             
     example_trial_specs = jt.map(get_validation_trial_specs, example_task, is_leaf=is_module)
     
-    colors, discrete_colors = setup_colors(hps, COMMON_COLOR_FUNCS | COLOR_FUNCS) 
+    colors, discrete_colors = setup_colors(hps, COMMON_COLOR_FUNCS | color_funcs) 
     
     def evaluate_all_states(all_tasks, all_models, all_hps):
         return jt.map(  # Map over task pairs generated by `schedule_intervenor` for each base task
@@ -226,12 +246,7 @@ def main(
     # single dict before performing the analyses.
     # TODO: Only pass the dependencies to each analysis that it actually needs
     dependencies = compute_dependencies(
-        analyses, 
-        all_models, 
-        all_tasks, 
-        all_states, 
-        all_hps,
-        **dict(
+        analyses, all_models, all_tasks, all_states, all_hps, **dict(
             # ANY subclass of `AbstractAnalysis` can add any of the following to the argument lists of
             # their `make_figs` and `compute` methods
             colors=colors,

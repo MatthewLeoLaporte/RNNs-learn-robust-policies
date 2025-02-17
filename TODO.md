@@ -4,11 +4,12 @@ updated: 2024-11-13T10:32
 ---
 **See [[results-2|Part 2 results]] for ongoing analysis TODOs.
 
-- [ ] Try training a significantly larger network in part 2 and see if the context 0 curves overlap
 - [ ] Better CLI progress bars
 - [ ] Solve: Sometimes `AbstractTask.validation_trials` raises a `jax.errors.UnexpectedTracerError`, which suggests there is a side-effect from a compiled function. Strangely, the backtrace points to the `ticks = jax.vmap(...` line in `feedbax.task`. This might only happen when there is only one validation trial.
 
 ### Unit perturbations
+
+- [ ] **Do tuning curves get narrower** (i.e. do units become less active more quickly as they move away from their preferred direction?) with context input?
 
 See: [[#Individual unit stimulation]].
 
@@ -59,7 +60,8 @@ However, more generally we might expect that more units are tuned in the directi
 
 ### Convert notebooks for part 1
 
-- [ ] **Convert `COLORSCALES` to a `TreeNamespace`, so its structure reflects that of `hps`.**
+- [ ] `seed`/base `key` column in each of the db tables
+- [ ] ~~**Convert `COLORSCALES` to a `TreeNamespace`, so its structure reflects that of `hps`.**~~
 - [ ] **Move `analysis.part1` and `analysis.part2` and the part1 and part 2 files into `config` subpackage**
 - [ ] Move the constants out of `constants` and into config files, where possible. Including `REPLICATE_CRITERION`.
 - [ ] **Convert 1-2, and move any shared functions out of 1-1 and into `analysis` or something**
@@ -72,19 +74,14 @@ I am using `SimpleNamespace`, though it might be better to use `namedtuple`.
 
 I can turn `SimpleNamespace` into a PyTree, however this would be automatic with `namedtuple`.
 
-Also, using `jt.map` is not ideal for replacing null values with defaults, if we allow for partial configs (i.e. if not every config file needs to have all the same keys as all the other config files of the same kind, even if they are assigned `null` and never used) then the pytree structures will not match. 
+Using `jt.map` is not ideal for replacing null values with defaults, if we allow for partial configs – i.e. if not every config file needs to have all the same keys as all the other config files of the same kind, even if they are assigned `null` and never used – then the pytree structures will not match. 
 
 With `namedtuple`, the user could use partial configs, but needs to specify in the project code the structure of every kind of config file (e.g. training, or analysis). Then the loaded hps would contain unused information. Though, perhaps we could use `namedtuple` and `jt.map` to get the updated hyperparameters, and then just recursively `subdict` out the parameters that appear in the defaults for that kind of config.
 
-#### Task and model setup
+### Supplementary
 
-Done, plus or minus any minor bugs I haven’t noticed yet.
-
-#### Individual analyses
-
-Some of these may depend on certain things we’d like to only calculate once.
-For example, aligned responses. 
-Either we add in one or more extra calculation phases where we can construct an “extra data” namespace which is passed around to the individual analyses. 
+- [ ] Try training a significantly larger network in part 2 and see if the context 0 curves overlap
+- [ ] 
 
 ## Efficiency
 

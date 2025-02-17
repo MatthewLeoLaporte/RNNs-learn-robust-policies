@@ -21,7 +21,9 @@ load:
       0: ['step.net.hidden', 'step.net.readout']
     method: 'pai-asf'
 
-eval_n: 5
+eval_n: 2  #! 5
+
+context_input: [-1.0, 0, 1.0]
 
 task:  # Passed to the base task constructor
   full:

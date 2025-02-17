@@ -689,7 +689,7 @@ class Measures_LoHiSummary(AbstractAnalysis):
                     width=300, height=300, 
                 )
             )
-            for key, measure in result.items()
+            for key, measure in result.items ()
         })
         return figs
 

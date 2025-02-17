@@ -12,7 +12,7 @@ import jax.tree as jt
 from jaxtyping import Array, Float, PyTree
 
 from feedbax.bodies import SimpleFeedbackState
-from jax_cookbook import is_type
+from jax_cookbook import is_type, compose
 
 from rnns_learn_robust_motor_policies.constants import EVAL_REACH_LENGTH
 from rnns_learn_robust_motor_policies.types import MeasureDict
@@ -53,16 +53,16 @@ RESPONSE_VAR_LABELS = Responses('Position', 'Velocity', 'Control force')
 #     force: Float[Array, "... time space"]
 
 
-def compose(*funcs):
-    """Compose a sequence of functions from left to right.
+# def compose(*funcs):
+#     """Compose a sequence of functions from left to right.
     
-    Args:
-        *funcs: Functions to compose, applied left to right (first to last)
+#     Args:
+#         *funcs: Functions to compose, applied left to right (first to last)
         
-    Returns:
-        Composed function that applies all transformations in sequence
-    """
-    return reduce(lambda f, g: lambda x: g(f(x)), funcs)
+#     Returns:
+#         Composed function that applies all transformations in sequence
+#     """
+#     return reduce(lambda f, g: lambda x: g(f(x)), funcs)
 
 
 class Measure(Module):

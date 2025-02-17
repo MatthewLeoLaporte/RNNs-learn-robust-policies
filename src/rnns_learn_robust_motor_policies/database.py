@@ -586,26 +586,11 @@ def save_model_and_add_record(
     model_hash, _ = save_tree(model, MODELS_DIR, hps)
     
     # Save associated files if provided
-    if train_history is not None:
-        _ = save_tree(train_history, MODELS_DIR, hps, hash_=model_hash, suffix=TRAIN_HISTORY_FILE_LABEL)
-        # train_history_params = namespace_to_dict(take_train_histories_hps(hps))
-        # train_history_path = get_hash_path(MODELS_DIR, model_hash, suffix=TRAIN_HISTORY_FILE_LABEL)
-        # save(
-        #     train_history_path, 
-        #     train_history,
-        #     hps_dict,
-        #     dump_func=yaml_dump,
-        # )
-        
-    if replicate_info is not None:
-        _ = save_tree(replicate_info, MODELS_DIR, hps, hash_=model_hash, suffix=REPLICATE_INFO_FILE_LABEL)
-        # replicate_info_path = get_hash_path(MODELS_DIR, model_hash, suffix=REPLICATE_INFO_FILE_LABEL)
-        # save(
-        #     replicate_info_path, 
-        #     replicate_info,
-        #     hps_dict,
-        #     dump_func=yaml_dump,
-        # )
+    for tree, suffix in (
+        (train_history, TRAIN_HISTORY_FILE_LABEL), 
+        (replicate_info, REPLICATE_INFO_FILE_LABEL),
+    ):
+        save_tree(tree, MODELS_DIR, hps, hash_=model_hash, suffix=suffix)
         
     update_table_schema(session.bind, MODELS_TABLE_NAME, record_params)    
     
