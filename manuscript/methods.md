@@ -115,6 +115,15 @@ Training takes about 10 min per ensemble of 10 models; i.e. about 4 h for 30 mod
 
 - How to make pos vs. vel perturbations comparable?
 - Choose amplitudes to align the max (or sum?) deviation for the control (zero train std) condition?
+### Single-unit stimulation
+
+Outline based on a conversation with Gunnar:
+
+- Perturb a single unit in all the different contexts (e.g. force field strength), resulting in a bunch of different responses for different contexts/context combinations for a single unit
+- Observe qualitatively what changes between context. For example, if context only changes the amplitude of the stimulation response but not the direction, then we will boil each response (set of states) to a single number. So we will have one number (e.g. relative amplitude) for each context/context combination; i.e. N numbers for N contexts.
+- Do e.g. linear regression to turn N numbers to M numbers, where M is the number of context variables (i.e. get trends for each context variable)
+- Repeat this for all the other units
+- Now we can e.g. do a scatter plot of the regression parameters across all the units
 
 ## Summary of conditions
 

@@ -6,59 +6,10 @@ updated: 2024-11-13T10:32
 
 - [ ] Better CLI progress bars
 - [ ] Solve: Sometimes `AbstractTask.validation_trials` raises a `jax.errors.UnexpectedTracerError`, which suggests there is a side-effect from a compiled function. Strangely, the backtrace points to the `ticks = jax.vmap(...` line in `feedbax.task`. This might only happen when there is only one validation trial.
+- [ ] Feedbax: Why is the mean validation loss lower than the mean training loss? Is it because the training task has a different distribution of reach lengths?
+- [ ] A `replicate_info` file might sometimes be generated for a non-postprocessed ModelRecord; in that case, its `has_replicate_info` gets set to `1` by `check_model_files` and this results in a “duplicate” error being raised when trying to load the postprocessed model according to its `has_replicate_info` value. It seems this happened when I re-ran `train.py` after it raised an error on `post_training`; i.e. the second time it only ran `post_training` on a single model.
 
-### Unit perturbations
-
-- [ ] **Do tuning curves get narrower** (i.e. do units become less active more quickly as they move away from their preferred direction?) with context input?
-
-See: [[#Individual unit stimulation]].
-
-#### Code 
-
-Ran into an issue with `evaluate_all_states` for analysis 2-6. 
-This is because `all_models` and `all_tasks` have the prefix `[{'full': {'plant_pert': ..., 'unit_stim': ...}}` whereas `all_hps` is only `[{'full': ...}]`. 
-
-#### Summary
-
-(Using part 2 hybrid models, since otherwise there is no basis from comparison between more- and less-robust networks.)
-
-1. Preference analysis
-
-- At steady state, perturb the point mass in center-out directions
-- At the time step of max forward force (max accel.), find the activities of all units
-- Find instantaneous preferences (direction of max activity for each unit; circular distributions of activity for each unit)
-
-2. Unit perturbation analysis
-
-- At steady state, perturb each unit in the network
-- Compare the direction of max acceleration, to the preferred direction of the same unit from 1. Note that the instantaneous preferences may not capture the unit-specific effects on recurrent processing, whereas unit perturbations should induce them.
-- Do the preferred & perturbed directions align more, for low vs. high context inputs? 
-- Also can do other analyses on the perturbed responses...
-
-#### Steady-state
-
-Start with this. 
-
-At steady state, what is the distribution of unit preferences?
-
-How does this depend on the steady-state position? 
-
-#### Unsteady state
-
-How does the distribution of unit preferences at a fixed point, depend on the direction of the position/velocity error?
-
-i.e. “at this FP we are not at steady state, we are outputting a force in some direction to try to reach steady state; in this state, what happens if I perturb a unit?”
-
-This might not make sense, depending on whether we can simply look at instantaneous tuning or not, since we will quickly move away from the FP as multiple time steps pass. 
-#### Reaching
-
-Here, it would be interesting to see how the distribution of preferred directions changes over the trial. 
-
-Presumably it won’t change much if we only look at the instantaneous tuning, since it will mostly depend on the readout.
-
-However, more generally we might expect that more units are tuned in the direction of the current reach near the beginning of the trial, and then in the opposite direction toward the end. 
-
-### Convert notebooks for part 1
+## Convert notebooks for part 1
 
 - [ ] `seed`/base `key` column in each of the db tables
 - [ ] ~~**Convert `COLORSCALES` to a `TreeNamespace`, so its structure reflects that of `hps`.**~~
@@ -154,62 +105,8 @@ Don’t worry about refactoring functions found in the notebooks, for now.
 - [ ] **Direction of max net force**
 	- at start of trial?
 
-### Network perturbations
+### Network analysis: Population level
 
-- Do preference analysis: 
-	- e.g. look at the network activity on a particular timestep (e.g. peak vel/acc)
-- Compare the direction of the preferences with the direction resulting from unit stimulation
-
-#### Individual unit stimulation
-
-Perturb the activity of units in the network, one at a time:
-
-- [ ] at steady state
-- [ ] during reaches
-
-If during reaches, then we could stimulate at multiple times during the reach, to see how tuning changes.
-
-Example methods:
-
-- Perturb a single unit in all the different contexts (e.g. force field strength), resulting in a bunch of different responses for different contexts/context combinations for a single unit
-- Observe qualitatively what changes between context. For example, if context only changes the amplitude of the stimulation response but not the direction, then we will boil each response (set of states) to a single number. So we will have one number (e.g. relative amplitude) for each context/context combination; i.e. N numbers for N contexts.
-- Do e.g. linear regression to turn N numbers to M numbers, where M is the number of context variables (i.e. get trends for each context variable)
-- Repeat this for all the other units
-- Now we can e.g. do a scatter plot of the regression parameters across all the units
-
-> [!NOTE]
-> One thing I'm unsure about: the very first step of stimulation, will that only reveal the readout? 
-> i.e. because there’s no time for recurrent activity so we’ll basically just project out the extra activity in the stimulated unit
-> 
-> Double check this is the case: what is the comp graph between a unit’s activity, and 
-
-
-##### Non-zero-force steady states
-
-**There are also non-zero-force steady states (e.g. the steady states in constant-field trials).**
-
-- If you apply a static force to the limb, and the network has to output a constant force to maintain steady state
-- The perturbation responses are probably state-dependent
-- Steve has done this sort of thing; Gunnar thinks this may reveal something about… gain modulation? But he seemed unsure
-
-#### Individual unit ablation
-
-Fix the activity of each unit to zero, in turn.
-
-- [ ] Is performance more sensitive to the ablation of some units, than others? 
-- [ ] How does this depend on reach direction? etc?
-
-#### Eigenvectors
-
-- [ ] At steady state, perturb the network by the eigenvectors of its Jacobian 
-	- [ ] Hessian?
-
-Run this in different positions in the workspace to see if it is state dependent
-
-### Fixed points
-
-- [ ] **Hessians** - describe the curvature
-- [ ] Examine reaching FP trajectories for both baseline (no disturbance) and disturbance conditions
 - [ ] Try a leaky vanilla RNN
 
 #### Troubleshooting
@@ -230,32 +127,27 @@ Run this in different positions in the workspace to see if it is state dependent
 	- If not, do all steady-state FPs show the same kinds of behaviour (e.g. increasing context input → more contracting?)
 	- **Based on the eigenspectra**, the steady-state grid FPs are approximately similar in their dynamical properties. There appears to be significantly more variation between context inputs, than between positions. If we zoom in on a particular eigenvalue, it appears to shift its position in tiny ~grids reflecting the change in position.
 
-#### Network input perturbations
+#### Steady-state FPs
+
+##### Variation with feedback inputs
 
 i.e. find steady-state FPs, then change the feedback input and see if the location/properties of the FP changes
 
 - [ ] As we increase the perturbation size, do the eigenvectors become aligned? Do they point in the direction in state space that would increase the readout in the corrective direction?
 - [ ] **Identify the most unstable eigenvectors. Which units have the strongest contribution?** If we perturb these units at steady state, versus some other randomly selected set of units, do we get a large “corrective” change in the network output?
 
-#### FP trajectories
-
-How do the fixed points change over reach/stabilization trajectories? 
+##### Variation with context input
 
 - [ ] **How do the init-goal and goal-goal fixed point structures vary with context input?**
-- [ ] **What about the init-goal fixed points for a feedback perturbation (i.e. if we suddenly change the network input)?**
-
-#### Hessian analysis
-
-- [ ] Demonstrate that the fixed points are dynamical minima (vs. say saddle-points)? (Positive definite?)
-- [ ] Does the curvature change with training std? Context input?
-- [ ] Think about what the eigenspectra might show, here. Not the directions of fastest movement, but of fastest acceleration.
 
 #### Jacobian eigenspectra
 
 - [ ] What are the “wing” eigenvalues, e.g. seen for the origin steady-state FP, in DAI+curl?
+	- **Perturb them.**
 	- Note that they seem to be the strongest oscillatory modes
 	- They become larger (i.e. decay more slowly) and higher-frequency with increasing context input 
 	- They become relatively larger and higher-frequency when training on stronger field std.
+	
 #### Poincare graph - phase portraits
 
 ![[file-20250116174358466.png]]
@@ -270,6 +162,108 @@ How do the fixed points change over reach/stabilization trajectories?
 If this does work, then:
 
 - [ ] See how context input (and train std? reach directions?) shifts the plot
+
+### Network analysis: Unit level
+
+> [!NOTE]
+> Using part 2 hybrid models, since otherwise there is no basis from comparison between more- and less-robust networks.
+
+#### Influence of context input on network dynamics
+
+##### Steady-state
+
+- [ ] **Run a steady-state trial and change the context input (but nothing else) midway through**
+	- or, ramp the context input across the trial
+	- how does the activity change?
+	- does the point mass move? hopefully not, but the network was never trained with within-trial variation of the context
+
+##### Reaching
+
+Repeat but change the context input during a reach, either step or ramp
+
+#### Preferred versus effective directions of units at steady state
+
+> [!warning] 
+> Make sure where the intervention is taking place in Feedbax! Do we perturb before or after the recurrent update? If after, then the immediate consequence of stimulation is entirely determined by the readout, which isn’t very interesting. But we’ll still get the recurrent effects on the next step, of course.
+
+
+> [!NOTE] 
+> Also we can analyze these two individually at steady state, but the preferred directions on their own don’t tell us much.)
+> 
+> - [ ] **Do tuning curves get narrower** (i.e. do units become less active more quickly as they move away from their preferred direction?) with context input?
+
+Here, our analysis is based on evaluation on two tasks.
+
+1. At the origin steady state, perturb the point mass with a constant force for several time steps. Infer unit preferred directions from their activities at peak force output for a trial.
+2. Also at the origin steady state, perturb a network unit with a constant input for several time steps. Repeat for each unit in the network. Infer effective directions as 
+
+##### Preferred directions analysis
+
+- At steady state, perturb the point mass in center-out directions
+- At the time step of max forward force (max accel.), find the activities of all units
+- Find instantaneous preferences ~~(direction of max activity for each unit; circular distributions of activity for each unit)~~
+
+> [!NOTE] 
+> Preferences should not be just argmax, especially since this limits our resolution by the number of directions we perturb in. 
+> 
+> Instead, use regression to infer a vector in the direction of max activity
+
+##### Effective directions single-unit stimulation analysis
+
+- At steady state, perturb each unit in the network
+- Compare the direction of max acceleration, to the preferred direction of the same unit from 1. Note that the instantaneous preferences may not capture the unit-specific effects on recurrent processing, whereas unit perturbations should induce them.
+- Do the preferred & perturbed directions align more, for low vs. high context inputs? 
+- Also can do other analyses on the perturbed responses...
+
+#### Variation in effective direction, with directional properties of fixed points
+
+Repeat the effective direction analysis at FPs which have a direction associated with them.
+Now, each of these FPs is associated with a non-zero force in some direction. 
+How does that direction relate the to the effective direction? 
+Do effective directions bend towards the FP force direction? 
+Does this happen more or less, in more robust networks?
+
+##### Reaches
+
+In the middle of reach trajectories are “unsteady” fixed points which correspond to non-zero force outputs, and which the network usually only approaches and does not pass through.
+
+Here, it might only make sense to do the unit perturbation analysis for a single time step (assuming we perturb before the recurrent update).
+##### Static loads
+
+When the point mass has to remain stationary under a static force, the network will be at steady state at a fixed point corresponding to an equal and opposite force. 
+
+Thus, place the point mass at the origin, make its goal the origin, and apply a load it has to statically counter. When it reaches steady state again, perform the effective direction.
+
+#### Variation in effective direction, over a reach
+
+Repeat the effective direction single-unit stimulation analysis, separately at several time points along a reach. 
+How do the (distributions of) effective directions of individual units shift over the reach? 
+Does this change with context?
+
+- [ ] Also: Variation in preferred versus effective direction, over a reach
+- [ ] 
+#### Individual unit ablation
+
+Fix the activity of each unit to zero, in turn.
+
+- [ ] Is performance more sensitive to the ablation of some units, than others? 
+- [ ] How does this depend on reach direction? etc?
+
+#### TMS/tDCS analogues
+
+Gunnar suggested stimulating all the units in the network simultaneously, to mimic TMS/tDCS. Specifically:
+
+- TMS is analogous to adding to the hidden vector (i.e. directly increasing the firing rate)
+- tDCS is analogous to adding a small bias term (i.e. in Feedbax, add to the hidden state *after* doing the recurrent update, but before the nonlinearity)
+
+How does this vary with context input? If there are clear differences, then we may be able to predict what will happen when we apply TMS/tDCS.
+
+#### Eigenvector stimulation
+
+- [ ] At steady state, perturb the network by the eigenvectors of its Jacobian 
+	- [ ] Hessian?
+
+Run this in different positions in the workspace to see if it is state dependent
 
 ## Training
 
@@ -414,7 +408,6 @@ def __call__(self, ...):
 ```
 `````
 
-## Meetings
 
-- [ ] Schedule a [[02 Questions#Steve|meeting]] with Steve. For one, ask about sensory perturbations in human tasks – do they see oscillations (i.e. going from straight to “loopy”, like we see in the control vs. robust networks)
+
 
