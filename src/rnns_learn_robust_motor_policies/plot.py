@@ -13,10 +13,11 @@ from sklearn.decomposition import PCA
 import feedbax.plotly as fbp
 from jax_cookbook import is_type
 
+from rnns_learn_robust_motor_policies.colors import COLORSCALES
 from rnns_learn_robust_motor_policies.plot_utils import (
     add_context_annotation,
 )
-from rnns_learn_robust_motor_policies.types import PertAmpDict, TrainStdDict
+from rnns_learn_robust_motor_policies.types import PertAmpDict, Responses, TrainStdDict
 
 
 def add_endpoint_traces(
@@ -504,3 +505,30 @@ def plot_traj_and_fp_pcs_3D(
     fig = fbp.trajectories_3D(trajs_pcs, colors=colors, fig=fig)
     
     return fig
+
+
+PLANT_VAR_LABELS = Responses('pos', 'vel', 'force')
+WHERE_PLOT_PLANT_VARS = lambda states: Responses(
+    states.mechanics.effector.pos,
+    states.mechanics.effector.vel,
+    states.efferent.output,
+)
+
+
+def plot_2d_effector_trajectories(states, *args, **kwargs):
+    """Helper to define the usual formatting for center-out plots."""
+    return fbp.trajectories_2D(
+        WHERE_PLOT_PLANT_VARS(states),
+        var_labels=PLANT_VAR_LABELS,
+        axes_labels=('x', 'y'),
+        colorscale=COLORSCALES['reach_condition'],
+        legend_title='Reach direction',
+        # scatter_kws=dict(line_width=0.5),
+        layout_kws=dict(
+            width=100 + len(PLANT_VAR_LABELS) * 300,
+            height=400,
+            legend_tracegroupgap=1,
+        ),
+        *args,
+        **kwargs,
+    )

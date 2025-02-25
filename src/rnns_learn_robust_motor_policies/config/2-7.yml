@@ -1,4 +1,4 @@
-expt_id: 2-6
+expt_id: 2-7
 
 #  Hyperparameters that uniquely identify the model(s)/training run(s) to analyze
 load:  
@@ -7,9 +7,9 @@ load:
   disturbance:  # during training
     type: curl
     # list -> load multiple models
-    std: [0, 1.0] # [0, 0.5, 1.0, 1.5]  
+    std: [0, 0.5, 1.0, 1.5]  
     
-  model:  # 
+  model:  
     n_steps: 100  
     hidden_size: 100
     feedback_noise_std: 0.01
@@ -23,8 +23,6 @@ load:
 
 eval_n: 10
 
-context_input: [-2.0, -1.0, 0, 1.0, 2.0]
-
 task:  # Passed to the base task constructor
   full:
     eval_grid_n: 1
@@ -32,20 +30,15 @@ task:  # Passed to the base task constructor
     eval_reach_length: 0
 
 disturbance:
-  plant:
-    directions: 24
-    amplitude: 1  
-    start_step: 30
-    duration: 5
-  unit:
-    amplitude: 1
-    start_step: 30
-    duration: 5
+  context:
+    step: 30
+    c_min: 0
+    c_max: 1
 
 model:
   n_steps: null
-  feedback_noise_std: 0  #! null
-  motor_noise_std: 0  #! null
+  feedback_noise_std: null
+  motor_noise_std: null
 
   
   

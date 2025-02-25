@@ -388,7 +388,8 @@ def get_record(
     if not matches:
         return None
     if len(matches) > 1:
-        raise ValueError(f"Multiple {model_class.__name__}s found matching filters: {filters}")
+        ids_str = ', '.join(str(match.id) for match in matches)  # type: ignore
+        raise ValueError(f"Multiple {model_class.__name__}s (record id: {ids_str}) found matching filters: {filters}")
     return matches[0]
 
 

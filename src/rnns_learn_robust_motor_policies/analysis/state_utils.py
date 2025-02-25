@@ -1,14 +1,22 @@
 
 
+from types import MappingProxyType
+from typing import ClassVar, Optional
 import equinox as eqx
+from equinox import Module
 import jax.numpy as jnp 
 import jax.random as jr
 import jax.tree as jt
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, PyTree
 
 from feedbax.intervene import AbstractIntervenor
 import jax_cookbook.tree as jtree
 from jax_cookbook import is_type, is_module
+
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
+from rnns_learn_robust_motor_policies.constants import REPLICATE_CRITERION
+from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
+from rnns_learn_robust_motor_policies.types import TrainStdDict
 
 
 def angle_between_vectors(v2, v1):
@@ -149,5 +157,52 @@ def get_aligned_vars(all_states, where_vars, endpoints):
         all_states,
         is_leaf=is_module,
     )
+
+
+def get_constant_task_input(x, n_steps, n_trials):
+    return lambda trial_spec, key: (
+        jnp.full((n_trials, n_steps), x, dtype=float)
+    )
+
+
+def get_step_task_input(x1, x2, step_step, n_steps, n_trials):
+    def input_func(trial_spec, key):
+        # Create array of x1 values
+        inputs = jnp.full((n_trials, n_steps), x1, dtype=float)
+        inputs = inputs.at[:, step_step:].set(x2)
+
+        return inputs
+
+    return input_func
+
+
+class BestReplicateStates(AbstractAnalysis):
+    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
+    variant: Optional[str] = None
+    conditions: tuple[str, ...] = ()
+    i_replicate: Optional[int] = None
+
+    def compute(
+        self,
+        models: PyTree[Module],
+        tasks: PyTree[Module],
+        states: PyTree[Module],
+        hps: PyTree[TreeNamespace],
+        *,
+        replicate_info,
+        **kwargs,
+    ):
+        return jt.map(
+            lambda states_by_std: TrainStdDict({
+                std: jtree.take(
+                    states,
+                    replicate_info[std]["best_replicates"][REPLICATE_CRITERION],
+                    axis=1,
+                )
+                for std, states in states_by_std.items()
+            }),
+            states,
+            is_leaf=is_type(TrainStdDict),
+        )
     
     

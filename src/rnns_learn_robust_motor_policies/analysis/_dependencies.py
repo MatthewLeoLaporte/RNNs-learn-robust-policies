@@ -13,8 +13,11 @@ parse the graph.
 Written with the help of Claude 3.5 Sonnet.
 """
 
+import logging
 from collections import defaultdict
-from typing import Set, Type
+import hashlib
+import json
+from typing import Set, Type, Dict, Any, Tuple
 
 from equinox import Module
 import jax.tree as jt
@@ -26,27 +29,72 @@ from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
 from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
 
 
-def build_dependency_graph(analyses: list[Type[AbstractAnalysis]]) -> tuple[dict[str, Set[str]], dict]:
-    graph = defaultdict(set)
-    dep_classes = {}
+logger = logging.getLogger(__name__)
+
+
+def param_hash(params: Dict[str, Any]) -> str:
+    """Create a hash of parameter values to uniquely identify dependency configurations."""
+    # Convert params to a stable string representation and hash it
+    param_str = json.dumps(params, sort_keys=True)
+    return hashlib.md5(param_str.encode()).hexdigest()
+
+
+def build_dependency_graph(analyses: list[AbstractAnalysis]) -> tuple[dict[str, Set[str]], dict]:
+    """Build dependency graph with parameter-specific nodes.
     
-    def add_deps(analysis_or_dep):
-        for dep_name, dep_class in analysis_or_dep.dependencies.items():
-            # Record the direct mapping
-            dep_classes[dep_name] = dep_class
+    Each dependency with unique parameters gets a unique node in the graph.
+    Only include dependencies for analyses whose conditions are met.
+    """
+    graph = defaultdict(set)
+    dep_instances = {}  # Maps node_id -> (dep_class, params)
+    
+    # TODO: Filter analyses by their conditions
+    # analyses_to_process = [a for a in analyses if conditions_are_met(a)]
+    
+    def add_deps(analysis):
+        for dep_name, dep_class in analysis.dependencies.items():
+            # Get parameters for this dependency
+            params = analysis.dependency_kwargs().get(dep_name, {})
+            
+            # Create a unique ID for this dependency with these parameters
+            node_id = f"{dep_name}_{param_hash(params)}"
+            
+            # Record the mapping
+            dep_instances[node_id] = (dep_class, params)
+            
+            # Create a temporary instance to get its dependencies
+            temp_instance = dep_class(**params)
+            
             # Add edges for this dependency's dependencies
-            for subdep_name in dep_class.dependencies:
-                graph[dep_name].add(subdep_name)
-            # Recursion will handle subdependencies
-            add_deps(dep_class)
+            for subdep_name, subdep_class in temp_instance.dependencies.items():
+                # Get parameters for subdependency
+                subdep_params = temp_instance.dependency_kwargs().get(subdep_name, {})
+                subdep_id = f"{subdep_name}_{param_hash(subdep_params)}"
+                graph[node_id].add(subdep_id)
+                
+                # Recursively add subdependencies
+                if subdep_id not in dep_instances:
+                    dep_instances[subdep_id] = (subdep_class, subdep_params)
+                    add_subdeps(subdep_class, subdep_params, subdep_id)
+    
+    def add_subdeps(dep_class, params, node_id):
+        temp_instance = dep_class(**params)
+        for subdep_name, subdep_class in temp_instance.dependencies.items():
+            subdep_params = temp_instance.dependency_kwargs().get(subdep_name, {})
+            subdep_id = f"{subdep_name}_{param_hash(subdep_params)}"
+            graph[node_id].add(subdep_id)
+            
+            if subdep_id not in dep_instances:
+                dep_instances[subdep_id] = (subdep_class, subdep_params)
+                add_subdeps(subdep_class, subdep_params, subdep_id)
         
-    for analysis in analyses:
+    for analysis in analyses:  # TODO: analyses_to_process
         add_deps(analysis)
         
-    return dict(graph), dep_classes
+    return dict(graph), dep_instances
 
 
-def topological_sort(graph: dict[str, Set[str]], dep_classes: dict[str, Type]) -> list[str]:
+def topological_sort(graph: dict[str, Set[str]]) -> list[str]:
     """Return dependencies in order they should be computed."""
     visited = set()
     temp_marks = set()
@@ -54,7 +102,7 @@ def topological_sort(graph: dict[str, Set[str]], dep_classes: dict[str, Type]) -
     
     def visit(node: str):
         if node in temp_marks:
-            raise ValueError("Circular dependency detected")
+            raise ValueError(f"Circular dependency detected at node {node}")
         if node in visited:
             return
             
@@ -69,15 +117,15 @@ def topological_sort(graph: dict[str, Set[str]], dep_classes: dict[str, Type]) -
         order.append(node)
     
     # Visit all nodes
-    for dep in dep_classes:
-        if dep not in visited:
-            visit(dep)
+    for node in graph:
+        if node not in visited:
+            visit(node)
             
     return order
 
 
 def compute_dependencies(
-    analyses: list[Type[AbstractAnalysis]],
+    analyses: list[AbstractAnalysis],
     models: PyTree[Module],
     tasks: PyTree[Module],
     states: PyTree[Module],
@@ -88,18 +136,39 @@ def compute_dependencies(
     
     Any `kwargs` are provided as baseline dependencies, and included in the returned dict.
     """
-    # Build dependency graph
-    graph, dep_classes = build_dependency_graph(analyses)  # Use both return values
+    # Build dependency graph with parameter-specific nodes
+    graph, dep_instances = build_dependency_graph(analyses)
     
     # Get computation order
-    comp_order = topological_sort(graph, dep_classes)
+    comp_order = topological_sort(graph)
     
     # Compute dependencies in order
-    results = kwargs
-    for dep_name in comp_order:
-        dep_class = dep_classes[dep_name]  # Now this will work
-        # Initialize dependency class and compute
-        dep_instance = dep_class()
-        results[dep_name] = dep_instance.compute(models, tasks, states, hps, **results)
+    results = kwargs.copy()
+    computed_results = {}  # Maps node_id -> result
+    
+    for node_id in comp_order:
+        dep_class, params = dep_instances[node_id]
         
+        # Create instance with parameters
+        dep_instance = dep_class(**params)
+        
+        # Extract the base name (without parameter hash)
+        base_name = node_id.split('_')[0]
+        
+        # Compute and store the result
+        logger.info(f"Computing dependency: {dep_class.__name__} with params {params}")
+        result = dep_instance.compute(models, tasks, states, hps, **results, **params)
+        
+        # Store in both dictionaries
+        computed_results[node_id] = result
+        results[base_name] = result
+        
+    # Final pass to ensure the right dependencies are available for each analysis
+    for analysis in analyses:
+        for dep_name, dep_class in analysis.dependencies.items():
+            params = analysis.dependency_kwargs().get(dep_name, {})
+            node_id = f"{dep_name}_{param_hash(params)}"
+            if node_id in computed_results:
+                results[dep_name] = computed_results[node_id]
+    
     return results

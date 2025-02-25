@@ -2,46 +2,30 @@ from abc import abstractmethod
 from collections.abc import Callable
 from functools import cached_property
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, Optional, Dict, Type, Tuple
+from pathlib import Path
+import json
 
 import equinox as eqx
 from equinox import AbstractVar, Module
-import jax.tree as jt
-from jax_cookbook import is_module
 from jaxtyping import PyTree, Array
 import plotly.graph_objects as go
 
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.analysis.measures import Responses
-from rnns_learn_robust_motor_policies.analysis.state_utils import get_aligned_vars, get_pos_endpoints
-from rnns_learn_robust_motor_policies.database import add_evaluation_figure
+from rnns_learn_robust_motor_policies.database import add_evaluation_figure, savefig
 from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
 from rnns_learn_robust_motor_policies.misc import camel_to_snake, get_dataclass_fields
 from rnns_learn_robust_motor_policies.plot_utils import figs_flatten_with_paths
 from rnns_learn_robust_motor_policies.tree_utils import tree_level_types
-from rnns_learn_robust_motor_policies.types import TYPE_LABELS  
+from rnns_learn_robust_motor_policies.types import TYPE_LABELS
+from rnns_learn_robust_motor_policies.types import Responses  
 
 if TYPE_CHECKING:
     from typing import ClassVar as AbstractClassVar
 else:
     from equinox import AbstractClassVar
 
-
-PLANT_VAR_LABELS = ('position', 'velocity', 'force')
-WHERE_PLOT_PLANT_VARS = lambda states: Responses(
-    states.mechanics.effector.pos,
-    states.mechanics.effector.vel,
-    states.efferent.output,
-)
-
-
-WHERE_VARS_TO_ALIGN = lambda states, pos_endpoints: Responses(
-    # Positions with respect to the origin
-    states.mechanics.effector.pos - pos_endpoints[0][..., None, :],
-    states.mechanics.effector.vel,
-    states.efferent.output,
-)
 
 class AbstractAnalysis(Module):
     """Component in an analysis pipeline.
@@ -51,12 +35,8 @@ class AbstractAnalysis(Module):
     of task conditions for statistical purposes, and evaluate a smaller 
     version for certain visualizations. Thus `AbstractAnalysis` 
     subclasses expect arguments `models`, `tasks`, `states`, and `hps` all 
-    of which are PyTrees (in practice I have only done a single dict level
-    to contain the eval variants, but typed it more generall as a PyTree).
-    
-    - Inside `make_figs` and `compute` we need to be explicit about the variant;
-      e.g. refer to `states['full']` when analyzing the larger eval set.
-    - The `variant` field indicates which 
+    of which are PyTrees. The top-level structure of these PyTrees is always 
+    a 
     
     Now, while it may be the case that an analysis would depend on both the 
     larger and smaller variants (in our example), we still must specify only a 
@@ -81,7 +61,7 @@ class AbstractAnalysis(Module):
             that case we could give the condition `"any_system_noise"` to those analyses.
     """
     dependencies: AbstractClassVar[MappingProxyType[str, "type[AbstractAnalysis]"]]
-    variant: AbstractClassVar[Optional[str]]  #! TODO: Should be an instance var so user can change it
+    variant: AbstractVar[Optional[str]] 
     conditions: AbstractVar[tuple[str, ...]]
     
     def __call__(
@@ -132,10 +112,32 @@ class AbstractAnalysis(Module):
         """
         return dict()
 
-    def save(self, db_session, eval_info, result, figs, hps, model_info=None, **dependencies):
+    def dependency_kwargs(self) -> Dict[str, Dict[str, Any]]:
+        """Return kwargs to be used when instantiating dependencies.
+        
+        Subclasses can override this method to provide parameters for their dependencies.
+        Returns a dictionary mapping dependency name to a dictionary of kwargs.
+        """
+        return {}
+
+    def save_figs(
+        self, 
+        db_session, 
+        eval_info, 
+        result, 
+        figs, 
+        hps, 
+        model_info=None,
+        dump_path: Optional[Path] = None,
+        **dependencies,
+    ):
         param_keys = tuple(TYPE_LABELS[t] for t in tree_level_types(figs))
         
-        for path, fig in figs_flatten_with_paths(figs):
+        if dump_path is not None:
+            dump_path = Path(dump_path)
+            dump_path.mkdir(exist_ok=True, parents=True)
+        
+        for i, (path, fig) in enumerate(figs_flatten_with_paths(figs)):
             path_params = dict(zip(param_keys, tuple(jtree.node_key_to_value(p) for p in path)))
             
             params = dict(
@@ -147,7 +149,7 @@ class AbstractAnalysis(Module):
                     **path_params, 
                     **dependencies, # Extras specified by the subclass
                 ),  
-                eval_n=hps.eval_n,  # Some things should always be included?
+                eval_n=hps.eval_n,  #? Some things should always be included
             )
             
             add_evaluation_figure(
@@ -158,38 +160,29 @@ class AbstractAnalysis(Module):
                 model_records=model_info, 
                 **params,
             )
+            
+            # Additionally dump to specified path if provided
+            if dump_path is not None:                                
+                # Create a unique filename
+                analysis_name = camel_to_snake(self.__class__.__name__)
+                filename = f"{analysis_name}_{i}"
+                
+                # Save the figure
+                savefig(fig, filename, dump_path, ["png"])
+                
+                # Save parameters as JSON
+                params_path = dump_path / f"{filename}.json"
+                with open(params_path, 'w') as f:
+                    json.dump(params, f, indent=2, default=lambda x: str(x) if not isinstance(x, (dict, list, str, int, float, bool, type(None))) else x)
     
     @cached_property
     def _field_params(self):
         return get_dataclass_fields(self, exclude=('dependencies', 'conditions'))
 
 
-class AlignedVars(AbstractAnalysis):
-    """Align spatial variable (e.g. position and velocity) coordinates with the reach direction."""
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
-    variant: ClassVar[Optional[str]] = None
-    conditions: tuple[str, ...] = ()
+RESPONSE_VAR_LABELS = Responses('Position', 'Velocity', 'Control force')
 
-    def compute(
-        self,
-        models: PyTree[Module],
-        tasks: PyTree[Module],
-        states: PyTree[Module],
-        hps: PyTree[TreeNamespace],
-        *,
-        trial_specs,
-        **kwargs,
-    ):
-        pos_endpoints = jt.map(get_pos_endpoints, trial_specs, is_leaf=is_module)
 
-        return {
-            variant: jt.map(
-                lambda all_states: get_aligned_vars(all_states, WHERE_VARS_TO_ALIGN, pos_endpoints[variant]),
-                states[variant],
-                is_leaf=is_module,
-            )
-            for variant in states
-        }
 
 
 

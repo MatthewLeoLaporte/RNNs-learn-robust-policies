@@ -14,21 +14,18 @@ from feedbax.task import TrialSpecDependency
 from jax_cookbook import is_type, is_module
 import jax_cookbook.tree as jtree
 
+from rnns_learn_robust_motor_policies.analysis.aligned import AlignedVars
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
 from rnns_learn_robust_motor_policies.analysis.state_utils import angle_between_vectors, vmap_eval_ensemble
 # from rnns_learn_robust_motor_policies.perturbations import random_unit_vector
+from rnns_learn_robust_motor_policies.analysis.state_utils import get_constant_task_input
 from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL
 from rnns_learn_robust_motor_policies.training.part2_context import CONTEXT_INPUT_FUNCS
 from rnns_learn_robust_motor_policies.types import ContextInputDict, PertVarDict
+from rnns_learn_robust_motor_policies.tree_utils import pp
 
 
 COLOR_FUNCS = dict()
-
-
-def get_context_input_func(x, n_steps, n_trials):
-    return lambda trial_spec, key: (
-        jnp.full((n_trials, n_steps), x, dtype=float)
-    )
 
 
 def setup_eval_tasks_and_models(task_base, models_base, hps):
@@ -39,18 +36,19 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     # Add the context input to the task dependencies, so that it is provided to the neural network
     #! Would be unnecessary if we used the task pytree constructed by the part2 setup function, 
     #! however we're using `setup_models_only` in `load_models`.
-    task_base = eqx.tree_at(
-        lambda task: task.input_dependencies,
-        task_base,
-        dict(context=TrialSpecDependency(CONTEXT_INPUT_FUNCS[hps.load.train.method]))
-    )
+    # task_base = eqx.tree_at(
+    #     # TODO: I think we can remove this since we just tree_at `input_dependencies` again, immediately
+    #     lambda task: task.input_dependencies,
+    #     task_base,
+    #     dict(context=TrialSpecDependency(CONTEXT_INPUT_FUNCS[hps.load.train.method]))
+    # )
     
     task_by_context = ContextInputDict({
         context_input: eqx.tree_at(
             lambda task: task.input_dependencies,
             task_base, 
             {
-                'context': TrialSpecDependency(get_context_input_func(
+                'context': TrialSpecDependency(get_constant_task_input(
                     context_input, 
                     hps.model.n_steps - 1, 
                     task_base.n_validation_trials,
@@ -151,7 +149,7 @@ def eval_func(models, task, hps, key):
 
 class UnitPreferredDirections(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType({})
-    variant: ClassVar[Optional[str]] = "full"
+    variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
     
     # TODO: Separate into two `AbstractAnalysis` classes in serial
@@ -168,7 +166,7 @@ class UnitPreferredDirections(AbstractAnalysis):
             return jnp.squeeze(activity_max_force)
         
         # Each array: (hps.disturbance.plant.directions, eval_n, n_replicates, n_units)
-        activities_at_max_force = jt.map(
+        activity_at_max_force = jt.map(
             lambda state: get_activity_at_max_force(state), 
             states['full']['plant_pert'], 
             is_leaf=is_module,
@@ -189,14 +187,14 @@ class UnitPreferredDirections(AbstractAnalysis):
         # i.e. the index of the direction 
         preferred_directions = jt.map(
             lambda activities: jnp.argmax(activities, axis=0),
-            activities_at_max_force,
+            activity_at_max_force,
             is_leaf=is_module,
         )
         
         # TODO: Convert from direction idxs to direction vectors here, instead of in `UnitPreferenceAlignment`?
         return dict(
             preferred_direction=preferred_directions,
-            activities_at_max_force=activities_at_max_force,
+            activity_at_max_force=activity_at_max_force,
         )
     
     def make_figs(self, models, tasks, states, hps, *, result, **dependencies):
@@ -208,7 +206,7 @@ class UnitPreferredDirections(AbstractAnalysis):
 
 class UnitStimDirections(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType({})
-    variant: ClassVar[Optional[str]] = "full"
+    variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
     
     def compute(self, models, tasks, states, hps, **dependencies):
@@ -254,7 +252,7 @@ class UnitPreferenceAlignment(AbstractAnalysis):
         results1=UnitPreferredDirections,
         results2=UnitStimDirections,
     ))
-    variant: ClassVar[Optional[str]] = "full"
+    variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
 
     def compute(self, models, tasks, states, hps, *, results1, results2, **dependencies):
@@ -302,7 +300,46 @@ class UnitPreferenceAlignment(AbstractAnalysis):
     def make_figs(self, models, tasks, states, hps, *, result, **dependencies):
         # 1. Distribution of (absolute?) angles between pref and stim, versus context input
         ...
+        
+
+class AllResults(AbstractAnalysis):
+    """Collect all the results for this analysis in one place, for interactive reasons."""
+    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
+        results1=UnitPreferredDirections,
+        results2=UnitStimDirections,
+        results3=UnitPreferenceAlignment,
+    ))
+    variant: Optional[str] = "full"
+    conditions: tuple[str, ...] = ()
+
+    def compute(
+        self, 
+        models, 
+        tasks, 
+        states, 
+        hps, 
+        *, 
+        results1,
+        results2, 
+        results3,  
+        **dependencies,
+    ):
+        updi = results1['preferred_direction']
+        aatmf = results1['activity_at_max_force']
+        aomfous = results2['angle_of_max_force']
+        abpas = results3['angle_between_pref_and_stim']
+        mabpas = results3['mean_angle_between_pref_and_stim']
+        
+        return dict(
+            preferred_direction=updi,
+            activity_at_max_force=aatmf,
+            angle_of_max_force_on_unit_stim=aomfous,
+            angle_between_pref_and_stim=abpas,
+            mean_angle_between_pref_and_stim=mabpas,
+        )
+
 
 ALL_ANALYSES = [
     UnitPreferenceAlignment(),
+    AllResults(),
 ]

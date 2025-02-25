@@ -1,8 +1,8 @@
 from collections import namedtuple
 from collections.abc import Callable
-from enum import Enum
 from functools import cached_property, partial, reduce
-from typing import Optional
+from types import MappingProxyType
+from typing import ClassVar, Optional, Dict, Any
 
 import equinox as eqx
 from equinox import Module
@@ -13,56 +13,25 @@ from jaxtyping import Array, Float, PyTree
 
 from feedbax.bodies import SimpleFeedbackState
 from jax_cookbook import is_type, compose
+import numpy as np
 
-from rnns_learn_robust_motor_policies.constants import EVAL_REACH_LENGTH
-from rnns_learn_robust_motor_policies.types import MeasureDict
+from rnns_learn_robust_motor_policies.types import Responses
+from rnns_learn_robust_motor_policies.analysis.aligned import AlignedVars
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
+from rnns_learn_robust_motor_policies.constants import EVAL_REACH_LENGTH, REPLICATE_CRITERION
+from rnns_learn_robust_motor_policies.misc import lohi
+from rnns_learn_robust_motor_policies.plot import get_measure_replicate_comparisons, get_violins
+from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace, subdict, tree_subset_dict_level
+from rnns_learn_robust_motor_policies.types import MeasureDict, PertAmpDict, TrainStdDict
+from rnns_learn_robust_motor_policies.types import ResponseVar
+from rnns_learn_robust_motor_policies.types import Direction
+from rnns_learn_robust_motor_policies.types import DIRECTION_IDXS
 
 
 frob = lambda x: jnp.linalg.norm(x, axis=(-1, -2), ord='fro')
 
 
-# TODO: Rename to Effector, or something
-class ResponseVar(str, Enum):
-    """Variables available in response state."""
-    POSITION = 'pos'
-    VELOCITY = 'vel'
-    FORCE = 'force'
-
-
-class Direction(str, Enum):
-    """Available directions for vector components."""
-    PARALLEL = 'parallel'
-    ORTHOGONAL = 'orthogonal'
-
-
-DIRECTION_IDXS = {
-    Direction.PARALLEL: 0,
-    Direction.ORTHOGONAL: 1,
-}
-
-
-Responses = namedtuple('Responses', ('position', 'velocity', 'force'))
-RESPONSE_VAR_LABELS = Responses('Position', 'Velocity', 'Control force')
-
-# TODO: Don't use namedtuple here? 
-#? Can we include the labels in `ResponseVar` by making its entries namedtuples?
-# class Responses(Module):
-#     """Container for response state variables."""
-#     pos: Float[Array, "... time space"]
-#     vel: Float[Array, "... time space"]
-#     force: Float[Array, "... time space"]
-
-
-# def compose(*funcs):
-#     """Compose a sequence of functions from left to right.
-    
-#     Args:
-#         *funcs: Functions to compose, applied left to right (first to last)
-        
-#     Returns:
-#         Composed function that applies all transformations in sequence
-#     """
-#     return reduce(lambda f, g: lambda x: g(f(x)), funcs)
+subset_by_train_stds = partial(tree_subset_dict_level, dict_type=TrainStdDict)
 
 
 class Measure(Module):
@@ -383,3 +352,225 @@ def output_corr(
     
     # Return the replicate axis to the same position as in `activities`
     return jnp.moveaxis(corrs, 0, 1)
+
+
+class Measures(AbstractAnalysis):
+    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
+        aligned_vars=AlignedVars,
+    ))
+    variant: Optional[str] = None
+    conditions: tuple[str, ...] = ()
+
+    def compute(
+        self,
+        models: PyTree[Module],
+        tasks: PyTree[Module],
+        states: PyTree[Module],
+        hps: PyTree[TreeNamespace],
+        *,
+        measure_keys,
+        aligned_vars,
+        **kwargs,
+    ):
+        all_measures: MeasureDict[Measure] = subdict(MEASURES, measure_keys)  # type: ignore
+        all_measure_values = compute_all_measures(all_measures, aligned_vars)
+        return all_measure_values
+
+
+def get_violins_per_measure(measure_values, **kwargs):
+    return {
+        key: get_violins(
+            values,
+            yaxis_title=MEASURE_LABELS[key],
+            xaxis_title="Train field std.",
+            **kwargs,
+        )
+        for key, values in measure_values.items()
+    }
+
+
+class Measures_ByTrainStd(AbstractAnalysis):
+    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
+        measure_values=Measures,
+    ))
+    variant: Optional[str] = "full"
+    conditions: tuple[str, ...] = ()
+
+    def make_figs(
+        self,
+        models: PyTree[Module],
+        tasks: PyTree[Module],
+        states: PyTree[Module],
+        hps: PyTree[TreeNamespace],
+        *,
+        measure_values,
+        colors,
+        **kwargs,
+    ):
+        figs = get_violins_per_measure(
+            measure_values['full'],
+            colors=colors['full']['disturbance_amplitude']['dark'],
+        )
+        return figs
+
+    def _params_to_save(self, hps: PyTree[TreeNamespace], *, result, **kwargs):
+        return dict(
+            n=int(np.prod(jt.leaves(result)[0].shape))
+        )
+
+
+def get_one_measure_plot_per_eval_condition(plot_func, measures, colors, **kwargs):
+    return {
+        key: PertAmpDict({
+            disturbance_amplitude: plot_func(
+                measure[disturbance_amplitude],
+                MEASURE_LABELS[key],
+                colors,
+                **kwargs,
+            )
+            for disturbance_amplitude in measure
+        })
+        for key, measure in measures.items()
+    }
+
+
+class MeasuresLoHiPertStd(AbstractAnalysis):
+    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
+        measure_values=Measures,
+    ))
+    measure_keys: tuple[str, ...]
+    variant: Optional[str] = None
+    conditions: tuple[str, ...] = ()
+        
+    def dependency_kwargs(self) -> Dict[str, Dict[str, Any]]:
+        return dict(
+            measure_values=dict(measure_keys=self.measure_keys)
+        )
+
+    def compute(
+        self,
+        models: PyTree[Module],
+        tasks: PyTree[Module],
+        states: PyTree[Module],
+        hps: PyTree[TreeNamespace],
+        *,
+        measure_values,
+        **kwargs,
+    ):
+        # Map over analysis variants (e.g. full task vs. small task)
+        return jt.map(
+            lambda hps_: subset_by_train_stds(
+                measure_values,
+                lohi(hps_.load.disturbance.std),  # type: ignore
+            ),
+            hps,
+            is_leaf=is_type(TreeNamespace),
+        )
+
+
+class Measures_CompareReplicatesLoHi(AbstractAnalysis):
+    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
+        measure_values_lohi_disturbance_std=MeasuresLoHiPertStd,
+    ))
+    measure_keys: tuple[str, ...]
+    variant: Optional[str] = "full"
+    conditions: tuple[str, ...] = ()
+    
+    def dependency_kwargs(self) -> Dict[str, Dict[str, Any]]:
+        return dict(
+            measure_values_lohi_disturbance_std=dict(
+                measure_keys=self.measure_keys
+            )
+        )
+
+    def make_figs(
+        self,
+        models: PyTree[Module],
+        tasks: PyTree[Module],
+        states: PyTree[Module],
+        hps: PyTree[TreeNamespace],
+        *,
+        measure_values_lohi_disturbance_std,
+        colors: TreeNamespace,
+        replicate_info,
+        **kwargs,
+    ):
+        included_replicates = replicate_info['included_replicates'][REPLICATE_CRITERION]
+        replicates_all_lohi_included = jt.reduce(jnp.logical_and, lohi(included_replicates))
+        figs = get_one_measure_plot_per_eval_condition(
+            get_measure_replicate_comparisons,
+            measure_values_lohi_disturbance_std,
+            lohi(colors.dark.disturbance_stds),
+            included_replicates=np.where(replicates_all_lohi_included)[0],
+        )
+        return figs
+
+    def _params_to_save(self, hps: PyTree[TreeNamespace], *, measure_values_lohi_disturbance_std, **kwargs):
+        return dict(
+            n=int(np.prod(jt.leaves(measure_values_lohi_disturbance_std)[0].shape))
+        )
+
+
+class Measures_LoHiSummary(AbstractAnalysis):
+    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
+        measure_values_lohi_disturbance_std=MeasuresLoHiPertStd,
+    ))
+    measure_keys: tuple[str, ...]
+    variant: Optional[str] = "full"
+    conditions: tuple[str, ...] = ()
+    
+    def dependency_kwargs(self) -> Dict[str, Dict[str, Any]]:
+        return dict(
+            measure_values_lohi_disturbance_std=dict(
+                measure_keys=self.measure_keys,
+            )
+        )
+
+    def compute(
+        self,
+        models: PyTree[Module],
+        tasks: PyTree[Module],
+        states: PyTree[Module],
+        hps: PyTree[TreeNamespace],
+        *,
+        measure_values_lohi_disturbance_std,
+        **kwargs,
+    ):
+
+        return MeasureDict(**{
+            key: subdict(measure, lohi(hps[self.variant].disturbance.amplitude))  # type: ignore
+            # MeasuresLoHiPertStd returns `measure_values_lohi_disturbance_std` for all eval variants,
+            # so we choose the right variant
+            for key, measure in measure_values_lohi_disturbance_std[self.variant].items()
+        })
+
+    def make_figs(
+        self,
+        models: PyTree[Module],
+        tasks: PyTree[Module],
+        states: PyTree[Module],
+        hps: PyTree[TreeNamespace],
+        *,
+        result,
+        colors,
+        **kwargs,
+    ):
+        figs = MeasureDict(**{
+            key: get_violins(
+                measure,
+                yaxis_title=MEASURE_LABELS[key],
+                xaxis_title="Train field std.",
+                legend_title="TODO",
+                colors=colors[self.variant]['disturbance_amplitude']['dark'],
+                layout_kws=dict(
+                    width=300, height=300,
+                )
+            )
+            for key, measure in result.items ()
+        })
+        return figs
+
+    def _params_to_save(self, hps: PyTree[TreeNamespace], *, result, **kwargs):
+        return dict(
+            n=int(np.prod(jt.leaves(result)[0].shape))
+        )

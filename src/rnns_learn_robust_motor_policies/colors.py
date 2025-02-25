@@ -44,11 +44,12 @@ def setup_colors(hps: PyTree[TreeNamespace], var_funcs: dict[str, Callable]) -> 
     """
     lighten_factors = dict(normal=1, dark=MEAN_LIGHTEN_FACTOR)
     colors = jt.map(
-        lambda hps: dict_to_namespace({
+        # TODO: Convert to namespace
+        lambda hps: {
             k: get_colors_dicts(v, COLORSCALES[k], lighten_factor=lighten_factors)
             for k, v in get_color_vars(var_funcs, hps).items()
             if v is not None
-        }),
+        },
         hps,
         is_leaf=is_type(TreeNamespace),
     )

@@ -11,8 +11,10 @@ import jax_cookbook.tree as jtree
 from feedbax.intervene import schedule_intervenor
 import feedbax.plotly as fbp
 
-from rnns_learn_robust_motor_policies.analysis.analysis import PLANT_VAR_LABELS, WHERE_PLOT_PLANT_VARS, AbstractAnalysis
-from rnns_learn_robust_motor_policies.analysis.measures import Responses
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
+from rnns_learn_robust_motor_policies.plot import WHERE_PLOT_PLANT_VARS
+from rnns_learn_robust_motor_policies.plot import PLANT_VAR_LABELS
+from rnns_learn_robust_motor_policies.types import Responses
 from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.types import ImpulseAmpTuple, PertVarDict, TrainStdDict
 from rnns_learn_robust_motor_policies.perturbations import feedback_impulse
@@ -163,7 +165,7 @@ def eval_func(key_eval, hps, models, task):
 
 class SingleImpulseAmplitude(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType({})
-    variant: ClassVar[Optional[str]] = "full"
+    variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
     i_impulse_amp_plot: int = -1 
     
@@ -184,7 +186,7 @@ class ExampleTrialSets(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         single_impulse_amp_states=SingleImpulseAmplitude,
     ))
-    variant: ClassVar[Optional[str]] = "full"
+    variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
     i_trial: int = 0
     i_replicate: Optional[int] = None
@@ -254,7 +256,7 @@ class ResponseTrajectories(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         single_impulse_amp_states=SingleImpulseAmplitude,
     ))
-    variant: ClassVar[Optional[str]] = "full"
+    variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
     
     def make_figs(self, models, tasks, states, hps, *, result, **dependencies):

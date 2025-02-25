@@ -153,7 +153,7 @@ def end_position_error(pos, eval_reach_length=1, last_n_steps=10):
 
 def get_measures_to_rate(models, tasks, hps):
     all_states = jt.map(
-        lambda model, task: vmap_eval_ensemble(model, task, hps, jr.PRNGKey(0)),
+        lambda model, task: vmap_eval_ensemble(jr.PRNGKey(0), hps, model, task),
         models, tasks,
         is_leaf=is_module,
     )
@@ -512,7 +512,7 @@ def process_model_post_training(
     """Process a single model record, adding a new record with best parameters and replicate info."""
     
     if model_record.has_replicate_info or (model_record.postprocessed and not process_all):
-        logger.info(f"Model {model_record.hash} has been processed previously and process_all is false; skipping")
+        logger.info(f"Model {model_record.hash[:7]} has been processed previously and process_all is false; skipping")
         return
     
     expt_id = str(model_record.expt_id)

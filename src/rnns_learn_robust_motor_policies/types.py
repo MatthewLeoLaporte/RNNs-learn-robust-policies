@@ -1,6 +1,7 @@
 from collections import namedtuple
+from enum import Enum
 from functools import partial
-from typing import Dict, Generic, TypeVar
+from typing import Any, Dict, Generic, NamedTuple, TypeVar
 
 import jax.tree_util as jtu
 import yaml
@@ -138,7 +139,8 @@ for cls in (ImpulseAmpTuple,):
         lambda x: (x, None), 
         lambda _, children: cls(children)  # type: ignore
     ) 
-  
+
+
 #! TODO: Compute this algorithmically using `camel_to_snake`
 #! (Will also need to rename `TrainStdDict` to `PertStdDict` or something)
 TYPE_LABELS = {
@@ -152,5 +154,31 @@ TYPE_LABELS = {
     # FPDict: 'fp',
     # TrainWhereDict: 'train_where',    
 }
+
+
+# TODO: Rename to Effector, or something
+class ResponseVar(str, Enum):
+    """Variables available in response state."""
+    POSITION = 'pos'
+    VELOCITY = 'vel'
+    FORCE = 'force'
+
+
+class Direction(str, Enum):
+    """Available directions for vector components."""
+    PARALLEL = 'parallel'
+    ORTHOGONAL = 'orthogonal'
+
+
+DIRECTION_IDXS = {
+    Direction.PARALLEL: 0,
+    Direction.ORTHOGONAL: 1,
+}
+
+
+class Responses(NamedTuple):
+    pos: Any
+    vel: Any
+    force: Any
             
   
