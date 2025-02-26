@@ -3,18 +3,20 @@ from types import MappingProxyType
 from typing import ClassVar, Optional
 
 from equinox import Module
-import feedbax.plotly as fbp
 import jax.tree as jt
-from jax_cookbook import is_module, is_type
-import jax_cookbook.tree as jtree
 from jaxtyping import PyTree
 
-from rnns_learn_robust_motor_policies.analysis.analysis import RESPONSE_VAR_LABELS, AbstractAnalysis
-from rnns_learn_robust_motor_policies.types import Responses
+import feedbax.plotly as fbp
+from jax_cookbook import is_module, is_type
+import jax_cookbook.tree as jtree
+
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_aligned_vars, get_pos_endpoints
 from rnns_learn_robust_motor_policies.colors import COLORSCALES, MEAN_LIGHTEN_FACTOR
 from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
-from rnns_learn_robust_motor_policies.types import PertAmpDict, TrainStdDict
+from rnns_learn_robust_motor_policies.types import RESPONSE_VAR_LABELS, Responses, PertAmpDict, TrainStdDict
+
+
 WHERE_VARS_TO_ALIGN = lambda states, pos_endpoints: Responses(
     # Positions with respect to the origin
     states.mechanics.effector.pos - pos_endpoints[0][..., None, :],

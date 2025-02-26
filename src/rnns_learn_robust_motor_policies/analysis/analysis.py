@@ -4,7 +4,7 @@ from functools import cached_property
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Optional, Dict, Type, Tuple
 from pathlib import Path
-import json
+import yaml
 
 import equinox as eqx
 from equinox import AbstractVar, Module
@@ -19,12 +19,17 @@ from rnns_learn_robust_motor_policies.misc import camel_to_snake, get_dataclass_
 from rnns_learn_robust_motor_policies.plot_utils import figs_flatten_with_paths
 from rnns_learn_robust_motor_policies.tree_utils import tree_level_types
 from rnns_learn_robust_motor_policies.types import TYPE_LABELS
-from rnns_learn_robust_motor_policies.types import Responses  
 
 if TYPE_CHECKING:
     from typing import ClassVar as AbstractClassVar
 else:
     from equinox import AbstractClassVar
+
+
+# Define a representer for objects PyYAML doesn't know how to handle
+def represent_undefined(dumper, data):
+    return dumper.represent_scalar('tag:yaml.org,2002:str', str(data))
+yaml.add_representer(object, represent_undefined)
 
 
 class AbstractAnalysis(Module):
@@ -168,19 +173,18 @@ class AbstractAnalysis(Module):
                 filename = f"{analysis_name}_{i}"
                 
                 # Save the figure
-                savefig(fig, filename, dump_path, ["png"])
+                savefig(fig, filename, dump_path, ["json"])
                 
-                # Save parameters as JSON
-                params_path = dump_path / f"{filename}.json"
+                # Save parameters as YAML
+                params_path = dump_path / f"{filename}.yaml"
                 with open(params_path, 'w') as f:
-                    json.dump(params, f, indent=2, default=lambda x: str(x) if not isinstance(x, (dict, list, str, int, float, bool, type(None))) else x)
-    
+                    yaml.dump(params, f, default_flow_style=False, sort_keys=False)
+                    
     @cached_property
     def _field_params(self):
         return get_dataclass_fields(self, exclude=('dependencies', 'conditions'))
 
 
-RESPONSE_VAR_LABELS = Responses('Position', 'Velocity', 'Control force')
 
 
 

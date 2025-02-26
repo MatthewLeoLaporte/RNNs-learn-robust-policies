@@ -517,8 +517,6 @@ def process_model_post_training(
     
     expt_id = str(model_record.expt_id)
     
-    # hps = record_to_namespace(model_record)
-    
     where_train = jt.map(
         attr_str_tree_to_where_func,
         model_record.train_where,

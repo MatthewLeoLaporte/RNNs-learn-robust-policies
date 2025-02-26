@@ -111,10 +111,12 @@ def promote_model_hps(hps: TreeNamespace) -> TreeNamespace:
     return hps
 
 
+#! TODO: Use dunder for `join_with`
 def flatten_hps(
     hps: TreeNamespace, 
     keep_load: bool = True, 
     is_leaf: Optional[Callable] = is_type(list, TrainWhereDict),
+    join_with: str = '_',
 ) -> TreeNamespace:
     """Flatten the hyperparameter namespace, joining keys with underscores."""
     hps = deepcopy(hps)
@@ -128,7 +130,7 @@ def flatten_hps(
     hps = promote_model_hps(hps)
 
     return TreeNamespace(**dict(zip(
-        jt.leaves(jtree.labels(hps, join_with='_', is_leaf=is_leaf)),
+        jt.leaves(jtree.labels(hps, join_with=join_with, is_leaf=is_leaf)),
         jt.leaves(hps, is_leaf=is_leaf),
     )))
 

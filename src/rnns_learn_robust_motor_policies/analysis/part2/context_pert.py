@@ -29,7 +29,7 @@ COLOR_FUNCS = dict()
 
 
 def setup_eval_tasks_and_models(task_base, models_base, hps):
-    """Modify the task so that context inputs that vary over trials.
+    """Modify the task so that context inputs vary over trials.
     
     Note that this is a bit different to how we perturb state variables; normally we'd use an intervenor 
     but since the context input is supplied by the task, we can just change the way that's defined.

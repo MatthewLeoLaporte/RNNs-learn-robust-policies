@@ -3,12 +3,20 @@
 
 - [ ] Feedbax: Why is the mean validation loss lower than the mean training loss? Is it because the training task has a different distribution of reach lengths?
 - [ ] A `replicate_info` file might sometimes be generated for a non-postprocessed ModelRecord; in that case, its `has_replicate_info` gets set to `1` by `check_model_files` and this results in a “duplicate” error being raised when trying to load the postprocessed model according to its `has_replicate_info` value. It seems this happened when I re-ran `train.py` after it raised an error on `post_training`; i.e. the second time it only ran `post_training` on a single model.
+- [ ] Use dunder for `join_with` in `flatten_hps`, uncomment the lines at the start of `run_analysis.setup_tasks_and_models`, and restart the DB
 
 ## Next
 
 - [ ] [[#Influence of context input on network dynamics]]
 - [ ] [[#Variation in effective direction, over a reach]]
 - [ ] [[#Individual unit ablation]]
+
+Then: continue with [[#Network analysis Population level]].
+
+- [ ] [[#Variation in effective direction, with directional properties of fixed points]]
+- [ ] [[#Stimulation of Jacobian eigenvectors]] 
+- [ ] [[#Steady-state Hessian]]
+- [ ] [[#TMS/tDCS analogues]]
 
 ### Technical
 
@@ -143,11 +151,14 @@ i.e. find steady-state FPs, then change the feedback input and see if the locati
 
 #### Steady-state Jacobian eigenspectra 
 
-- [ ] At the origin steady state FP, perturb the eigenvectors of the Jacobian
 - [ ] What are the “wing” eigenvalues, e.g. seen for the origin steady-state FP, in DAI+curl?
 	- Note that they seem to be the strongest oscillatory modes
 	- They become larger (i.e. decay more slowly) and higher-frequency with increasing context input 
 	- They become relatively larger and higher-frequency when training on stronger field std.
+
+##### Stimulation of Jacobian eigenvectors
+
+- [ ] At the origin steady state FP, perturb the eigenvectors of the Jacobian
 
 When we stimulate them what is different from when we stimulate one of the eigenvectors whose eigenvalue is in the circle around 0? 
 How does this change based on context input? e.g. the “circle around origin” doesn’t really exist for the less-robust networks.
@@ -244,10 +255,9 @@ If this does work, then:
 
 Each figure type also has certain parameters which may vary. We may want a function that tells us which parameters are seen to vary for each figure subtype. This will help with writing more specific queries in the figure table, once we know what train+test conditions we are interested in.
 
-
-
 ## Debris 
 
+- [ ] Construction of the analysis graph might be too complicated; is there a way to make analysis classes cache their results for a particular input, without causing problems with JAX?
 - [ ] Better CLI progress bars
 - [ ] Solve: Sometimes `AbstractTask.validation_trials` raises a `jax.errors.UnexpectedTracerError`, which suggests there is a side-effect from a compiled function. Strangely, the backtrace points to the `ticks = jax.vmap(...` line in `feedbax.task`. This might only happen when there is only one validation trial.
 - [x] Double check that `save_model_and_add_record` is detecting existing records – not just generating a new hash and save a new model even if all the hps match

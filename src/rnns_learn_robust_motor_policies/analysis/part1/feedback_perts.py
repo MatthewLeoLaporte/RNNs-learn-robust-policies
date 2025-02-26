@@ -123,16 +123,16 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     )
     hps.disturbance.amplitude = impulse_amplitudes
 
-    impulse_end_step = hps.disturbance.start_step + hps.disturbance.duration
+    # impulse_end_step = hps.disturbance.start_step + hps.disturbance.duration
     # TODO: Move extra info to another function? Or return it here.
-    impulse_time_idxs = slice(hps.disturbance.start_step, impulse_end_step)
+    # impulse_time_idxs = slice(hps.disturbance.start_step, impulse_end_step)
 
     # For the example trajectories and aligned profiles, we'll only plot one of the impulse amplitudes. 
 
-    i_impulse_amp_plot = -1  # The largest amplitude perturbation
-    impulse_amplitude_plot = {
-        pert_var: v[i_impulse_amp_plot] for pert_var, v in impulse_amplitudes.items()
-    }
+    # i_impulse_amp_plot = -1  # The largest amplitude perturbation
+    # impulse_amplitude_plot = {
+    #     pert_var: v[i_impulse_amp_plot] for pert_var, v in impulse_amplitudes.items()
+    # }
 
     all_tasks, all_models, impulse_directions = SETUP_FUNCS_BY_DIRECTION[hps.disturbance.direction](
         task_base, models_base, hps

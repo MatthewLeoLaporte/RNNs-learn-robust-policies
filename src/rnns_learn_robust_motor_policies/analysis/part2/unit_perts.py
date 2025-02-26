@@ -230,7 +230,7 @@ class UnitStimDirections(AbstractAnalysis):
         # Each array: (hps.disturbance.plant.directions, eval_n, n_replicates, n_units)
         angle_of_max_force = jt.map(
             lambda state: get_angle_of_max_force(state), 
-            states['full']['unit_stim'], 
+            states[self.variant]['unit_stim'], 
             is_leaf=is_module,
         )
         
@@ -265,7 +265,7 @@ class UnitPreferenceAlignment(AbstractAnalysis):
         # 1. Convert preferred direction from index to angle, and take the difference between the angles (works for all signs?)
         # 2. Convert both to vectors and use `angle_between_vectors` (trust this more)
         def get_angle_between_prefs_and_forces(unit_preferred_direction_idx, angle_of_max_force_on_unit_stim):
-            n_directions = hps['full']['plant_pert'][0].disturbance.plant.directions
+            n_directions = hps[self.variant]['plant_pert'][0].disturbance.plant.directions
             unit_preferred_angle = 2 * jnp.pi * unit_preferred_direction_idx / n_directions
             unit_preferred_direction = angle_to_direction(unit_preferred_angle)
             direction_of_max_force_on_unit_stim = angle_to_direction(angle_of_max_force_on_unit_stim)

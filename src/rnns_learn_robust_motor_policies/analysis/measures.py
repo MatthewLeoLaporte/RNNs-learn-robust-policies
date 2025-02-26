@@ -408,8 +408,8 @@ class Measures_ByTrainStd(AbstractAnalysis):
         **kwargs,
     ):
         figs = get_violins_per_measure(
-            measure_values['full'],
-            colors=colors['full']['disturbance_amplitude']['dark'],
+            measure_values[self.variant],
+            colors=colors[self.variant]['disturbance_amplitude']['dark'],
         )
         return figs
 

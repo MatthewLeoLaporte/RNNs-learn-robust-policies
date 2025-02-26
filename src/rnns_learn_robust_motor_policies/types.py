@@ -28,6 +28,28 @@ K = TypeVar('K')
 V = TypeVar('V')
 
 
+#! TODO
+class LevelDict(dict):
+    """Dictionary that carries its level type as metadata."""
+    
+    def __init__(self, *args, level_type=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.level_type = level_type
+    
+    def __repr__(self):
+        return f"LevelDict<{self.level_type}>({dict.__repr__(self)})"
+    
+    def __or__(self, other):
+        result = type(self)({**self, **other})
+        result.level_type = self.level_type
+        return result
+    
+    def __ror__(self, other):
+        result = type(self)({**other, **self})
+        result.level_type = self.level_type
+        return result
+
+
 class CustomDict(Dict[K, V], Generic[K, V]):
     def __repr__(self):
         return f"{self.__class__.__name__}({dict.__repr__(self)})"
@@ -78,6 +100,11 @@ class LabelDict(CustomDict[str, V], Generic[V]):
 class MeasureDict(CustomDict[str, V], Generic[V]):
     ...
     
+
+class CoordDict(CustomDict[str, V], Generic[V]):
+    ...
+
+    
     
 _custom_dict_classes = (
     TrainStdDict, 
@@ -85,6 +112,7 @@ _custom_dict_classes = (
     PertVarDict, 
     ContextInputDict, 
     TrainingMethodDict,
+    CoordDict,
     LabelDict,
     FPDict,
     TrainWhereDict,
@@ -151,6 +179,7 @@ TYPE_LABELS = {
     TrainingMethodDict: 'training_method',
     LabelDict: 'label',
     MeasureDict: 'measure',
+    CoordDict: 'coord',
     # FPDict: 'fp',
     # TrainWhereDict: 'train_where',    
 }
@@ -180,5 +209,8 @@ class Responses(NamedTuple):
     pos: Any
     vel: Any
     force: Any
+
+
+RESPONSE_VAR_LABELS = Responses('Position', 'Velocity', 'Control force')
             
   

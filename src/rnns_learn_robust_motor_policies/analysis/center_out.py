@@ -93,7 +93,6 @@ class CenterOutSingleEval(AbstractAnalysis):
         return figs
 
 
-# "center_out_sets/single_eval_all_replicates"
 class CenterOutByReplicate(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
     variant: Optional[str] = "small"

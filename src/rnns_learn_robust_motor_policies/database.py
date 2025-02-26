@@ -6,11 +6,11 @@ Written with the help of Claude 3.5 Sonnet.
 
 from collections.abc import Callable, Sequence
 from datetime import datetime
+import hashlib
+import json
 import logging
 from pathlib import Path
 from typing import Literal, Optional, Dict, Any, TypeVar
-import hashlib
-import json
 import uuid
 import yaml
 
@@ -88,7 +88,7 @@ logger.setLevel(logging.DEBUG)
 logging.getLogger('alembic.runtime.migration').setLevel(logging.WARNING)
 
 
-class Base(DeclarativeBase):
+class RecordBase(DeclarativeBase):
     type_annotation_map = {
         dict[str, Any]: JSON,
         dict[str, str]: JSON,
@@ -99,10 +99,10 @@ class Base(DeclarativeBase):
     }
 
 
-BaseT = TypeVar("BaseT", bound=Base)
+BaseT = TypeVar("BaseT", bound=RecordBase)
 
 
-class ModelRecord(Base):
+class ModelRecord(RecordBase):
     __tablename__ = MODELS_TABLE_NAME
     
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -151,7 +151,7 @@ MODEL_RECORD_BASE_ATTRS = [
 ]
     
     
-class EvaluationRecord(Base):
+class EvaluationRecord(RecordBase):
     """Represents a single evaluation."""
     __tablename__ = EVALUATIONS_TABLE_NAME
 
@@ -173,7 +173,7 @@ class EvaluationRecord(Base):
         return FIGS_BASE_DIR / self.hash
     
 
-class FigureRecord(Base):
+class FigureRecord(RecordBase):
     """Represents a figure generated during evaluation."""
     __tablename__ = FIGURES_TABLE_NAME
 
@@ -200,7 +200,7 @@ class FigureRecord(Base):
 
 TABLE_NAME_TO_MODEL = {
     mapper.class_.__tablename__: mapper.class_
-    for mapper in Base.registry.mappers
+    for mapper in RecordBase.registry.mappers
 }
 
 
@@ -219,7 +219,7 @@ def get_sql_type(value) -> TypeEngine:
 
 def update_table_schema(engine, table_name: str, columns: Dict[str, Any]):
     """Dynamically add new columns using Alembic operations."""
-    Base.metadata.create_all(engine)
+    RecordBase.metadata.create_all(engine)
     
     # Get existing columns
     inspector = inspect(engine)
@@ -237,8 +237,8 @@ def update_table_schema(engine, table_name: str, columns: Dict[str, Any]):
             setattr(model_class, key, column)
             op.add_column(table_name, column)
             
-    Base.metadata.clear()             # Clear SQLAlchemy's cached schema
-    Base.metadata.create_all(engine)  # Recreate tables with new schema
+    RecordBase.metadata.clear()             # Clear SQLAlchemy's cached schema
+    RecordBase.metadata.create_all(engine)  # Recreate tables with new schema
             
 
 def init_db_session(db_path: str = "sqlite:///models.db"):
@@ -263,7 +263,7 @@ def init_db_session(db_path: str = "sqlite:///models.db"):
         so I could explicitly add all of them to the model classes.
     """
     engine = create_engine(db_path)
-    Base.metadata.create_all(engine)
+    RecordBase.metadata.create_all(engine)
     
     # Dynamically add missing columns to the table record classes
     inspector = inspect(engine)
@@ -282,8 +282,8 @@ def init_db_session(db_path: str = "sqlite:///models.db"):
                     Column(col['name'], col['type'], nullable=col['nullable']),
                 ) 
     
-    Base.metadata.clear()             # Clear SQLAlchemy's cached schema
-    Base.metadata.create_all(engine)  # Recreate tables with new schema
+    RecordBase.metadata.clear()             # Clear SQLAlchemy's cached schema
+    RecordBase.metadata.create_all(engine)  # Recreate tables with new schema
     
     return sessionmaker(bind=engine)()
 
@@ -577,6 +577,7 @@ def save_model_and_add_record(
     hps = arrays_to_lists(hps)
     
     hps_dict = namespace_to_dict(hps)
+    
     record_hps = flatten_hps(hps) | dict(version_info=version_info)
     record_params = namespace_to_dict(record_hps)
 
@@ -809,7 +810,7 @@ def add_evaluation_figure(
     return figure_record
 
 
-def use_record_params_where_none(parameters: dict[str, Any], record: Base) -> dict[str, Any]:
+def use_record_params_where_none(parameters: dict[str, Any], record: RecordBase) -> dict[str, Any]:
     """Helper to replace `None` values in `parameters` with matching values from `record`.
     
     Will raise an error if `parameters` contains any keys that are not columns in the type of `record`.
@@ -895,7 +896,7 @@ RecordDict = jtree.make_named_dict_subclass("RecordDict")
 ColumnTuple = jtree.make_named_tuple_subclass("ColumnTuple")
 
 
-def record_to_dict(record: Base) -> dict[str, Any]:
+def record_to_dict(record: RecordBase) -> dict[str, Any]:
     """Converts an SQLAlchemy record to a dict."""
     return RecordDict({
         col.key: getattr(record, col.key) 
@@ -911,12 +912,12 @@ def _value_if_unique(x: tuple):
         return x[0]
     else:
         return x
-    
+ 
     
 # TODO: Use a DataFrame instead
-def records_to_dict(records: list[Base], collapse_constant: bool = True) -> dict[str, Any]:
+def records_to_dict(records: list[RecordBase], collapse_constant: bool = True) -> dict[str, Any]:
     """Zips multiple records into a single dict."""
-    records_dict = tree_zip(
+    records_dict = jtree.zip_(
         *[record_to_dict(r) for r in records], 
         is_leaf=allf(is_type(dict, list), is_not_type(RecordDict)),
         zip_cls=ColumnTuple,
@@ -929,7 +930,6 @@ def records_to_dict(records: list[Base], collapse_constant: bool = True) -> dict
         )
     return records_dict
         
-
     
 def retrieve_figures(
     session: Session,
@@ -999,7 +999,7 @@ def retrieve_figures(
     return figures, records
 
 
-def record_to_namespace(record: Base) -> TreeNamespace:
+def record_to_namespace(record: RecordBase, split_by='__') -> TreeNamespace:
     """Convert an SQLAlchemy record to a TreeNamespace with nested structure.
     
     Column names with underscores are converted to nested attributes.
@@ -1012,7 +1012,7 @@ def record_to_namespace(record: Base) -> TreeNamespace:
     }
     
     record_key_paths = [
-        list(column_name.split('_')) for column_name in record_dict.keys()
+        list(column_name.split(split_by)) for column_name in record_dict.keys()
     ]
     
     nested_dict = dict()
