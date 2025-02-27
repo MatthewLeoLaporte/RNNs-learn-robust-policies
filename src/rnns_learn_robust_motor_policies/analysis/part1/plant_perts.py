@@ -11,7 +11,7 @@ import numpy as np
 import plotly.graph_objects as go
 from tqdm.auto import tqdm
 
-from feedbax.intervene import CurlField, FixedField, add_intervenors, schedule_intervenor
+from feedbax.intervene import add_intervenors, schedule_intervenor
 from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
@@ -22,10 +22,11 @@ from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
 from rnns_learn_robust_motor_policies.analysis.center_out import CenterOutByEval
 from rnns_learn_robust_motor_policies.analysis.center_out import CenterOutSingleEval
 from rnns_learn_robust_motor_policies.analysis.center_out import CenterOutByReplicate
+from rnns_learn_robust_motor_policies.analysis.disturbance import DISTURBANCE_FUNCS
 from rnns_learn_robust_motor_policies.analysis.measures import output_corr
 from rnns_learn_robust_motor_policies.analysis.measures import Measures_LoHiSummary
 from rnns_learn_robust_motor_policies.analysis.profiles import VelocityProfiles
-from rnns_learn_robust_motor_policies.analysis.state_utils import orthogonal_field, vmap_eval_ensemble
+from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL
 from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
 from rnns_learn_robust_motor_policies.misc import camel_to_snake
@@ -52,17 +53,6 @@ MEASURE_KEYS = (
 )
 
 
-DISTURBANCE_FUNCS = {
-    'curl': lambda amplitude: CurlField.with_params(
-        amplitude=amplitude,
-    ),
-    'constant': lambda amplitude: FixedField.with_params(
-        scale=amplitude,
-        field=orthogonal_field,
-    ),
-}
-
-# Could specify extra colorscales needed for this analysis
 COLOR_FUNCS = dict()
 
 

@@ -180,7 +180,7 @@ class Aligned_IdxTrainStd(AbstractAnalysis):
     ):
         plot_vars_stacked = jt.map(
             lambda d: jtree.stack(list(d.values())),
-            aligned_vars['small'],
+            aligned_vars[self.variant],
             is_leaf=is_type(TrainStdDict),
         )
         # plot_vars_stacked = PertAmpDict({
@@ -194,7 +194,7 @@ class Aligned_IdxTrainStd(AbstractAnalysis):
                 colorscale=COLORSCALES['disturbance_std'],
                 colorscale_axis=0,
                 legend_title="Train<br>field std.",
-                legend_labels=hps['small'].load.disturbance.std,
+                legend_labels=hps[self.variant].load.disturbance.std,
                 curves_mode='lines',
                 var_endpoint_ms=0,
                 scatter_kws=dict(line_width=0.5, opacity=0.3),

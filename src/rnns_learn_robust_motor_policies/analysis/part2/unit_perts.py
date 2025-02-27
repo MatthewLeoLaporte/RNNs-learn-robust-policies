@@ -25,7 +25,9 @@ from rnns_learn_robust_motor_policies.types import ContextInputDict, PertVarDict
 from rnns_learn_robust_motor_policies.tree_utils import pp
 
 
-COLOR_FUNCS = dict()
+COLOR_FUNCS = dict(
+    context_inputs=lambda hps: hps.context_input,
+)
 
 
 def setup_eval_tasks_and_models(task_base, models_base, hps):
