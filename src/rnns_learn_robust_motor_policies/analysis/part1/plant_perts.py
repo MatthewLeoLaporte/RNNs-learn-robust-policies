@@ -90,7 +90,9 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
         PertAmpDict(zip(disturbance_amplitudes, disturbance_amplitudes)),
     ))
     
-    return all_tasks, all_models, hps
+    all_hps = jt.map(lambda _: hps, all_tasks, is_leaf=is_module)
+    
+    return all_tasks, all_models, all_hps
 
 
 # We aren't vmapping over any other variables, so this is trivial.
@@ -144,7 +146,7 @@ class OutputWeightCorrelation(AbstractAnalysis):
         hps: PyTree[TreeNamespace], 
         *, 
         result, 
-        colors, 
+        colors_0, 
         **kwargs,
     ):
         assert result is not None
@@ -152,7 +154,7 @@ class OutputWeightCorrelation(AbstractAnalysis):
             result, 
             yaxis_title="Output correlation", 
             xaxis_title="Train field std.",
-            colors=colors[self.variant]['disturbance_amplitude']['dark'],
+            colors=colors_0[self.variant]['disturbance_amplitude']['dark'],
         )
         return fig
 

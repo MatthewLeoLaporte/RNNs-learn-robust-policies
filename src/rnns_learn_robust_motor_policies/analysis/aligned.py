@@ -41,16 +41,18 @@ class AlignedVars(AbstractAnalysis):
         trial_specs,
         **kwargs,
     ):
-        pos_endpoints = jt.map(get_pos_endpoints, trial_specs, is_leaf=is_module)
-
-        return {
-            variant: jt.map(
-                lambda all_states: get_aligned_vars(all_states, WHERE_VARS_TO_ALIGN, pos_endpoints[variant]),
-                states[variant],
+        return jt.map(
+            lambda specs, states_by_std: jt.map(
+                lambda states: get_aligned_vars(
+                    states, WHERE_VARS_TO_ALIGN, get_pos_endpoints(specs),
+                ),
+                states_by_std,
                 is_leaf=is_module,
-            )
-            for variant in states
-        }
+            ),
+            trial_specs,
+            states,
+            is_leaf=is_module,
+        )
 
 
 plot_condition_trajectories = partial(

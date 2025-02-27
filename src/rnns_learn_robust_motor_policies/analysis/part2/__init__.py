@@ -1,4 +1,11 @@
 
+from .plant_perts import (
+    ALL_ANALYSES as ANALYSES_PLANT_PERTS,
+    COLOR_FUNCS as COLOR_FUNCS_PLANT_PERTS,
+    setup_eval_tasks_and_models as setup_plant_perts,
+    eval_func as eval_func_plant_perts,
+)
+
 from .unit_perts import (
     ALL_ANALYSES as ANALYSES_UNIT_PERTS,
     COLOR_FUNCS as COLOR_FUNCS_UNIT_PERTS,
@@ -14,7 +21,7 @@ from .context_pert import (
 )
 
 ANALYSIS_SETS = {
-    "2-1": None,
+    "2-1": (setup_plant_perts, eval_func_plant_perts, ANALYSES_PLANT_PERTS, COLOR_FUNCS_PLANT_PERTS),
     "2-2": None,
     "2-3": None,
     "2-4": None,

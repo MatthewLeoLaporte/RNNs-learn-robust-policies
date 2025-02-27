@@ -153,10 +153,10 @@ def compute_dependencies(
         dep_instance = dep_class(**params)
         
         # Extract the base name (without parameter hash)
-        base_name = node_id.split('_')[0]
+        base_name = node_id.rsplit('_', 1)[0]
         
         # Compute and store the result
-        logger.info(f"Computing dependency: {dep_class.__name__} with params {params}")
+        logger.debug(f"Computing dependency: {dep_class.__name__} with params {params}")
         result = dep_instance.compute(models, tasks, states, hps, **results, **params)
         
         # Store in both dictionaries

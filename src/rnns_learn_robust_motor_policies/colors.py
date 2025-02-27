@@ -12,6 +12,7 @@ from jax_cookbook import is_type
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace, dict_to_namespace
+from rnns_learn_robust_motor_policies.types import ColorDict
 
 
 # How much to darken (<1) or lighten (>1) plots of means, versus plots of individual trials
@@ -45,11 +46,11 @@ def setup_colors(hps: PyTree[TreeNamespace], var_funcs: dict[str, Callable]) -> 
     lighten_factors = dict(normal=1, dark=MEAN_LIGHTEN_FACTOR)
     colors = jt.map(
         # TODO: Convert to namespace
-        lambda hps: {
+        lambda hps: ColorDict({
             k: get_colors_dicts(v, COLORSCALES[k], lighten_factor=lighten_factors)
             for k, v in get_color_vars(var_funcs, hps).items()
             if v is not None
-        },
+        }),
         hps,
         is_leaf=is_type(TreeNamespace),
     )

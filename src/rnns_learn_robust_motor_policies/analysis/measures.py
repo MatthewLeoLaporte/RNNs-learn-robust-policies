@@ -1,5 +1,5 @@
 from collections import namedtuple
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from functools import cached_property, partial, reduce
 from types import MappingProxyType
 from typing import ClassVar, Optional, Dict, Any
@@ -358,6 +358,7 @@ class Measures(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         aligned_vars=AlignedVars,
     ))
+    measure_keys: Sequence[str]
     variant: Optional[str] = None
     conditions: tuple[str, ...] = ()
 
@@ -368,12 +369,12 @@ class Measures(AbstractAnalysis):
         states: PyTree[Module],
         hps: PyTree[TreeNamespace],
         *,
-        measure_keys,
+        # measure_keys,
         aligned_vars,
         **kwargs,
     ):
-        all_measures: MeasureDict[Measure] = subdict(MEASURES, measure_keys)  # type: ignore
-        all_measure_values = compute_all_measures(all_measures, aligned_vars)
+        all_measures: MeasureDict[Measure] = subdict(MEASURES, self.measure_keys)  # type: ignore
+        all_measure_values = compute_all_measures(all_measures, aligned_vars.get(self.variant, aligned_vars))
         return all_measure_values
 
 
@@ -404,12 +405,12 @@ class Measures_ByTrainStd(AbstractAnalysis):
         hps: PyTree[TreeNamespace],
         *,
         measure_values,
-        colors,
+        colors_0,
         **kwargs,
     ):
         figs = get_violins_per_measure(
             measure_values[self.variant],
-            colors=colors[self.variant]['disturbance_amplitude']['dark'],
+            colors=colors_0[self.variant]['disturbance_amplitude']['dark'],
         )
         return figs
 
@@ -491,7 +492,7 @@ class Measures_CompareReplicatesLoHi(AbstractAnalysis):
         hps: PyTree[TreeNamespace],
         *,
         measure_values_lohi_disturbance_std,
-        colors: TreeNamespace,
+        colors_0,
         replicate_info,
         **kwargs,
     ):
@@ -500,7 +501,7 @@ class Measures_CompareReplicatesLoHi(AbstractAnalysis):
         figs = get_one_measure_plot_per_eval_condition(
             get_measure_replicate_comparisons,
             measure_values_lohi_disturbance_std,
-            lohi(colors.dark.disturbance_stds),
+            lohi(colors_0[self.variant]["disturbance_std"]["dark"]),
             included_replicates=np.where(replicates_all_lohi_included)[0],
         )
         return figs
@@ -552,7 +553,7 @@ class Measures_LoHiSummary(AbstractAnalysis):
         hps: PyTree[TreeNamespace],
         *,
         result,
-        colors,
+        colors_0,
         **kwargs,
     ):
         figs = MeasureDict(**{
@@ -561,7 +562,7 @@ class Measures_LoHiSummary(AbstractAnalysis):
                 yaxis_title=MEASURE_LABELS[key],
                 xaxis_title="Train field std.",
                 legend_title="TODO",
-                colors=colors[self.variant]['disturbance_amplitude']['dark'],
+                colors=colors_0[self.variant]['disturbance_amplitude']['dark'],
                 layout_kws=dict(
                     width=300, height=300,
                 )

@@ -1,0 +1,11 @@
+{
+    // "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "activate-conda-env",
+            "type": "shell",
+            "command": "conda activate rbst",
+            "problemMatcher": []
+        }
+    ]
+}

@@ -1,4 +1,3 @@
-from collections.abc import Callable
 from functools import partial 
 from types import MappingProxyType
 from typing import ClassVar, Optional, Dict, Any
@@ -9,36 +8,27 @@ import jax.tree as jt
 from jaxtyping import PyTree
 import numpy as np
 import plotly.graph_objects as go
-from tqdm.auto import tqdm
 
 from feedbax.intervene import add_intervenors, schedule_intervenor
 from feedbax.task import TrialSpecDependency
 from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.analysis.aligned import Aligned_IdxTrial, AlignedVars, plot_condition_trajectories
-from rnns_learn_robust_motor_policies.analysis.aligned import Aligned_IdxPertAmp
-from rnns_learn_robust_motor_policies.analysis.aligned import Aligned_IdxTrainStd
+from rnns_learn_robust_motor_policies.analysis.aligned import AlignedVars, plot_condition_trajectories
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
-from rnns_learn_robust_motor_policies.analysis.center_out import CenterOutByEval
-from rnns_learn_robust_motor_policies.analysis.center_out import CenterOutSingleEval
-from rnns_learn_robust_motor_policies.analysis.center_out import CenterOutByReplicate
 from rnns_learn_robust_motor_policies.analysis.disturbance import DISTURBANCE_FUNCS
-from rnns_learn_robust_motor_policies.analysis.measures import MEASURE_LABELS, output_corr
+from rnns_learn_robust_motor_policies.analysis.measures import MEASURE_LABELS
 from rnns_learn_robust_motor_policies.analysis.measures import Measures
-from rnns_learn_robust_motor_policies.analysis.profiles import VelocityProfiles
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_constant_task_input, vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.colors import COLORSCALES
 from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL, POS_ENDPOINTS_ALIGNED
-from rnns_learn_robust_motor_policies.misc import camel_to_snake
 from rnns_learn_robust_motor_policies.plot import add_endpoint_traces, get_violins
-from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace, tree_subset_dict_level
+from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
 from rnns_learn_robust_motor_policies.types import (
     ContextInputDict,
     MeasureDict,
     PertAmpDict,
     Responses,
-    TrainingMethodDict,
     TrainStdDict, 
 )
 
@@ -63,8 +53,9 @@ MEASURE_KEYS = (
     "sum_net_force",
 )
 
+
 COLOR_FUNCS = dict(
-    context_inputs=lambda hps: hps.context_input,
+    context_input=lambda hps: hps.context_input,
 )
 
 
@@ -92,28 +83,26 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
         PertAmpDict(zip(disturbance_amplitudes, disturbance_amplitudes)),
     ))
     
-    all_tasks = ContextInputDict({
+    tasks = ContextInputDict({
         context_input: jt.map(
             lambda task: eqx.tree_at( 
                 lambda task: task.input_dependencies,
                 task, 
                 {
-                    'context': TrialSpecDependency(
-                        get_constant_task_input(
+                    'context': TrialSpecDependency(get_constant_task_input(
                             context_input, 
                             hps.model.n_steps - 1, 
                             task.n_validation_trials,
-                        )
-                    )
+                    ))
                 },
             ),
             tasks_by_amp,
             is_leaf=is_module,
         )
-        for context_input in hps.context_inputs
+        for context_input in hps.context_input
     })
     
-    all_models = jt.map(
+    models_by_std = jt.map(
         lambda models: add_intervenors(
             models,
             lambda model: model.step.mechanics,
@@ -126,9 +115,12 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
         is_leaf=is_module,
     )
     
-    # all_models = move_level_to_outside(all_models, TrainingMethodDict)
+    # The outer levels of `all_models` have to match those of `all_tasks`
+    models, hps = jtree.unzip(jt.map(
+        lambda _: (models_by_std, hps), tasks, is_leaf=is_module
+    ))
     
-    return all_tasks, all_models, hps
+    return tasks, models, hps
 
 
 class Aligned_IdxContextInput(AbstractAnalysis):
@@ -150,20 +142,23 @@ class Aligned_IdxContextInput(AbstractAnalysis):
         aligned_vars,
         **kwargs,
     ):
-        plot_vars_stacked = jt.map(
+        plot_vars_stacked: PertAmpDict = jt.map(
             lambda d: jtree.stack(d.values()),
             aligned_vars[self.variant],
             is_leaf=is_type(ContextInputDict),
         )
         
+        # Context inputs do not depend on pert amp
+        context_inputs = jt.leaves(hps, is_leaf=is_type(TreeNamespace))[0].context_input
+        
         figs = jt.map(
             partial(
                 plot_condition_trajectories, 
-                colorscale=COLORSCALES['context_inputs'],
+                colorscale=COLORSCALES['context_input'],
                 colorscale_axis=0,
                 # stride=stride,
                 legend_title="Context input",
-                legend_labels=hps[self.variant].context_input,
+                legend_labels=context_inputs,
                 curves_mode='lines',
                 var_endpoint_ms=0,
                 scatter_kws=dict(line_width=0.5, opacity=0.3),
@@ -206,19 +201,24 @@ class Aligned_IdxTrainStd_PerContext(AbstractAnalysis):
         aligned_vars,
         **kwargs,
     ):
-        plot_vars_stacked = jt.map(
+        plot_vars_stacked: PertAmpDict = jt.map(
             lambda d: jtree.stack(d.values()),
             aligned_vars[self.variant],
             is_leaf=is_type(ContextInputDict),
         )
         
+        # Context inputs and disturbance stds do not depend on pert amp
+        hps_0 = jt.leaves(hps, is_leaf=is_type(TreeNamespace))[0]
+        context_inputs = hps_0.context_input
+        disturbance_train_stds = hps_0.load.disturbance.std 
+        
         plot_vars = jt.map(
-            lambda d: {
+            lambda d: ContextInputDict({
                 context_input: jtree.stack(
-                    jt.map(lambda arr: arr[hps.context_input.index(context_input)], d).values()
+                    jt.map(lambda arr: arr[i], d).values()
                 )
-                for context_input in hps.context_input
-            },
+                for i, context_input in enumerate(context_inputs)
+            }),
             plot_vars_stacked,
             is_leaf=is_type(TrainStdDict),
         )
@@ -229,7 +229,7 @@ class Aligned_IdxTrainStd_PerContext(AbstractAnalysis):
                 colorscale=COLORSCALES['disturbance_std'],
                 colorscale_axis=0,
                 legend_title="Train<br>field std.",
-                legend_labels=hps[self.variant].load.disturbance.std,
+                legend_labels=disturbance_train_stds,
                 curves_mode='lines',
                 var_endpoint_ms=0,
                 scatter_kws=dict(line_width=0.5, opacity=0.3),
@@ -255,18 +255,18 @@ class Aligned_IdxTrainStd_PerContext(AbstractAnalysis):
 
 class Measures_CompareTrainStdAndContext(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
-        measure_values=Measures,
+        all_measure_values=Measures,
     ))
     measure_keys: tuple[str, ...]
-    variant: Optional[str] = "small"
+    variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
-    # n_conditions: int  # all_tasks['small'][disturbance_amplitude].n_validation_trials
     n_curves_max: int = 20    
 
     def dependency_kwargs(self) -> Dict[str, Dict[str, Any]]:
         return dict(
-            measure_values_lohi_disturbance_std=dict(
+            all_measure_values=dict(
                 measure_keys=self.measure_keys,
+                variant=self.variant,
             )
         )
 
@@ -277,25 +277,30 @@ class Measures_CompareTrainStdAndContext(AbstractAnalysis):
         states: PyTree[Module],
         hps: PyTree[TreeNamespace],
         *,
-        measure_values,
-        colors,
+        all_measure_values,
+        colors_0,
         **kwargs,
     ):
         # Move the disturbance amplitude level to the outside of each measure.
         #! Is this necessary now?
-        measure_values = MeasureDict({
+        all_measure_values = MeasureDict({
             measure_key: jtree.move_level_to_outside(measure_values, PertAmpDict)
-            for measure_key, measure_values in measure_values.items()
+            for measure_key, measure_values in all_measure_values.items()
         })
+        
+        # Since `TrainStdDict` is inner in this case, as it typically is, but we want to show violins
+        # with train std. in the legend and context on the x-axis, we will need to swap these levels 
+        # before passing to `get_violins`
+        swap_vars = lambda tree: jt.transpose(jt.structure(tree, is_leaf=is_type(TrainStdDict)), None, tree)
 
         figs = MeasureDict({
             measure_key: PertAmpDict({
                 pert_amplitude: get_violins(
-                    measure_values,
+                    swap_vars(measure_values),
                     yaxis_title=MEASURE_LABELS[measure_key],
                     xaxis_title="Context input",
                     legend_title="Train std.",
-                    colors=colors[self.variant]['disturbance_std']['dark'],
+                    colors=colors_0[self.variant]['context_input']['dark'],
                     arr_axis_labels=["Evaluation", "Replicate", "Condition"],
                     zero_hline=True,
                     layout_kws=dict(
@@ -306,23 +311,22 @@ class Measures_CompareTrainStdAndContext(AbstractAnalysis):
                         # yaxis_range=[0, measure_ranges_lohi[key][1]],
                     ),
                 )
-                for pert_amplitude, measure_values in measure_values[measure_key].items()
+                for pert_amplitude, measure_values in all_measure_values[measure_key].items()
             })
-            for measure_key in measure_values
+            for measure_key in all_measure_values
         })
         
         return figs
 
-    def _params_to_save(self, hps: PyTree[TreeNamespace], *, measure_values, **kwargs):
+    def _params_to_save(self, hps: PyTree[TreeNamespace], *, all_measure_values, **kwargs):
         return dict(
             # TODO: The number of replicates (`n_replicates_included`) may vary with the disturbance train std!
-            n=int(np.prod(jt.leaves(measure_values)[0].shape)),
+            n=int(np.prod(jt.leaves(all_measure_values)[0].shape)),
         )
                 
         
-
 ALL_ANALYSES = [
     Aligned_IdxContextInput(),
     Aligned_IdxTrainStd_PerContext(),
-    Measures_CompareTrainStdAndContext(),
+    Measures_CompareTrainStdAndContext(measure_keys=MEASURE_KEYS),
 ]

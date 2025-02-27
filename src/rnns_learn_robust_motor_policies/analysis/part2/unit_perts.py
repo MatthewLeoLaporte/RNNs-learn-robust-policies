@@ -3,7 +3,6 @@ from functools import partial
 from types import MappingProxyType
 from typing import ClassVar, Optional
 
-import jax
 import jax.numpy as jnp
 import jax.tree as jt
 import equinox as eqx
@@ -11,22 +10,18 @@ import equinox as eqx
 from feedbax.bodies import SimpleFeedbackState
 from feedbax.intervene import ConstantInput,  NetworkConstantInput, TimeSeriesParam, schedule_intervenor
 from feedbax.task import TrialSpecDependency
-from jax_cookbook import is_type, is_module
+from jax_cookbook import is_module
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.analysis.aligned import AlignedVars
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
 from rnns_learn_robust_motor_policies.analysis.state_utils import angle_between_vectors, vmap_eval_ensemble
 # from rnns_learn_robust_motor_policies.perturbations import random_unit_vector
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_constant_task_input
-from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL
-from rnns_learn_robust_motor_policies.training.part2_context import CONTEXT_INPUT_FUNCS
-from rnns_learn_robust_motor_policies.types import ContextInputDict, PertVarDict
-from rnns_learn_robust_motor_policies.tree_utils import pp
+from rnns_learn_robust_motor_policies.types import ContextInputDict
 
 
 COLOR_FUNCS = dict(
-    context_inputs=lambda hps: hps.context_input,
+    context_input=lambda hps: hps.context_input,
 )
 
 
@@ -74,12 +69,13 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
         }.items()
     })
     
-    #! TODO: I'm not sure hps should be the same in all cases. e.g. we should probably update 
-    #! `hps.disturbance.amplitude` to contain the respective value.
-    #! If so, it will be necessary to modify the `setup_part_func`s and return `all_hps` 
-    #! along with the main unzip, above.
-    hps_by_context = ContextInputDict.fromkeys(hps.context_input, hps)
-    all_hps = {'plant_pert': hps_by_context, 'unit_stim': hps_by_context}
+    # #! TODO: I'm not sure hps should be the same in all cases. e.g. we should probably update 
+    # #! `hps.disturbance.amplitude` to contain the respective value.
+    # #! If so, it will be necessary to modify the `setup_part_func`s and return `all_hps` 
+    # #! along with the main unzip, above.
+    # hps_by_context = ContextInputDict.fromkeys(hps.context_input, hps)
+    # all_hps = {'plant_pert': hps_by_context, 'unit_stim': hps_by_context}
+    all_hps = jt.map(lambda _: hps, all_tasks, is_leaf=is_module)
 
     return all_tasks, all_models, all_hps
 

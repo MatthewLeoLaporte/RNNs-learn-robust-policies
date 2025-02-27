@@ -11,10 +11,10 @@ load:
     
   model:  
     n_steps: 100  # TODO: Move this out a level
-    hidden_size: 50  #! 100
+    hidden_size: 100
     feedback_noise_std: 0.01
     motor_noise_std: 0.01
-    feedback_delay_steps: 4
+    feedback_delay_steps: 0
     
   train:
     where: 

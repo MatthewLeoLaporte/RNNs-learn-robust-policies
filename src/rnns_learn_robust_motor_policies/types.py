@@ -104,7 +104,10 @@ class MeasureDict(CustomDict[str, V], Generic[V]):
 class CoordDict(CustomDict[str, V], Generic[V]):
     ...
 
-    
+
+class ColorDict(CustomDict[str, V], Generic[V]):
+    ...
+ 
     
 _custom_dict_classes = (
     TrainStdDict, 
@@ -117,6 +120,7 @@ _custom_dict_classes = (
     FPDict,
     TrainWhereDict,
     MeasureDict,
+    ColorDict,
 )
 
 
@@ -180,6 +184,7 @@ TYPE_LABELS = {
     LabelDict: 'label',
     MeasureDict: 'measure',
     CoordDict: 'coord',
+    ColorDict: 'color',
     # FPDict: 'fp',
     # TrainWhereDict: 'train_where',    
 }

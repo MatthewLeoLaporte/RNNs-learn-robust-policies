@@ -147,7 +147,7 @@ def vmap_eval_ensemble(key, hps, models, task):
     
 def get_aligned_vars(all_states, where_vars, endpoints): 
     """Get variables from state PyTree, and project them onto respective reach directions for their trials."""
-    directions = endpoints[1] - endpoints[0]
+    directions = endpoints[1] -  endpoints[0]
     
     return jt.map(
         lambda states: jt.map(

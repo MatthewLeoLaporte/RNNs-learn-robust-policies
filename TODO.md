@@ -22,15 +22,19 @@ Then: continue with [[#Network analysis Population level]].
 
 - [ ] `seed`/base `key` column in each of the db tables
 - [ ] Move the constants out of `constants` and into config files, where possible. Including `REPLICATE_CRITERION`.
-- [ ] In `types`, make the mapping algorithmic between custom dict types and the column names they map to. Thus `PertVarDict` keys correspond to `pert_var` column values.
+- [ ] **In `types`, make the mapping algorithmic between custom dict types and the column names they map to. Thus `PertVarDict` keys correspond to `pert_var` column values.**
+	- **Use `LevelDict`**
+	- Similarly, we can use the same system to automatically determine the axis labels for `get_violins`
+- [ ] **In `AbstractAnalysis.save_figs`, format the dump filename based on `path_params` and not just an integer counter**
+- [x] Make sure we save *all* analysis figures in `AbstractAnalysis.save_figs`; currently we’re only saving a subset for `Measures_CompareTrainStdAndContext`, it seems
+	- This was because of an incorrect change I had just made to `save_figs`, which is now reverted
 - [ ] Add the calculation of `disturbance.amplitude` when loading hyperparams (e.g. 1-2)
 
 ### Convert notebooks for part 1
 
 - [ ] 1-2
-	- and move any shared functions out of 1-1 and into `analysis` or something
-- [ ] 1-3
-- [ ] 2-1
+- [x] 1-3
+- [x] 2-1
 - [ ] 2-2
 - [ ] 2-4
 - [ ] 2-5

@@ -14,7 +14,8 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "args": ["${command:pickArgs}"]
+            "args": ["${command:pickArgs}"],
+            // "preLaunchTask": "activate-conda-env"
         },
         {
             "name": "Python Debugger: Current File",
@@ -23,6 +24,7 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "cwd": "${fileDirname}",
+            // "preLaunchTask": "activate-conda-env"
         }
     ]
 }

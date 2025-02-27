@@ -8,9 +8,11 @@ import yaml
 
 import equinox as eqx
 from equinox import AbstractVar, Module
+import jax.tree as jt
 from jaxtyping import PyTree, Array
 import plotly.graph_objects as go
 
+from jax_cookbook import is_type
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.database import add_evaluation_figure, savefig
@@ -130,31 +132,36 @@ class AbstractAnalysis(Module):
         db_session, 
         eval_info, 
         result, 
-        figs, 
+        figs: PyTree,   
         hps, 
         model_info=None,
         dump_path: Optional[Path] = None,
         **dependencies,
     ):
+        """Save to disk and record in the database each figure in a PyTree of figures, for this analysis.
+        """
         param_keys = tuple(TYPE_LABELS[t] for t in tree_level_types(figs))
         
         if dump_path is not None:
             dump_path = Path(dump_path)
             dump_path.mkdir(exist_ok=True, parents=True)
         
-        for i, (path, fig) in enumerate(figs_flatten_with_paths(figs)):
+        figs_with_paths_flat = figs_flatten_with_paths(figs)
+        hps_0 = jt.leaves(hps, is_leaf=is_type(TreeNamespace))[0]
+        
+        for i, (path, fig) in enumerate(figs_with_paths_flat):
             path_params = dict(zip(param_keys, tuple(jtree.node_key_to_value(p) for p in path)))
             
             params = dict(
                 **path_params,  # Inferred from the structure of the figs PyTree
                 **self._field_params,  # From the fields of this subclass
                 **self._params_to_save(
-                    hps, 
+                    hps_0, 
                     result=result, 
                     **path_params, 
                     **dependencies, # Extras specified by the subclass
                 ),  
-                eval_n=hps.eval_n,  #? Some things should always be included
+                eval_n=hps_0.eval_n,  #? Some things should always be included
             )
             
             add_evaluation_figure(
@@ -170,7 +177,7 @@ class AbstractAnalysis(Module):
             if dump_path is not None:                                
                 # Create a unique filename
                 analysis_name = camel_to_snake(self.__class__.__name__)
-                filename = f"{analysis_name}_{i}"
+                filename = f"{analysis_name}__{i}"
                 
                 # Save the figure
                 savefig(fig, filename, dump_path, ["json"])
