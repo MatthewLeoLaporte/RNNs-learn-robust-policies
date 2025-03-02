@@ -2,7 +2,7 @@ from rnns_learn_robust_motor_policies.analysis.aligned import AlignedVars
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
 from rnns_learn_robust_motor_policies.types import Responses
 from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
-from rnns_learn_robust_motor_policies.types import LabelDict, PertAmpDict
+from rnns_learn_robust_motor_policies.types import LDict
 
 
 import feedbax.plotly as fbp
@@ -53,11 +53,11 @@ class VelocityProfiles(AbstractAnalysis):
         colors,
         **kwargs,
     ):
-        figs = PertAmpDict({
+        figs = LDict.of("disturbance__amplitude")({
             # TODO: Once the mapping between custom dict types and their column names is automatic
             # (e.g. `PertVarDict` will simply map to 'pert_var'), we can construct a `DirectionDict`
             # ad hoc maybe
-            disturbance_amplitude: LabelDict({
+            disturbance_amplitude: LDict.of("label")({
                 label: fbp.profiles(
                     jtree.take(result, i, -1)[disturbance_amplitude],
                     varname=f"{label} velocity",

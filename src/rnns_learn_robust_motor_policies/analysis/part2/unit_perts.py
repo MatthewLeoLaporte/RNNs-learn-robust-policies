@@ -1,7 +1,6 @@
-
 from functools import partial
 from types import MappingProxyType
-from typing import ClassVar, Optional
+from typing import ClassVar, Optional, Literal as L
 
 import jax.numpy as jnp
 import jax.tree as jt
@@ -15,9 +14,8 @@ import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
 from rnns_learn_robust_motor_policies.analysis.state_utils import angle_between_vectors, vmap_eval_ensemble
-# from rnns_learn_robust_motor_policies.perturbations import random_unit_vector
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_constant_task_input
-from rnns_learn_robust_motor_policies.types import ContextInputDict
+from rnns_learn_robust_motor_policies.types import LDict
 
 
 COLOR_FUNCS = dict(
@@ -27,7 +25,7 @@ COLOR_FUNCS = dict(
 
 def setup_eval_tasks_and_models(task_base, models_base, hps):
     # 1. Tasks are steady-state 
-    # 2. `models_base` is a `TrainStdDict`
+    # 2. `models_base` is a `disturbance_std` dict
     # 3. Two types of tasks (plant vs. unit stim)
     
     # Add the context input to the task dependencies, so that it is provided to the neural network
@@ -40,7 +38,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     #     dict(context=TrialSpecDependency(CONTEXT_INPUT_FUNCS[hps.load.train.method]))
     # )
     
-    task_by_context = ContextInputDict({
+    task_by_context = LDict.of("context_input")({
         context_input: eqx.tree_at(
             lambda task: task.input_dependencies,
             task_base, 

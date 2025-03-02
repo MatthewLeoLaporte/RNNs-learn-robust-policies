@@ -1,7 +1,5 @@
-
-
 from types import MappingProxyType, SimpleNamespace
-from typing import ClassVar, Optional
+from typing import ClassVar, Literal as L, Optional
 
 import jax.numpy as jnp
 import jax.tree as jt
@@ -12,7 +10,7 @@ import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
 from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
-from rnns_learn_robust_motor_policies.types import CoordDict, LabelDict, PertVarDict
+from rnns_learn_robust_motor_policies.types import LDict
 
 
 COLOR_FUNCS = dict()
@@ -63,7 +61,7 @@ class FrequencyResponse(AbstractAnalysis):
             (result.gains, result.phases),
         )
 
-        gain_figs = PertVarDict({
+        gain_figs = LDict.of("fb_var")({
             fb_var: jt.map(
                 lambda xy_idx: fbp.profiles(
                     jtree.take(gains_plot[fb_var], xy_idx),
@@ -81,19 +79,19 @@ class FrequencyResponse(AbstractAnalysis):
                         xaxis_title="Frequency",
                     )
                 ),
-                CoordDict(x=0, y=1),
+                LDict.of("coord")(dict(x=0, y=1)),
             )
             for fb_var in result.freqs
         })
 
-        phase_figs = PertVarDict({
+        phase_figs = LDict.of("fb_var")({
             fb_var: jt.map(
                 lambda xy_idx: fbp.profiles(
                     jtree.take(phases_plot[fb_var], xy_idx),
                     keep_axis=None,
                     mode='std',
                     varname="Phase (rad)",
-                    colors=list(colors[self.variant]["disturbance_std"]["dark"].values()),
+                    colors=list(colors_0[self.variant]["disturbance_std"]["dark"].values()),
                     # labels=disturbance_stds_load,
                     layout_kws=dict(
                         legend_title="Train<br>field std.",
@@ -104,17 +102,17 @@ class FrequencyResponse(AbstractAnalysis):
                         xaxis_title="Frequency",
                     )
                 ),
-                CoordDict(x=0, y=1),
+                LDict.of("coord")(dict(x=0, y=1)),
             )
             for fb_var in result.freqs
         })
         
         # Wrap in LabelDict so we get (e.g.) `label="gain"` in the database, for gain plots
         # (Alternatively, we could use two different named subclasses of `AbstractAnalysis` for gains and phases)
-        return LabelDict(
+        return LDict.of("label")(dict(
             gain=gain_figs,
             phase=phase_figs,
-        )
+        ))
         
 
 def frequency_analysis(input_, output, dt):

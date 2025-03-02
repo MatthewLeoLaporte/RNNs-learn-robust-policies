@@ -1,5 +1,4 @@
 from functools import partial
-from typing import Literal
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -8,8 +7,6 @@ import jax.tree as jt
 from jaxtyping import PRNGKeyArray
 
 from feedbax.intervene import schedule_intervenor
-from feedbax.misc import attr_str_tree_to_where_func
-from feedbax.train import filter_spec_leaves
 from feedbax.xabdeef.models import point_mass_nn
 from feedbax.xabdeef.losses import simple_reach_loss
 from jax_cookbook.tree import get_ensemble
@@ -22,7 +19,7 @@ from rnns_learn_robust_motor_policies.constants import (
 from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
 from rnns_learn_robust_motor_policies.misc import vector_with_gaussian_length
 from rnns_learn_robust_motor_policies.setup_utils import get_base_reaching_task, get_train_pairs_by_disturbance_std
-from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainStdDict
+from rnns_learn_robust_motor_policies.types import TaskModelPair
 
 
 disturbance_params = lambda scale_func: {

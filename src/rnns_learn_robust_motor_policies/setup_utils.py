@@ -26,7 +26,7 @@ from feedbax.train import (
     init_task_trainer_history,
 )
 from feedbax.xabdeef.losses import simple_reach_loss
-from jax_cookbook import is_module, is_type, load
+from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies import MODELS_DIR

@@ -2,7 +2,7 @@ from collections import namedtuple
 from collections.abc import Callable, Sequence
 from functools import cached_property, partial, reduce
 from types import MappingProxyType
-from typing import ClassVar, Optional, Dict, Any
+from typing import ClassVar, Optional, Dict, Any, Literal as L, Type
 
 import equinox as eqx
 from equinox import Module
@@ -21,17 +21,14 @@ from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
 from rnns_learn_robust_motor_policies.constants import EVAL_REACH_LENGTH, REPLICATE_CRITERION
 from rnns_learn_robust_motor_policies.misc import lohi
 from rnns_learn_robust_motor_policies.plot import get_measure_replicate_comparisons, get_violins
-from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace, subdict, tree_subset_dict_level
-from rnns_learn_robust_motor_policies.types import MeasureDict, PertAmpDict, TrainStdDict
-from rnns_learn_robust_motor_policies.types import ResponseVar
-from rnns_learn_robust_motor_policies.types import Direction
-from rnns_learn_robust_motor_policies.types import DIRECTION_IDXS
+from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace, subdict, tree_subset_ldict_level
+from rnns_learn_robust_motor_policies.types import ResponseVar, Direction, DIRECTION_IDXS, LDict
 
 
 frob = lambda x: jnp.linalg.norm(x, axis=(-1, -2), ord='fro')
 
 
-subset_by_train_stds = partial(tree_subset_dict_level, dict_type=TrainStdDict)
+subset_by_train_stds = partial(tree_subset_ldict_level, )
 
 
 class Measure(Module):
@@ -267,7 +264,7 @@ def set_timesteps(measure: Measure, timesteps) -> Measure:
     )
 
 
-MEASURES = MeasureDict(
+MEASURES = LDict.of("measure")(dict(
     max_net_force=max_net_force,
     sum_net_force=sum_net_force,
     max_parallel_force_forward=max_parallel_force,
@@ -290,10 +287,10 @@ MEASURES = MeasureDict(
     sum_deviation=sum_deviation,
     end_velocity_error=make_end_velocity_error(),
     end_position_error=make_end_position_error(),
-)
+))
 
 
-MEASURE_LABELS = MeasureDict(
+MEASURE_LABELS = LDict.of("measure")(dict(
     max_net_force="Max net control force",
     sum_net_force="Sum net control force",
     max_parallel_force_forward="Max forward force",
@@ -316,7 +313,7 @@ MEASURE_LABELS = MeasureDict(
     sum_deviation="Sum of deviations",
     end_velocity_error=f"Mean velocity error<br>(last {ENDPOINT_ERROR_STEPS} steps)",
     end_position_error=f"Mean position error<br>(last {ENDPOINT_ERROR_STEPS} steps)",
-)
+))
 
 
 def compute_all_measures(measures: PyTree[Measure], all_responses: PyTree[Responses]):
@@ -369,11 +366,10 @@ class Measures(AbstractAnalysis):
         states: PyTree[Module],
         hps: PyTree[TreeNamespace],
         *,
-        # measure_keys,
         aligned_vars,
         **kwargs,
     ):
-        all_measures: MeasureDict[Measure] = subdict(MEASURES, self.measure_keys)  # type: ignore
+        all_measures: LDict[str, Measure] = subdict(MEASURES, self.measure_keys)  # type: ignore
         all_measure_values = compute_all_measures(all_measures, aligned_vars.get(self.variant, aligned_vars))
         return all_measure_values
 
@@ -422,7 +418,7 @@ class Measures_ByTrainStd(AbstractAnalysis):
 
 def get_one_measure_plot_per_eval_condition(plot_func, measures, colors, **kwargs):
     return {
-        key: PertAmpDict({
+        key: LDict.of("disturbance__amplitude")({
             disturbance_amplitude: plot_func(
                 measure[disturbance_amplitude],
                 MEASURE_LABELS[key],
@@ -460,12 +456,13 @@ class MeasuresLoHiPertStd(AbstractAnalysis):
     ):
         # Map over analysis variants (e.g. full task vs. small task)
         return jt.map(
-            lambda hps_: subset_by_train_stds(
-                measure_values,
-                lohi(hps_.load.disturbance.std),  # type: ignore
-            ),
-            hps,
-            is_leaf=is_type(TreeNamespace),
+            lambda measure_values_by_std: LDict.of("train__disturbance__std")({
+                std: measure_values
+                for std, measure_values in measure_values_by_std.items()
+                if std in (min(measure_values_by_std), max(measure_values_by_std))
+            }),
+            measure_values,
+            is_leaf=LDict.is_of("train__disturbance__std"),
         )
 
 
@@ -538,7 +535,7 @@ class Measures_LoHiSummary(AbstractAnalysis):
         **kwargs,
     ):
 
-        return MeasureDict(**{
+        return LDict.of("measure")(**{
             key: subdict(measure, lohi(hps[self.variant].disturbance.amplitude))  # type: ignore
             # MeasuresLoHiPertStd returns `measure_values_lohi_disturbance_std` for all eval variants,
             # so we choose the right variant
@@ -556,7 +553,7 @@ class Measures_LoHiSummary(AbstractAnalysis):
         colors_0,
         **kwargs,
     ):
-        figs = MeasureDict(**{
+        figs = LDict.of("measure")({
             key: get_violins(
                 measure,
                 yaxis_title=MEASURE_LABELS[key],

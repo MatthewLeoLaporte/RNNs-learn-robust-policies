@@ -5,13 +5,14 @@ For example, `analysis.part1.plant_perts` is such a module.
 
 from collections.abc import Callable, Sequence
 from types import MappingProxyType
-from typing import ClassVar, Optional
+from typing import ClassVar, Optional, Literal as L
+
 from equinox import Module
 
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
 from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
-from rnns_learn_robust_motor_policies.types import TrainStdDict
+from rnns_learn_robust_motor_policies.types import LDict
 
 
 """Specify any additional colorscales needed for this analysis. 
@@ -22,7 +23,7 @@ COLOR_FUNCS: dict[str, Callable[[TreeNamespace], Sequence]] = dict(
 )
 
 
-def setup_eval_tasks_and_models(task_base: Module, models_base: TrainStdDict[float, Module], hps: TreeNamespace):
+def setup_eval_tasks_and_models(task_base: Module, models_base: LDict[float, Module], hps: TreeNamespace):
     """Specify how to set up the PyTrees of evaluation tasks and models.
     
     Also, make any necessary modifications to `hps` as they will be available during analysis. 

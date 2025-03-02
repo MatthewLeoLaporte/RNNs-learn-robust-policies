@@ -1,7 +1,5 @@
-
-
 from types import MappingProxyType
-from typing import ClassVar, Optional
+from typing import ClassVar, Optional, Literal as L
 import equinox as eqx
 from equinox import Module
 import jax.numpy as jnp 
@@ -16,7 +14,7 @@ from jax_cookbook import is_type, is_module
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
 from rnns_learn_robust_motor_policies.constants import REPLICATE_CRITERION
 from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
-from rnns_learn_robust_motor_policies.types import TrainStdDict
+from rnns_learn_robust_motor_policies.types import LDict
 
 
 def angle_between_vectors(v2, v1):
@@ -193,7 +191,7 @@ class BestReplicateStates(AbstractAnalysis):
         **kwargs,
     ):
         return jt.map(
-            lambda states_by_std: TrainStdDict({
+            lambda states_by_std: LDict.of("train__disturbance__std")({
                 std: jtree.take(
                     states,
                     replicate_info[std]["best_replicates"][REPLICATE_CRITERION],
@@ -202,7 +200,7 @@ class BestReplicateStates(AbstractAnalysis):
                 for std, states in states_by_std.items()
             }),
             states,
-            is_leaf=is_type(TrainStdDict),
+            is_leaf=LDict.is_of("train__disturbance__std"),
         )
     
     

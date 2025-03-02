@@ -1,6 +1,6 @@
 from functools import partial 
 from types import MappingProxyType
-from typing import ClassVar, Optional, Dict, Any
+from typing import ClassVar, Optional, Dict, Any, Literal as L
 
 import equinox as eqx
 from equinox import Module
@@ -25,11 +25,8 @@ from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL, POS_END
 from rnns_learn_robust_motor_policies.plot import add_endpoint_traces, get_violins
 from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
 from rnns_learn_robust_motor_policies.types import (
-    ContextInputDict,
-    MeasureDict,
-    PertAmpDict,
+    LDict,
     Responses,
-    TrainStdDict, 
 )
 
 
@@ -80,10 +77,12 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
             label=INTERVENOR_LABEL,
             default_active=False,
         ),
-        PertAmpDict(zip(disturbance_amplitudes, disturbance_amplitudes)),
+        LDict.of("disturbance__amplitude")(
+            dict(zip(disturbance_amplitudes, disturbance_amplitudes)),
+        )
     ))
     
-    tasks = ContextInputDict({
+    tasks = LDict.of("context_input")({
         context_input: jt.map(
             lambda task: eqx.tree_at( 
                 lambda task: task.input_dependencies,
@@ -142,10 +141,10 @@ class Aligned_IdxContextInput(AbstractAnalysis):
         aligned_vars,
         **kwargs,
     ):
-        plot_vars_stacked: PertAmpDict = jt.map(
+        plot_vars_stacked: LDict[float, Any] = jt.map(
             lambda d: jtree.stack(d.values()),
             aligned_vars[self.variant],
-            is_leaf=is_type(ContextInputDict),
+            is_leaf=LDict.is_of("context_input"),
         )
         
         # Context inputs do not depend on pert amp
@@ -168,7 +167,7 @@ class Aligned_IdxContextInput(AbstractAnalysis):
             is_leaf=is_type(Responses),
         )
         
-        assert self.variant is not None, "How is it that this `variant` field is None?"
+        assert self.variant is not None, "How is it that the `variant` field is None?"
 
         for fig in jt.leaves(figs, is_leaf=is_type(go.Figure)):
             add_endpoint_traces(fig, POS_ENDPOINTS_ALIGNED[self.variant], xaxis='x1', yaxis='y1')
@@ -201,10 +200,10 @@ class Aligned_IdxTrainStd_PerContext(AbstractAnalysis):
         aligned_vars,
         **kwargs,
     ):
-        plot_vars_stacked: PertAmpDict = jt.map(
+        plot_vars_stacked: LDict[float, Any] = jt.map(
             lambda d: jtree.stack(d.values()),
             aligned_vars[self.variant],
-            is_leaf=is_type(ContextInputDict),
+            is_leaf=LDict.is_of("context_input"),
         )
         
         # Context inputs and disturbance stds do not depend on pert amp
@@ -213,14 +212,14 @@ class Aligned_IdxTrainStd_PerContext(AbstractAnalysis):
         disturbance_train_stds = hps_0.load.disturbance.std 
         
         plot_vars = jt.map(
-            lambda d: ContextInputDict({
+            lambda d: LDict.of("context_input")({
                 context_input: jtree.stack(
                     jt.map(lambda arr: arr[i], d).values()
                 )
                 for i, context_input in enumerate(context_inputs)
             }),
             plot_vars_stacked,
-            is_leaf=is_type(TrainStdDict),
+            is_leaf=LDict.is_of("train__disturbance__std"),
         )
         
         figs = jt.map(
@@ -283,18 +282,23 @@ class Measures_CompareTrainStdAndContext(AbstractAnalysis):
     ):
         # Move the disturbance amplitude level to the outside of each measure.
         #! Is this necessary now?
-        all_measure_values = MeasureDict({
-            measure_key: jtree.move_level_to_outside(measure_values, PertAmpDict)
+        all_measure_values = LDict.of("measure")({
+            measure_key: jtree.move_level_to_outside(
+                measure_values, 
+                LDict[float, Responses],  #! TODO LDict
+            )
             for measure_key, measure_values in all_measure_values.items()
         })
         
-        # Since `TrainStdDict` is inner in this case, as it typically is, but we want to show violins
+        # Since disturbance_std is inner in this case, as it typically is, but we want to show violins
         # with train std. in the legend and context on the x-axis, we will need to swap these levels 
         # before passing to `get_violins`
-        swap_vars = lambda tree: jt.transpose(jt.structure(tree, is_leaf=is_type(TrainStdDict)), None, tree)
+        swap_vars = lambda tree: jt.transpose(
+            jt.structure(tree, is_leaf=LDict.is_of("train__disturbance__std")), None, tree
+        )
 
-        figs = MeasureDict({
-            measure_key: PertAmpDict({
+        figs = LDict.of("measure")({
+            measure_key: LDict.of("disturbance__amplitude")({
                 pert_amplitude: get_violins(
                     swap_vars(measure_values),
                     yaxis_title=MEASURE_LABELS[measure_key],

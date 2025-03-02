@@ -9,6 +9,7 @@ from feedbax.task import TrialSpecDependency
 from rnns_learn_robust_motor_policies.analysis.center_out import CenterOutByReplicate
 from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_step_task_input
+from rnns_learn_robust_motor_policies.types import LDict
 
 
 COLOR_FUNCS = dict()

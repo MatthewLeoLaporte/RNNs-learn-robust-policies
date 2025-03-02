@@ -1,6 +1,6 @@
 from functools import partial
 from types import MappingProxyType
-from typing import ClassVar, Optional
+from typing import ClassVar, Optional, Literal as L
 
 import jax.tree as jt
 import jax_cookbook.tree as jtree

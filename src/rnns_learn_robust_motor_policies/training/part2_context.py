@@ -1,7 +1,6 @@
-
 from collections.abc import Callable
 from functools import partial
-from typing import Literal, Optional, TypeAlias
+from typing import Literal as L, Optional, TypeAlias
 
 import equinox as eqx
 import jax
@@ -22,10 +21,10 @@ from rnns_learn_robust_motor_policies.constants import (
     MASS,
 )
 from rnns_learn_robust_motor_policies.setup_utils import get_base_reaching_task, get_train_pairs_by_disturbance_std
-from rnns_learn_robust_motor_policies.types import TaskModelPair, TrainingMethodDict
+from rnns_learn_robust_motor_policies.types import TaskModelPair, LDict
 
 
-TrainingMethodLabel: TypeAlias = Literal["bcs", "dai", "pai-asf", "pai-n"]
+TrainingMethodLabel: TypeAlias = L["bcs", "dai", "pai-asf", "pai-n"]
 
 # Separate this def by training method so that we can multiply by `field_std` in the "pai-asf" case,
 # without it affecting the context input. That is, in all three cases `field_std` is a factor of 
@@ -33,7 +32,7 @@ TrainingMethodLabel: TypeAlias = Literal["bcs", "dai", "pai-asf", "pai-n"]
 # `scale` parameter, which is not seen by the network in those cases; and in `"pai-asf"` it is
 # multiplied by the `field` parameter, which is not seen by the network in that case. 
 # (See the definition of `SCALE_FUNCS` below.)
-disturbance_params = TrainingMethodDict({
+disturbance_params = LDict.of("train__method")({
     "bcs": lambda field_std: {
         'curl': dict(
             amplitude=lambda trial_spec, batch_info, key: jr.normal(key, ()),
@@ -64,7 +63,7 @@ disturbance_params = TrainingMethodDict({
 
 
 # Define whether the disturbance is active on each trial
-disturbance_active: dict[str, Callable] = TrainingMethodDict({
+disturbance_active: LDict[str, Callable] = LDict.of("train__method")({
     "bcs": lambda p: lambda trial_spec, _, key: jr.bernoulli(key, p=p),
     "dai": lambda p: lambda trial_spec, _, key: jr.bernoulli(key, p=p),  
     "pai-asf": lambda p: lambda trial_spec, _, key: jr.bernoulli(key, p=p),  
@@ -72,7 +71,7 @@ disturbance_active: dict[str, Callable] = TrainingMethodDict({
 
 
 # Define how the network's context input will be determined from the trial specs, to which it is then added
-CONTEXT_INPUT_FUNCS = TrainingMethodDict({
+CONTEXT_INPUT_FUNCS = LDict.of("train__method")({
     "bcs": lambda trial_specs, key: trial_specs.intervene[INTERVENOR_LABEL].active.astype(float),
     "dai": lambda trial_specs, key: get_field_amplitude(trial_specs.intervene[INTERVENOR_LABEL]),
     "pai-asf": lambda trial_specs, key: trial_specs.intervene[INTERVENOR_LABEL].scale,
@@ -80,7 +79,7 @@ CONTEXT_INPUT_FUNCS = TrainingMethodDict({
 
 
 # TODO: Move to config yaml
-P_PERTURBED = TrainingMethodDict({
+P_PERTURBED = LDict.of("train__method")({
     "bcs": 0.5,
     "dai": 1.0,
     "pai-asf": 1.0,
@@ -93,7 +92,7 @@ Note that in the `"pai-asf"` case the actual field amplitude is still scaled by 
 but this is done in `disturbance_params` so that the magnitude of the context input 
 is the same on average between the `"dai"` and `"pai-asf"` methods.
 """
-SCALE_FUNCS = TrainingMethodDict({
+SCALE_FUNCS = LDict.of("train__method")({
     "bcs": lambda field_std: field_std,
     "dai": lambda field_std: field_std,
     "pai-asf": lambda field_std: (
@@ -186,7 +185,7 @@ def get_train_pairs(hps: TreeNamespace, key: PRNGKeyArray):
         key=key,  # Use the same PRNG key for all training methods
     )
     
-    return TrainingMethodDict({
+    return LDict.of("train__method")({
         method_label: get_train_pairs_partial(hps | dict(train=dict(method=method_label)))
         #! Assume `hps.method` is a list of training method labels
         for method_label in hps.train.method

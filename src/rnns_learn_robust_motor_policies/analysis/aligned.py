@@ -1,6 +1,6 @@
 from functools import partial
 from types import MappingProxyType
-from typing import ClassVar, Optional
+from typing import ClassVar, Optional, Literal as L
 
 from equinox import Module
 import jax.tree as jt
@@ -14,7 +14,11 @@ from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_aligned_vars, get_pos_endpoints
 from rnns_learn_robust_motor_policies.colors import COLORSCALES, MEAN_LIGHTEN_FACTOR
 from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
-from rnns_learn_robust_motor_policies.types import RESPONSE_VAR_LABELS, Responses, PertAmpDict, TrainStdDict
+from rnns_learn_robust_motor_policies.types import (
+    RESPONSE_VAR_LABELS, 
+    Responses, 
+    LDict,
+)
 
 
 WHERE_VARS_TO_ALIGN = lambda states, pos_endpoints: Responses(
@@ -137,7 +141,7 @@ class Aligned_IdxPertAmp(AbstractAnalysis):
         plot_vars_stacked = jt.map(
             lambda d: jtree.stack(list(d.values())),
             aligned_vars['small'],
-            is_leaf=is_type(PertAmpDict),
+            is_leaf=LDict.is_of("disturbance__amplitude"),
         )
 
         figs = jt.map(
@@ -183,9 +187,9 @@ class Aligned_IdxTrainStd(AbstractAnalysis):
         plot_vars_stacked = jt.map(
             lambda d: jtree.stack(list(d.values())),
             aligned_vars[self.variant],
-            is_leaf=is_type(TrainStdDict),
+            is_leaf=LDict.is_of("train__disturbance__std"),
         )
-        # plot_vars_stacked = PertAmpDict({
+        # plot_vars_stacked = LDict.of("disturbance__amplitude")({
         #     # concatenate along the replicate axis, which has variable length
         #     disturbance_amplitude: jtree.stack(list(vars_.values()))
         #     for disturbance_amplitude, vars_ in aligned_vars['small'].items()

@@ -1,8 +1,6 @@
-from abc import abstractmethod
-from collections.abc import Callable
 from functools import cached_property
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Optional, Dict, Type, Tuple
+from typing import TYPE_CHECKING, Any, Optional, Dict
 from pathlib import Path
 import yaml
 
@@ -16,11 +14,10 @@ from jax_cookbook import is_type
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.database import add_evaluation_figure, savefig
-from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
+from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace, tree_level_labels
 from rnns_learn_robust_motor_policies.misc import camel_to_snake, get_dataclass_fields
 from rnns_learn_robust_motor_policies.plot_utils import figs_flatten_with_paths
-from rnns_learn_robust_motor_policies.tree_utils import tree_level_types
-from rnns_learn_robust_motor_policies.types import TYPE_LABELS
+
 
 if TYPE_CHECKING:
     from typing import ClassVar as AbstractClassVar
@@ -140,7 +137,7 @@ class AbstractAnalysis(Module):
     ):
         """Save to disk and record in the database each figure in a PyTree of figures, for this analysis.
         """
-        param_keys = tuple(TYPE_LABELS[t] for t in tree_level_types(figs))
+        param_keys = tree_level_labels(figs)
         
         if dump_path is not None:
             dump_path = Path(dump_path)

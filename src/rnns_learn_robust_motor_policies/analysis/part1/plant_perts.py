@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from functools import partial 
 from types import MappingProxyType
-from typing import ClassVar, Optional, Dict, Any
+from typing import ClassVar, Literal as L, Optional, Dict, Any
 
 import equinox as eqx
 from equinox import Module
@@ -29,10 +29,8 @@ from rnns_learn_robust_motor_policies.analysis.profiles import VelocityProfiles
 from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL
 from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
-from rnns_learn_robust_motor_policies.misc import camel_to_snake
 from rnns_learn_robust_motor_policies.plot import get_violins
-from rnns_learn_robust_motor_policies.tree_utils import tree_subset_dict_level
-from rnns_learn_robust_motor_policies.types import PertAmpDict, TrainStdDict
+from rnns_learn_robust_motor_policies.types import LDict
 
 
 """Labels of measures to include in the analysis."""
@@ -87,7 +85,9 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
             label=INTERVENOR_LABEL,  
             default_active=False,
         ),
-        PertAmpDict(zip(disturbance_amplitudes, disturbance_amplitudes)),
+        LDict.of("disturbance__amplitude")(
+            dict(zip(disturbance_amplitudes, disturbance_amplitudes))
+        ),
     ))
     
     all_hps = jt.map(lambda _: hps, all_tasks, is_leaf=is_module)
@@ -125,7 +125,7 @@ class OutputWeightCorrelation(AbstractAnalysis):
         )
 
         output_corrs = jt.map(
-            lambda activities: TrainStdDict({
+            lambda activities: LDict.of("train__disturbance__std")({
                 train_std: output_corr(
                     activities[train_std], 
                     output_weights[train_std],
@@ -133,7 +133,7 @@ class OutputWeightCorrelation(AbstractAnalysis):
                 for train_std in activities
             }),
             activities,
-            is_leaf=is_type(TrainStdDict),
+            is_leaf=LDict.is_of("train__disturbance__std"),
         )
         
         return output_corrs

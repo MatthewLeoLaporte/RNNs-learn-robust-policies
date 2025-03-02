@@ -2,7 +2,7 @@ import argparse
 from collections.abc import Callable
 from functools import partial
 import logging
-from typing import Any, Sequence
+from typing import Any, Sequence, TypeVar, Literal as L
 import jax
 import numpy as np
 from sqlalchemy.orm import Session
@@ -20,7 +20,7 @@ from feedbax.misc import attr_str_tree_to_where_func
 import feedbax.plotly as fbp 
 from feedbax.train import TaskTrainerHistory, WhereFunc
 import jax_cookbook.tree as jtree
-from jax_cookbook import is_module, is_type
+from jax_cookbook import is_module, is_type, anyf
 
 from rnns_learn_robust_motor_policies.database import (
     ModelRecord, 
@@ -30,7 +30,6 @@ from rnns_learn_robust_motor_policies.database import (
     check_model_files,
     get_db_session,
     query_model_records,
-    record_to_namespace,
     save_model_and_add_record,
     load_tree_with_hps,
 )
@@ -45,7 +44,7 @@ from rnns_learn_robust_motor_policies.analysis.state_utils import (
     get_pos_endpoints,
     vmap_eval_ensemble,
 )
-from rnns_learn_robust_motor_policies.types import TrainStdDict
+from rnns_learn_robust_motor_policies.types import LDict
 
 from rnns_learn_robust_motor_policies.training.part1_fixed import (
     setup_task_model_pair as setup_task_model_pair_p1,
@@ -73,6 +72,9 @@ TRAINPAIR_SETUP_FUNCS = {
 
 # Number of trials to evaluate when deciding which replicates to exclude
 N_TRIALS_VAL = 5
+
+
+T = TypeVar('T')
 
 
 def load_data(model_record: ModelRecord):
@@ -249,7 +251,7 @@ def get_best_models(
 #! It probably makes sense to move this to an analysis script since it involves loading 
 #! a spread of training conditions (e.g. disturbance_std, as here)
 # def get_replicate_distribution_figure(
-#     measure: TrainStdDict[float, Shaped[Array, 'replicates']], 
+#     measure: LDict[float, Shaped[Array, 'replicates']], 
 #     yaxis_title="",
 # ) -> go.Figure:
     
@@ -342,7 +344,7 @@ def get_train_history_figures(
 
 
 class FigFuncSpec(eqx.Module):
-    func: Callable[..., go.Figure | TrainStdDict[float, go.Figure]]
+    func: Callable[..., go.Figure | LDict[float, go.Figure]]
     args: tuple[PyTree, ...]
 
 
@@ -387,7 +389,7 @@ def save_training_figures(
         fig_label: jt.map(
             fig_spec.func,
             *fig_spec.args,
-            is_leaf=is_type(TrainStdDict),
+            is_leaf=LDict.is_of("train__disturbance__std"),
         )
         for fig_label, fig_spec in fig_specs.items()
     }
@@ -411,6 +413,8 @@ def save_training_figures(
             save_formats=['png'],
             **fig_parameters,
         )
+        
+    is_leaf = anyf(LDict.is_of("train__disturbance__std"), is_type(go.Figure))
     
     # Save and add records for each figure 
     # TODO: BUT DON'T MAP OVER TrainStdDict
@@ -432,8 +436,8 @@ def save_training_figures(
                 is_leaf=is_type(go.Figure),
             ),
             figs,
-            jtree.labels(figs, join_with="_", is_leaf=is_type(TrainStdDict, go.Figure)),
-            is_leaf=is_type(TrainStdDict, go.Figure),
+            jtree.labels(figs, join_with="_", is_leaf=is_leaf),
+            is_leaf=is_leaf,
         )
 
         logger.info(f"Saved {plot_id} figure set")

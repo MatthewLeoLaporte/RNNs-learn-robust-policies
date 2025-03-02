@@ -14,7 +14,7 @@ from rnns_learn_robust_motor_policies.analysis.fp_finder import (
     fp_adam_optimizer,
     take_top_fps,
 )
-from rnns_learn_robust_motor_policies.types import FPDict
+from rnns_learn_robust_motor_policies.types import LDict
 
 
 def get_endpoint_positions(task):
@@ -199,7 +199,7 @@ def get_simple_reach_fps(
         key=key,
     )
     
-    return states, FPDict(all_fps)
+    return states, LDict.of("fp")(all_fps)
 
 
 def get_simple_reach_first_fps(model, task, loss_tol, stride_trials=1, *, key):

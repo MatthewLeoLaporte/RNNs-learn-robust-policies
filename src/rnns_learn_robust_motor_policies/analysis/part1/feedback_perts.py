@@ -1,4 +1,3 @@
-
 from types import MappingProxyType
 from typing import ClassVar, Literal, Optional
 import jax.numpy as jnp
@@ -16,7 +15,7 @@ from rnns_learn_robust_motor_policies.plot import WHERE_PLOT_PLANT_VARS
 from rnns_learn_robust_motor_policies.plot import PLANT_VAR_LABELS
 from rnns_learn_robust_motor_policies.types import Responses
 from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
-from rnns_learn_robust_motor_policies.types import ImpulseAmpTuple, PertVarDict, TrainStdDict
+from rnns_learn_robust_motor_policies.types import ImpulseAmpTuple, LDict
 from rnns_learn_robust_motor_policies.perturbations import feedback_impulse
 
 
@@ -54,7 +53,7 @@ def _setup_rand(task_base, models_base, hps):
             default_active=False,
             stage_name="update_queue",
         ),
-        PertVarDict(pos=0, vel=1),
+        LDict.of("disturbance__fb_var")(dict(pos=0, vel=1)),
         is_leaf=is_type(tuple),
     ))
 
@@ -70,10 +69,10 @@ def _setup_rand(task_base, models_base, hps):
 
 def _setup_xy(task_base, models_base, hps):
     """Impulses only in the x and y directions."""
-    feedback_var_idxs = PertVarDict(zip(PERT_VAR_NAMES, range(len(PERT_VAR_NAMES))))
+    feedback_var_idxs = LDict.of("disturbance__fb_var")(dict(zip(PERT_VAR_NAMES, range(len(PERT_VAR_NAMES)))))
     coord_idxs = dict(zip(COORD_NAMES, range(len(COORD_NAMES))))
     
-    impulse_xy_conditions = PertVarDict.fromkeys(PERT_VAR_NAMES, dict.fromkeys(COORD_NAMES))
+    impulse_xy_conditions = LDict.of("disturbance__fb_var").fromkeys(PERT_VAR_NAMES, dict.fromkeys(COORD_NAMES))
     impulse_xy_conditions_keys = jtree.key_tuples(
         impulse_xy_conditions, keys_to_strs=True, is_leaf=lambda x: x is None,
     )
@@ -226,7 +225,7 @@ class ExampleTrialSets(AbstractAnalysis):
             get_replicate = lambda _: self.i_replicate
             
         figs = jt.map(  
-            lambda states: TrainStdDict({
+            lambda states: LDict.of("train__disturbance__std")({
                 train_std: fbp.trajectories_2D(
                     jtree.take_multi(
                         plot_vars, 
@@ -247,7 +246,7 @@ class ExampleTrialSets(AbstractAnalysis):
                 for train_std, plot_vars in states.items()
             }),
             result,
-            is_leaf=is_type(TrainStdDict),
+            is_leaf=LDict.is_of("train__disturbance__std"),
         )  
         return figs
     
@@ -260,7 +259,7 @@ class ResponseTrajectories(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     
     def make_figs(self, models, tasks, states, hps, *, result, **dependencies):
-
+        figs = {}  # Define figs to fix the linter error
         return figs        
 
 

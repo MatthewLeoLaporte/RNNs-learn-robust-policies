@@ -1,9 +1,8 @@
 from collections import namedtuple
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from enum import Enum
 from functools import partial
-from typing import Any, ClassVar, Dict, Generic, Literal, NamedTuple, Type, TypeAlias, TypeVar, TypedDict, cast, Mapping, overload, Union, Protocol, runtime_checkable
-
+from typing import Any, Dict, Generic, Literal as L, NamedTuple, TypeVar, Mapping, overload
 import jax
 import jax.tree_util as jtu
 import yaml
@@ -12,36 +11,28 @@ import yaml
 TaskModelPair = namedtuple("TaskModelPair", ["task", "model"])
 
 
-"""
-Our PyTrees will contain levels corresponding to training conditions (standard deviation
-of disturbance amplitude during training), evaluation conditions (disturbance
-amplitudes during analysis), and so on.
-
-Here, we define some trivial subclasses of `dict` and `tuple` that can be identified by
-name, when manipulating such levels in the trees.
-
-For example, `TrainStdDict` behaves like `dict` in almost every way, except it is technically 
-a different type. This means in particular that if `a = dict()` and `b = TrainStdDict()`, 
-then `isinstance(b, dict) == isinstance(b, TrainStdDict) == True` but 
-`isinstance(a, TrainStdDict) == False`. Also, these dict subclasses maintain the order of their
-entries through `jax.tree.map`, which is not the case for builtin `dict`.
-"""
-K = TypeVar('K', bound=str)
+K = TypeVar('K')
 V = TypeVar('V')
-
-LT = TypeVar('LT', bound=str)  # For label
 
 
 @jax.tree_util.register_pytree_node_class
-class LDictBase(Mapping[K, V], Generic[K, V, LT]):
-    """Immutable dictionary with a string label for distinguishing dictionary types."""
+class LDict(Mapping[K, V], Generic[K, V]):
+    """Immutable dictionary with a string label for distinguishing dictionary types.
     
-    def __init__(self, label: LT, data: Mapping[K, V]):
+    Our PyTrees will contain levels corresponding to training conditions (standard deviation
+    of disturbance amplitude during training), evaluation conditions (disturbance
+    amplitudes during analysis), and so on. Associating a label with a mapping will allow us 
+    to identify and map over specific levels of these PyTrees, as well as to keep track of the 
+    names of hyperparameters stored in the PyTree, e.g. so we can automatically determine 
+    which columns to store those hyperparameters in, in the DB.
+    """
+    
+    def __init__(self, label: str, data: Mapping[K, V]):
         self._label = label
         self._data = dict(data)  # Make a copy for immutability
     
     @property
-    def label(self) -> LT:
+    def label(self) -> str:
         return self._label
     
     def __getitem__(self, key: K) -> V:
@@ -54,17 +45,15 @@ class LDictBase(Mapping[K, V], Generic[K, V, LT]):
         return len(self._data)
     
     def __repr__(self) -> str:
-        return f"LabeledDict({repr(self._label)}, {self._data})"
+        return f"LDict({repr(self._label)}, {self._data})"
     
     # PyTree implementation
-    def tree_flatten(self) -> tuple[tuple[Dict[K, V]], LT]:
-        """Flatten this LabeledDict for JAX PyTree traversal."""
+    def tree_flatten(self) -> tuple[tuple[Dict[K, V]], str]:
         # Return a tuple of (children, auxiliary_data)
         return (self._data,), self._label
     
     @classmethod
-    def tree_unflatten(cls, label: LT, children: tuple[Dict[K, V]]):
-        """Recreate a LabeledDict from flattened data."""
+    def tree_unflatten(cls, label: str, children: tuple[Dict[K, V]]):
         return cls(label, children[0])
     
     # Common dict methods
@@ -80,151 +69,51 @@ class LDictBase(Mapping[K, V], Generic[K, V, LT]):
     def get(self, key, default=None):
         return self._data.get(key, default)
     
-
-LDictType: TypeAlias = LDictBase[K, Any, LT]
-    
-
-class LDictConstructor(Generic[LT]):
-    """Constructor for a specific labeled dictionary type."""
-    
-    def __init__(self, label: LT):
-        self.label = label
-    
-    def __call__(self, data: Mapping[K, V]) -> LDictBase[K, V, LT]:
-        return LDictBase(self.label, data)
-    
-    @property
-    def is_leaf(self) -> Callable[[Any], bool]:
-        """Return a predicate for JAX pytree traversal."""
-        label = self.label
-        return lambda node: isinstance(node, LDictBase) and node.label == label
-
-
-class LDictFactory:
-    """Factory for creating labeled dictionary constructors."""
-    
-    def __call__(self, label: LT) -> LDictConstructor[LT]:
-        """Returns a constructor for dictionaries with the specified label."""
-        return LDictConstructor(label)
+    # Static methods for creating and checking LDicts
+    @staticmethod
+    def of(label: str) -> Callable[[Mapping[K, V]], 'LDict[K, V]']:
+        """Returns a constructor function for the given label."""
+        return lambda data: LDict(label, data)
     
     @staticmethod
-    def is_any_ldict(node: Any) -> bool:
-        """Check if a node is any type of LabeledDict."""
-        return isinstance(node, LDictBase)
-
-
-# The factory instance
-LDict = LDictFactory()
-
-
-class CustomDict(Dict[K, V], Generic[K, V]):
-    def __repr__(self):
-        return f"{self.__class__.__name__}({dict.__repr__(self)})"
-
-    # In principle we could check if self and other are instances of two 
-    # different custom dict classes, and return a plain dict in that case.
-    # However I foresee no reason at this point we should want to mix
-    # different custom types, so I'll keep this simple.
-    def __or__(self, other):
-        return type(self)({**self, **other})
+    def is_of(label: str) -> Callable[[Any], bool]:
+        """Return a predicate checking if a node is a LDict with a specific label."""
+        return lambda node: isinstance(node, LDict) and node.label == label
+        
+    @staticmethod
+    def is_ldict(label: str) -> Callable[[Any], bool]:
+        """Alias for is_of for backward compatibility."""
+        return LDict.is_of(label)
+        
+    @staticmethod
+    @overload
+    def fromkeys(label: str, keys: Iterable[K]) -> 'LDict[K, None]': ...
     
-    def __ror__(self, other):
-        return type(self)({**other, **self})
+    @staticmethod
+    @overload
+    def fromkeys(label: str, keys: Iterable[K], value: V) -> 'LDict[K, V]': ...
     
-
-class TrainStdDict(CustomDict[K, V], Generic[K, V]):
-    ...
-
-
-class PertAmpDict(CustomDict[K, V], Generic[K, V]):
-    ...
+    @staticmethod
+    def fromkeys(label: str, keys: Iterable[Any], value: Any = None) -> 'LDict[Any, Any]':
+        """Create a new LDict with the given label and keys, each with value set to value."""
+        return LDict(label, dict.fromkeys(keys, value))
 
 
-class PertVarDict(CustomDict[K, V], Generic[K, V]):
-    ...
+# YAML serialisation/deserialisation for LDict objects
+def _ldict_representer(dumper, data):
+    # Store both the label and the dictionary data
+    # Format: !LDict:label {key1: value1, key2: value2, ...}
+    return dumper.represent_mapping(f"!LDict:{data.label}", data._data)
 
+yaml.add_representer(LDict, _ldict_representer)
 
-class ContextInputDict(CustomDict[K, V], Generic[K, V]):
-    ...
+def _ldict_multi_constructor(loader, tag_suffix, node):
+    # Extract the label from the tag suffix (after the colon)
+    label = tag_suffix
+    mapping = loader.construct_mapping(node)
+    return LDict(label, mapping)
 
-
-class TrainingMethodDict(CustomDict[K, V], Generic[K, V]):
-    ...
-
-
-class FPDict(CustomDict[K, V], Generic[K, V]):
-    ...
-
-
-class TrainWhereDict(CustomDict[K, V], Generic[K, V]):
-    ...
-
-
-class LabelDict(CustomDict[str, V], Generic[V]):
-    ...
-    
-    
-class MeasureDict(CustomDict[str, V], Generic[V]):
-    ...
-    
-
-class CoordDict(CustomDict[str, V], Generic[V]):
-    ...
-
-
-class ColorDict(CustomDict[str, V], Generic[V]):
-    ...
- 
-    
-_custom_dict_classes = (
-    TrainStdDict, 
-    PertAmpDict, 
-    PertVarDict, 
-    ContextInputDict, 
-    TrainingMethodDict,
-    CoordDict,
-    LabelDict,
-    FPDict,
-    TrainWhereDict,
-    MeasureDict,
-    ColorDict,
-)
-
-
-def _dict_flatten_with_keys(obj):
-    children = [(jtu.DictKey(k), v) for k, v in obj.items()]
-    return (children, obj.keys())
-
-
-def _get_dict_unflatten(cls):
-    def dict_unflatten(keys, children):
-        return cls(zip(keys, children))
-    
-    return dict_unflatten
-
-
-def _yaml_dicttype_representer(cls: type[dict], dumper, data):
-    return dumper.represent_mapping(f"!{cls.__name__}", data)
-
-
-def _yaml_dicttype_constructor(cls: type[dict], loader, node):
-    return cls(loader.construct_mapping(node))
-
-
-for cls in _custom_dict_classes:
-    jtu.register_pytree_with_keys(
-        cls, 
-        _dict_flatten_with_keys, 
-        _get_dict_unflatten(cls),
-    )
-
-    # Add YAML representers and constructors to enable writing/reading
-    # of special dict types to/from YAML.
-    yaml.add_representer(cls, partial(_yaml_dicttype_representer, cls))    
-    yaml.SafeLoader.add_constructor(
-        f"!{cls.__name__}",
-        partial(_yaml_dicttype_constructor, cls), 
-    )
+yaml.SafeLoader.add_multi_constructor('!LDict:', _ldict_multi_constructor)
     
 
 class ImpulseAmpTuple(tuple, Generic[K, V]):
@@ -238,23 +127,6 @@ for cls in (ImpulseAmpTuple,):
         lambda x: (x, None), 
         lambda _, children: cls(children)  # type: ignore
     ) 
-
-
-#! TODO: Compute this algorithmically using `camel_to_snake`
-#! (Will also need to rename `TrainStdDict` to `PertStdDict` or something)
-TYPE_LABELS = {
-    TrainStdDict: 'disturbance_std',
-    PertAmpDict: 'disturbance_amplitude',  
-    PertVarDict: 'pert_var', 
-    ContextInputDict: 'context_input', 
-    TrainingMethodDict: 'training_method',
-    LabelDict: 'label',
-    MeasureDict: 'measure',
-    CoordDict: 'coord',
-    ColorDict: 'color',
-    # FPDict: 'fp',
-    # TrainWhereDict: 'train_where',    
-}
 
 
 # TODO: Rename to Effector, or something

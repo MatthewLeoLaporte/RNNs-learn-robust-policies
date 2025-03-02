@@ -15,6 +15,8 @@ from feedbax.intervene import AbstractIntervenor
 from jax_cookbook import anyf, is_module, is_type
 import jax_cookbook.tree as jtree
 
+from rnns_learn_robust_motor_policies.types import LDict
+
 
 
 T = TypeVar("T")
@@ -68,6 +70,42 @@ def falsef(x):
     return False
 
     
+def tree_level_labels(tree: PyTree, is_leaf=falsef) -> list[str]:
+    """
+    Given a PyTree of LDict nodes, return a list of labels for each level of the tree.
+    
+    This function assumes a homogeneous tree structure where all nodes at the same level
+    have the same label. It traverses the tree from root to first leaf, collecting LDict
+    labels along the way.
+    """
+    # Get the path to the first leaf
+    paths, _ = jtu.tree_flatten_with_path(tree, is_leaf=is_leaf)
+    if not paths:
+        return []
+    first_path, _ = paths[0]
+    
+    # Collect the labels from all LDict nodes in the path
+    labels = []
+    current_node = tree
+    for path_element in first_path:
+        # Get the node at this level
+        if isinstance(current_node, dict) or hasattr(current_node, '__getitem__'):
+            current_node = current_node[path_element.key if hasattr(path_element, 'key') else path_element]
+        
+        if is_leaf(current_node):
+            break
+        
+        # If this is an LDict, collect its label
+        if isinstance(current_node, LDict):
+            labels.append(current_node.label)
+            
+        else:
+            
+            raise NotImplementedError("")
+    
+    return labels
+
+
 def tree_level_types(tree: PyTree, is_leaf=falsef) -> list[type]:
     """Given a PyTree, return a PyTree of the types of each node along the path to the first leaf."""
     treedef = jt.structure(tree)
@@ -99,15 +137,20 @@ def tree_map_with_keys(func, tree: PyTree, *rest, is_leaf=None, **kwargs):
         is_leaf=is_leaf,
         **kwargs,
     )
+    
+    
+K = TypeVar('K')
+V = TypeVar('V')
+
+LT = TypeVar('LT', bound=str) 
 
 
-def tree_subset_dict_level(tree: PyTree[dict[T, Any]], keys: Sequence[T], dict_type=dict):
-    """Maps `subdict` over dicts of a given type"""
-    return jt.map(
-        lambda d: subdict(d, keys),
-        tree,
-        is_leaf=is_type(dict_type),
-    )
+def tree_subset_ldict_level(tree: PyTree[LDict[K, V]], keys: Sequence[K], label: str):
+    """Maps `subdict` over LabeledDict nodes with a specific label in a PyTree.
+    """
+    ldicts, other = eqx.partition(tree, LDict.is_of(label), is_leaf=LDict.is_of(label))
+    ldicts = [subdict(ld, keys) for ld in ldicts if ld is not None]
+    return eqx.combine(ldicts, other)
     
 
 def flatten_with_paths(tree, is_leaf=None):

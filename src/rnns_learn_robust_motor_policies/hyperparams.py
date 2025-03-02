@@ -10,37 +10,30 @@ from typing import Optional, TypeVar
 import jax.tree as jt
 from jaxtyping import ArrayLike, PyTree
 
-from jax_cookbook import is_type
+from jax_cookbook import is_type, anyf
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.config import load_config, load_default_config
 from rnns_learn_robust_motor_policies.constants import get_iterations_to_save_model_parameters
-from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace, dict_to_namespace
 from rnns_learn_robust_motor_policies.tree_utils import (
+    TreeNamespace, 
+    dict_to_namespace, 
+    tree_level_labels,
     deep_update,
     is_dict_with_int_keys,
-    pp,
-    tree_level_types,
 )
 from rnns_learn_robust_motor_policies.types import (
     TaskModelPair, 
-    TrainStdDict, 
-    TrainingMethodDict,
-    TrainWhereDict,
+    LDict,
 )
 
 
-# If we construct the pytree of task-model pairs out of these, then in
-# `training.train_and_save_models` we can use `fill_out_hps` to automatically
-# add to the hyperparameters, key-value pairs where the key corresponds to the 
-# dict subtype, and the value corresponds to the key of the respective pair 
-# within the dict.
-TYPE_HP_KEY_MAPPING = {
-    TrainingMethodDict: ("train", "method"),
-    # TODO: Rename this to `DisturbanceStdDict`, thus then automate the construction of this mapping?
-    # i.e.
-    TrainStdDict: ("disturbance", "std"),
-}
+LEVEL_LABEL_SEP = "__"
+
+
+# We use LDict labels to identify levels in task-model pair trees
+# The label format is expected to be double-underscore separated parts that map to hyperparameter paths
+# For example, "train__method" maps to hps.train.method and "disturbance__std" maps to hps.disturbance.std
 
 NT = TypeVar("NT", bound=SimpleNamespace)
 DT = TypeVar("DT", bound=dict)
@@ -57,7 +50,7 @@ def process_hps(hps: TreeNamespace) -> TreeNamespace:
     # Only train configs should have the train key
     if getattr(hps, 'train', None) is not None:
         if getattr(hps.train, 'where', None) is not None:
-            hps.train.where = TrainWhereDict(hps.train.where)
+            hps.train.where = LDict.of("train__where")(hps.train.where)
         hps.train.intervention_scaleup_batches = [
             hps.train.n_batches_baseline,
             hps.train.n_batches_baseline + hps.train.n_scaleup_batches,
@@ -70,7 +63,7 @@ def process_hps(hps: TreeNamespace) -> TreeNamespace:
     # Not all experiments will load an existing model 
     if getattr(hps, 'load', None) is not None:        
         if getattr(hps.load, 'train', None) is not None:
-            hps.load.train.where = TrainWhereDict(hps.load.train.where)         
+            hps.load.train.where = LDict.of("train__where")(hps.load.train.where)         
 
     return hps
 
@@ -111,12 +104,11 @@ def promote_model_hps(hps: TreeNamespace) -> TreeNamespace:
     return hps
 
 
-#! TODO: Use dunder for `join_with`
 def flatten_hps(
     hps: TreeNamespace, 
     keep_load: bool = True, 
-    is_leaf: Optional[Callable] = is_type(list, TrainWhereDict),
-    join_with: str = '_',
+    is_leaf: Optional[Callable] = anyf(is_type(list), LDict.is_of("train__where")),
+    join_with: str = LEVEL_LABEL_SEP,
 ) -> TreeNamespace:
     """Flatten the hyperparameter namespace, joining keys with underscores."""
     hps = deepcopy(hps)
@@ -135,12 +127,36 @@ def flatten_hps(
     )))
 
 
-def update_hps_given_tree_path(hps: TreeNamespace, path: tuple, types: Sequence) -> TreeNamespace:
-    """Given the path of a task-model pair in the training PyTree, """
+def update_hps_given_tree_path(hps: TreeNamespace, path: tuple, labels: Sequence[str]) -> TreeNamespace:
+    """
+    Update hyperparameters based on the path of a task-model pair in the training PyTree.
+    
+    Args:
+        hps: The base hyperparameters
+        path: Path to a leaf in the task-model pair tree
+        labels: LDict labels for each level in the tree
+    
+    Returns:
+        Updated hyperparameters with values from the path
+    """
     hps = deepcopy(hps)
-    for node_key, type_ in zip(path, types):
-        hps_key, hps_subkey = TYPE_HP_KEY_MAPPING[type_]
-        setattr(getattr(hps, hps_key), hps_subkey, node_key.key)
+    for node_key, label in zip(path, labels):
+        # Split the label to get the path into `hps`
+        # For example: "train__method" -> ["train", "method"]
+        parts = label.split(LEVEL_LABEL_SEP)
+
+        if not parts:
+            continue
+            
+        # Navigate to the nested attribute and assign
+        obj = hps
+        for part in parts[:-1]:
+            obj = getattr(obj, part)
+            
+        # Set the final attribute value
+        last_part = parts[-1]
+        setattr(obj, last_part, node_key.key)
+
     return hps
 
 
@@ -152,12 +168,12 @@ def fill_out_hps(hps_common: TreeNamespace, task_model_pairs: PyTree[TaskModelPa
     dict subtype, and where the keys are the values of hyperparameters. Each dict subtype has a fixed 
     mapping to a particular 
     """
-    level_types = tree_level_types(task_model_pairs)
+    level_labels = tree_level_labels(task_model_pairs, is_leaf=is_type(TaskModelPair))
     return jt.map(
         lambda _, path: update_hps_given_tree_path(
             hps_common,
             path,
-            level_types,
+            level_labels,
         ),
         task_model_pairs, jtree.key_tuples(task_model_pairs, is_leaf=is_type(TaskModelPair)),
         is_leaf=is_type(TaskModelPair),
