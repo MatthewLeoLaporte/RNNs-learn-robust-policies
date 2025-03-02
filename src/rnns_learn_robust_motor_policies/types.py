@@ -1,8 +1,10 @@
 from collections import namedtuple
+from collections.abc import Callable
 from enum import Enum
 from functools import partial
-from typing import Any, Dict, Generic, NamedTuple, TypeVar
+from typing import Any, ClassVar, Dict, Generic, Literal, NamedTuple, Type, TypeAlias, TypeVar, TypedDict, cast, Mapping, overload, Union, Protocol, runtime_checkable
 
+import jax
 import jax.tree_util as jtu
 import yaml
 
@@ -24,30 +26,95 @@ then `isinstance(b, dict) == isinstance(b, TrainStdDict) == True` but
 `isinstance(a, TrainStdDict) == False`. Also, these dict subclasses maintain the order of their
 entries through `jax.tree.map`, which is not the case for builtin `dict`.
 """
-K = TypeVar('K')
+K = TypeVar('K', bound=str)
 V = TypeVar('V')
 
+LT = TypeVar('LT', bound=str)  # For label
 
-#! TODO
-class LevelDict(dict):
-    """Dictionary that carries its level type as metadata."""
+
+@jax.tree_util.register_pytree_node_class
+class LDictBase(Mapping[K, V], Generic[K, V, LT]):
+    """Immutable dictionary with a string label for distinguishing dictionary types."""
     
-    def __init__(self, *args, level_type=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.level_type = level_type
+    def __init__(self, label: LT, data: Mapping[K, V]):
+        self._label = label
+        self._data = dict(data)  # Make a copy for immutability
     
-    def __repr__(self):
-        return f"LevelDict<{self.level_type}>({dict.__repr__(self)})"
+    @property
+    def label(self) -> LT:
+        return self._label
     
-    def __or__(self, other):
-        result = type(self)({**self, **other})
-        result.level_type = self.level_type
-        return result
+    def __getitem__(self, key: K) -> V:
+        return self._data[key]
     
-    def __ror__(self, other):
-        result = type(self)({**other, **self})
-        result.level_type = self.level_type
-        return result
+    def __iter__(self):
+        return iter(self._data)
+    
+    def __len__(self) -> int:
+        return len(self._data)
+    
+    def __repr__(self) -> str:
+        return f"LabeledDict({repr(self._label)}, {self._data})"
+    
+    # PyTree implementation
+    def tree_flatten(self) -> tuple[tuple[Dict[K, V]], LT]:
+        """Flatten this LabeledDict for JAX PyTree traversal."""
+        # Return a tuple of (children, auxiliary_data)
+        return (self._data,), self._label
+    
+    @classmethod
+    def tree_unflatten(cls, label: LT, children: tuple[Dict[K, V]]):
+        """Recreate a LabeledDict from flattened data."""
+        return cls(label, children[0])
+    
+    # Common dict methods
+    def items(self):
+        return self._data.items()
+    
+    def keys(self):
+        return self._data.keys()
+    
+    def values(self):
+        return self._data.values()
+    
+    def get(self, key, default=None):
+        return self._data.get(key, default)
+    
+
+LDictType: TypeAlias = LDictBase[K, Any, LT]
+    
+
+class LDictConstructor(Generic[LT]):
+    """Constructor for a specific labeled dictionary type."""
+    
+    def __init__(self, label: LT):
+        self.label = label
+    
+    def __call__(self, data: Mapping[K, V]) -> LDictBase[K, V, LT]:
+        return LDictBase(self.label, data)
+    
+    @property
+    def is_leaf(self) -> Callable[[Any], bool]:
+        """Return a predicate for JAX pytree traversal."""
+        label = self.label
+        return lambda node: isinstance(node, LDictBase) and node.label == label
+
+
+class LDictFactory:
+    """Factory for creating labeled dictionary constructors."""
+    
+    def __call__(self, label: LT) -> LDictConstructor[LT]:
+        """Returns a constructor for dictionaries with the specified label."""
+        return LDictConstructor(label)
+    
+    @staticmethod
+    def is_any_ldict(node: Any) -> bool:
+        """Check if a node is any type of LabeledDict."""
+        return isinstance(node, LDictBase)
+
+
+# The factory instance
+LDict = LDictFactory()
 
 
 class CustomDict(Dict[K, V], Generic[K, V]):
