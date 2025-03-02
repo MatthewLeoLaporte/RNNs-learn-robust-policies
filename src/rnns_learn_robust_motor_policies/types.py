@@ -1,8 +1,7 @@
 from collections import namedtuple
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from enum import Enum
-from functools import partial
-from typing import Any, Dict, Generic, Literal as L, NamedTuple, TypeVar, Mapping, overload
+from typing import Any, Dict, Generic, NamedTuple, TypeVar, overload
 import jax
 import jax.tree_util as jtu
 import yaml
@@ -79,12 +78,7 @@ class LDict(Mapping[K, V], Generic[K, V]):
     def is_of(label: str) -> Callable[[Any], bool]:
         """Return a predicate checking if a node is a LDict with a specific label."""
         return lambda node: isinstance(node, LDict) and node.label == label
-        
-    @staticmethod
-    def is_ldict(label: str) -> Callable[[Any], bool]:
-        """Alias for is_of for backward compatibility."""
-        return LDict.is_of(label)
-        
+    
     @staticmethod
     @overload
     def fromkeys(label: str, keys: Iterable[K]) -> 'LDict[K, None]': ...

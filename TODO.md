@@ -3,7 +3,7 @@
 
 - [ ] Feedbax: Why is the mean validation loss lower than the mean training loss? Is it because the training task has a different distribution of reach lengths?
 - [ ] A `replicate_info` file might sometimes be generated for a non-postprocessed ModelRecord; in that case, its `has_replicate_info` gets set to `1` by `check_model_files` and this results in a “duplicate” error being raised when trying to load the postprocessed model according to its `has_replicate_info` value. It seems this happened when I re-ran `train.py` after it raised an error on `post_training`; i.e. the second time it only ran `post_training` on a single model.
-- [ ] Use dunder for `join_with` in `flatten_hps`, uncomment the lines at the start of `run_analysis.setup_tasks_and_models`, and restart the DB
+- [x] Use dunder for `join_with` in `flatten_hps`, uncomment the lines at the start of `run_analysis.setup_tasks_and_models`, and restart the DB
 
 ## Next
 
@@ -28,7 +28,7 @@ Then: continue with [[#Network analysis Population level]].
 - [ ] **In `AbstractAnalysis.save_figs`, format the dump filename based on `path_params` and not just an integer counter**
 - [x] Make sure we save *all* analysis figures in `AbstractAnalysis.save_figs`; currently we’re only saving a subset for `Measures_CompareTrainStdAndContext`, it seems
 	- This was because of an incorrect change I had just made to `save_figs`, which is now reverted
-- [ ] Add the calculation of `disturbance.amplitude` when loading hyperparams (e.g. 1-2)
+- [ ] Add the calculation of `disturbance.amp` when loading hyperparams (e.g. 1-2)
 
 ### Convert notebooks for part 1
 
@@ -348,7 +348,7 @@ It might also make sense to automatically save evaluated states to disk, and to 
 Currently, my model saving and loading process is oriented around entire training runs. 
 
 - All of the models from a training run are saved in the same `.eqx` file, whose name is a hash, which is referenced by a record in the models table of the database. 
-- The models (i.e. training run) table has the array-valued column `disturbance_stds`, which is a list of floats. 
+- The models (i.e. training run) table has the array-valued column `train__pert__stds`, which is a list of floats. 
 - When we load models for analysis, we end up with a `TrainStdDict`, i.e. model records map one-to-one with `TrainStdDict`s.
 - It is difficult to load and analyze across the values of hyperparameters other than training disturbance std, e.g. noise level, weight of one of the cost terms, …
 

@@ -25,7 +25,7 @@ COLOR_FUNCS = dict(
 
 def setup_eval_tasks_and_models(task_base, models_base, hps):
     # 1. Tasks are steady-state 
-    # 2. `models_base` is a `disturbance_std` dict
+    # 2. `models_base` is a `train__pert__std` LDict
     # 3. Two types of tasks (plant vs. unit stim)
     
     # Add the context input to the task dependencies, so that it is provided to the neural network
@@ -62,13 +62,13 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
             is_leaf=is_module,
         )
         for part_label, (setup_part_func, n)  in {
-            'plant_pert': (setup_ss_plant_pert_task, hps.disturbance.plant.directions),
+            'plant_pert': (setup_ss_plant_pert_task, hps.pert.plant.directions),
             'unit_stim': (setup_ss_unit_stim_task, hps.load.model.hidden_size),
         }.items()
     })
     
     # #! TODO: I'm not sure hps should be the same in all cases. e.g. we should probably update 
-    # #! `hps.disturbance.amplitude` to contain the respective value.
+    # #! `hps.pert.amp` to contain the respective value.
     # #! If so, it will be necessary to modify the `setup_part_func`s and return `all_hps` 
     # #! along with the main unzip, above.
     # hps_by_context = ContextInputDict.fromkeys(hps.context_input, hps)
@@ -80,17 +80,17 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
 
 def force_impulse(direction_idx, *, hps):
     idxs = slice(
-        hps.disturbance.plant.start_step, 
-        hps.disturbance.plant.start_step + hps.disturbance.plant.duration,
+        hps.pert.plant.start_step, 
+        hps.pert.plant.start_step + hps.pert.plant.duration,
     )
     trial_mask = jnp.zeros((hps.load.model.n_steps - 1,), bool).at[idxs].set(True)
     
-    angle = 2 * jnp.pi * direction_idx / hps.disturbance.plant.directions
+    angle = 2 * jnp.pi * direction_idx / hps.pert.plant.directions
     array = jnp.array([jnp.cos(angle), jnp.sin(angle)])
     
     return ConstantInput.with_params(
         out_where=lambda channel_state: channel_state.output,
-        scale=hps.disturbance.plant.amplitude,
+        scale=hps.pert.plant.amp,
         arrays=array,
         active=TimeSeriesParam(trial_mask),
     )
@@ -98,13 +98,13 @@ def force_impulse(direction_idx, *, hps):
 
 def activity_impulse(unit_idx, *, hps):
     idxs = slice(
-        hps.disturbance.unit.start_step, 
-        hps.disturbance.unit.start_step + hps.disturbance.unit.duration,
+        hps.pert.unit.start_step, 
+        hps.pert.unit.start_step + hps.pert.unit.duration,
     )
     trial_mask = jnp.zeros((hps.load.model.n_steps - 1,), bool).at[idxs].set(True)
     
     unit_spec = jnp.full(hps.load.model.hidden_size, jnp.nan)
-    unit_spec = unit_spec.at[unit_idx].set(hps.disturbance.unit.amplitude)
+    unit_spec = unit_spec.at[unit_idx].set(hps.pert.unit.amp)
     
     return NetworkConstantInput.with_params(
         # out_where=lambda state: state.hidden,
@@ -161,7 +161,7 @@ class UnitPreferredDirections(AbstractAnalysis):
             # Remove the "condition" dimension, which is singleton in this module 
             return jnp.squeeze(activity_max_force)
         
-        # Each array: (hps.disturbance.plant.directions, eval_n, n_replicates, n_units)
+        # Each array: (hps.pert.plant.directions, eval_n, n_replicates, n_units)
         activity_at_max_force = jt.map(
             lambda state: get_activity_at_max_force(state), 
             states['full']['plant_pert'], 
@@ -171,7 +171,7 @@ class UnitPreferredDirections(AbstractAnalysis):
         #! Collapse (eval_n, n_replicates, conditions) axes; for now, don't worry about non-aggregate statistics)
         #! Actually, this might be wrong; shouldn't we process `n_replicates` in parallel until the end? Otherwise 
         #! we assume that the preferred directions are similar across replicates, indexed by unit, which is clearly wrong.
-        # Each array: (hps.disturbance.plant.directions, samples=(eval_n * n_replicates), n_units)
+        # Each array: (hps.pert.plant.directions, samples=(eval_n * n_replicates), n_units)
         # activities_at_max_accel = jt.map(
         #     lambda activity: jnp.reshape(activity, (activity.shape[0], -1, activity.shape[-1])),
         #     activities_at_max_accel,
@@ -223,7 +223,7 @@ class UnitStimDirections(AbstractAnalysis):
             # Remove the "condition" dimension, which is singleton in this module 
             return jnp.squeeze(angle_of_max_net_force)
         
-        # Each array: (hps.disturbance.plant.directions, eval_n, n_replicates, n_units)
+        # Each array: (hps.pert.plant.directions, eval_n, n_replicates, n_units)
         angle_of_max_force = jt.map(
             lambda state: get_angle_of_max_force(state), 
             states[self.variant]['unit_stim'], 
@@ -261,7 +261,7 @@ class UnitPreferenceAlignment(AbstractAnalysis):
         # 1. Convert preferred direction from index to angle, and take the difference between the angles (works for all signs?)
         # 2. Convert both to vectors and use `angle_between_vectors` (trust this more)
         def get_angle_between_prefs_and_forces(unit_preferred_direction_idx, angle_of_max_force_on_unit_stim):
-            n_directions = hps[self.variant]['plant_pert'][0].disturbance.plant.directions
+            n_directions = hps[self.variant]['plant_pert'][0].pert.plant.directions
             unit_preferred_angle = 2 * jnp.pi * unit_preferred_direction_idx / n_directions
             unit_preferred_direction = angle_to_direction(unit_preferred_angle)
             direction_of_max_force_on_unit_stim = angle_to_direction(angle_of_max_force_on_unit_stim)

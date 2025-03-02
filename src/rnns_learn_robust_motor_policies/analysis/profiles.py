@@ -53,19 +53,19 @@ class VelocityProfiles(AbstractAnalysis):
         colors,
         **kwargs,
     ):
-        figs = LDict.of("disturbance__amplitude")({
+        figs = LDict.of("pert__amp")({
             # TODO: Once the mapping between custom dict types and their column names is automatic
             # (e.g. `PertVarDict` will simply map to 'pert_var'), we can construct a `DirectionDict`
             # ad hoc maybe
-            disturbance_amplitude: LDict.of("label")({
+            pert_amp: LDict.of("label")({
                 label: fbp.profiles(
-                    jtree.take(result, i, -1)[disturbance_amplitude],
+                    jtree.take(result, i, -1)[pert_amp],
                     varname=f"{label} velocity",
                     legend_title="Train<br>field std.",
                     mode='std', # or 'curves'
                     n_std_plot=1,
                     hline=dict(y=0, line_color="grey"),
-                    colors=list(colors['full']['disturbance_std']['dark'].values()),
+                    colors=list(colors['full']['train__pert__std']['dark'].values()),
                     # stride_curves=500,
                     # curves_kws=dict(opacity=0.7),
                     layout_kws=dict(
@@ -76,7 +76,7 @@ class VelocityProfiles(AbstractAnalysis):
                 )
                 for i, label in enumerate(("Forward", "Lateral"))
             })
-            for disturbance_amplitude in hps[self.variant].disturbance.amplitude
+            for pert_amp in hps[self.variant].pert.amp
         })
         return figs
 

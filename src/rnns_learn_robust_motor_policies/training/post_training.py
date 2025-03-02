@@ -249,7 +249,7 @@ def get_best_models(
 # TODO
 #! This no longer works because the model records are kept and post-processed individually.
 #! It probably makes sense to move this to an analysis script since it involves loading 
-#! a spread of training conditions (e.g. disturbance_std, as here)
+#! a spread of training conditions (e.g. train_pert_std, as here)
 # def get_replicate_distribution_figure(
 #     measure: LDict[float, Shaped[Array, 'replicates']], 
 #     yaxis_title="",
@@ -279,18 +279,18 @@ def get_best_models(
 
 #     violins = [
 #         go.Violin(
-#             x=[disturbance_std] * n_replicates,
+#             x=[train_pert_std] * n_replicates,
 #             y=data,
 #             # box_visible=True,
 #             line_color='black',
 #             meanline_visible=True,
 #             fillcolor='lightgrey',
 #             opacity=0.6,
-#             name=f"{disturbance_std}",
+#             name=f"{train_pert_std}",
 #             showlegend=False,   
 #             spanmode='hard',  
 #         )
-#         for disturbance_std, data in measure.items()
+#         for train_pert_std, data in measure.items()
 #     ]
     
 #     fig.add_traces(violins)
@@ -384,12 +384,12 @@ def save_training_figures(
     )
     
     # TODO
-    # DON'T Evaluate all of them at the TrainStdDict level
+    # DON'T Evaluate all of them at the "train__pert__std" level
     all_figs = {
         fig_label: jt.map(
             fig_spec.func,
             *fig_spec.args,
-            is_leaf=LDict.is_of("train__disturbance__std"),
+            is_leaf=LDict.is_of("train__pert__std"),
         )
         for fig_label, fig_spec in fig_specs.items()
     }
@@ -402,7 +402,7 @@ def save_training_figures(
             fig_parameters |= dict(variant_label=variant_label)
         
         if train_std:
-            fig_parameters |= dict(disturbance_train_std=float(train_std))
+            fig_parameters |= dict(train__pert__std=float(train_std))
         
         add_evaluation_figure(
             db_session,
@@ -414,16 +414,16 @@ def save_training_figures(
             **fig_parameters,
         )
         
-    is_leaf = anyf(LDict.is_of("train__disturbance__std"), is_type(go.Figure))
+    is_leaf = anyf(LDict.is_of("train__pert__std"), is_type(go.Figure))
     
     # Save and add records for each figure 
-    # TODO: BUT DON'T MAP OVER TrainStdDict
+    # TODO: BUT DON'T MAP OVER "train__pert__std"
     for plot_id, figs in all_figs.items():
         # Some training notebooks use multiple training methods, and some don't. And some figure functions
         # return one figure per training condition, while others are summaries. Thus we need to descend 
-        # to the `TrainStdDict` or `go.Figure` level first, and whatever the label is down to that level, will
+        # to the "train__pert__std" or `go.Figure` level first, and whatever the label is down to that level, will
         # label the training method (variant). Then we can descend to the `go.Figure` level, and whatever 
-        # label is constructed here will either be the training std (if we originally descended to `TrainStdDict`),
+        # label is constructed here will either be the training std (if we originally descended to "train__pert__std"),
         # or nothing.
         jt.map(
             # Map over each set (i.e. training variant) of disturbance train stds

@@ -4,7 +4,7 @@ expt_id: 2-6
 load:  
   expt_id: 2
 
-  disturbance:  # during training
+  pert:  # during training
     type: curl
     # list -> load multiple models
     std: [0, 1.0] # [0, 0.5, 1.0, 1.5]  
@@ -31,14 +31,14 @@ task:  # Passed to the base task constructor
     eval_n_directions: 1
     eval_reach_length: 0
 
-disturbance:
+pert:
   plant:
     directions: 24
-    amplitude: 1  
+    amp: 1  
     start_step: 30
     duration: 5
   unit:
-    amplitude: 1
+    amp: 1
     start_step: 30
     duration: 5
 

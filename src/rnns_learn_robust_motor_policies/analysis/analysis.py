@@ -111,7 +111,7 @@ class AbstractAnalysis(Module):
         
         Note that `**kwargs` here may not only contain the dependencies, but that `save` 
         passes the key-value pairs of parameters inferred from the `figs` PyTree. 
-        Thus for example `disturbance_std` is explicitly referred to in the argument list of 
+        Thus for example `train_pert_std` is explicitly referred to in the argument list of 
         `plant_perts.CenterOutByEval._params_to_save`.
         """
         return dict()

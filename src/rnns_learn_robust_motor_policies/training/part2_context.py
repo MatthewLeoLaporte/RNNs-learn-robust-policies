@@ -20,7 +20,7 @@ from rnns_learn_robust_motor_policies.constants import (
     INTERVENOR_LABEL, 
     MASS,
 )
-from rnns_learn_robust_motor_policies.setup_utils import get_base_reaching_task, get_train_pairs_by_disturbance_std
+from rnns_learn_robust_motor_policies.setup_utils import get_base_reaching_task, get_train_pairs_by_pert_std
 from rnns_learn_robust_motor_policies.types import TaskModelPair, LDict
 
 
@@ -101,15 +101,15 @@ SCALE_FUNCS = LDict.of("train__method")({
 })
 
 
-def disturbance(disturbance_type, field_std, method):
-    return DISTURBANCE_CLASSES[disturbance_type].with_params(
+def disturbance(pert_type, field_std, method):
+    return DISTURBANCE_CLASSES[pert_type].with_params(
         scale=SCALE_FUNCS[method](field_std),
         active=disturbance_active[method](P_PERTURBED[method]),
         **disturbance_params[method](
             # TODO: Scaleup
             # partial(batch_scale_up, intervention_scaleup_batches[0], n_batches_scaleup)
             field_std
-        )[disturbance_type],
+        )[pert_type],
     )
 
 
@@ -166,8 +166,8 @@ def setup_task_model_pair(
         task, models_base,
         lambda model: model.step.mechanics,
         disturbance(
-            hps.disturbance.type,
-            hps.disturbance.std, 
+            hps.pert.type,
+            hps.pert.std, 
             # p_perturbed,
             hps.train.method,
         ),
@@ -180,7 +180,7 @@ def get_train_pairs(hps: TreeNamespace, key: PRNGKeyArray):
     """Given hyperparams and a particular task-model pair setup function, return the PyTree of task-model pairs."""
     
     get_train_pairs_partial = partial(
-        get_train_pairs_by_disturbance_std, 
+        get_train_pairs_by_pert_std, 
         setup_task_model_pair, 
         key=key,  # Use the same PRNG key for all training methods
     )

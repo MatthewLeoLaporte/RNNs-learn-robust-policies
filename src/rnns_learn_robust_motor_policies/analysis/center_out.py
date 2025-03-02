@@ -48,9 +48,9 @@ class CenterOutByEval(AbstractAnalysis):
         )
         return figs
 
-    def _params_to_save(self, hps: PyTree[TreeNamespace], *, replicate_info, disturbance_std, **kwargs):
+    def _params_to_save(self, hps: PyTree[TreeNamespace], *, replicate_info, pert_std, **kwargs):
         return dict(
-            i_replicate=replicate_info[disturbance_std]['best_replicates'][REPLICATE_CRITERION],
+            i_replicate=replicate_info[pert_std]['best_replicates'][REPLICATE_CRITERION],
         )
 
 
@@ -124,9 +124,9 @@ class CenterOutByReplicate(AbstractAnalysis):
 
         return figs
 
-    def _params_to_save(self, hps: PyTree[TreeNamespace], *, disturbance_std, **kwargs):
+    def _params_to_save(self, hps: PyTree[TreeNamespace], *, pert_std, **kwargs):
         return dict(
-            # n=n_replicates_included[disturbance_std],
+            # n=n_replicates_included[pert_std],
         )
 
 

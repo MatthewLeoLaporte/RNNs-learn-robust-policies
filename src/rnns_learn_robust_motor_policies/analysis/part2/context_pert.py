@@ -26,9 +26,9 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
         task_base,
         # TODO: Use not just a fixed perturbation of the context, but randomly-sampled context endpoints
         dict(context=TrialSpecDependency(get_step_task_input(
-            hps.disturbance.context.c_min, 
-            hps.disturbance.context.c_max,
-            hps.disturbance.context.step,  
+            hps.pert.context.c_min, 
+            hps.pert.context.c_max,
+            hps.pert.context.step,  
             hps.model.n_steps - 1, 
             task_base.n_validation_trials,
         ))),

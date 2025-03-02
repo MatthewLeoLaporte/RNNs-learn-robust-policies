@@ -1,9 +1,8 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from functools import partial
 import logging
-from pathlib import Path
-from typing import Any, Optional, TypeAlias
+from typing import Optional
 
 import equinox as eqx
 import jax.numpy as jnp
@@ -25,7 +24,6 @@ from jax_cookbook import is_type
 from rnns_learn_robust_motor_policies.database import ModelRecord, get_record, save_model_and_add_record
 from rnns_learn_robust_motor_policies.hyperparams import (
     flatten_hps, 
-    load_hps,
     promote_model_hps, 
     fill_out_hps,
 )
@@ -143,7 +141,7 @@ def train_pair(
 
 
 def where_strs_to_funcs(where_strs: Sequence[str] | dict[int, Sequence[str]]):
-    if isinstance(where_strs, dict):
+    if isinstance(where_strs, Mapping):
         return {
             i: attr_str_tree_to_where_func(strs) 
             # TODO: Let the user pass a single sequence, instead of a dict of them

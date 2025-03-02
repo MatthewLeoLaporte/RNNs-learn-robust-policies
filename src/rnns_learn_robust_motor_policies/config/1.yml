@@ -1,6 +1,6 @@
 expt_id: 1
 
-disturbance:
+pert:
   type: curl
   std: [0, 0.5, 1.0, 1.5]  
 

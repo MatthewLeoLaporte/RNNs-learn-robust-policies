@@ -86,7 +86,7 @@ class Aligned_IdxTrial(AbstractAnalysis):
     ))
     variant: Optional[str] = "small"
     conditions: tuple[str, ...] = ()
-    # n_conditions: int  # all_tasks['small'][disturbance_amplitude].n_validation_trials
+    # n_conditions: int  # all_tasks['small'][pert_amp].n_validation_trials
     n_curves_max: int = 20
 
     def make_figs(
@@ -112,9 +112,9 @@ class Aligned_IdxTrial(AbstractAnalysis):
         )
         return figs
 
-    def _params_to_save(self, hps: PyTree[TreeNamespace], *, disturbance_std, **kwargs):
+    def _params_to_save(self, hps: PyTree[TreeNamespace], *, pert_std, **kwargs):
         return dict(
-            # n=min(self.n_curves_max, n_replicates_included[disturbance_std] * self.n_conditions)
+            # n=min(self.n_curves_max, n_replicates_included[pert_std] * self.n_conditions)
         )
 
 
@@ -124,7 +124,7 @@ class Aligned_IdxPertAmp(AbstractAnalysis):
     ))
     variant: Optional[str] = "small"
     conditions: tuple[str, ...] = ()
-    # n_conditions: int  # all_tasks['small'][disturbance_amplitude].n_validation_trials
+    # n_conditions: int  # all_tasks['small'][pert_amp].n_validation_trials
     n_curves_max: int = 20
 
     def make_figs(
@@ -141,16 +141,16 @@ class Aligned_IdxPertAmp(AbstractAnalysis):
         plot_vars_stacked = jt.map(
             lambda d: jtree.stack(list(d.values())),
             aligned_vars['small'],
-            is_leaf=LDict.is_of("disturbance__amplitude"),
+            is_leaf=LDict.is_of("pert__amp"),
         )
 
         figs = jt.map(
             partial(
                 plot_condition_trajectories,
-                colorscale=COLORSCALES['disturbance_amplitude'],
+                colorscale=COLORSCALES['pert_amp'],
                 colorscale_axis=0,
                 legend_title="Field<br>amplitude",
-                legend_labels=hps['small'].disturbance.amplitude,
+                legend_labels=hps['small'].pert.amp,
                 curves_mode='lines',
             ),
             plot_vars_stacked,
@@ -159,9 +159,9 @@ class Aligned_IdxPertAmp(AbstractAnalysis):
 
         return figs
 
-    def _params_to_save(self, hps: PyTree[TreeNamespace], *, disturbance_std, **kwargs):
+    def _params_to_save(self, hps: PyTree[TreeNamespace], *, pert_std, **kwargs):
         return dict(
-            # n=min(self.n_curves_max, hps.eval_n * n_replicates_included[disturbance_std] * self.n_conditions)
+            # n=min(self.n_curves_max, hps.eval_n * n_replicates_included[pert_std] * self.n_conditions)
         )
 
 
@@ -171,7 +171,7 @@ class Aligned_IdxTrainStd(AbstractAnalysis):
     ))
     variant: Optional[str] = "small"
     conditions: tuple[str, ...] = ()
-    # n_conditions: int  # all_tasks['small'][disturbance_amplitude].n_validation_trials
+    # n_conditions: int  # all_tasks['small'][pert_amp].n_validation_trials
     n_curves_max: int = 20
 
     def make_figs(
@@ -187,20 +187,20 @@ class Aligned_IdxTrainStd(AbstractAnalysis):
         plot_vars_stacked = jt.map(
             lambda d: jtree.stack(list(d.values())),
             aligned_vars[self.variant],
-            is_leaf=LDict.is_of("train__disturbance__std"),
+            is_leaf=LDict.is_of("train__pert__std"),
         )
-        # plot_vars_stacked = LDict.of("disturbance__amplitude")({
+        # plot_vars_stacked = LDict.of("pert__amp")({
         #     # concatenate along the replicate axis, which has variable length
-        #     disturbance_amplitude: jtree.stack(list(vars_.values()))
-        #     for disturbance_amplitude, vars_ in aligned_vars['small'].items()
+        #     pert_amp: jtree.stack(list(vars_.values()))
+        #     for pert_amp, vars_ in aligned_vars['small'].items()
         # })
         figs = jt.map(
             partial(
                 plot_condition_trajectories,
-                colorscale=COLORSCALES['disturbance_std'],
+                colorscale=COLORSCALES['train__pert__std'],
                 colorscale_axis=0,
                 legend_title="Train<br>field std.",
-                legend_labels=hps[self.variant].load.disturbance.std,
+                legend_labels=hps[self.variant].load.pert.std,
                 curves_mode='lines',
                 var_endpoint_ms=0,
                 scatter_kws=dict(line_width=0.5, opacity=0.3),

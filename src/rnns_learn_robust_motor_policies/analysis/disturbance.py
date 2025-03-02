@@ -4,7 +4,7 @@ from rnns_learn_robust_motor_policies.analysis.state_utils import orthogonal_fie
 from feedbax.intervene import CurlField, FixedField
 
 
-DISTURBANCE_FUNCS = {
+PERT_FUNCS = {
     'curl': lambda amplitude: CurlField.with_params(
         amplitude=amplitude,
     ),

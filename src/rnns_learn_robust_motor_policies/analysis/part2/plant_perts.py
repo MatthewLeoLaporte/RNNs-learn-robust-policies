@@ -16,7 +16,7 @@ import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.aligned import AlignedVars, plot_condition_trajectories
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
-from rnns_learn_robust_motor_policies.analysis.disturbance import DISTURBANCE_FUNCS
+from rnns_learn_robust_motor_policies.analysis.disturbance import PERT_FUNCS
 from rnns_learn_robust_motor_policies.analysis.measures import MEASURE_LABELS
 from rnns_learn_robust_motor_policies.analysis.measures import Measures
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_constant_task_input, vmap_eval_ensemble
@@ -63,22 +63,22 @@ eval_func = vmap_eval_ensemble
 
 def setup_eval_tasks_and_models(task_base, models_base, hps):
     try:
-        disturbance = DISTURBANCE_FUNCS[hps.disturbance.type]
+        disturbance = PERT_FUNCS[hps.pert.type]
     except KeyError:
-        raise ValueError(f"Unknown disturbance type: {hps.disturbance.type}")
+        raise ValueError(f"Unknown disturbance type: {hps.pert.type}")
     
-    disturbance_amplitudes = hps.disturbance.amplitude
+    pert_amps = hps.pert.amp
     
     tasks_by_amp, _ = jtree.unzip(jt.map( # over disturbance amplitudes
-        lambda disturbance_amplitude: schedule_intervenor(  # (implicitly) over train stds
+        lambda pert_amp: schedule_intervenor(  # (implicitly) over train stds
             task_base, jt.leaves(models_base, is_leaf=is_module)[0],
             lambda model: model.step.mechanics,
-            disturbance(disturbance_amplitude),
+            disturbance(pert_amp),
             label=INTERVENOR_LABEL,
             default_active=False,
         ),
-        LDict.of("disturbance__amplitude")(
-            dict(zip(disturbance_amplitudes, disturbance_amplitudes)),
+        LDict.of("pert__amp")(
+            dict(zip(pert_amps, pert_amps)),
         )
     ))
     
@@ -128,7 +128,7 @@ class Aligned_IdxContextInput(AbstractAnalysis):
     ))
     variant: Optional[str] = "small"
     conditions: tuple[str, ...] = ()
-    # n_conditions: int  # all_tasks['small'][disturbance_amplitude].n_validation_trials
+    # n_conditions: int  # all_tasks['small'][pert_amp].n_validation_trials
     n_curves_max: int = 20
     
     def make_figs(
@@ -174,9 +174,9 @@ class Aligned_IdxContextInput(AbstractAnalysis):
         
         return figs
         
-    def _params_to_save(self, hps: PyTree[TreeNamespace], *, disturbance_std, **kwargs):
+    def _params_to_save(self, hps: PyTree[TreeNamespace], *, train_pert_std, **kwargs):
         return dict(
-            # n=min(self.n_curves_max, n_replicates_included[disturbance_std] * self.n_conditions)
+            # n=min(self.n_curves_max, n_replicates_included[train_pert_std] * self.n_conditions)
         )
 
 
@@ -187,7 +187,7 @@ class Aligned_IdxTrainStd_PerContext(AbstractAnalysis):
     ))
     variant: Optional[str] = "small"
     conditions: tuple[str, ...] = ()
-    # n_conditions: int  # all_tasks['small'][disturbance_amplitude].n_validation_trials
+    # n_conditions: int  # all_tasks['small'][pert_amp].n_validation_trials
     n_curves_max: int = 20
 
     def make_figs(
@@ -206,10 +206,10 @@ class Aligned_IdxTrainStd_PerContext(AbstractAnalysis):
             is_leaf=LDict.is_of("context_input"),
         )
         
-        # Context inputs and disturbance stds do not depend on pert amp
+        # Context inputs and train pert stds do not depend on pert amp
         hps_0 = jt.leaves(hps, is_leaf=is_type(TreeNamespace))[0]
         context_inputs = hps_0.context_input
-        disturbance_train_stds = hps_0.load.disturbance.std 
+        train_pert_stds = hps_0.load.pert.std 
         
         plot_vars = jt.map(
             lambda d: LDict.of("context_input")({
@@ -219,16 +219,16 @@ class Aligned_IdxTrainStd_PerContext(AbstractAnalysis):
                 for i, context_input in enumerate(context_inputs)
             }),
             plot_vars_stacked,
-            is_leaf=LDict.is_of("train__disturbance__std"),
+            is_leaf=LDict.is_of("train__pert__std"),
         )
         
         figs = jt.map(
             partial(
                 plot_condition_trajectories,
-                colorscale=COLORSCALES['disturbance_std'],
+                colorscale=COLORSCALES['train__pert__std'],
                 colorscale_axis=0,
                 legend_title="Train<br>field std.",
-                legend_labels=disturbance_train_stds,
+                legend_labels=train_pert_stds,
                 curves_mode='lines',
                 var_endpoint_ms=0,
                 scatter_kws=dict(line_width=0.5, opacity=0.3),
@@ -290,15 +290,15 @@ class Measures_CompareTrainStdAndContext(AbstractAnalysis):
             for measure_key, measure_values in all_measure_values.items()
         })
         
-        # Since disturbance_std is inner in this case, as it typically is, but we want to show violins
+        # Since train__pert__std is inner in this case, as it typically is, but we want to show violins
         # with train std. in the legend and context on the x-axis, we will need to swap these levels 
         # before passing to `get_violins`
         swap_vars = lambda tree: jt.transpose(
-            jt.structure(tree, is_leaf=LDict.is_of("train__disturbance__std")), None, tree
+            jt.structure(tree, is_leaf=LDict.is_of("train__pert__std")), None, tree
         )
 
         figs = LDict.of("measure")({
-            measure_key: LDict.of("disturbance__amplitude")({
+            measure_key: LDict.of("pert__amp")({
                 pert_amplitude: get_violins(
                     swap_vars(measure_values),
                     yaxis_title=MEASURE_LABELS[measure_key],

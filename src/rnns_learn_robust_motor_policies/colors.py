@@ -1,8 +1,7 @@
 
 from collections.abc import Callable, Hashable, Sequence
-from typing import ClassVar, Literal, Optional
+from typing import Literal, Optional
 
-from equinox import Module
 import jax.tree as jt
 from jaxtyping import PyTree
 import plotly.colors as plc
@@ -11,8 +10,8 @@ import feedbax.plotly as fbp
 from jax_cookbook import is_type
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace, dict_to_namespace
-from rnns_learn_robust_motor_policies.types import ColorDict
+from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
+from rnns_learn_robust_motor_policies.types import LDict
 
 
 # How much to darken (<1) or lighten (>1) plots of means, versus plots of individual trials
@@ -22,9 +21,9 @@ MEAN_LIGHTEN_FACTOR = 0.7
 # Colorscales
 #! TODO: Combine with `setup_colors`; pair a colorscale and a variable under a single key
 COLORSCALES: dict[str, str] = dict(
+    train__pert__std='viridis',
+    pert__amp='plotly3',
     context_input='thermal',
-    disturbance_amplitude='plotly3',
-    disturbance_std='viridis',
     # pert_var=plc.qualitative.D3,  # list[str]
     reach_condition='phase',
     trial='Tealgrn',
@@ -46,7 +45,7 @@ def setup_colors(hps: PyTree[TreeNamespace], var_funcs: dict[str, Callable]) -> 
     lighten_factors = dict(normal=1, dark=MEAN_LIGHTEN_FACTOR)
     colors = jt.map(
         # TODO: Convert to namespace
-        lambda hps: ColorDict({
+        lambda hps: LDict.of("color")({
             k: get_colors_dicts(v, COLORSCALES[k], lighten_factor=lighten_factors)
             for k, v in get_color_vars(var_funcs, hps).items()
             if v is not None

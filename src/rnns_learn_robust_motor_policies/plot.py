@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Literal, Optional, TypeVar
+from typing import Literal, Optional
 
 import equinox as eqx
 import jax.numpy as jnp
@@ -11,13 +11,9 @@ import plotly.graph_objects as go
 from sklearn.decomposition import PCA
 
 import feedbax.plotly as fbp
-from jax_cookbook import is_type
 
 from rnns_learn_robust_motor_policies.colors import COLORSCALES
-from rnns_learn_robust_motor_policies.plot_utils import (
-    add_context_annotation,
-)
-from rnns_learn_robust_motor_policies.types import PertAmpDict, Responses, TrainStdDict
+from rnns_learn_robust_motor_policies.types import Responses
 
 
 def add_endpoint_traces(

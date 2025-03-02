@@ -18,7 +18,7 @@ from rnns_learn_robust_motor_policies.constants import (
 )
 from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
 from rnns_learn_robust_motor_policies.misc import vector_with_gaussian_length
-from rnns_learn_robust_motor_policies.setup_utils import get_base_reaching_task, get_train_pairs_by_disturbance_std
+from rnns_learn_robust_motor_policies.setup_utils import get_base_reaching_task, get_train_pairs_by_pert_std
 from rnns_learn_robust_motor_policies.types import TaskModelPair
 
 
@@ -81,18 +81,18 @@ def setup_task_model_pair(hps: TreeNamespace, *, key):
     )
     
     def disturbance(field_std, active=True):
-        return DISTURBANCE_CLASSES[hps.disturbance.type].with_params(
+        return DISTURBANCE_CLASSES[hps.pert.type].with_params(
             scale=field_std,
             active=active,
             **disturbance_params(
                 partial(batch_scale_up, scaleup_batches[0], n_batches_scaleup)
-            )[hps.disturbance.type],
+            )[hps.pert.type],
         )
         
     return TaskModelPair(*schedule_intervenor(
         task_base, models,
         lambda model: model.step.mechanics,
-        disturbance(hps.disturbance.std),
+        disturbance(hps.pert.std),
         label=INTERVENOR_LABEL,
         default_active=False,
     ))
@@ -101,8 +101,8 @@ def setup_task_model_pair(hps: TreeNamespace, *, key):
 def get_train_pairs(hps: TreeNamespace, key: PRNGKeyArray):
     """Given hyperparams and a particular task-model pair setup function, return the PyTree of task-model pairs.
     
-    Here in Part 1 this is trivial since we're only training a single `TrainStdDict` of models.
+    Here in Part 1 this is trivial since we're only training a single set of models, by training pert std.
     """
-    return get_train_pairs_by_disturbance_std(
+    return get_train_pairs_by_pert_std(
         setup_task_model_pair, hps, key=key
     )

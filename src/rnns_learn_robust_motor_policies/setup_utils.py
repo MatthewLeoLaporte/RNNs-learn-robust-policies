@@ -48,9 +48,7 @@ from rnns_learn_robust_motor_policies.tree_utils import (
     at_path,
     subdict,
 )
-from rnns_learn_robust_motor_policies.types import (
-    TrainStdDict,
-)
+from rnns_learn_robust_motor_policies.types import LDict
 
 
 def get_base_reaching_task(
@@ -67,26 +65,26 @@ def get_base_reaching_task(
     )
 
 
-def get_train_pairs_by_disturbance_std(
+def get_train_pairs_by_pert_std(
     setup_task_model_pair: Callable, 
     hps: TreeNamespace,
     *,
     key: PRNGKeyArray, 
     #! I think this might be useless now:
     model_hps_update: Optional[dict] = None,
-) -> TrainStdDict:
+) -> LDict:
     if model_hps_update is None:
         model_hps_update = dict()
         
-    def get_pair(disturbance_std):
+    def get_pair(pert_std):
         hps_i = deepcopy(hps)
-        hps_i.disturbance.std = disturbance_std
+        hps_i.pert.std = pert_std
         return setup_task_model_pair(hps_i, key=key)
 
-    task_model_pairs = TrainStdDict({
+    task_model_pairs = LDict.of("train__pert__std")({
         std: get_pair(std)
-        #! Assume that `hps.disturbance.std` is a sequence
-        for std in hps.disturbance.std
+        #! Assume that `hps.pert.std` is a sequence
+        for std in hps.pert.std
     })
     
     return task_model_pairs

@@ -4,7 +4,7 @@ expt_id: 1-2
 load:  
   expt_id: 1
 
-  disturbance:  # during training
+  pert:  # during training
     type: curl
     std: [0.0, 0.5, 1.0, 1.5]  # list -> load multiple models
     
@@ -27,8 +27,8 @@ task:  # Passed to the base task constructor
     eval_n_directions: 1
     eval_reach_length: 0
 
-disturbance:
-  # null -> same as during training, e.g. load.disturbance.type in this case
+pert:
+  # null -> same as during training, e.g. load.pert.type in this case
   type: impulse  # not used for anything but reference
   # TODO: Add the calculation of `amplitude` when loading hyperparams
   amplitude_max: 

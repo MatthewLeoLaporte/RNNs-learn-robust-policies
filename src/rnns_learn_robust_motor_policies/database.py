@@ -117,8 +117,8 @@ class ModelRecord(RecordBase):
     # Explicitly define some parameter columns to avoid typing issues, though our dynamic column 
     # migration would handle whatever parameters the user happens to pass, without this.
     n_replicates: Mapped[int]
-    disturbance_type: Mapped[str]
-    disturbance_std: Mapped[float]
+    pert__type: Mapped[str]
+    pert_std: Mapped[float]
     train_where: Mapped[dict[str, Sequence[str]]]
     train_n_batches: Mapped[int]
     train_save_model_parameters: Mapped[Sequence[int]]
@@ -193,9 +193,9 @@ class FigureRecord(RecordBase):
     model_hashes: Mapped[Optional[Sequence[str]]] = mapped_column(nullable=True)
     
     # These are also redundant, and can be inferred from `evaluation_hash`
-    disturbance_type: Mapped[str] = mapped_column(nullable=True)
-    disturbance_std: Mapped[float] = mapped_column(nullable=True)
-    disturbance_stds: Mapped[Sequence[float]] = mapped_column(nullable=True)
+    pert__type: Mapped[str] = mapped_column(nullable=True)
+    pert_std: Mapped[float] = mapped_column(nullable=True)
+    pert_stds: Mapped[Sequence[float]] = mapped_column(nullable=True)
 
 
 TABLE_NAME_TO_MODEL = {

@@ -406,7 +406,7 @@ class Measures_ByTrainStd(AbstractAnalysis):
     ):
         figs = get_violins_per_measure(
             measure_values[self.variant],
-            colors=colors_0[self.variant]['disturbance_amplitude']['dark'],
+            colors=colors_0[self.variant]['pert_amp']['dark'],
         )
         return figs
 
@@ -418,14 +418,14 @@ class Measures_ByTrainStd(AbstractAnalysis):
 
 def get_one_measure_plot_per_eval_condition(plot_func, measures, colors, **kwargs):
     return {
-        key: LDict.of("disturbance__amplitude")({
-            disturbance_amplitude: plot_func(
-                measure[disturbance_amplitude],
+        key: LDict.of("pert__amp")({
+            pert_amp: plot_func(
+                measure[pert_amp],
                 MEASURE_LABELS[key],
                 colors,
                 **kwargs,
             )
-            for disturbance_amplitude in measure
+            for pert_amp in measure
         })
         for key, measure in measures.items()
     }
@@ -456,19 +456,19 @@ class MeasuresLoHiPertStd(AbstractAnalysis):
     ):
         # Map over analysis variants (e.g. full task vs. small task)
         return jt.map(
-            lambda measure_values_by_std: LDict.of("train__disturbance__std")({
+            lambda measure_values_by_std: LDict.of("train__pert__std")({
                 std: measure_values
                 for std, measure_values in measure_values_by_std.items()
                 if std in (min(measure_values_by_std), max(measure_values_by_std))
             }),
             measure_values,
-            is_leaf=LDict.is_of("train__disturbance__std"),
+            is_leaf=LDict.is_of("train__pert__std"),
         )
 
 
 class Measures_CompareReplicatesLoHi(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
-        measure_values_lohi_disturbance_std=MeasuresLoHiPertStd,
+        measure_values_lohi_train_pert_std=MeasuresLoHiPertStd,
     ))
     measure_keys: tuple[str, ...]
     variant: Optional[str] = "full"
@@ -476,7 +476,7 @@ class Measures_CompareReplicatesLoHi(AbstractAnalysis):
     
     def dependency_kwargs(self) -> Dict[str, Dict[str, Any]]:
         return dict(
-            measure_values_lohi_disturbance_std=dict(
+            measure_values_lohi_train_pert_std=dict(
                 measure_keys=self.measure_keys
             )
         )
@@ -488,7 +488,7 @@ class Measures_CompareReplicatesLoHi(AbstractAnalysis):
         states: PyTree[Module],
         hps: PyTree[TreeNamespace],
         *,
-        measure_values_lohi_disturbance_std,
+        measure_values_lohi_train_pert_std,
         colors_0,
         replicate_info,
         **kwargs,
@@ -497,21 +497,21 @@ class Measures_CompareReplicatesLoHi(AbstractAnalysis):
         replicates_all_lohi_included = jt.reduce(jnp.logical_and, lohi(included_replicates))
         figs = get_one_measure_plot_per_eval_condition(
             get_measure_replicate_comparisons,
-            measure_values_lohi_disturbance_std,
-            lohi(colors_0[self.variant]["disturbance_std"]["dark"]),
+            measure_values_lohi_train_pert_std,
+            lohi(colors_0[self.variant]["train__pert__std"]["dark"]),
             included_replicates=np.where(replicates_all_lohi_included)[0],
         )
         return figs
 
-    def _params_to_save(self, hps: PyTree[TreeNamespace], *, measure_values_lohi_disturbance_std, **kwargs):
+    def _params_to_save(self, hps: PyTree[TreeNamespace], *, measure_values_lohi_train_pert_std, **kwargs):
         return dict(
-            n=int(np.prod(jt.leaves(measure_values_lohi_disturbance_std)[0].shape))
+            n=int(np.prod(jt.leaves(measure_values_lohi_train_pert_std)[0].shape))
         )
 
 
 class Measures_LoHiSummary(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
-        measure_values_lohi_disturbance_std=MeasuresLoHiPertStd,
+        measure_values_lohi_train_pert_std=MeasuresLoHiPertStd,
     ))
     measure_keys: tuple[str, ...]
     variant: Optional[str] = "full"
@@ -519,7 +519,7 @@ class Measures_LoHiSummary(AbstractAnalysis):
     
     def dependency_kwargs(self) -> Dict[str, Dict[str, Any]]:
         return dict(
-            measure_values_lohi_disturbance_std=dict(
+            measure_values_lohi_train_pert_std=dict(
                 measure_keys=self.measure_keys,
             )
         )
@@ -531,15 +531,15 @@ class Measures_LoHiSummary(AbstractAnalysis):
         states: PyTree[Module],
         hps: PyTree[TreeNamespace],
         *,
-        measure_values_lohi_disturbance_std,
+        measure_values_lohi_train_pert_std,
         **kwargs,
     ):
 
         return LDict.of("measure")(**{
-            key: subdict(measure, lohi(hps[self.variant].disturbance.amplitude))  # type: ignore
-            # MeasuresLoHiPertStd returns `measure_values_lohi_disturbance_std` for all eval variants,
+            key: subdict(measure, lohi(hps[self.variant].pert.amp))  # type: ignore
+            # MeasuresLoHiPertStd returns `measure_values_lohi_train_pert_std` for all eval variants,
             # so we choose the right variant
-            for key, measure in measure_values_lohi_disturbance_std[self.variant].items()
+            for key, measure in measure_values_lohi_train_pert_std[self.variant].items()
         })
 
     def make_figs(
@@ -559,7 +559,7 @@ class Measures_LoHiSummary(AbstractAnalysis):
                 yaxis_title=MEASURE_LABELS[key],
                 xaxis_title="Train field std.",
                 legend_title="TODO",
-                colors=colors_0[self.variant]['disturbance_amplitude']['dark'],
+                colors=colors_0[self.variant]['pert_amp']['dark'],
                 layout_kws=dict(
                     width=300, height=300,
                 )

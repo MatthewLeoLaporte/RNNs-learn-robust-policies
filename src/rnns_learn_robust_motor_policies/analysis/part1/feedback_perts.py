@@ -46,21 +46,21 @@ def _setup_rand(task_base, models_base, hps):
             feedback_impulse(  
                 hps.model.n_steps,
                 1.0, #impulse_amplitude[pert_var_names[feedback_var_idx]],
-                hps.disturbance.duration,
+                hps.pert.duration,
                 feedback_var_idx,   
-                hps.disturbance.start_step,
+                hps.pert.start_step,
             ),
             default_active=False,
             stage_name="update_queue",
         ),
-        LDict.of("disturbance__fb_var")(dict(pos=0, vel=1)),
+        LDict.of("pert__fb_var")(dict(pos=0, vel=1)),
         is_leaf=is_type(tuple),
     ))
 
     # Get the perturbation directions, for later:
     #? I think these values are equivalent to `line_vec` in the functions in `state_utils`
     impulse_directions = jt.map(
-        lambda task: task.validation_trials.intervene['ConstantInput'].arrays[:, hps.disturbance.start_step],
+        lambda task: task.validation_trials.intervene['ConstantInput'].arrays[:, hps.pert.start_step],
         all_tasks,
         is_leaf=is_module,
     )
@@ -69,10 +69,10 @@ def _setup_rand(task_base, models_base, hps):
 
 def _setup_xy(task_base, models_base, hps):
     """Impulses only in the x and y directions."""
-    feedback_var_idxs = LDict.of("disturbance__fb_var")(dict(zip(PERT_VAR_NAMES, range(len(PERT_VAR_NAMES)))))
+    feedback_var_idxs = LDict.of("pert__fb_var")(dict(zip(PERT_VAR_NAMES, range(len(PERT_VAR_NAMES)))))
     coord_idxs = dict(zip(COORD_NAMES, range(len(COORD_NAMES))))
     
-    impulse_xy_conditions = LDict.of("disturbance__fb_var").fromkeys(PERT_VAR_NAMES, dict.fromkeys(COORD_NAMES))
+    impulse_xy_conditions = LDict.of("pert__fb_var").fromkeys(PERT_VAR_NAMES, dict.fromkeys(COORD_NAMES))
     impulse_xy_conditions_keys = jtree.key_tuples(
         impulse_xy_conditions, keys_to_strs=True, is_leaf=lambda x: x is None,
     )
@@ -84,9 +84,9 @@ def _setup_xy(task_base, models_base, hps):
             feedback_impulse(
                 hps.model.n_steps,
                 1.0, # impulse_amplitude[ks[0]],
-                hps.disturbance.duration,
+                hps.pert.duration,
                 feedback_var_idxs[ks[0]],  
-                hps.disturbance.start_step,
+                hps.pert.start_step,
                 feedback_dim=coord_idxs[ks[1]],  
             ),
             default_active=False,
@@ -117,14 +117,14 @@ SETUP_FUNCS_BY_DIRECTION = dict(
 
 def setup_eval_tasks_and_models(task_base, models_base, hps):
     impulse_amplitudes = jt.map(
-        lambda max_amp: jnp.linspace(0, max_amp, hps.disturbance.n_amplitudes + 1)[1:],
-        hps.disturbance.amplitude_max,
+        lambda max_amp: jnp.linspace(0, max_amp, hps.pert.n_amplitudes + 1)[1:],
+        hps.pert.amp_max,
     )
-    hps.disturbance.amplitude = impulse_amplitudes
+    hps.pert.amp = impulse_amplitudes
 
-    # impulse_end_step = hps.disturbance.start_step + hps.disturbance.duration
+    # impulse_end_step = hps.pert.start_step + hps.pert.duration
     # TODO: Move extra info to another function? Or return it here.
-    # impulse_time_idxs = slice(hps.disturbance.start_step, impulse_end_step)
+    # impulse_time_idxs = slice(hps.pert.start_step, impulse_end_step)
 
     # For the example trajectories and aligned profiles, we'll only plot one of the impulse amplitudes. 
 
@@ -133,7 +133,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     #     pert_var: v[i_impulse_amp_plot] for pert_var, v in impulse_amplitudes.items()
     # }
 
-    all_tasks, all_models, impulse_directions = SETUP_FUNCS_BY_DIRECTION[hps.disturbance.direction](
+    all_tasks, all_models, impulse_directions = SETUP_FUNCS_BY_DIRECTION[hps.pert.direction](
         task_base, models_base, hps
     )
     
@@ -158,7 +158,7 @@ def eval_func(key_eval, hps, models, task):
             models, 
             task_with_imp_amplitude(task, amplitude), 
         )
-    )(hps.disturbance.amplitudes)
+    )(hps.pert.amps)
     
     
 
@@ -169,9 +169,9 @@ class SingleImpulseAmplitude(AbstractAnalysis):
     i_impulse_amp_plot: int = -1 
     
     def compute(self, models, tasks, states, hps, **dependencies):
-        #! This was used in getting `disturbance_amplitude` for `add_evaluation_figure` params; I don't think we need it anymore
+        #! This was used in getting `pert_amp` for `add_evaluation_figure` params; I don't think we need it anymore
         # impulse_amplitude_plot = {
-        #     pert_var: v[self.i_impulse_amp_plot] for pert_var, v in hps.disturbance.amplitude.items()
+        #     pert_var: v[self.i_impulse_amp_plot] for pert_var, v in hps.pert.amp.items()
         # }
         
         return jt.map(
@@ -225,7 +225,7 @@ class ExampleTrialSets(AbstractAnalysis):
             get_replicate = lambda _: self.i_replicate
             
         figs = jt.map(  
-            lambda states: LDict.of("train__disturbance__std")({
+            lambda states: LDict.of("train__pert__std")({
                 train_std: fbp.trajectories_2D(
                     jtree.take_multi(
                         plot_vars, 
@@ -246,7 +246,7 @@ class ExampleTrialSets(AbstractAnalysis):
                 for train_std, plot_vars in states.items()
             }),
             result,
-            is_leaf=LDict.is_of("train__disturbance__std"),
+            is_leaf=LDict.is_of("train__pert__std"),
         )  
         return figs
     

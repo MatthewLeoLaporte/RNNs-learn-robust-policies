@@ -9,6 +9,8 @@ import os
 
 import numpy as np
 
+from rnns_learn_robust_motor_policies.types import LDict
+
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
 import argparse
@@ -25,7 +27,7 @@ import optax
 import plotly
 
 import feedbax
-from jax_cookbook import is_module, is_type, vmap_multi
+from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree  
 
 import rnns_learn_robust_motor_policies
@@ -33,36 +35,31 @@ from rnns_learn_robust_motor_policies import PROJECT_SEED
 from rnns_learn_robust_motor_policies.analysis import ANALYSIS_SETS
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
 from rnns_learn_robust_motor_policies.analysis._dependencies import compute_dependencies
-from rnns_learn_robust_motor_policies.analysis.state_utils import get_pos_endpoints
 from rnns_learn_robust_motor_policies.colors import setup_colors
-from rnns_learn_robust_motor_policies.colors import (
-    get_colors_dicts_from_discrete,
-)
 from rnns_learn_robust_motor_policies.constants import REPLICATE_CRITERION
 from rnns_learn_robust_motor_policies.database import RecordBase, add_evaluation, check_model_files, get_db_session, record_to_namespace
 from rnns_learn_robust_motor_policies.hyperparams import flatten_hps, load_hps
 from rnns_learn_robust_motor_policies.misc import log_version_info
 from rnns_learn_robust_motor_policies.training.post_training import TRAINPAIR_SETUP_FUNCS
-from rnns_learn_robust_motor_policies.setup_utils import get_base_reaching_task, query_and_load_model
+from rnns_learn_robust_motor_policies.setup_utils import query_and_load_model
 from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
 from rnns_learn_robust_motor_policies.tree_utils import namespace_to_dict
-from rnns_learn_robust_motor_policies.types import TrainStdDict, ColorDict
 
 
 logger = logging.getLogger(os.path.basename(__file__))
 
 
-#! TODO: `TrainStdDict` should probably not be hardcoded here? Maybe put in the `setup_eval_tasks_and_models` functions
 def load_model_and_train_task(db_session, hps: TreeNamespace):
     setup_task_model_pair = TRAINPAIR_SETUP_FUNCS[int(hps.load.expt_id)]
     
     pairs, model_info, replicate_info, n_replicates_included = jtree.unzip(
-        TrainStdDict({
-            disturbance_std: query_and_load_model(
+        # Should this structure be hardcoded here?
+        LDict.of("train__pert__std")({
+            train_pert_std: query_and_load_model(
                 db_session,
                 setup_task_model_pair,
                 params_query=namespace_to_dict(flatten_hps(hps.load)) | dict(
-                    disturbance_std=disturbance_std
+                    train__pert__std=train_pert_std
                 ),
                 noise_stds=dict(
                     feedback=hps.model.feedback_noise_std,
@@ -74,7 +71,7 @@ def load_model_and_train_task(db_session, hps: TreeNamespace):
                 exclude_underperformers_by=REPLICATE_CRITERION,
                 return_task=True,
             )
-            for disturbance_std in hps.load.disturbance.std
+            for train_pert_std in hps.load.pert.std
         })
     )
     
@@ -106,8 +103,8 @@ Values are hyperparameter where-functions so we can try to load them one-by-one.
 """
 COMMON_COLOR_FUNCS = dict(
     # context_input= 
-    disturbance_amplitude=lambda hps: hps.disturbance.amplitude,
-    disturbance_std=lambda hps: hps.load.disturbance.std,
+    pert__amp=lambda hps: hps.pert.amp,
+    train__pert__std=lambda hps: hps.load.pert.std,
     # pert_var=  #? Discrete
     #  reach_condition=  #? Discrete
     trial=lambda hps: range(hps.eval_n),  #? Discrete
@@ -123,7 +120,7 @@ def main(
 ):    
     # If some config values (other than those under the `load` key) are unspecified, replace them with 
     # respective values from the `load` key
-    # e.g. if trained on curl fields and hps.disturbance.type is None, use hps.load.disturbance.type
+    # e.g. if trained on curl fields and hps.pert.type is None, use hps.load.pert.type
     # (In `setup_tasks_and_models` we then fill out any fields that are entirely missing from the config, 
     #  but which are given by the loaded model records.)
     hps = use_load_hps_when_none(hps)
@@ -149,7 +146,7 @@ def main(
         COMMON_COLOR_FUNCS | color_funcs,
     ) 
     colors_0 = {
-        variant_label: jt.leaves(variant_hps, is_leaf=is_type(ColorDict))[0]
+        variant_label: jt.leaves(variant_hps, is_leaf=LDict.is_of("color"))[0]
         for variant_label, variant_hps in colors.items()
     }
     
@@ -209,8 +206,7 @@ def setup_tasks_and_models(hps: TreeNamespace, setup_func, db_session):
     # hps = jt.map(lambda hps, model_hps: model_hps | hps, hps, model_hps)
         
     #! For this project, the training task should not vary with the train field std 
-    #! (`models_base` and `tasks_base` are both `TrainStdDict` instances) so we just 
-    #! keep a single one of them.
+    #! so we just keep a single one of them.
     # TODO: In the future, could keep the full `tasks_base`, and update `get_task_variant`/`setup_func`
     task_base = jt.leaves(tasks_base, is_leaf=is_module)[0]
     
@@ -226,13 +222,13 @@ def setup_tasks_and_models(hps: TreeNamespace, setup_func, db_session):
         hps.eval_n = 1
 
     # Get indices for taking important subsets of replicates
-    best_replicate, included_replicates = jtree.unzip(TrainStdDict({
+    best_replicate, included_replicates = jtree.unzip(LDict.of("train__pert__std")({
         std: (
             replicate_info[std]['best_replicates'][REPLICATE_CRITERION],
             replicate_info[std]['included_replicates'][REPLICATE_CRITERION],
         ) 
-        #! Assumes that `load.disturbance.std` is given as a sequence
-        for std in hps.load.disturbance.std
+        #! Assumes that `load.pert.std` is given as a sequence
+        for std in hps.load.pert.std
     }))
     
     version_info = log_version_info(

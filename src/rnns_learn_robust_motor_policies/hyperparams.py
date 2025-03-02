@@ -33,7 +33,7 @@ LEVEL_LABEL_SEP = "__"
 
 # We use LDict labels to identify levels in task-model pair trees
 # The label format is expected to be double-underscore separated parts that map to hyperparameter paths
-# For example, "train__method" maps to hps.train.method and "disturbance__std" maps to hps.disturbance.std
+# For example, "train__method" maps to hps.train.method and "train__pert__std" maps to hps.pert.std
 
 NT = TypeVar("NT", bound=SimpleNamespace)
 DT = TypeVar("DT", bound=dict)

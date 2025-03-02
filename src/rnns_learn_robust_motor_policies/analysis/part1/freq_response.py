@@ -68,7 +68,7 @@ class FrequencyResponse(AbstractAnalysis):
                     keep_axis=None,
                     mode='std',
                     varname="Gain (dB)",
-                    colors=list(colors_0[self.variant]["disturbance_std"]["dark"].values()),
+                    colors=list(colors_0[self.variant]["train__pert__std"]["dark"].values()),
                     # labels=disturbance_stds_load,
                     layout_kws=dict(
                         legend_title="Train<br>field std.",
@@ -91,7 +91,7 @@ class FrequencyResponse(AbstractAnalysis):
                     keep_axis=None,
                     mode='std',
                     varname="Phase (rad)",
-                    colors=list(colors_0[self.variant]["disturbance_std"]["dark"].values()),
+                    colors=list(colors_0[self.variant]["train__pert__std"]["dark"].values()),
                     # labels=disturbance_stds_load,
                     layout_kws=dict(
                         legend_title="Train<br>field std.",

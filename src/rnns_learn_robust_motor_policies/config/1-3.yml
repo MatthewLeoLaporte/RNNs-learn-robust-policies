@@ -4,7 +4,7 @@ expt_id: 1-3
 load:  
   expt_id: 1
 
-  disturbance:  # during training
+  pert:  # during training
     type: curl
     std: [0.0, 0.5] 
     
@@ -27,10 +27,10 @@ task:  # Passed to the base task constructor
     eval_n_directions: 1
     eval_reach_length: 0
 
-disturbance:
-  # null -> same as during training, e.g. load.disturbance.type in this case
+pert:
+  # null -> same as during training, e.g. load.pert.type in this case
   type: null 
-  amplitude: [0, 0.5, 1.0, 2.0, 4.0] 
+  amp: [0, 0.5, 1.0, 2.0, 4.0] 
 
 model:
   n_steps: 200

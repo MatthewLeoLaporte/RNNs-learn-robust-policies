@@ -191,7 +191,7 @@ class BestReplicateStates(AbstractAnalysis):
         **kwargs,
     ):
         return jt.map(
-            lambda states_by_std: LDict.of("train__disturbance__std")({
+            lambda states_by_std: LDict.of("train__pert__std")({
                 std: jtree.take(
                     states,
                     replicate_info[std]["best_replicates"][REPLICATE_CRITERION],
@@ -200,7 +200,7 @@ class BestReplicateStates(AbstractAnalysis):
                 for std, states in states_by_std.items()
             }),
             states,
-            is_leaf=LDict.is_of("train__disturbance__std"),
+            is_leaf=LDict.is_of("train__pert__std"),
         )
     
     

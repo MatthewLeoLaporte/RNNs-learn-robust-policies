@@ -22,7 +22,7 @@ from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
 from rnns_learn_robust_motor_policies.analysis.center_out import CenterOutByEval
 from rnns_learn_robust_motor_policies.analysis.center_out import CenterOutSingleEval
 from rnns_learn_robust_motor_policies.analysis.center_out import CenterOutByReplicate
-from rnns_learn_robust_motor_policies.analysis.disturbance import DISTURBANCE_FUNCS
+from rnns_learn_robust_motor_policies.analysis.disturbance import PERT_FUNCS
 from rnns_learn_robust_motor_policies.analysis.measures import output_corr
 from rnns_learn_robust_motor_policies.analysis.measures import Measures_LoHiSummary
 from rnns_learn_robust_motor_policies.analysis.profiles import VelocityProfiles
@@ -56,9 +56,9 @@ COLOR_FUNCS = dict()
 
 def setup_eval_tasks_and_models(task_base, models_base, hps):
     try:
-        disturbance = DISTURBANCE_FUNCS[hps.disturbance.type]
+        disturbance = PERT_FUNCS[hps.pert.type]
     except KeyError:
-        raise ValueError(f"Unknown disturbance type: {hps.disturbance.type}")
+        raise ValueError(f"Unknown perturbation type: {hps.pert.type}")
 
     # Insert the disturbance field component into each model
     models = jt.map(
@@ -75,18 +75,18 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     )
 
     # Assume a sequence of amplitudes is provided, as in the default config
-    disturbance_amplitudes = hps.disturbance.amplitude
+    pert_amps = hps.pert.amp
     # Construct tasks with different amplitudes of disturbance field
     all_tasks, all_models = jtree.unzip(jt.map(
-        lambda disturbance_amplitude: schedule_intervenor(
+        lambda pert_amp: schedule_intervenor(
             task_base, models,
             lambda model: model.step.mechanics,
-            disturbance(disturbance_amplitude),
+            disturbance(pert_amp),
             label=INTERVENOR_LABEL,  
             default_active=False,
         ),
-        LDict.of("disturbance__amplitude")(
-            dict(zip(disturbance_amplitudes, disturbance_amplitudes))
+        LDict.of("pert__amp")(
+            dict(zip(pert_amps, pert_amps))
         ),
     ))
     
@@ -125,7 +125,7 @@ class OutputWeightCorrelation(AbstractAnalysis):
         )
 
         output_corrs = jt.map(
-            lambda activities: LDict.of("train__disturbance__std")({
+            lambda activities: LDict.of("train__pert__std")({
                 train_std: output_corr(
                     activities[train_std], 
                     output_weights[train_std],
@@ -133,7 +133,7 @@ class OutputWeightCorrelation(AbstractAnalysis):
                 for train_std in activities
             }),
             activities,
-            is_leaf=LDict.is_of("train__disturbance__std"),
+            is_leaf=LDict.is_of("train__pert__std"),
         )
         
         return output_corrs
@@ -154,7 +154,7 @@ class OutputWeightCorrelation(AbstractAnalysis):
             result, 
             yaxis_title="Output correlation", 
             xaxis_title="Train field std.",
-            colors=colors_0[self.variant]['disturbance_amplitude']['dark'],
+            colors=colors_0[self.variant]['pert_amp']['dark'],
         )
         return fig
 
