@@ -3,11 +3,6 @@ expt_id: 1-1
 #  Hyperparameters that uniquely identify the model(s)/training run(s) to analyze
 load:  
   expt_id: 1
-
-  pert:  # during training
-    type: curl
-    # list -> load multiple models
-    std: [0.0, 0.5, 1.0] #! , 1.5]  
     
   model:  
     n_steps: 100  # TODO: Move this out a level
@@ -19,6 +14,10 @@ load:
   train:
     where: 
       0: ['step.net.hidden', 'step.net.readout']
+    pert:  # during training
+      type: curl
+      # list -> load multiple models
+      std: [0.0, 0.5, 1.0] #! , 1.5]  
     # n_batches: 10000
     # intervention_scaleup_batches=[0,0],
     # state_reset_iterations=[],
@@ -38,7 +37,7 @@ task:  # Passed to the base task constructor
     # eval_reach_length: 0.5
 
 pert:
-  # null -> same as during training, e.g. load.pert.type in this case
+  # null -> same as during training, e.g. load.train.pert.type in this case
   type: null 
   amp: [0.0, 0.5, 1.0, 2.0, 4.0] 
   # constant -> [0.0, 0.05, 0.1, 0.2, 0.4],

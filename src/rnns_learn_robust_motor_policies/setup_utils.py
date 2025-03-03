@@ -48,7 +48,7 @@ from rnns_learn_robust_motor_policies.tree_utils import (
     at_path,
     subdict,
 )
-from rnns_learn_robust_motor_policies.types import LDict
+from rnns_learn_robust_motor_policies.types import LDict, TaskModelPair
 
 
 def get_base_reaching_task(
@@ -70,24 +70,19 @@ def get_train_pairs_by_pert_std(
     hps: TreeNamespace,
     *,
     key: PRNGKeyArray, 
-    #! I think this might be useless now:
-    model_hps_update: Optional[dict] = None,
-) -> LDict:
-    if model_hps_update is None:
-        model_hps_update = dict()
-        
+) -> tuple[LDict[float, TaskModelPair], LDict[float, TreeNamespace]]:       
     def get_pair(pert_std):
         hps_i = deepcopy(hps)
-        hps_i.pert.std = pert_std
-        return setup_task_model_pair(hps_i, key=key)
+        hps_i.train.pert.std = pert_std
+        return setup_task_model_pair(hps_i, key=key), hps_i
 
-    task_model_pairs = LDict.of("train__pert__std")({
+    task_model_pairs, all_hps = jtree.unzip(LDict.of("train__pert__std")({
         std: get_pair(std)
-        #! Assume that `hps.pert.std` is a sequence
-        for std in hps.pert.std
-    })
+        #! Assume that `hps.train.pert.std` is a sequence
+        for std in hps.train.pert.std
+    }))
     
-    return task_model_pairs
+    return task_model_pairs, all_hps
 
 
 def setup_train_histories(
@@ -137,7 +132,7 @@ def setup_train_histories(
             batch_size=hps.train.batch_size,
             loss_func_validation=loss_func_validation,
             model=models,
-            where_train=where_train,  
+            where_train=dict(where_train),  
         ),
         models_tree,
         is_leaf=is_module,

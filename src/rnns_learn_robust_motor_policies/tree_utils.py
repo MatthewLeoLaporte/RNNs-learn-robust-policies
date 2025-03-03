@@ -88,6 +88,12 @@ def tree_level_labels(tree: PyTree, is_leaf=falsef) -> list[str]:
     labels = []
     current_node = tree
     for path_element in first_path:
+        # If this is an LDict, collect its label
+        if isinstance(current_node, LDict):
+            labels.append(current_node.label)   
+        else:
+            raise NotImplementedError("")
+        
         # Get the node at this level
         if isinstance(current_node, dict) or hasattr(current_node, '__getitem__'):
             current_node = current_node[path_element.key if hasattr(path_element, 'key') else path_element]
@@ -95,13 +101,6 @@ def tree_level_labels(tree: PyTree, is_leaf=falsef) -> list[str]:
         if is_leaf(current_node):
             break
         
-        # If this is an LDict, collect its label
-        if isinstance(current_node, LDict):
-            labels.append(current_node.label)
-            
-        else:
-            
-            raise NotImplementedError("")
     
     return labels
 

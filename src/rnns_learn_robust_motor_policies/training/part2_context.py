@@ -166,8 +166,8 @@ def setup_task_model_pair(
         task, models_base,
         lambda model: model.step.mechanics,
         disturbance(
-            hps.pert.type,
-            hps.pert.std, 
+            hps.train.pert.type,
+            hps.train.pert.std, 
             # p_perturbed,
             hps.train.method,
         ),
@@ -185,8 +185,8 @@ def get_train_pairs(hps: TreeNamespace, key: PRNGKeyArray):
         key=key,  # Use the same PRNG key for all training methods
     )
     
-    return LDict.of("train__method")({
+    task_model_pairs, all_hps = jtree.unzip(LDict.of("train__method")({
         method_label: get_train_pairs_partial(hps | dict(train=dict(method=method_label)))
-        #! Assume `hps.method` is a list of training method labels
+        #! Assume `hps.train.method` is a list of training method labels
         for method_label in hps.train.method
-    })
+    }))

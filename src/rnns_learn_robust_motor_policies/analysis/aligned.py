@@ -200,7 +200,7 @@ class Aligned_IdxTrainStd(AbstractAnalysis):
                 colorscale=COLORSCALES['train__pert__std'],
                 colorscale_axis=0,
                 legend_title="Train<br>field std.",
-                legend_labels=hps[self.variant].load.pert.std,
+                legend_labels=hps[self.variant].load.train.pert.std,
                 curves_mode='lines',
                 var_endpoint_ms=0,
                 scatter_kws=dict(line_width=0.5, opacity=0.3),

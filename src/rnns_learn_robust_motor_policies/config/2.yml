@@ -2,7 +2,7 @@ expt_id: 2
 
 pert:
   type: curl
-  std: [0, 0.5, 1.0, 1.5]  
+  std: [0, 0.5, 1.0] #! , 1.5]  
 
 model:
   n_replicates: 5
@@ -16,9 +16,9 @@ model:
   control_loss_scale: 1.0
 
 train:  
-  method: ['pai-asf']  #! , 'bcs']
+  method: ['pai-asf']  # , 'bcs']
   learning_rate_0: 0.01
-  n_batches_condition: 10000
+  n_batches_condition: 2500  #! 10000
   n_batches_baseline: 0
   batch_size: 250
   where: 

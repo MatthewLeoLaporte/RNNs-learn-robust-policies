@@ -4,11 +4,6 @@ expt_id: 2-1
 load:  
   expt_id: 2
 
-  pert:  # during training
-    type: curl
-    # list -> load multiple models
-    std: [0.0, 1.0] #! , 0.5, 1.5]  
-    
   model:  
     n_steps: 100  # TODO: Move this out a level
     hidden_size: 100
@@ -17,9 +12,13 @@ load:
     feedback_delay_steps: 0
     
   train:
+    method: 'pai-asf'
     where: 
       0: ['step.net.hidden', 'step.net.readout']
-    method: 'pai-asf'
+    pert:  # during training
+      type: curl
+      # list -> load multiple models
+      std: [0.0, 1.0] #! , 0.5, 1.5]  
 
 context_input: [-1, 0, 1] #! [-2., -1., 0., 1., 2.]
 
@@ -36,7 +35,7 @@ task:  # Passed to the base task constructor
     # eval_reach_length: 0.5
 
 pert:
-  # null -> same as during training, e.g. load.pert.type in this case
+  # null -> same as during training, e.g. load.train.pert.type in this case
   type: null 
   amp: [0.0, 2.0] 
   # constant -> [0.0, 0.4],

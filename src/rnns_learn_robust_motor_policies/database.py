@@ -75,6 +75,7 @@ from rnns_learn_robust_motor_policies.tree_utils import (
     is_dict_with_int_keys, 
     pp
 )
+from rnns_learn_robust_motor_policies.types import LDict
 
 
 MODELS_TABLE_NAME = 'models'
@@ -117,11 +118,11 @@ class ModelRecord(RecordBase):
     # Explicitly define some parameter columns to avoid typing issues, though our dynamic column 
     # migration would handle whatever parameters the user happens to pass, without this.
     n_replicates: Mapped[int]
-    pert__type: Mapped[str]
-    pert_std: Mapped[float]
-    train_where: Mapped[dict[str, Sequence[str]]]
-    train_n_batches: Mapped[int]
-    train_save_model_parameters: Mapped[Sequence[int]]
+    train__pert__type: Mapped[str]
+    train__pert__std: Mapped[float]
+    train__where: Mapped[dict[str, Sequence[str]]]
+    train__n_batches: Mapped[int]
+    train__save_model_parameters: Mapped[Sequence[int]]
     
     @hybrid_property
     def path(self):
@@ -194,8 +195,8 @@ class FigureRecord(RecordBase):
     
     # These are also redundant, and can be inferred from `evaluation_hash`
     pert__type: Mapped[str] = mapped_column(nullable=True)
-    pert_std: Mapped[float] = mapped_column(nullable=True)
-    pert_stds: Mapped[Sequence[float]] = mapped_column(nullable=True)
+    pert__std: Mapped[float] = mapped_column(nullable=True)
+    # pert__stds: Mapped[Sequence[float]] = mapped_column(nullable=True)
 
 
 TABLE_NAME_TO_MODEL = {
@@ -576,11 +577,11 @@ def save_model_and_add_record(
     
     hps = arrays_to_lists(hps)
     
-    hps_dict = namespace_to_dict(hps)
+    # Replace LDict with plain dict so it is serialisable
+    record_hps = flatten_hps(hps, ldict_to_dict=True) | dict(version_info=version_info)
+    # If any LDicts have made their way here, 
+    record_params = namespace_to_dict(record_hps)   
     
-    record_hps = flatten_hps(hps) | dict(version_info=version_info)
-    record_params = namespace_to_dict(record_hps)
-
     # Save model and get hash-based filename
     # TODO: Optionally, let the hash/existence checks be independent of `version_info`
     # i.e. so we don't retrain models just because Equinox got a minor update or something

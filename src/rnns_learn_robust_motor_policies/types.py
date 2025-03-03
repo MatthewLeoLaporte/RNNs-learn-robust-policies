@@ -151,4 +151,9 @@ class Responses(NamedTuple):
 
 RESPONSE_VAR_LABELS = Responses('Position', 'Velocity', 'Control force')
             
-  
+
+RESPONSE_VAR_LABELS_SHORT = Responses(
+    pos='p',
+    vel='v',
+    force='F',
+)

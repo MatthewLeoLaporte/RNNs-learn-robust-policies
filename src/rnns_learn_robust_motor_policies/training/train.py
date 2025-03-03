@@ -25,7 +25,7 @@ from rnns_learn_robust_motor_policies.database import ModelRecord, get_record, s
 from rnns_learn_robust_motor_policies.hyperparams import (
     flatten_hps, 
     promote_model_hps, 
-    fill_out_hps,
+    # fill_out_hps,
 )
 from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace, namespace_to_dict
 from rnns_learn_robust_motor_policies.tree_utils import pp
@@ -173,13 +173,8 @@ def train_and_save_models(
     # User specifies which variant to run using the `id` key
     get_train_pairs = EXPERIMENTS[hps_common.expt_id]
     
-    task_model_pairs = get_train_pairs(hps_common, key_init)
-    
-    # Get one set of complete hyperparameters for each task-model pair
-    # (Add in the hyperparameters corresponding to the pytree levels)
-    #? We might also do this inside `get_train_pairs`, and avoid needing to re-parse the 
-    #? PyTree structure of `task_model_pairs` here. (See `hyperparams.TYPE_HP_KEY_MAPPING`)
-    all_hps = fill_out_hps(hps_common, task_model_pairs)
+    # `all_hps` is a tree of pair-specific hps
+    task_model_pairs, all_hps = jtree.unzip(get_train_pairs(hps_common, key_init))
 
     if untrained_only:
         task_model_pairs = skip_already_trained(db_session, task_model_pairs, all_hps, n_std_exclude, save_figures)
@@ -207,7 +202,7 @@ def train_and_save_models(
             ensembled=True,
             loss_func=loss_func,
             task_baseline=task_baseline,  
-            where_train=where_strs_to_funcs(hps.train.where),
+            where_train=where_strs_to_funcs(dict(hps.train.where)),
             batch_size=hps.train.batch_size, 
             log_step=LOG_STEP,
             save_model_parameters=hps.train.save_model_parameters,

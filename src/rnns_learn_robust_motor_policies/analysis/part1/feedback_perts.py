@@ -11,9 +11,8 @@ from feedbax.intervene import schedule_intervenor
 import feedbax.plotly as fbp
 
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
-from rnns_learn_robust_motor_policies.plot import WHERE_PLOT_PLANT_VARS
-from rnns_learn_robust_motor_policies.plot import PLANT_VAR_LABELS
-from rnns_learn_robust_motor_policies.types import Responses
+from rnns_learn_robust_motor_policies.plot import PLANT_VAR_LABELS, WHERE_PLOT_PLANT_VARS
+from rnns_learn_robust_motor_policies.types import Responses, RESPONSE_VAR_LABELS_SHORT
 from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.types import ImpulseAmpTuple, LDict
 from rnns_learn_robust_motor_policies.perturbations import feedback_impulse

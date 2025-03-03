@@ -33,7 +33,7 @@ LEVEL_LABEL_SEP = "__"
 
 # We use LDict labels to identify levels in task-model pair trees
 # The label format is expected to be double-underscore separated parts that map to hyperparameter paths
-# For example, "train__method" maps to hps.train.method and "train__pert__std" maps to hps.pert.std
+# For example, "train__method" maps to hps.train.method and "train__pert__std" maps to hps.train.pert.std
 
 NT = TypeVar("NT", bound=SimpleNamespace)
 DT = TypeVar("DT", bound=dict)
@@ -50,6 +50,7 @@ def process_hps(hps: TreeNamespace) -> TreeNamespace:
     # Only train configs should have the train key
     if getattr(hps, 'train', None) is not None:
         if getattr(hps.train, 'where', None) is not None:
+            # Wrap in an LDict so it doesn't get flattened by `flatten_hps`
             hps.train.where = LDict.of("train__where")(hps.train.where)
         hps.train.intervention_scaleup_batches = [
             hps.train.n_batches_baseline,
@@ -61,9 +62,10 @@ def process_hps(hps: TreeNamespace) -> TreeNamespace:
         )
         
     # Not all experiments will load an existing model 
+    #? Collapse the load params into the 
     if getattr(hps, 'load', None) is not None:        
         if getattr(hps.load, 'train', None) is not None:
-            hps.load.train.where = LDict.of("train__where")(hps.load.train.where)         
+            hps.load.train.where = LDict.of("train__where")(hps.load.train.where)      
 
     return hps
 
@@ -108,6 +110,7 @@ def flatten_hps(
     hps: TreeNamespace, 
     keep_load: bool = True, 
     is_leaf: Optional[Callable] = anyf(is_type(list), LDict.is_of("train__where")),
+    ldict_to_dict: bool = True,
     join_with: str = LEVEL_LABEL_SEP,
 ) -> TreeNamespace:
     """Flatten the hyperparameter namespace, joining keys with underscores."""
@@ -121,9 +124,14 @@ def flatten_hps(
 
     hps = promote_model_hps(hps)
 
+    hp_values = jt.leaves(hps, is_leaf=is_leaf)
+    
+    if ldict_to_dict:
+        hp_values = [dict(v) if isinstance(v, LDict) else v for v in hp_values]
+
     return TreeNamespace(**dict(zip(
         jt.leaves(jtree.labels(hps, join_with=join_with, is_leaf=is_leaf)),
-        jt.leaves(hps, is_leaf=is_leaf),
+        hp_values,
     )))
 
 
@@ -169,13 +177,16 @@ def fill_out_hps(hps_common: TreeNamespace, task_model_pairs: PyTree[TaskModelPa
     mapping to a particular 
     """
     level_labels = tree_level_labels(task_model_pairs, is_leaf=is_type(TaskModelPair))
+    
+    # TODO: Use `jt.map_with_path` if updating to new JAX version
     return jt.map(
         lambda _, path: update_hps_given_tree_path(
             hps_common,
             path,
             level_labels,
         ),
-        task_model_pairs, jtree.key_tuples(task_model_pairs, is_leaf=is_type(TaskModelPair)),
+        task_model_pairs, 
+        jtree.key_tuples(task_model_pairs, is_leaf=is_type(TaskModelPair)),
         is_leaf=is_type(TaskModelPair),
     )
 

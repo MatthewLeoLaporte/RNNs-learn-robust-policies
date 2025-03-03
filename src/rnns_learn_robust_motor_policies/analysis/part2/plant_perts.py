@@ -209,7 +209,7 @@ class Aligned_IdxTrainStd_PerContext(AbstractAnalysis):
         # Context inputs and train pert stds do not depend on pert amp
         hps_0 = jt.leaves(hps, is_leaf=is_type(TreeNamespace))[0]
         context_inputs = hps_0.context_input
-        train_pert_stds = hps_0.load.pert.std 
+        train_pert_stds = hps_0.load.train.pert.std 
         
         plot_vars = jt.map(
             lambda d: LDict.of("context_input")({

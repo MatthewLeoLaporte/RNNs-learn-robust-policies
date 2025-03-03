@@ -5,7 +5,7 @@ For example, `analysis.part1.plant_perts` is such a module.
 
 from collections.abc import Callable, Sequence
 from types import MappingProxyType
-from typing import ClassVar, Optional, Literal as L
+from typing import ClassVar, Optional
 
 from equinox import Module
 

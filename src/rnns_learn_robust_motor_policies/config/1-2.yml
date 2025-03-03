@@ -4,9 +4,6 @@ expt_id: 1-2
 load:  
   expt_id: 1
 
-  pert:  # during training
-    type: curl
-    std: [0.0, 0.5, 1.0, 1.5]  # list -> load multiple models
     
   model:  # 
     n_steps: 100  
@@ -18,6 +15,9 @@ load:
   train:
     where: 
       0: ['step.net.hidden', 'step.net.readout']
+    pert:  # during training
+      type: curl
+      std: [0.0, 0.5, 1.0, 1.5]  # list -> load multiple models
 
 eval_n: 5
 
@@ -28,7 +28,7 @@ task:  # Passed to the base task constructor
     eval_reach_length: 0
 
 pert:
-  # null -> same as during training, e.g. load.pert.type in this case
+  # null -> same as during training, e.g. load.train.pert.type in this case
   type: impulse  # not used for anything but reference
   # TODO: Add the calculation of `amplitude` when loading hyperparams
   amplitude_max: 

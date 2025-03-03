@@ -4,10 +4,6 @@ expt_id: 2-6
 load:  
   expt_id: 2
 
-  pert:  # during training
-    type: curl
-    # list -> load multiple models
-    std: [0, 1.0] # [0, 0.5, 1.0, 1.5]  
     
   model:  # 
     n_steps: 100  
@@ -17,9 +13,13 @@ load:
     feedback_delay_steps: 0
     
   train:
+    method: 'pai-asf'
     where: 
       0: ['step.net.hidden', 'step.net.readout']
-    method: 'pai-asf'
+    pert: 
+      type: curl
+      # list -> load multiple models
+      std: [0, 1.0] # [0, 0.5, 1.0, 1.5]  
 
 eval_n: 10
 

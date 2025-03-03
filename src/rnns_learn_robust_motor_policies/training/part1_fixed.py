@@ -81,18 +81,18 @@ def setup_task_model_pair(hps: TreeNamespace, *, key):
     )
     
     def disturbance(field_std, active=True):
-        return DISTURBANCE_CLASSES[hps.pert.type].with_params(
+        return DISTURBANCE_CLASSES[hps.train.pert.type].with_params(
             scale=field_std,
             active=active,
             **disturbance_params(
                 partial(batch_scale_up, scaleup_batches[0], n_batches_scaleup)
-            )[hps.pert.type],
+            )[hps.train.pert.type],
         )
         
     return TaskModelPair(*schedule_intervenor(
         task_base, models,
         lambda model: model.step.mechanics,
-        disturbance(hps.pert.std),
+        disturbance(hps.train.pert.std),
         label=INTERVENOR_LABEL,
         default_active=False,
     ))
@@ -103,6 +103,7 @@ def get_train_pairs(hps: TreeNamespace, key: PRNGKeyArray):
     
     Here in Part 1 this is trivial since we're only training a single set of models, by training pert std.
     """
-    return get_train_pairs_by_pert_std(
+    task_model_pairs, all_hps = get_train_pairs_by_pert_std(
         setup_task_model_pair, hps, key=key
     )
+    return task_model_pairs, all_hps
