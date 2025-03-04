@@ -9,11 +9,12 @@ from equinox import AbstractVar, Module
 import jax.tree as jt
 from jaxtyping import PyTree, Array
 import plotly.graph_objects as go
+from sqlalchemy.orm import Session
 
 from jax_cookbook import is_type
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.database import add_evaluation_figure, savefig
+from rnns_learn_robust_motor_policies.database import EvaluationRecord, add_evaluation_figure, savefig
 from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace, tree_level_labels
 from rnns_learn_robust_motor_policies.misc import camel_to_snake, get_dataclass_fields
 from rnns_learn_robust_motor_policies.plot_utils import figs_flatten_with_paths
@@ -25,10 +26,18 @@ else:
     from equinox import AbstractClassVar
 
 
-# Define a representer for objects PyYAML doesn't know how to handle
+# Define a string representer for objects PyYAML doesn't know how to handle
 def represent_undefined(dumper, data):
     return dumper.represent_scalar('tag:yaml.org,2002:str', str(data))
 yaml.add_representer(object, represent_undefined)
+
+
+class AnalysisInputData(Module):
+    models: PyTree[Module]
+    tasks: PyTree[Module]
+    states: PyTree[Module]
+    hps: PyTree[TreeNamespace]  
+    extras: PyTree[TreeNamespace] 
 
 
 class AbstractAnalysis(Module):
@@ -70,32 +79,23 @@ class AbstractAnalysis(Module):
     
     def __call__(
         self, 
-        models: PyTree[Module], 
-        tasks: PyTree[Module], 
-        states: PyTree[Module], 
-        hps: PyTree[TreeNamespace],
+        data: AnalysisInputData,
         **kwargs,
     ) -> tuple[PyTree[Array], PyTree[go.Figure]]:
-        result = self.compute(models, tasks, states, hps, **kwargs)
-        figs = self.make_figs(models, tasks, states, hps, result=result, **kwargs)
+        result = self.compute(data, **kwargs)
+        figs = self.make_figs(data, result=result, **kwargs)
         return result, figs
         
     def compute(
         self, 
-        models: PyTree[Module], 
-        tasks: PyTree[Module], 
-        states: PyTree[Module], 
-        hps: PyTree[TreeNamespace],
+        data: AnalysisInputData,
         **kwargs,
     ) -> Optional[PyTree[Array]]:
         return 
     
     def make_figs(
         self, 
-        models: PyTree[Module], 
-        tasks: PyTree[Module], 
-        states: PyTree[Module], 
-        hps: PyTree[TreeNamespace],
+        data: AnalysisInputData,
         *,
         result: Optional[Any],
         **kwargs,
@@ -126,25 +126,29 @@ class AbstractAnalysis(Module):
 
     def save_figs(
         self, 
-        db_session, 
-        eval_info, 
+        db_session: Session, 
+        eval_info: EvaluationRecord, 
         result, 
-        figs: PyTree,   
-        hps, 
+        figs: PyTree[go.Figure],   
+        hps: PyTree[TreeNamespace], 
         model_info=None,
         dump_path: Optional[Path] = None,
         **dependencies,
     ):
         """Save to disk and record in the database each figure in a PyTree of figures, for this analysis.
         """
-        param_keys = tree_level_labels(figs)
+        # `sep="_"`` switches the label dunders for single underscores, so 
+        # in `_params_to_save` we can use an argument e.g. `train_pert_std` rather than `train__pert__std`
+        param_keys = tree_level_labels(figs, is_leaf=is_type(go.Figure), sep="_")
         
         if dump_path is not None:
             dump_path = Path(dump_path)
             dump_path.mkdir(exist_ok=True, parents=True)
         
         figs_with_paths_flat = figs_flatten_with_paths(figs)
-        hps_0 = jt.leaves(hps, is_leaf=is_type(TreeNamespace))[0]
+        
+        # Construct this for reference to hps that should only vary with the task variant.
+        hps_0 = jt.leaves(hps[self.variant], is_leaf=is_type(TreeNamespace))[0]
         
         for i, (path, fig) in enumerate(figs_with_paths_flat):
             path_params = dict(zip(param_keys, tuple(jtree.node_key_to_value(p) for p in path)))
@@ -153,10 +157,10 @@ class AbstractAnalysis(Module):
                 **path_params,  # Inferred from the structure of the figs PyTree
                 **self._field_params,  # From the fields of this subclass
                 **self._params_to_save(
-                    hps_0, 
+                    hps, 
                     result=result, 
                     **path_params, 
-                    **dependencies, # Extras specified by the subclass
+                    **dependencies,  # Specified by the subclass `dependency_kwargs`, via `run_analysis`
                 ),  
                 eval_n=hps_0.eval_n,  #? Some things should always be included
             )

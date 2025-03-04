@@ -9,10 +9,8 @@ import ipywidgets as widgets
 import jax
 import jax.numpy as jnp
 import jax.tree as jt
-from jaxtyping import Array, Float
 import matplotlib.figure as mplfig
 import plotly
-import plotly.colors as plc
 import plotly.graph_objects as go
 import pyperclip as clip
 
@@ -20,6 +18,31 @@ import feedbax.plot as fbp
 from jax_cookbook import is_type
 
 from rnns_learn_robust_motor_policies.misc import filename_join
+
+
+VAR_TITLES = {
+    'train__pert__std': "Train pert. std.",
+    'pert__amp': "Pert. amp.",
+}
+
+# If these appear in a label to format, append a period 
+ABBREV_TERMS = ['std', 'pert', 'amp', 'eval']
+
+
+def _format_if_abbrev(s: str) -> str: 
+    if s in ABBREV_TERMS:
+        s += '.'
+    return s
+
+
+def get_label_str(s: str):
+    """Converts flattened hyperparameter keys to labels that can be used in plots."""
+    # TODO: Optionally add in line breaks if the string is long
+    if s in VAR_TITLES:
+        return VAR_TITLES[s]
+    else:
+        subs = [_format_if_abbrev(sub) for sub in s.split('_') if sub]
+        return ' '.join(subs).capitalize()
 
 
 def get_savefig_func(fig_dir: Path, suffix=""):

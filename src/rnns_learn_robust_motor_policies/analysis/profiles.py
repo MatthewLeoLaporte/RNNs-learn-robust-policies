@@ -1,9 +1,6 @@
-from rnns_learn_robust_motor_policies.analysis.aligned import AlignedVars
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
-from rnns_learn_robust_motor_policies.types import Responses
-from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
-from rnns_learn_robust_motor_policies.types import LDict
 
+from types import MappingProxyType
+from typing import ClassVar, Optional
 
 import feedbax.plotly as fbp
 import jax.tree as jt
@@ -13,13 +10,17 @@ from equinox import Module
 from jax_cookbook import is_type
 from jaxtyping import PyTree
 
-
-from types import MappingProxyType
-from typing import ClassVar, Optional
+from rnns_learn_robust_motor_policies.analysis.aligned import AlignedVars
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
+from rnns_learn_robust_motor_policies.plot_utils import get_label_str
+from rnns_learn_robust_motor_policies.types import Responses
+from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
+from rnns_learn_robust_motor_policies.types import LDict
 
 
 class VelocityProfiles(AbstractAnalysis):
-    """Generates forward and lateral velocity profile figures."""
+    """Generates forward and lateral velocity profile figures.
+    """
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         aligned_vars=AlignedVars,
     ))
@@ -28,10 +29,7 @@ class VelocityProfiles(AbstractAnalysis):
 
     def compute(
         self,
-        models: PyTree[Module],
-        tasks: PyTree[Module],
-        states: PyTree[Module],
-        hps: PyTree[TreeNamespace],
+        data: AnalysisInputData,
         *,
         aligned_vars,
         **kwargs,
@@ -44,39 +42,36 @@ class VelocityProfiles(AbstractAnalysis):
 
     def make_figs(
         self,
-        models: PyTree[Module],
-        tasks: PyTree[Module],
-        states: PyTree[Module],
-        hps: PyTree[TreeNamespace],
+        data: AnalysisInputData,
         *,
         result,
         colors,
         **kwargs,
     ):
-        figs = LDict.of("pert__amp")({
-            # TODO: Once the mapping between custom dict types and their column names is automatic
-            # (e.g. `PertVarDict` will simply map to 'pert_var'), we can construct a `DirectionDict`
-            # ad hoc maybe
-            pert_amp: LDict.of("label")({
-                label: fbp.profiles(
-                    jtree.take(result, i, -1)[pert_amp],
-                    varname=f"{label} velocity",
-                    legend_title="Train<br>field std.",
-                    mode='std', # or 'curves'
-                    n_std_plot=1,
-                    hline=dict(y=0, line_color="grey"),
-                    colors=list(colors['full']['train__pert__std']['dark'].values()),
-                    # stride_curves=500,
-                    # curves_kws=dict(opacity=0.7),
-                    layout_kws=dict(
-                        width=600,
-                        height=400,
-                        legend_tracegroupgap=1,
-                    ),
-                )
+        def _get_fig(fig_data, i, label, colors):                      
+            return fbp.profiles(
+                jtree.take(fig_data, i, -1),
+                varname=f"{label} velocity",
+                legend_title=get_label_str(fig_data.label),
+                mode='std', # or 'curves'
+                n_std_plot=1,
+                hline=dict(y=0, line_color="grey"),
+                colors=list(colors[fig_data.label]['dark'].values()),
+                # stride_curves=500,
+                # curves_kws=dict(opacity=0.7),
+                layout_kws=dict(
+                    width=600,
+                    height=400,
+                    legend_tracegroupgap=1,
+                ),
+            )
+        
+        figs = LDict.of(result.label)({
+            value: LDict.of("direction")({
+                label.lower(): _get_fig(result[value], i, label, colors[self.variant][value])
                 for i, label in enumerate(("Forward", "Lateral"))
             })
-            for pert_amp in hps[self.variant].pert.amp
+            for value in result.keys()
         })
         return figs
 

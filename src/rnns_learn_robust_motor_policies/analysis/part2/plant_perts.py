@@ -15,7 +15,7 @@ from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.aligned import AlignedVars, plot_condition_trajectories
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
 from rnns_learn_robust_motor_policies.analysis.disturbance import PERT_FUNCS
 from rnns_learn_robust_motor_policies.analysis.measures import MEASURE_LABELS
 from rnns_learn_robust_motor_policies.analysis.measures import Measures
@@ -119,7 +119,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
         lambda _: (models_by_std, hps), tasks, is_leaf=is_module
     ))
     
-    return tasks, models, hps
+    return tasks, models, hps, None
 
 
 class Aligned_IdxContextInput(AbstractAnalysis):
@@ -133,10 +133,7 @@ class Aligned_IdxContextInput(AbstractAnalysis):
     
     def make_figs(
         self,
-        models: PyTree[Module],
-        tasks: PyTree[Module],
-        states: PyTree[Module],
-        hps: PyTree[TreeNamespace],
+        data: AnalysisInputData,
         *,
         aligned_vars,
         **kwargs,
@@ -192,10 +189,7 @@ class Aligned_IdxTrainStd_PerContext(AbstractAnalysis):
 
     def make_figs(
         self,
-        models: PyTree[Module],
-        tasks: PyTree[Module],
-        states: PyTree[Module],
-        hps: PyTree[TreeNamespace],
+        data: AnalysisInputData,
         *,
         aligned_vars,
         **kwargs,
@@ -245,10 +239,10 @@ class Aligned_IdxTrainStd_PerContext(AbstractAnalysis):
 
         return figs
 
-    def _params_to_save(self, hps: PyTree[TreeNamespace], **kwargs):
+    def _params_to_save(self, hps: PyTree[TreeNamespace], *, hps_common, **kwargs):
         return dict(
             # TODO: The number of replicates (`n_replicates_included`) may vary with the disturbance train std!
-            # n=min(self.n_curves_max, hps.eval_n * n_replicates_included)  #? n: pytree[int]
+            # n=min(self.n_curves_max, hps_common.eval_n * n_replicates_included)  #? n: pytree[int]
         )
 
 
@@ -271,10 +265,7 @@ class Measures_CompareTrainStdAndContext(AbstractAnalysis):
 
     def make_figs(
         self,
-        models: PyTree[Module],
-        tasks: PyTree[Module],
-        states: PyTree[Module],
-        hps: PyTree[TreeNamespace],
+        data: AnalysisInputData,
         *,
         all_measure_values,
         colors_0,

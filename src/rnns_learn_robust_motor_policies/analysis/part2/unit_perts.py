@@ -12,7 +12,7 @@ from feedbax.task import TrialSpecDependency
 from jax_cookbook import is_module
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
 from rnns_learn_robust_motor_policies.analysis.state_utils import angle_between_vectors, vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_constant_task_input
 from rnns_learn_robust_motor_policies.types import LDict
@@ -75,7 +75,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     # all_hps = {'plant_pert': hps_by_context, 'unit_stim': hps_by_context}
     all_hps = jt.map(lambda _: hps, all_tasks, is_leaf=is_module)
 
-    return all_tasks, all_models, all_hps
+    return all_tasks, all_models, all_hps, None
 
 
 def force_impulse(direction_idx, *, hps):
@@ -149,7 +149,7 @@ class UnitPreferredDirections(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     
     # TODO: Separate into two `AbstractAnalysis` classes in serial
-    def compute(self, models, tasks, states, hps, **dependencies):
+    def compute(self, data: AnalysisInputData, **dependencies):
         # 1. Get activities of all units at the time step of max forward force 
         def get_activity_at_max_force(state: SimpleFeedbackState):
             net_force = jnp.linalg.norm(state.efferent.output, axis=-1)  
@@ -164,7 +164,7 @@ class UnitPreferredDirections(AbstractAnalysis):
         # Each array: (hps.pert.plant.directions, eval_n, n_replicates, n_units)
         activity_at_max_force = jt.map(
             lambda state: get_activity_at_max_force(state), 
-            states['full']['plant_pert'], 
+            data.states['full']['plant_pert'], 
             is_leaf=is_module,
         )
         
@@ -193,7 +193,7 @@ class UnitPreferredDirections(AbstractAnalysis):
             activity_at_max_force=activity_at_max_force,
         )
     
-    def make_figs(self, models, tasks, states, hps, *, result, **dependencies):
+    def make_figs(self, data, *, result, **dependencies):
         # Plot the distribution of preferred directions across units, for each context input
         # (Should remain uniform? However maybe the tuning curves get narrower.)
         preferred_directions = result['preferred_directions']
@@ -205,7 +205,7 @@ class UnitStimDirections(AbstractAnalysis):
     variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
     
-    def compute(self, models, tasks, states, hps, **dependencies):
+    def compute(self, data: AnalysisInputData, **dependencies):
         # Compute the direction of maximum force for each perturbed unit
         def get_angle_of_max_force(state: SimpleFeedbackState):
             net_force = jnp.linalg.norm(state.efferent.output, axis=-1)
@@ -226,7 +226,7 @@ class UnitStimDirections(AbstractAnalysis):
         # Each array: (hps.pert.plant.directions, eval_n, n_replicates, n_units)
         angle_of_max_force = jt.map(
             lambda state: get_angle_of_max_force(state), 
-            states[self.variant]['unit_stim'], 
+            data.states[self.variant]['unit_stim'], 
             is_leaf=is_module,
         )
         
@@ -234,7 +234,7 @@ class UnitStimDirections(AbstractAnalysis):
             angle_of_max_force=angle_of_max_force,
         )
     
-    def make_figs(self, models, tasks, states, hps, **dependencies):
+    def make_figs(self, data: AnalysisInputData, **dependencies):
         # Plot the distribution of stim directions, for each condition
         ...
 
@@ -251,7 +251,7 @@ class UnitPreferenceAlignment(AbstractAnalysis):
     variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
 
-    def compute(self, models, tasks, states, hps, *, results1, results2, **dependencies):
+    def compute(self, data: AnalysisInputData, *, results1, results2, **dependencies):
         """Compute the alignment between preferred and stim directions"""
         unit_preferred_direction_idx = results1['preferred_direction']
         # activity_at_max_force = results1['activity_at_max_force']
@@ -261,7 +261,7 @@ class UnitPreferenceAlignment(AbstractAnalysis):
         # 1. Convert preferred direction from index to angle, and take the difference between the angles (works for all signs?)
         # 2. Convert both to vectors and use `angle_between_vectors` (trust this more)
         def get_angle_between_prefs_and_forces(unit_preferred_direction_idx, angle_of_max_force_on_unit_stim):
-            n_directions = hps[self.variant]['plant_pert'][0].pert.plant.directions
+            n_directions = data.hps[self.variant]['plant_pert'][0].pert.plant.directions
             unit_preferred_angle = 2 * jnp.pi * unit_preferred_direction_idx / n_directions
             unit_preferred_direction = angle_to_direction(unit_preferred_angle)
             direction_of_max_force_on_unit_stim = angle_to_direction(angle_of_max_force_on_unit_stim)
@@ -293,7 +293,7 @@ class UnitPreferenceAlignment(AbstractAnalysis):
         )
 
     
-    def make_figs(self, models, tasks, states, hps, *, result, **dependencies):
+    def make_figs(self, data: AnalysisInputData, *, result, **dependencies):
         # 1. Distribution of (absolute?) angles between pref and stim, versus context input
         ...
         
@@ -310,10 +310,7 @@ class AllResults(AbstractAnalysis):
 
     def compute(
         self, 
-        models, 
-        tasks, 
-        states, 
-        hps, 
+        data: AnalysisInputData,
         *, 
         results1,
         results2, 

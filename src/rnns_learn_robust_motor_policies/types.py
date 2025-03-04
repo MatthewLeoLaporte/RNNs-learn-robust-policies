@@ -14,7 +14,7 @@ K = TypeVar('K')
 V = TypeVar('V')
 
 
-@jax.tree_util.register_pytree_node_class
+@jax.tree_util.register_pytree_with_keys_class
 class LDict(Mapping[K, V], Generic[K, V]):
     """Immutable dictionary with a string label for distinguishing dictionary types.
     
@@ -28,7 +28,7 @@ class LDict(Mapping[K, V], Generic[K, V]):
     
     def __init__(self, label: str, data: Mapping[K, V]):
         self._label = label
-        self._data = dict(data)  # Make a copy for immutability
+        self._data = dict(data)  
     
     @property
     def label(self) -> str:
@@ -46,16 +46,15 @@ class LDict(Mapping[K, V], Generic[K, V]):
     def __repr__(self) -> str:
         return f"LDict({repr(self._label)}, {self._data})"
     
-    # PyTree implementation
-    def tree_flatten(self) -> tuple[tuple[Dict[K, V]], str]:
-        # Return a tuple of (children, auxiliary_data)
-        return (self._data,), self._label
+    def tree_flatten_with_keys(self):
+        children_with_keys = [(jtu.DictKey(k), v) for k, v in self.items()]
+        return children_with_keys, (self._label, self.keys())
     
     @classmethod
-    def tree_unflatten(cls, label: str, children: tuple[Dict[K, V]]):
-        return cls(label, children[0])
+    def tree_unflatten(cls, aux_data, children):
+        label, keys = aux_data
+        return cls(label, dict(zip(keys, children)))
     
-    # Common dict methods
     def items(self):
         return self._data.items()
     
@@ -67,12 +66,18 @@ class LDict(Mapping[K, V], Generic[K, V]):
     
     def get(self, key, default=None):
         return self._data.get(key, default)
-    
-    # Static methods for creating and checking LDicts
+
     @staticmethod
     def of(label: str) -> Callable[[Mapping[K, V]], 'LDict[K, V]']:
         """Returns a constructor function for the given label."""
-        return lambda data: LDict(label, data)
+        class LDictConstructor:
+            def __call__(self, data: Mapping[K, V]) -> 'LDict[K, V]':
+                return LDict(label, data)
+                
+            def fromkeys(self, keys: Iterable[Any], value: Any = None) -> 'LDict':
+                return LDict.fromkeys(label, keys, value)
+                
+        return LDictConstructor()
     
     @staticmethod
     def is_of(label: str) -> Callable[[Any], bool]:

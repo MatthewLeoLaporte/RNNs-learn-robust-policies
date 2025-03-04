@@ -1,3 +1,7 @@
+from ipyfilechooser import FileChooser
+from ipywidgets import HTML
+from IPython.display import display
+
 from collections.abc import Callable, Sequence
 from copy import deepcopy
 from functools import partial
@@ -9,13 +13,11 @@ import json
 import os
 
 import equinox as eqx
-from ipyfilechooser import FileChooser
-from ipywidgets import HTML
-from IPython.display import display
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 from jaxtyping import PRNGKeyArray, PyTree
+from sqlalchemy.orm import Session
 
 from feedbax.loss import AbstractLoss
 from feedbax.misc import attr_str_tree_to_where_func
@@ -367,7 +369,7 @@ def setup_replicate_info(models, hps, *, key):
 
 # TODO: Update docstring
 def query_and_load_model(
-    db_session,  # TODO: Type?
+    db_session: Session,
     setup_task_model_pair: Callable,
     params_query: dict[str, Any],
     noise_stds: Optional[dict[Literal['feedback', 'motor'] | str, Optional[float]]] = None,

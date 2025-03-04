@@ -15,6 +15,7 @@ from feedbax.intervene import AbstractIntervenor
 from jax_cookbook import anyf, is_module, is_type
 import jax_cookbook.tree as jtree
 
+from rnns_learn_robust_motor_policies.constants import LEVEL_LABEL_SEP
 from rnns_learn_robust_motor_policies.types import LDict
 
 
@@ -33,11 +34,18 @@ def swap_model_trainables(model: PyTree[..., "T"], trained: PyTree[..., "T"], wh
         model,
         where_train(trained),
     )
-    
 
-def subdict(dct: dict[T, Any], keys: Sequence[T]):
+
+def get_dict_constructor(d: dict):
+    if isinstance(d, LDict):
+        return LDict.of(d.label)   
+    else:
+        return type(d)
+
+
+def subdict(d: dict[T, Any], keys: Sequence[T]):
     """Returns the dict containing only the keys `keys`."""
-    return type(dct)({k: dct[k] for k in keys})
+    return get_dict_constructor(d)({k: d[k] for k in keys})
 
 
 def dictmerge(*dicts: dict) -> dict:
@@ -70,9 +78,9 @@ def falsef(x):
     return False
 
     
-def tree_level_labels(tree: PyTree, is_leaf=falsef) -> list[str]:
+def tree_level_labels(tree: LDict, is_leaf=falsef, sep=None) -> list[str]:
     """
-    Given a PyTree of LDict nodes, return a list of labels for each level of the tree.
+    Given a PyTree of LDict nodes, return a list of labels, one for each level of the tree.
     
     This function assumes a homogeneous tree structure where all nodes at the same level
     have the same label. It traverses the tree from root to first leaf, collecting LDict
@@ -101,7 +109,9 @@ def tree_level_labels(tree: PyTree, is_leaf=falsef) -> list[str]:
         if is_leaf(current_node):
             break
         
-    
+    if sep is not None:
+        labels = [label.replace(LEVEL_LABEL_SEP, sep) for label in labels]
+        
     return labels
 
 

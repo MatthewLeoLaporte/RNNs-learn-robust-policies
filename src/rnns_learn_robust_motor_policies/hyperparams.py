@@ -14,7 +14,7 @@ from jax_cookbook import is_type, anyf
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.config import load_config, load_default_config
-from rnns_learn_robust_motor_policies.constants import get_iterations_to_save_model_parameters
+from rnns_learn_robust_motor_policies.constants import LEVEL_LABEL_SEP, get_iterations_to_save_model_parameters
 from rnns_learn_robust_motor_policies.tree_utils import (
     TreeNamespace, 
     dict_to_namespace, 
@@ -26,9 +26,6 @@ from rnns_learn_robust_motor_policies.types import (
     TaskModelPair, 
     LDict,
 )
-
-
-LEVEL_LABEL_SEP = "__"
 
 
 # We use LDict labels to identify levels in task-model pair trees

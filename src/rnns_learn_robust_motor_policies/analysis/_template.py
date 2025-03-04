@@ -4,7 +4,7 @@ For example, `analysis.part1.plant_perts` is such a module.
 """
 
 from collections.abc import Callable, Sequence
-from types import MappingProxyType
+from types import MappingProxyType, SimpleNamespace
 from typing import ClassVar, Optional
 
 from equinox import Module
@@ -24,11 +24,19 @@ COLOR_FUNCS: dict[str, Callable[[TreeNamespace], Sequence]] = dict(
 
 
 def setup_eval_tasks_and_models(task_base: Module, models_base: LDict[float, Module], hps: TreeNamespace):
-    """Specify how to set up the PyTrees of evaluation tasks and models.
+    """Specify how to set up the PyTrees of evaluation tasks and models, given a base task and 
+    a spread of models.
     
     Also, make any necessary modifications to `hps` as they will be available during analysis. 
     """
-    ...
+    # Trivial example
+    tasks = task_base
+    models = models_base 
+    
+    # Provides any additional data needed for the analysis
+    extras = SimpleNamespace()  
+    
+    return tasks, models, hps, extras
 
     
 """Depending on the structure of `setup_eval_tasks_and_models`, e.g. the use of `vmap`, it may be 

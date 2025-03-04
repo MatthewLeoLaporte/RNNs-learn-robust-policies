@@ -9,6 +9,9 @@ from feedbax.intervene import (
 )
 
 
+# Separator to use in labels for DB columns and flattened hps 
+LEVEL_LABEL_SEP = "__"
+
 INTERVENOR_LABEL = "DisturbanceField"
 DISTURBANCE_CLASSES = {
     'curl': CurlField,

@@ -1,19 +1,17 @@
 from types import MappingProxyType
-from typing import ClassVar, Optional, Literal as L
+from typing import ClassVar, Optional
 import equinox as eqx
-from equinox import Module
 import jax.numpy as jnp 
 import jax.random as jr
 import jax.tree as jt
-from jaxtyping import Array, Float, PyTree
+from jaxtyping import Array, Float
 
 from feedbax.intervene import AbstractIntervenor
 import jax_cookbook.tree as jtree
 from jax_cookbook import is_type, is_module
 
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
 from rnns_learn_robust_motor_policies.constants import REPLICATE_CRITERION
-from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
 from rnns_learn_robust_motor_policies.types import LDict
 
 
@@ -182,10 +180,7 @@ class BestReplicateStates(AbstractAnalysis):
 
     def compute(
         self,
-        models: PyTree[Module],
-        tasks: PyTree[Module],
-        states: PyTree[Module],
-        hps: PyTree[TreeNamespace],
+        data: AnalysisInputData,
         *,
         replicate_info,
         **kwargs,
@@ -199,8 +194,9 @@ class BestReplicateStates(AbstractAnalysis):
                 )
                 for std, states in states_by_std.items()
             }),
-            states,
+            data.states,
             is_leaf=LDict.is_of("train__pert__std"),
         )
     
     
+from feedbax.bodies import SimpleFeedbackState

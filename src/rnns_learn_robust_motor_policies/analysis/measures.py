@@ -1,8 +1,7 @@
-from collections import namedtuple
 from collections.abc import Callable, Sequence
-from functools import cached_property, partial, reduce
+from functools import cached_property, partial
 from types import MappingProxyType
-from typing import ClassVar, Optional, Dict, Any, Literal as L, Type
+from typing import ClassVar, Optional, Dict, Any
 
 import equinox as eqx
 from equinox import Module
@@ -11,17 +10,17 @@ import jax.numpy as jnp
 import jax.tree as jt
 from jaxtyping import Array, Float, PyTree
 
-from feedbax.bodies import SimpleFeedbackState
 from jax_cookbook import is_type, compose
 import numpy as np
 
+from rnns_learn_robust_motor_policies.plot_utils import get_label_str
 from rnns_learn_robust_motor_policies.types import Responses
 from rnns_learn_robust_motor_policies.analysis.aligned import AlignedVars
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
 from rnns_learn_robust_motor_policies.constants import EVAL_REACH_LENGTH, REPLICATE_CRITERION
 from rnns_learn_robust_motor_policies.misc import lohi
 from rnns_learn_robust_motor_policies.plot import get_measure_replicate_comparisons, get_violins
-from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace, subdict, tree_subset_ldict_level
+from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace, subdict, tree_level_labels, tree_subset_ldict_level
 from rnns_learn_robust_motor_policies.types import ResponseVar, Direction, DIRECTION_IDXS, LDict
 
 
@@ -361,10 +360,7 @@ class Measures(AbstractAnalysis):
 
     def compute(
         self,
-        models: PyTree[Module],
-        tasks: PyTree[Module],
-        states: PyTree[Module],
-        hps: PyTree[TreeNamespace],
+        data: AnalysisInputData,
         *,
         aligned_vars,
         **kwargs,
@@ -390,15 +386,21 @@ class Measures_ByTrainStd(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         measure_values=Measures,
     ))
+    measure_keys: Sequence[str]
     variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
 
+    def dependency_kwargs(self) -> Dict[str, Dict[str, Any]]:
+        return dict(
+            measure_values=dict(
+                measure_keys=self.measure_keys,
+                variant=self.variant,
+            ),
+        )
+
     def make_figs(
         self,
-        models: PyTree[Module],
-        tasks: PyTree[Module],
-        states: PyTree[Module],
-        hps: PyTree[TreeNamespace],
+        data: AnalysisInputData,
         *,
         measure_values,
         colors_0,
@@ -441,15 +443,15 @@ class MeasuresLoHiPertStd(AbstractAnalysis):
         
     def dependency_kwargs(self) -> Dict[str, Dict[str, Any]]:
         return dict(
-            measure_values=dict(measure_keys=self.measure_keys)
+            measure_values=dict(
+                measure_keys=self.measure_keys,
+                variant=self.variant,
+            ),
         )
 
     def compute(
         self,
-        models: PyTree[Module],
-        tasks: PyTree[Module],
-        states: PyTree[Module],
-        hps: PyTree[TreeNamespace],
+        data: AnalysisInputData,
         *,
         measure_values,
         **kwargs,
@@ -477,16 +479,14 @@ class Measures_CompareReplicatesLoHi(AbstractAnalysis):
     def dependency_kwargs(self) -> Dict[str, Dict[str, Any]]:
         return dict(
             measure_values_lohi_train_pert_std=dict(
-                measure_keys=self.measure_keys
+                measure_keys=self.measure_keys,
+                variant=self.variant,
             )
         )
 
     def make_figs(
         self,
-        models: PyTree[Module],
-        tasks: PyTree[Module],
-        states: PyTree[Module],
-        hps: PyTree[TreeNamespace],
+        data: AnalysisInputData,
         *,
         measure_values_lohi_train_pert_std,
         colors_0,
@@ -521,50 +521,45 @@ class Measures_LoHiSummary(AbstractAnalysis):
         return dict(
             measure_values_lohi_train_pert_std=dict(
                 measure_keys=self.measure_keys,
+                variant=self.variant,
             )
         )
 
     def compute(
         self,
-        models: PyTree[Module],
-        tasks: PyTree[Module],
-        states: PyTree[Module],
-        hps: PyTree[TreeNamespace],
+        data: AnalysisInputData,
         *,
         measure_values_lohi_train_pert_std,
         **kwargs,
     ):
-
-        return LDict.of("measure")(**{
-            key: subdict(measure, lohi(hps[self.variant].pert.amp))  # type: ignore
+        return LDict.of("measure")({
+            key: subdict(measure, lohi(list(data.hps[self.variant].keys())))  # type: ignore
             # MeasuresLoHiPertStd returns `measure_values_lohi_train_pert_std` for all eval variants,
             # so we choose the right variant
-            for key, measure in measure_values_lohi_train_pert_std[self.variant].items()
+            for key, measure in measure_values_lohi_train_pert_std.items()
         })
 
     def make_figs(
         self,
-        models: PyTree[Module],
-        tasks: PyTree[Module],
-        states: PyTree[Module],
-        hps: PyTree[TreeNamespace],
+        data: AnalysisInputData,
         *,
         result,
         colors_0,
         **kwargs,
     ):
+        _, outer_label, inner_label = tree_level_labels(result)
         figs = LDict.of("measure")({
             key: get_violins(
                 measure,
                 yaxis_title=MEASURE_LABELS[key],
-                xaxis_title="Train field std.",
-                legend_title="TODO",
-                colors=colors_0[self.variant]['pert_amp']['dark'],
+                xaxis_title=get_label_str(inner_label),
+                legend_title=get_label_str(outer_label),
+                colors=colors_0[self.variant][outer_label]['dark'],
                 layout_kws=dict(
                     width=300, height=300,
                 )
             )
-            for key, measure in result.items ()
+            for key, measure in result.items()
         })
         return figs
 

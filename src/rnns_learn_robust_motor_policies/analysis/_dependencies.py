@@ -15,18 +15,14 @@ Written with the help of Claude 3.5 Sonnet.
 
 import logging
 from collections import defaultdict
+from collections.abc import Sequence
 import hashlib
 import json
-from typing import Set, Type, Dict, Any, Tuple
+from typing import Optional, Set, Dict, Any
 
-from equinox import Module
 import jax.tree as jt
-from jaxtyping import PyTree
 
-from jax_cookbook import is_module
-
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
-from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
 
 
 logger = logging.getLogger(__name__)
@@ -39,7 +35,7 @@ def param_hash(params: Dict[str, Any]) -> str:
     return hashlib.md5(param_str.encode()).hexdigest()
 
 
-def build_dependency_graph(analyses: list[AbstractAnalysis]) -> tuple[dict[str, Set[str]], dict]:
+def build_dependency_graph(analyses: Sequence[AbstractAnalysis]) -> tuple[dict[str, Set[str]], dict]:
     """Build dependency graph with parameter-specific nodes.
     
     Each dependency with unique parameters gets a unique node in the graph.
@@ -51,7 +47,7 @@ def build_dependency_graph(analyses: list[AbstractAnalysis]) -> tuple[dict[str, 
     # TODO: Filter analyses by their conditions
     # analyses_to_process = [a for a in analyses if conditions_are_met(a)]
     
-    def add_deps(analysis):
+    def add_deps(analysis):        
         for dep_name, dep_class in analysis.dependencies.items():
             # Get parameters for this dependency
             params = analysis.dependency_kwargs().get(dep_name, {})
@@ -88,8 +84,12 @@ def build_dependency_graph(analyses: list[AbstractAnalysis]) -> tuple[dict[str, 
                 dep_instances[subdep_id] = (subdep_class, subdep_params)
                 add_subdeps(subdep_class, subdep_params, subdep_id)
         
-    for analysis in analyses:  # TODO: analyses_to_process
+    for analysis in analyses:  
         add_deps(analysis)
+
+    for node_id in dep_instances:
+        if node_id not in graph:
+            graph[node_id] = set()
         
     return dict(graph), dep_instances
 
@@ -125,11 +125,8 @@ def topological_sort(graph: dict[str, Set[str]]) -> list[str]:
 
 
 def compute_dependencies(
-    analyses: list[AbstractAnalysis],
-    models: PyTree[Module],
-    tasks: PyTree[Module],
-    states: PyTree[Module],
-    hps: PyTree[TreeNamespace],
+    analyses: Sequence[AbstractAnalysis],
+    data: AnalysisInputData,
     **kwargs,
 ) -> dict:
     """Compute all dependencies in correct order.
@@ -157,7 +154,7 @@ def compute_dependencies(
         
         # Compute and store the result
         logger.debug(f"Computing dependency: {dep_class.__name__} with params {params}")
-        result = dep_instance.compute(models, tasks, states, hps, **results, **params)
+        result = dep_instance.compute(data, **results, **params)
         
         # Store in both dictionaries
         computed_results[node_id] = result
@@ -166,6 +163,9 @@ def compute_dependencies(
     # Final pass to ensure the right dependencies are available for each analysis
     for analysis in analyses:
         for dep_name, dep_class in analysis.dependencies.items():
+            if dep_name not in results:
+                raise ValueError(f"Dependency '{dep_name}' for {analysis.__class__.__name__} was not computed")
+
             params = analysis.dependency_kwargs().get(dep_name, {})
             node_id = f"{dep_name}_{param_hash(params)}"
             if node_id in computed_results:

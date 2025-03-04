@@ -8,7 +8,7 @@ import feedbax.plotly as fbp
 from jax_cookbook import is_module
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
 from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.types import LDict
 
@@ -18,7 +18,7 @@ COLOR_FUNCS = dict()
 
 def setup_eval_tasks_and_models(task_base, models_base, hps):
     """Use the base task, where the usual Gaussian noise in the feedback channels suffices for the frequency analysis."""
-    return task_base, models_base, hps
+    return task_base, models_base, hps, None
 
 
 eval_func = vmap_eval_ensemble
@@ -33,15 +33,15 @@ class FrequencyResponse(AbstractAnalysis):
     variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
     
-    def compute(self, models, tasks, states, hps, **dependencies):
+    def compute(self, data: AnalysisInputData, **dependencies):
         all_freqs, all_gains, all_phases = jtree.unzip(jt.map(
             lambda fb_idx: jt.map(
                 lambda states: frequency_analysis(
                     INPUT_WHERE(states, fb_idx),
                     OUTPUT_WHERE(states),
-                    hps[self.variant].model.dt, 
+                    data.hps[self.variant].model.dt, 
                 ),
-                states[self.variant],
+                data.states[self.variant],
                 is_leaf=is_module,
             ),
             dict(fb_pos=0, fb_vel=1),    
@@ -53,7 +53,7 @@ class FrequencyResponse(AbstractAnalysis):
             phases=all_phases,
         )
 
-    def make_figs(self, models, tasks, states, hps, *, result, colors_0, **dependencies):
+    def make_figs(self, data: AnalysisInputData, *, result, colors_0, **dependencies):
         gains_plot, phases_plot = jt.map(
             lambda arr: jnp.moveaxis(
                 arr, -1, 0

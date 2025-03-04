@@ -593,7 +593,8 @@ def save_model_and_add_record(
         (train_history, TRAIN_HISTORY_FILE_LABEL), 
         (replicate_info, REPLICATE_INFO_FILE_LABEL),
     ):
-        save_tree(tree, MODELS_DIR, hps, hash_=model_hash, suffix=suffix)
+        if tree is not None:
+            save_tree(tree, MODELS_DIR, hps, hash_=model_hash, suffix=suffix)
         
     update_table_schema(session.bind, MODELS_TABLE_NAME, record_params)    
     

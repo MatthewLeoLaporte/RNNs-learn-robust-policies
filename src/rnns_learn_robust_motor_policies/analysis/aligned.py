@@ -10,7 +10,7 @@ import feedbax.plotly as fbp
 from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_aligned_vars, get_pos_endpoints
 from rnns_learn_robust_motor_policies.colors import COLORSCALES, MEAN_LIGHTEN_FACTOR
 from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
@@ -37,10 +37,7 @@ class AlignedVars(AbstractAnalysis):
 
     def compute(
         self,
-        models: PyTree[Module],
-        tasks: PyTree[Module],
-        states: PyTree[Module],
-        hps: PyTree[TreeNamespace],
+        data: AnalysisInputData,
         *,
         trial_specs,
         **kwargs,
@@ -54,7 +51,7 @@ class AlignedVars(AbstractAnalysis):
                 is_leaf=is_module,
             ),
             trial_specs,
-            states,
+            data.states,
             is_leaf=is_module,
         )
 
@@ -91,10 +88,7 @@ class Aligned_IdxTrial(AbstractAnalysis):
 
     def make_figs(
         self,
-        models: PyTree[Module],
-        tasks: PyTree[Module],
-        states: PyTree[Module],
-        hps: PyTree[TreeNamespace],
+        data: AnalysisInputData,
         *,
         aligned_vars,
         **kwargs,
@@ -112,9 +106,9 @@ class Aligned_IdxTrial(AbstractAnalysis):
         )
         return figs
 
-    def _params_to_save(self, hps: PyTree[TreeNamespace], *, pert_std, **kwargs):
+    def _params_to_save(self, hps: PyTree[TreeNamespace], *, train_pert_std, **kwargs):
         return dict(
-            # n=min(self.n_curves_max, n_replicates_included[pert_std] * self.n_conditions)
+            # n=min(self.n_curves_max, n_replicates_included[train_pert_std] * self.n_conditions)
         )
 
 
@@ -129,12 +123,10 @@ class Aligned_IdxPertAmp(AbstractAnalysis):
 
     def make_figs(
         self,
-        models: PyTree[Module],
-        tasks: PyTree[Module],
-        states: PyTree[Module],
-        hps: PyTree[TreeNamespace],
+        data: AnalysisInputData,
         *,
         aligned_vars,
+        hps_common,
         **kwargs,
     ):
         # plot_vars_stacked = jtree.stack(aligned_vars['small'].values())
@@ -147,10 +139,10 @@ class Aligned_IdxPertAmp(AbstractAnalysis):
         figs = jt.map(
             partial(
                 plot_condition_trajectories,
-                colorscale=COLORSCALES['pert_amp'],
+                colorscale=COLORSCALES['pert__amp'],
                 colorscale_axis=0,
                 legend_title="Field<br>amplitude",
-                legend_labels=hps['small'].pert.amp,
+                legend_labels=hps_common.pert.amp,
                 curves_mode='lines',
             ),
             plot_vars_stacked,
@@ -159,9 +151,9 @@ class Aligned_IdxPertAmp(AbstractAnalysis):
 
         return figs
 
-    def _params_to_save(self, hps: PyTree[TreeNamespace], *, pert_std, **kwargs):
+    def _params_to_save(self, hps: PyTree[TreeNamespace], *, train_pert_std, hps_common, **kwargs):
         return dict(
-            # n=min(self.n_curves_max, hps.eval_n * n_replicates_included[pert_std] * self.n_conditions)
+            # n=min(self.n_curves_max, hps_common.eval_n * n_replicates_included[train_pert_std] * self.n_conditions)
         )
 
 
@@ -176,12 +168,10 @@ class Aligned_IdxTrainStd(AbstractAnalysis):
 
     def make_figs(
         self,
-        models: PyTree[Module],
-        tasks: PyTree[Module],
-        states: PyTree[Module],
-        hps: PyTree[TreeNamespace],
+        data: AnalysisInputData,
         *,
         aligned_vars,
+        hps_common,
         **kwargs,
     ):
         plot_vars_stacked = jt.map(
@@ -200,7 +190,7 @@ class Aligned_IdxTrainStd(AbstractAnalysis):
                 colorscale=COLORSCALES['train__pert__std'],
                 colorscale_axis=0,
                 legend_title="Train<br>field std.",
-                legend_labels=hps[self.variant].load.train.pert.std,
+                legend_labels=hps_common.load.train.pert.std,
                 curves_mode='lines',
                 var_endpoint_ms=0,
                 scatter_kws=dict(line_width=0.5, opacity=0.3),
@@ -212,8 +202,8 @@ class Aligned_IdxTrainStd(AbstractAnalysis):
 
         return figs
 
-    def _params_to_save(self, hps: PyTree[TreeNamespace], **kwargs):
+    def _params_to_save(self, hps: PyTree[TreeNamespace], *, hps_common, **kwargs):
         return dict(
             # TODO: The number of replicates (`n_replicates_included`) may vary with the disturbance train std!
-            # n=min(self.n_curves_max, hps.eval_n * n_replicates_included)  #? n: pytree[int]
+            # n=min(self.n_curves_max, hps_common.eval_n * n_replicates_included)  #? n: pytree[int]
         )

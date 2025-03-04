@@ -34,7 +34,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
         ))),
     )
     
-    return task, models_base, hps
+    return task, models_base, hps, None
 
 
 eval_func = vmap_eval_ensemble

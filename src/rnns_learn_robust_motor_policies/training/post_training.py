@@ -23,6 +23,7 @@ import jax_cookbook.tree as jtree
 from jax_cookbook import is_module, is_type, anyf
 
 from rnns_learn_robust_motor_policies.database import (
+    EvaluationRecord,
     ModelRecord, 
     MODEL_RECORD_BASE_ATTRS,
     add_evaluation,
@@ -349,8 +350,8 @@ class FigFuncSpec(eqx.Module):
 
 
 def save_training_figures(
-    db_session,
-    eval_info,
+    db_session: Session,
+    eval_info: EvaluationRecord,
     train_histories, 
     replicate_info,
 ):

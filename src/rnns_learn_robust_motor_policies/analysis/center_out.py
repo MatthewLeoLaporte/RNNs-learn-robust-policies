@@ -8,7 +8,7 @@ from equinox import Module
 from jax_cookbook import is_module
 from jaxtyping import PyTree
 
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
 from rnns_learn_robust_motor_policies.analysis.state_utils import BestReplicateStates
 from rnns_learn_robust_motor_policies.colors import MEAN_LIGHTEN_FACTOR
 from rnns_learn_robust_motor_policies.constants import REPLICATE_CRITERION
@@ -25,10 +25,7 @@ class CenterOutByEval(AbstractAnalysis):
 
     def make_figs(
         self,
-        models: PyTree[Module],
-        tasks: PyTree[Module],
-        states: PyTree[Module],
-        hps: PyTree[TreeNamespace],
+        data: AnalysisInputData,
         *,
         best_replicate_states,
         **kwargs,
@@ -48,9 +45,9 @@ class CenterOutByEval(AbstractAnalysis):
         )
         return figs
 
-    def _params_to_save(self, hps: PyTree[TreeNamespace], *, replicate_info, pert_std, **kwargs):
+    def _params_to_save(self, hps: PyTree[TreeNamespace], *, replicate_info, train_pert_std, **kwargs):
         return dict(
-            i_replicate=replicate_info[pert_std]['best_replicates'][REPLICATE_CRITERION],
+            i_replicate=replicate_info[train_pert_std]['best_replicates'][REPLICATE_CRITERION],
         )
 
 
@@ -64,10 +61,7 @@ class CenterOutSingleEval(AbstractAnalysis):
 
     def make_figs(
         self,
-        models: PyTree[Module],
-        tasks: PyTree[Module],
-        states: PyTree[Module],
-        hps: PyTree[TreeNamespace],
+        data: AnalysisInputData,
         *,
         best_replicate_states,
         **kwargs,
@@ -101,13 +95,10 @@ class CenterOutByReplicate(AbstractAnalysis):
 
     def make_figs(
         self,
-        models: PyTree[Module],
-        tasks: PyTree[Module],
-        states: PyTree[Module],
-        hps: PyTree[TreeNamespace],
+        data: AnalysisInputData,
         **kwargs,
     ):
-        plot_states = jtree.take(states[self.variant], self.i_trial, 0)
+        plot_states = jtree.take(data.states[self.variant], self.i_trial, 0)
 
         figs = jt.map(
             partial(
@@ -124,9 +115,9 @@ class CenterOutByReplicate(AbstractAnalysis):
 
         return figs
 
-    def _params_to_save(self, hps: PyTree[TreeNamespace], *, pert_std, **kwargs):
+    def _params_to_save(self, hps: PyTree[TreeNamespace], *, train_pert_std, **kwargs):
         return dict(
-            # n=n_replicates_included[pert_std],
+            # n=n_replicates_included[train_pert_std],
         )
 
 

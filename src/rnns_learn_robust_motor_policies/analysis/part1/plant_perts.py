@@ -18,7 +18,7 @@ import jax_cookbook.tree as jtree
 from rnns_learn_robust_motor_policies.analysis.aligned import Aligned_IdxTrial
 from rnns_learn_robust_motor_policies.analysis.aligned import Aligned_IdxPertAmp
 from rnns_learn_robust_motor_policies.analysis.aligned import Aligned_IdxTrainStd
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
 from rnns_learn_robust_motor_policies.analysis.center_out import CenterOutByEval
 from rnns_learn_robust_motor_policies.analysis.center_out import CenterOutSingleEval
 from rnns_learn_robust_motor_policies.analysis.center_out import CenterOutByReplicate
@@ -92,7 +92,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     
     all_hps = jt.map(lambda _: hps, all_tasks, is_leaf=is_module)
     
-    return all_tasks, all_models, all_hps
+    return all_tasks, all_models, all_hps, None
 
 
 # We aren't vmapping over any other variables, so this is trivial.
@@ -106,21 +106,18 @@ class OutputWeightCorrelation(AbstractAnalysis):
     
     def compute(
         self, 
-        models: PyTree[Module], 
-        tasks: PyTree[Module], 
-        states: PyTree[Module], 
-        hps: PyTree[TreeNamespace], 
+        data: AnalysisInputData,
         **kwargs,
     ):
         activities = jt.map(
             lambda states: states.net.hidden,
-            states[self.variant],
+            data.states[self.variant],
             is_leaf=is_module,
         )
 
         output_weights = jt.map(
             lambda models: models.step.net.readout.weight,
-            models,
+            data.models,
             is_leaf=is_module,
         )
 
@@ -140,10 +137,7 @@ class OutputWeightCorrelation(AbstractAnalysis):
         
     def make_figs(
         self, 
-        models: PyTree[Module], 
-        tasks: PyTree[Module], 
-        states: PyTree[Module], 
-        hps: PyTree[TreeNamespace], 
+        data: AnalysisInputData,
         *, 
         result, 
         colors_0, 

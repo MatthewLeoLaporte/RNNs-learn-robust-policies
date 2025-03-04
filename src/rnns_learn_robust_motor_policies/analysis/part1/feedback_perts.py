@@ -1,4 +1,4 @@
-from types import MappingProxyType
+from types import MappingProxyType, SimpleNamespace
 from typing import ClassVar, Literal, Optional
 import jax.numpy as jnp
 import jax.tree as jt 
@@ -10,9 +10,8 @@ import jax_cookbook.tree as jtree
 from feedbax.intervene import schedule_intervenor
 import feedbax.plotly as fbp
 
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
 from rnns_learn_robust_motor_policies.plot import PLANT_VAR_LABELS, WHERE_PLOT_PLANT_VARS
-from rnns_learn_robust_motor_policies.types import Responses, RESPONSE_VAR_LABELS_SHORT
 from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.types import ImpulseAmpTuple, LDict
 from rnns_learn_robust_motor_policies.perturbations import feedback_impulse
@@ -113,6 +112,8 @@ SETUP_FUNCS_BY_DIRECTION = dict(
     xy=_setup_xy,
 )
 
+I_IMPULSE_AMP_PLOT = -1  # The largest amplitude perturbation
+
 
 def setup_eval_tasks_and_models(task_base, models_base, hps):
     impulse_amplitudes = jt.map(
@@ -121,22 +122,25 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     )
     hps.pert.amp = impulse_amplitudes
 
-    # impulse_end_step = hps.pert.start_step + hps.pert.duration
-    # TODO: Move extra info to another function? Or return it here.
-    # impulse_time_idxs = slice(hps.pert.start_step, impulse_end_step)
+    impulse_end_step = hps.pert.start_step + hps.pert.duration
+    impulse_time_idxs = slice(hps.pert.start_step, impulse_end_step)
 
     # For the example trajectories and aligned profiles, we'll only plot one of the impulse amplitudes. 
-
-    # i_impulse_amp_plot = -1  # The largest amplitude perturbation
-    # impulse_amplitude_plot = {
-    #     pert_var: v[i_impulse_amp_plot] for pert_var, v in impulse_amplitudes.items()
-    # }
+    impulse_amplitude_plot = {
+        pert_var: v[I_IMPULSE_AMP_PLOT] for pert_var, v in impulse_amplitudes.items()
+    }
 
     all_tasks, all_models, impulse_directions = SETUP_FUNCS_BY_DIRECTION[hps.pert.direction](
         task_base, models_base, hps
     )
     
-    return all_tasks, all_models, hps
+    extras = SimpleNamespace(
+        impulse_directions=impulse_directions,
+        impulse_time_idxs=impulse_time_idxs,
+        impulse_amplitude_plot=impulse_amplitude_plot,
+    )
+    
+    return all_tasks, all_models, hps, extras
 
 
 def task_with_imp_amplitude(task, impulse_amplitude):
@@ -167,7 +171,7 @@ class SingleImpulseAmplitude(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     i_impulse_amp_plot: int = -1 
     
-    def compute(self, models, tasks, states, hps, **dependencies):
+    def compute(self, data: AnalysisInputData, **dependencies):
         #! This was used in getting `pert_amp` for `add_evaluation_figure` params; I don't think we need it anymore
         # impulse_amplitude_plot = {
         #     pert_var: v[self.i_impulse_amp_plot] for pert_var, v in hps.pert.amp.items()
@@ -175,7 +179,7 @@ class SingleImpulseAmplitude(AbstractAnalysis):
         
         return jt.map(
             lambda t: t[self.i_impulse_amp_plot],
-            states,
+            data.states,
             is_leaf=is_type(ImpulseAmpTuple),
         )    
     
@@ -189,8 +193,8 @@ class ExampleTrialSets(AbstractAnalysis):
     i_trial: int = 0
     i_replicate: Optional[int] = None
 
-    def compute(self, models, tasks, states, hps, *, single_impulse_amp_states, **dependencies):
-        return jt.map(WHERE_PLOT_PLANT_VARS, states, is_leaf=is_module)
+    def compute(self, data, *, single_impulse_amp_states, **dependencies):
+        return jt.map(WHERE_PLOT_PLANT_VARS, data.states, is_leaf=is_module)
         
         # # Split up the impulse amplitudes from array dim 0, into a tuple part of the PyTree,
         # # and unzip them so `ExamplePlotVars` is on the inside
@@ -216,7 +220,7 @@ class ExampleTrialSets(AbstractAnalysis):
         #     is_leaf=is_type(ImpulseAmpTuple),
         # )
 
-    def make_figs(self, models, tasks, states, hps, *, result, replicate_info, **dependencies):
+    def make_figs(self, data: AnalysisInputData, *, result, replicate_info, **dependencies):
         
         if self.i_replicate is None:
             get_replicate = lambda train_std: replicate_info[train_std]['best_replicate']
@@ -257,7 +261,7 @@ class ResponseTrajectories(AbstractAnalysis):
     variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
     
-    def make_figs(self, models, tasks, states, hps, *, result, **dependencies):
+    def make_figs(self, data: AnalysisInputData, *, result, **dependencies):
         figs = {}  # Define figs to fix the linter error
         return figs        
 

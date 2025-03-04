@@ -11,6 +11,7 @@ import jax.tree as jt
 from jaxtyping import Array, PRNGKeyArray, PyTree
 import numpy as np
 import optax
+from sqlalchemy.orm import Session
 
 from feedbax._io import arrays_to_lists
 from feedbax.loss import AbstractLoss
@@ -154,7 +155,7 @@ def where_strs_to_funcs(where_strs: Sequence[str] | dict[int, Sequence[str]]):
 
 
 def train_and_save_models(
-    db_session,
+    db_session: Session,
     hps_common: TreeNamespace, 
     key: PRNGKeyArray,
     untrained_only: bool = True,
@@ -247,7 +248,7 @@ def concat_save_iterations(iterations: Array, n_batches_seq: Sequence[int]):
 
 
 def skip_already_trained(
-    db_session, 
+    db_session: Session, 
     task_model_pairs: PyTree[TaskModelPair, 'T'], 
     all_hps: PyTree[dict, 'T'],
     n_std_exclude: int,
