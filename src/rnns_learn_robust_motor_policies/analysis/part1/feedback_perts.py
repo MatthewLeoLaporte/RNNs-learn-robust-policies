@@ -11,6 +11,7 @@ from feedbax.intervene import schedule_intervenor
 import feedbax.plotly as fbp
 
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
+from rnns_learn_robust_motor_policies.analysis.effector import Effector_SingleEval
 from rnns_learn_robust_motor_policies.plot import PLANT_VAR_LABELS, WHERE_PLOT_PLANT_VARS
 from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.types import ImpulseAmpTuple, LDict
@@ -51,7 +52,7 @@ def _setup_rand(task_base, models_base, hps):
             default_active=False,
             stage_name="update_queue",
         ),
-        LDict.of("pert__fb_var")(dict(pos=0, vel=1)),
+        LDict.of("pert__var")(dict(fb_pos=0, fb_vel=1)),
         is_leaf=is_type(tuple),
     ))
 
@@ -67,10 +68,12 @@ def _setup_rand(task_base, models_base, hps):
 
 def _setup_xy(task_base, models_base, hps):
     """Impulses only in the x and y directions."""
-    feedback_var_idxs = LDict.of("pert__fb_var")(dict(zip(PERT_VAR_NAMES, range(len(PERT_VAR_NAMES)))))
+    feedback_var_idxs = LDict.of("pert__var")(
+        dict(zip(PERT_VAR_NAMES, range(len(PERT_VAR_NAMES))))
+    )
     coord_idxs = dict(zip(COORD_NAMES, range(len(COORD_NAMES))))
     
-    impulse_xy_conditions = LDict.of("pert__fb_var").fromkeys(PERT_VAR_NAMES, dict.fromkeys(COORD_NAMES))
+    impulse_xy_conditions = LDict.of("pert__var").fromkeys(PERT_VAR_NAMES, dict.fromkeys(COORD_NAMES))
     impulse_xy_conditions_keys = jtree.key_tuples(
         impulse_xy_conditions, keys_to_strs=True, is_leaf=lambda x: x is None,
     )
@@ -117,8 +120,8 @@ I_IMPULSE_AMP_PLOT = -1  # The largest amplitude perturbation
 
 def setup_eval_tasks_and_models(task_base, models_base, hps):
     impulse_amplitudes = jt.map(
-        lambda max_amp: jnp.linspace(0, max_amp, hps.pert.n_amplitudes + 1)[1:],
-        hps.pert.amp_max,
+        lambda max_amp: jnp.linspace(0, max_amp, hps.pert.n_amps + 1)[1:],
+        LDict.of("pert__var").from_ns(hps.pert.amp_max),
     )
     hps.pert.amp = impulse_amplitudes
 
@@ -165,7 +168,7 @@ def eval_func(key_eval, hps, models, task):
     
     
 
-class SingleImpulseAmplitude(AbstractAnalysis):
+class States_SingleImpulseAmplitude(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType({})
     variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
@@ -186,7 +189,7 @@ class SingleImpulseAmplitude(AbstractAnalysis):
 
 class ExampleTrialSets(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
-        single_impulse_amp_states=SingleImpulseAmplitude,
+        single_impulse_amp_states=States_SingleImpulseAmplitude,
     ))
     variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
@@ -239,6 +242,8 @@ class ExampleTrialSets(AbstractAnalysis):
                     axes_labels=('x', 'y'),
                     curves_mode='markers+lines',
                     ms=3,
+                    # colorscale=COLORSCALES['reach_condition'],
+                    # legend_title='Reach direction',
                     scatter_kws=dict(line_width=0.75),
                     layout_kws=dict(
                         width=100 + len(PLANT_VAR_LABELS) * 300,
@@ -256,7 +261,7 @@ class ExampleTrialSets(AbstractAnalysis):
 
 class ResponseTrajectories(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
-        single_impulse_amp_states=SingleImpulseAmplitude,
+        single_impulse_amp_states=States_SingleImpulseAmplitude,
     ))
     variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
@@ -266,4 +271,6 @@ class ResponseTrajectories(AbstractAnalysis):
         return figs        
 
 
-ALL_ANALYSES = []
+ALL_ANALYSES = [
+    Effector_SingleEval(),
+]

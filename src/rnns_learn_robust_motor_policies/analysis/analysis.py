@@ -15,9 +15,10 @@ from jax_cookbook import is_type
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.database import EvaluationRecord, add_evaluation_figure, savefig
-from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace, tree_level_labels
+from rnns_learn_robust_motor_policies.tree_utils import tree_level_labels
 from rnns_learn_robust_motor_policies.misc import camel_to_snake, get_dataclass_fields
 from rnns_learn_robust_motor_policies.plot_utils import figs_flatten_with_paths
+from rnns_learn_robust_motor_policies.types import TreeNamespace
 
 
 if TYPE_CHECKING:
@@ -112,7 +113,7 @@ class AbstractAnalysis(Module):
         Note that `**kwargs` here may not only contain the dependencies, but that `save` 
         passes the key-value pairs of parameters inferred from the `figs` PyTree. 
         Thus for example `train_pert_std` is explicitly referred to in the argument list of 
-        `plant_perts.CenterOutByEval._params_to_save`.
+        `plant_perts.Effector_ByEval._params_to_save`.
         """
         return dict()
 

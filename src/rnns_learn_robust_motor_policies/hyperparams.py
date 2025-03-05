@@ -16,15 +16,15 @@ import jax_cookbook.tree as jtree
 from rnns_learn_robust_motor_policies.config import load_config, load_default_config
 from rnns_learn_robust_motor_policies.constants import LEVEL_LABEL_SEP, get_iterations_to_save_model_parameters
 from rnns_learn_robust_motor_policies.tree_utils import (
-    TreeNamespace, 
-    dict_to_namespace, 
     tree_level_labels,
     deep_update,
-    is_dict_with_int_keys,
 )
 from rnns_learn_robust_motor_policies.types import (
     TaskModelPair, 
     LDict,
+    TreeNamespace,
+    dict_to_namespace,
+    is_dict_with_int_keys,
 )
 
 
@@ -118,7 +118,9 @@ def flatten_hps(
             hps.load = promote_model_hps(hps.load)
         else:
             del hps.load
-
+    
+    #! TODO: Don't do this, since we can't unflatten from DB column names later 
+    #! without confusing model params with other top-level params
     hps = promote_model_hps(hps)
 
     hp_values = jt.leaves(hps, is_leaf=is_leaf)

@@ -11,7 +11,7 @@ from equinox import Module
 
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis
 from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
-from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
+from rnns_learn_robust_motor_policies.types import TreeNamespace
 from rnns_learn_robust_motor_policies.types import LDict
 
 

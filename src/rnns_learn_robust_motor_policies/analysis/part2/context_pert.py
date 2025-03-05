@@ -6,7 +6,7 @@ import equinox as eqx
 
 from feedbax.task import TrialSpecDependency
 
-from rnns_learn_robust_motor_policies.analysis.center_out import CenterOutByReplicate
+from rnns_learn_robust_motor_policies.analysis.effector import Effector_ByReplicate
 from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_step_task_input
 from rnns_learn_robust_motor_policies.types import LDict
@@ -41,5 +41,5 @@ eval_func = vmap_eval_ensemble
     
 
 ALL_ANALYSES = [
-    CenterOutByReplicate(variant='full'),
+    Effector_ByReplicate(variant='full'),
 ]

@@ -19,16 +19,16 @@ from rnns_learn_robust_motor_policies.analysis.aligned import Aligned_IdxTrial
 from rnns_learn_robust_motor_policies.analysis.aligned import Aligned_IdxPertAmp
 from rnns_learn_robust_motor_policies.analysis.aligned import Aligned_IdxTrainStd
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
-from rnns_learn_robust_motor_policies.analysis.center_out import CenterOutByEval
-from rnns_learn_robust_motor_policies.analysis.center_out import CenterOutSingleEval
-from rnns_learn_robust_motor_policies.analysis.center_out import CenterOutByReplicate
+from rnns_learn_robust_motor_policies.analysis.effector import Effector_ByEval
+from rnns_learn_robust_motor_policies.analysis.effector import Effector_SingleEval
+from rnns_learn_robust_motor_policies.analysis.effector import Effector_ByReplicate
 from rnns_learn_robust_motor_policies.analysis.disturbance import PERT_FUNCS
 from rnns_learn_robust_motor_policies.analysis.measures import output_corr
 from rnns_learn_robust_motor_policies.analysis.measures import Measures_LoHiSummary
 from rnns_learn_robust_motor_policies.analysis.profiles import VelocityProfiles
 from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL
-from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
+from rnns_learn_robust_motor_policies.types import TreeNamespace
 from rnns_learn_robust_motor_policies.plot import get_violins
 from rnns_learn_robust_motor_policies.types import LDict
 
@@ -120,7 +120,8 @@ class OutputWeightCorrelation(AbstractAnalysis):
             data.models,
             is_leaf=is_module,
         )
-
+        
+        #! TODO: Generalize
         output_corrs = jt.map(
             lambda activities: LDict.of("train__pert__std")({
                 train_std: output_corr(
@@ -143,12 +144,13 @@ class OutputWeightCorrelation(AbstractAnalysis):
         colors_0, 
         **kwargs,
     ):
+        #! TODO: Generalize
         assert result is not None
         fig = get_violins(
             result, 
             yaxis_title="Output correlation", 
             xaxis_title="Train field std.",
-            colors=colors_0[self.variant]['pert_amp']['dark'],
+            colors=colors_0[self.variant]['pert__amp']['dark'],
         )
         return fig
 
@@ -161,9 +163,9 @@ class OutputWeightCorrelation(AbstractAnalysis):
 
 """All the analyses to perform in this part."""
 ALL_ANALYSES = [
-    CenterOutByEval(),
-    CenterOutSingleEval(i_trial=0),
-    CenterOutByReplicate(i_trial=0),
+    Effector_ByEval(),
+    Effector_SingleEval(i_trial=0),
+    Effector_ByReplicate(i_trial=0),
     Aligned_IdxTrial(),
     Aligned_IdxPertAmp(),
     Aligned_IdxTrainStd(),

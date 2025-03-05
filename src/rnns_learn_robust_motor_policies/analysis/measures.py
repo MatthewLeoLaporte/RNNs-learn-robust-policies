@@ -14,13 +14,13 @@ from jax_cookbook import is_type, compose
 import numpy as np
 
 from rnns_learn_robust_motor_policies.plot_utils import get_label_str
-from rnns_learn_robust_motor_policies.types import Responses
+from rnns_learn_robust_motor_policies.types import Responses, TreeNamespace
 from rnns_learn_robust_motor_policies.analysis.aligned import AlignedVars
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
 from rnns_learn_robust_motor_policies.constants import EVAL_REACH_LENGTH, REPLICATE_CRITERION
 from rnns_learn_robust_motor_policies.misc import lohi
 from rnns_learn_robust_motor_policies.plot import get_measure_replicate_comparisons, get_violins
-from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace, subdict, tree_level_labels, tree_subset_ldict_level
+from rnns_learn_robust_motor_policies.tree_utils import subdict, tree_level_labels, tree_subset_ldict_level
 from rnns_learn_robust_motor_policies.types import ResponseVar, Direction, DIRECTION_IDXS, LDict
 
 

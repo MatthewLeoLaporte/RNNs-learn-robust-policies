@@ -69,13 +69,9 @@ from rnns_learn_robust_motor_policies import (
 )
 from rnns_learn_robust_motor_policies.hyperparams import flatten_hps, load_hps, take_train_histories_hps
 from rnns_learn_robust_motor_policies.tree_utils import (
-    TreeNamespace, 
-    dict_to_namespace, 
-    namespace_to_dict,
-    is_dict_with_int_keys, 
     pp
 )
-from rnns_learn_robust_motor_policies.types import LDict
+from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace, dict_to_namespace, is_dict_with_int_keys, namespace_to_dict
 
 
 MODELS_TABLE_NAME = 'models'
@@ -1001,15 +997,23 @@ def retrieve_figures(
     return figures, records
 
 
+class _Box(eqx.Module):
+    data: Any 
+    
+    def unbox(self):
+        return self.data
+
+
 def record_to_namespace(record: RecordBase, split_by='__') -> TreeNamespace:
     """Convert an SQLAlchemy record to a TreeNamespace with nested structure.
     
     Column names with underscores are converted to nested attributes.
     For example, 'foo_bar_baz' becomes foo.bar.baz in the namespace.
-    """
+    """    
     # Get all column values as a dictionary
     record_dict = {
-        column_name: getattr(record, column_name) 
+        # Wrap in `_Box` so that when we convert the dict to namespace, any dict-valued keys don't get converted
+        column_name: _Box(getattr(record, column_name)) 
         for column_name in record.__table__.columns.keys()
     }
     
@@ -1017,17 +1021,10 @@ def record_to_namespace(record: RecordBase, split_by='__') -> TreeNamespace:
         list(column_name.split(split_by)) for column_name in record_dict.keys()
     ]
     
-    nested_dict = dict()
+    # Unflatten dict
+    hps_dict = None 
     
-    def _add_leaf(d, key_path, value):
-        if key_path == ():
-            return value
-        while key_path:
-            key, key_path = key_path[0], key_path[1:]
-            d[key] = _add_leaf(d.get(key, {}), key_path, value)
-        return d
+    # Convert to `TreeNamespace`
     
-    for key_path, value in zip(record_key_paths, record_dict.values()):
-        nested_dict = _add_leaf(nested_dict, key_path, value)
-        
-    return dict_to_namespace(nested_dict, to_type=TreeNamespace)
+    # Unbox values
+    

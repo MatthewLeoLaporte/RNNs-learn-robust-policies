@@ -23,7 +23,7 @@ from rnns_learn_robust_motor_policies.analysis.state_utils import get_constant_t
 from rnns_learn_robust_motor_policies.colors import COLORSCALES
 from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL, POS_ENDPOINTS_ALIGNED
 from rnns_learn_robust_motor_policies.plot import add_endpoint_traces, get_violins
-from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
+from rnns_learn_robust_motor_policies.types import TreeNamespace
 from rnns_learn_robust_motor_policies.types import (
     LDict,
     Responses,

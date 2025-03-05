@@ -5,7 +5,7 @@ load:
   expt_id: 1
     
   model:  
-    n_steps: 100  # TODO: Move this out a level
+    n_steps: 100  # TODO: This should be under `task`
     hidden_size: 100
     feedback_noise_std: 0.01
     motor_noise_std: 0.01
@@ -24,16 +24,16 @@ load:
     # readout_norm_loss_weight: 0.0
     # readout_norm_value: 2.0
   
-eval_n: 2  #! 5
+eval_n: 5
   
 task:  # Passed to the base task constructor
   full:
     eval_grid_n: 2
-    eval_n_directions: 2 #! 24
+    eval_n_directions: 24
     # eval_reach_length: 0.5
   small:
     eval_grid_n: 1
-    eval_n_directions: 2 #! 7
+    eval_n_directions: 7
     # eval_reach_length: 0.5
 
 pert:

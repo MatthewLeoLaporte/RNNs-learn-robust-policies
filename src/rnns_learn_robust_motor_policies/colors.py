@@ -10,7 +10,7 @@ import feedbax.plotly as fbp
 from jax_cookbook import is_type
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
+from rnns_learn_robust_motor_policies.types import TreeNamespace
 from rnns_learn_robust_motor_policies.types import LDict
 
 

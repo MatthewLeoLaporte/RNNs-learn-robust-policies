@@ -13,10 +13,10 @@ from rnns_learn_robust_motor_policies.analysis.state_utils import BestReplicateS
 from rnns_learn_robust_motor_policies.colors import MEAN_LIGHTEN_FACTOR
 from rnns_learn_robust_motor_policies.constants import REPLICATE_CRITERION
 from rnns_learn_robust_motor_policies.plot import plot_2d_effector_trajectories
-from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
+from rnns_learn_robust_motor_policies.types import TreeNamespace
 
 
-class CenterOutByEval(AbstractAnalysis):
+class Effector_ByEval(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         best_replicate_states=BestReplicateStates,
     ))
@@ -30,7 +30,7 @@ class CenterOutByEval(AbstractAnalysis):
         best_replicate_states,
         **kwargs,
     ):
-        plot_states = best_replicate_states['small']
+        plot_states = best_replicate_states[self.variant]
         figs = jt.map(
             partial(
                 plot_2d_effector_trajectories,
@@ -51,12 +51,12 @@ class CenterOutByEval(AbstractAnalysis):
         )
 
 
-class CenterOutSingleEval(AbstractAnalysis):
+class Effector_SingleEval(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         best_replicate_states=BestReplicateStates,
     ))
     variant: Optional[str] = "small"
-    conditions: tuple[str, ...] = ('any_system_noise',)
+    conditions: tuple[str, ...] = ()
     i_trial: int = 0
 
     def make_figs(
@@ -66,7 +66,7 @@ class CenterOutSingleEval(AbstractAnalysis):
         best_replicate_states,
         **kwargs,
     ):
-        plot_states = best_replicate_states['small']
+        plot_states = best_replicate_states[self.variant]
         plot_states_i = jtree.take(plot_states, self.i_trial, 0)
 
         figs = jt.map(
@@ -81,16 +81,16 @@ class CenterOutSingleEval(AbstractAnalysis):
         )
 
         # add_endpoint_traces(
-        #     fig, pos_endpoints['small'], xaxis='x1', yaxis='y1', colorscale='phase'
+        #     fig, pos_endpoints[self.variant], xaxis='x1', yaxis='y1', colorscale='phase'
         # )
 
         return figs
 
 
-class CenterOutByReplicate(AbstractAnalysis):
+class Effector_ByReplicate(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
     variant: Optional[str] = "small"
-    conditions: tuple[str, ...] = ('any_system_noise',)
+    conditions: tuple[str, ...] = ()
     i_trial: int = 0
 
     def make_figs(

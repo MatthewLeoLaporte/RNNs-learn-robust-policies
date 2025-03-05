@@ -25,7 +25,7 @@ import rnns_learn_robust_motor_policies
 from rnns_learn_robust_motor_policies import PROJECT_SEED
 
 from rnns_learn_robust_motor_policies.hyperparams import load_hps
-from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
+from rnns_learn_robust_motor_policies.types import TreeNamespace
 from rnns_learn_robust_motor_policies.database import get_db_session
 from rnns_learn_robust_motor_policies.misc import log_version_info
 from rnns_learn_robust_motor_policies.training import train_and_save_models

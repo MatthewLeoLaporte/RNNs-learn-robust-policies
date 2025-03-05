@@ -38,7 +38,8 @@ from rnns_learn_robust_motor_policies.colors import setup_colors
 from rnns_learn_robust_motor_policies.constants import REPLICATE_CRITERION
 from rnns_learn_robust_motor_policies.database import (
     EvaluationRecord, 
-    ModelRecord, 
+    ModelRecord,
+    RecordBase, 
     add_evaluation, 
     check_model_files, 
     get_db_session, 
@@ -48,8 +49,8 @@ from rnns_learn_robust_motor_policies.hyperparams import flatten_hps, load_hps
 from rnns_learn_robust_motor_policies.misc import log_version_info
 from rnns_learn_robust_motor_policies.training.post_training import TRAINPAIR_SETUP_FUNCS
 from rnns_learn_robust_motor_policies.setup_utils import query_and_load_model
-from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
-from rnns_learn_robust_motor_policies.tree_utils import namespace_to_dict
+from rnns_learn_robust_motor_policies.types import TreeNamespace
+from rnns_learn_robust_motor_policies.types import namespace_to_dict
 from rnns_learn_robust_motor_policies.types import LDict
 
 

@@ -13,7 +13,7 @@ import jax_cookbook.tree as jtree
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_aligned_vars, get_pos_endpoints
 from rnns_learn_robust_motor_policies.colors import COLORSCALES, MEAN_LIGHTEN_FACTOR
-from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
+from rnns_learn_robust_motor_policies.types import TreeNamespace
 from rnns_learn_robust_motor_policies.types import (
     RESPONSE_VAR_LABELS, 
     Responses, 
@@ -129,10 +129,10 @@ class Aligned_IdxPertAmp(AbstractAnalysis):
         hps_common,
         **kwargs,
     ):
-        # plot_vars_stacked = jtree.stack(aligned_vars['small'].values())
+        # plot_vars_stacked = jtree.stack(aligned_vars[self.variant].values())
         plot_vars_stacked = jt.map(
             lambda d: jtree.stack(list(d.values())),
-            aligned_vars['small'],
+            aligned_vars[self.variant],
             is_leaf=LDict.is_of("pert__amp"),
         )
 
@@ -182,7 +182,7 @@ class Aligned_IdxTrainStd(AbstractAnalysis):
         # plot_vars_stacked = LDict.of("pert__amp")({
         #     # concatenate along the replicate axis, which has variable length
         #     pert_amp: jtree.stack(list(vars_.values()))
-        #     for pert_amp, vars_ in aligned_vars['small'].items()
+        #     for pert_amp, vars_ in aligned_vars[self.variant].items()
         # })
         figs = jt.map(
             partial(

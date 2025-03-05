@@ -46,11 +46,10 @@ from rnns_learn_robust_motor_policies.misc import (
     take_model,
 )
 from rnns_learn_robust_motor_policies.tree_utils import (
-    TreeNamespace,
     at_path,
     subdict,
 )
-from rnns_learn_robust_motor_policies.types import LDict, TaskModelPair
+from rnns_learn_robust_motor_policies.types import LDict, TaskModelPair, TreeNamespace
 
 
 def get_base_reaching_task(

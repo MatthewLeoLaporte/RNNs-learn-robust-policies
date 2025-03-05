@@ -14,7 +14,7 @@ from rnns_learn_robust_motor_policies.analysis.aligned import AlignedVars
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
 from rnns_learn_robust_motor_policies.plot_utils import get_label_str
 from rnns_learn_robust_motor_policies.types import Responses
-from rnns_learn_robust_motor_policies.tree_utils import TreeNamespace
+from rnns_learn_robust_motor_policies.types import TreeNamespace
 from rnns_learn_robust_motor_policies.types import LDict
 
 

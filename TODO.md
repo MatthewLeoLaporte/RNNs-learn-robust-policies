@@ -2,7 +2,6 @@
 **See [[results-2|Part 2 results]] for ongoing analysis TODOs.
 
 - [ ] Feedbax: Why is the mean validation loss lower than the mean training loss? Is it because the training task has a different distribution of reach lengths?
-- [ ] A `replicate_info` file might sometimes be generated for a non-postprocessed ModelRecord; in that case, its `has_replicate_info` gets set to `1` by `check_model_files` and this results in a “duplicate” error being raised when trying to load the postprocessed model according to its `has_replicate_info` value. It seems this happened when I re-ran `train.py` after it raised an error on `post_training`; i.e. the second time it only ran `post_training` on a single model.
 
 ## Next
 
@@ -16,14 +15,6 @@ Then: continue with [[#Network analysis Population level]].
 - [ ] [[#Stimulation of Jacobian eigenvectors]] 
 - [ ] [[#Steady-state Hessian]]
 - [ ] [[#TMS/tDCS analogues]]
-
-### Technical
-
-- [ ] ~~`seed`/base `key` column in each of the db tables~~
-- [ ] Move the constants out of `constants` and into config files, where possible. Including `REPLICATE_CRITERION`.
-- [ ] **In `AbstractAnalysis.save_figs`, format the dump filename based on `path_params` and not just an integer counter**
-- [ ] Add the calculation of `disturbance.amp` when loading hyperparams (e.g. 1-2)
-
 ### Convert notebooks for part 1
 
 - [ ] 1-2
@@ -34,6 +25,23 @@ Then: continue with [[#Network analysis Population level]].
 ## Analysis
 
 See [[TODO-analysis]].
+
+## Technical
+
+- [ ] **Convert `model_info` column values to hyperparameters**, so we have access to all the model hps in `hps` without having to fill out the config YAML with whatever we need
+	- i.e. properly implement `record_to_namespace`
+	- the use of `promote_model_hps` in `flatten_hps` is problematic, since we can’t distinguish column names that refer to model hps, to those that refer to other hps (e.g. `eval_n` or `n_std_exclude`)
+	- instead, we should keep the `model__*` prefix for 
+- [ ] **Is it really necessary to construct `all_hps` in `run_analysis`?**
+	- Consider that we will always have access to the hyperparameter information in the `LDict` levels of `all_models`/`all_tasks`
+	- So the question is whether `hps` will ever need to contain information that is specific to a task-model eval pair, aside from the information that is encoded in the structure of the PyTree of pairs
+	- However, we would need to modify the code slightly so that `hps` gets updated with the PyTree path info as we map over the leaves
+	- Also note that we have `extras` now, which is for more structured info that would not be appropriate to pass 
+	- As for the task variant, the differences between the variants is already found in the config file under the YAML key `task`, so we can access it from `hps_common`
+- [x] ~~`seed`/base `key` column in each of the db tables~~
+- [ ] Move the constants out of `constants` and into config files, where possible. Including `REPLICATE_CRITERION`.
+- [ ] **In `AbstractAnalysis.save_figs`, format the dump filename based on `path_params` and not just an integer counter**
+- [ ] Add the calculation of `disturbance.amp` when loading hyperparams (e.g. 1-2)
 
 ## Figures and formatting 
 
@@ -65,8 +73,8 @@ See [[TODO-analysis]].
 Each figure type also has certain parameters which may vary. We may want a function that tells us which parameters are seen to vary for each figure subtype. This will help with writing more specific queries in the figure table, once we know what train+test conditions we are interested in.
 
 ## Debris 
-
-- [ ] ~~Construction of the analysis graph might be too complicated; is there a way to make analysis classes cache their results for a particular input, without causing problems with JAX?~~
+- [ ] A `replicate_info` file might sometimes be generated for a non-postprocessed ModelRecord; in that case, its `has_replicate_info` gets set to `1` by `check_model_files` and this results in a “duplicate” error being raised when trying to load the postprocessed model according to its `has_replicate_info` value. It seems this happened when I re-ran `train.py` after it raised an error on `post_training`; i.e. the second time it only ran `post_training` on a single model.
+- [x] ~~Construction of the analysis graph might be too complicated; is there a way to make analysis classes cache their results for a particular input, without causing problems with JAX?~~
 - [ ] Better CLI progress bars
 - [ ] Solve: Sometimes `AbstractTask.validation_trials` raises a `jax.errors.UnexpectedTracerError`, which suggests there is a side-effect from a compiled function. Strangely, the backtrace points to the `ticks = jax.vmap(...` line in `feedbax.task`. This might only happen when there is only one validation trial.
 - [ ] Separate train and eval seeds in `prng.yml` 
