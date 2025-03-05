@@ -185,7 +185,7 @@ class BestReplicateStates(AbstractAnalysis):
         replicate_info,
         **kwargs,
     ):
-        return jt.map(
+        result = jt.map(
             lambda states_by_std: LDict.of("train__pert__std")({
                 std: jtree.take(
                     states,
@@ -197,6 +197,7 @@ class BestReplicateStates(AbstractAnalysis):
             data.states,
             is_leaf=LDict.is_of("train__pert__std"),
         )
+        return result
     
     
 from feedbax.bodies import SimpleFeedbackState

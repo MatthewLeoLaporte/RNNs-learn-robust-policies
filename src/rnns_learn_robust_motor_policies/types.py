@@ -58,6 +58,11 @@ class TreeNamespace(SimpleNamespace):
     This is useful when we want to attribute-like access to the data in
     a nested dict. For example, `hyperparameters['train']['n_batches']` 
     becomes `TreeNamespace(**hyperparameters).train.n_batches`.
+    
+    NOTE:
+        If it weren't for `update_none_leaves`, `__or__`, and perhaps `__repr__`, 
+        we could simply register `SimpleNamespace` as a PyTree. Consider whether 
+        these methods can be replaced by e.g. functions.
     """
     def tree_flatten_with_keys(self):
         children_with_keys = [(jtu.GetAttrKey(k), v) for k, v in self.__dict__.items()]
@@ -85,13 +90,9 @@ class TreeNamespace(SimpleNamespace):
             attr_strs.append(f"{name}={attr_repr},")
 
         current_indent = TREENAMESPACE_REPR_INDENT * level
-        inner_str = current_indent + TREENAMESPACE_REPR_INDENT + s for s in attr_strs
+        inner_str = '\n'.join(current_indent + TREENAMESPACE_REPR_INDENT + s for s in attr_strs)
         
-        return (
-            f"{cls_name}(\n"
-            + '\n'.join(inner_str) 
-            + f"\n{current_indent})"
-        )
+        return f"{cls_name}(\n" + inner_str + f"\n{current_indent})"
 
     def update_none_leaves(self, other):
         # I would just use `jt.map` or `eqx.combine` to do this, however I don't want to assume
@@ -144,6 +145,29 @@ class TreeNamespace(SimpleNamespace):
                 setattr(result, attr_name, other_value)
 
         return result
+    
+
+def unflatten_dict_keys(flat_dict: dict, sep: str = '__') -> dict:
+    """Unflatten a dictionary by splitting keys on the separator.
+    
+    Supports multiple levels of nesting.
+    """
+    result = {}
+    
+    for key, value in flat_dict.items():
+        current = result
+        
+        if sep in key:
+            parts = key.split(sep)
+            
+            for part in parts[:-1]:
+                current = current.setdefault(part, {})
+                
+            current[parts[-1]] = value
+        else:
+            result[key] = value
+            
+    return result
 
 
 @jax.tree_util.register_pytree_with_keys_class

@@ -22,6 +22,8 @@ class Effector_ByEval(AbstractAnalysis):
     ))
     variant: Optional[str] = "small"
     conditions: tuple[str, ...] = ('any_system_noise',)  # Skip this analysis, if only one eval
+    legend_title: str = "Reach direction"
+    colorscale_key: str = "reach_condition"
 
     def make_figs(
         self,
@@ -34,6 +36,8 @@ class Effector_ByEval(AbstractAnalysis):
         figs = jt.map(
             partial(
                 plot_2d_effector_trajectories,
+                legend_title=self.legend_title,
+                colorscale_key=self.colorscale_key,
                 curves_mode='lines',
                 colorscale_axis=1,
                 mean_trajectory_line_width=2.5,
@@ -57,6 +61,8 @@ class Effector_SingleEval(AbstractAnalysis):
     ))
     variant: Optional[str] = "small"
     conditions: tuple[str, ...] = ()
+    legend_title: str = "Reach direction"
+    colorscale_key: str = "reach_condition"
     i_trial: int = 0
 
     def make_figs(
@@ -67,11 +73,14 @@ class Effector_SingleEval(AbstractAnalysis):
         **kwargs,
     ):
         plot_states = best_replicate_states[self.variant]
+        # Assume replicate has already been indexed out, and trial is the first axis
         plot_states_i = jtree.take(plot_states, self.i_trial, 0)
 
         figs = jt.map(
             partial(
                 plot_2d_effector_trajectories,
+                legend_title=self.legend_title,
+                colorscale_key=self.colorscale_key,
                 mode='markers+lines',
                 ms=3,
                 scatter_kws=dict(line_width=0.75),
@@ -91,6 +100,8 @@ class Effector_ByReplicate(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
     variant: Optional[str] = "small"
     conditions: tuple[str, ...] = ()
+    legend_title: str = "Reach direction"
+    colorscale_key: str = "reach_condition"
     i_trial: int = 0
 
     def make_figs(
@@ -103,6 +114,8 @@ class Effector_ByReplicate(AbstractAnalysis):
         figs = jt.map(
             partial(
                 plot_2d_effector_trajectories,
+                legend_title=self.legend_title,
+                colorscale_key=self.colorscale_key,
                 curves_mode='lines',
                 colorscale_axis=1,
                 mean_trajectory_line_width=2.5,

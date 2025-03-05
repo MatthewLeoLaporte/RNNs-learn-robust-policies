@@ -5,6 +5,8 @@
 
 ## Next
 
+- [ ] **In `AbstractAnalysis.save_figs`, format the dump filename based on `path_params` and not just an integer counter**
+
 - [ ] [[#Influence of context input on network dynamics]]
 - [ ] [[#Variation in effective direction, over a reach]]
 - [ ] [[#Individual unit ablation]]
@@ -38,9 +40,10 @@ See [[TODO-analysis]].
 	- However, we would need to modify the code slightly so that `hps` gets updated with the PyTree path info as we map over the leaves
 	- Also note that we have `extras` now, which is for more structured info that would not be appropriate to pass 
 	- As for the task variant, the differences between the variants is already found in the config file under the YAML key `task`, so we can access it from `hps_common`
+- [ ] Combine `Effector_ByEval`, `Effector_SingleEval`, `Effector_ByReplicate`
+	- Be careful about axes. For example, in `part1.feedback_perts` we add an impulse amplitude axis; we have to add it at position 2 so as not to interfere with trial/replicate indexing. However, for `Effector_ByReplicate` we will end up lumping the impulse amplitude axis, I think, and coloring by replicate. Is this the intended behaviour?
 - [x] ~~`seed`/base `key` column in each of the db tables~~
 - [ ] Move the constants out of `constants` and into config files, where possible. Including `REPLICATE_CRITERION`.
-- [ ] **In `AbstractAnalysis.save_figs`, format the dump filename based on `path_params` and not just an integer counter**
 - [ ] Add the calculation of `disturbance.amp` when loading hyperparams (e.g. 1-2)
 
 ## Figures and formatting 
@@ -65,10 +68,24 @@ See [[TODO-analysis]].
 
 ## Database 
 
+- [ ] Switch to a document database like MongoDB (or TinyDB)
+	- See [this](https://console.anthropic.com/workbench/279b86f6-39f9-4c42-947f-6f1b02df1224) convo with Claude. 
+	- I’m not sure I’ll do this for this project, however it is appealing because it seems to 1) avoid issues with flattening/unflattening hyperparameters, 2) allow more complex queries, 3) doesn’t require an ORM to be defined
 - [ ] Function which deletes/archives any .eqx files for which the database record is missing – this will allow us to delete database records to “delete” models, then use this function to clean up afterwards
 - [ ] Linking table that maintains foreign key relationships between evaluation records and model records; i.e. currently we store multiple model hashes in a `list[str]` column of the evals table, since an eval can depend on multiple models. But it doesn’t make sense to have an arbitrary number of foreign key columns in this table. Instead, the linking table would have a single entry for each eval-model dependency relation (i.e. a single eval record that refers to the hashes of 5 model records, corresponds to 5 records in the linking table).
 
-#### Function to obtain figures based on training + testing conditions
+###  Converting a record to a `TreeNamespace`
+
+e.g. when loading hps for a model.
+
+Approaches:
+
+1. Split column names to unflatten the record entries into a nested dict, then convert to a namespace. 
+2. Use a document database like MongoDB
+
+One approach Claude suggested was to add an extra column that stores the entire hyperparameter JSON, so we can load it all at once without flattening. However, this doesn’t save us anything as we still want to keep the flattened columns for querying purposes, meaning we still need at least `flatten_hps`, and also the database stores all of the hyperparameter values twice. 
+
+### Function to obtain figures based on training + testing conditions
 
 Each figure type also has certain parameters which may vary. We may want a function that tells us which parameters are seen to vary for each figure subtype. This will help with writing more specific queries in the figure table, once we know what train+test conditions we are interested in.
 

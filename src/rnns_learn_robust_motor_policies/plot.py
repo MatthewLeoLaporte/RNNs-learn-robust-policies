@@ -511,14 +511,21 @@ WHERE_PLOT_PLANT_VARS = lambda states: Responses(
 )
 
 
-def plot_2d_effector_trajectories(states, *args, **kwargs):
-    """Helper to define the usual formatting for center-out plots."""
+def plot_2d_effector_trajectories(
+    states, 
+    *args, 
+    # Corresponding to axis 0 of `states`:
+    legend_title='Reach direction', 
+    colorscale_key='reach_condition', 
+    **kwargs,
+):
+    """Helper to define the usual formatting for effector trajectory plots."""
     return fbp.trajectories_2D(
         WHERE_PLOT_PLANT_VARS(states),
         var_labels=PLANT_VAR_LABELS,
         axes_labels=('x', 'y'),
-        colorscale=COLORSCALES['reach_condition'],
-        legend_title='Reach direction',
+        colorscale=COLORSCALES[colorscale_key],
+        legend_title=legend_title,
         # scatter_kws=dict(line_width=0.5),
         layout_kws=dict(
             width=100 + len(PLANT_VAR_LABELS) * 300,

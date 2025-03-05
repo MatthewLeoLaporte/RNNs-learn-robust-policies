@@ -24,7 +24,7 @@ load:
     # readout_norm_loss_weight: 0.0
     # readout_norm_value: 2.0
   
-eval_n: 5
+eval_n: 3
   
 task:  # Passed to the base task constructor
   full:

@@ -14,7 +14,7 @@ from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis,
 from rnns_learn_robust_motor_policies.analysis.effector import Effector_SingleEval
 from rnns_learn_robust_motor_policies.plot import PLANT_VAR_LABELS, WHERE_PLOT_PLANT_VARS
 from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
-from rnns_learn_robust_motor_policies.types import ImpulseAmpTuple, LDict
+from rnns_learn_robust_motor_policies.types import ImpulseAmpTuple, LDict, unflatten_dict_keys
 from rnns_learn_robust_motor_policies.perturbations import feedback_impulse
 
 
@@ -44,7 +44,7 @@ def _setup_rand(task_base, models_base, hps):
             lambda model: model.step.feedback_channels[0],  # type: ignore
             feedback_impulse(  
                 hps.model.n_steps,
-                1.0, #impulse_amplitude[pert_var_names[feedback_var_idx]],
+                1.0,  # Will be varied later
                 hps.pert.duration,
                 feedback_var_idx,   
                 hps.pert.start_step,
@@ -84,7 +84,7 @@ def _setup_xy(task_base, models_base, hps):
             lambda model: model.step.feedback_channels[0],  # type: ignore
             feedback_impulse(
                 hps.model.n_steps,
-                1.0, # impulse_amplitude[ks[0]],
+                1.0, 
                 hps.pert.duration,
                 feedback_var_idxs[ks[0]],  
                 hps.pert.start_step,
@@ -119,22 +119,28 @@ I_IMPULSE_AMP_PLOT = -1  # The largest amplitude perturbation
 
 
 def setup_eval_tasks_and_models(task_base, models_base, hps):
+
+    impulse_end_step = hps.pert.start_step + hps.pert.duration
+    impulse_time_idxs = slice(hps.pert.start_step, impulse_end_step)
+
+
+    all_tasks, all_models, impulse_directions = SETUP_FUNCS_BY_DIRECTION[hps.pert.direction](
+        task_base, models_base, hps
+    )
+    
     impulse_amplitudes = jt.map(
         lambda max_amp: jnp.linspace(0, max_amp, hps.pert.n_amps + 1)[1:],
         LDict.of("pert__var").from_ns(hps.pert.amp_max),
     )
-    hps.pert.amp = impulse_amplitudes
-
-    impulse_end_step = hps.pert.start_step + hps.pert.duration
-    impulse_time_idxs = slice(hps.pert.start_step, impulse_end_step)
 
     # For the example trajectories and aligned profiles, we'll only plot one of the impulse amplitudes. 
     impulse_amplitude_plot = {
         pert_var: v[I_IMPULSE_AMP_PLOT] for pert_var, v in impulse_amplitudes.items()
     }
-
-    all_tasks, all_models, impulse_directions = SETUP_FUNCS_BY_DIRECTION[hps.pert.direction](
-        task_base, models_base, hps
+    
+    all_hps = jt.map(
+        lambda amps: hps | unflatten_dict_keys(dict(pert__amps=amps)), 
+        impulse_amplitudes,
     )
     
     extras = SimpleNamespace(
@@ -143,7 +149,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
         impulse_amplitude_plot=impulse_amplitude_plot,
     )
     
-    return all_tasks, all_models, hps, extras
+    return all_tasks, all_models, all_hps, extras
 
 
 def task_with_imp_amplitude(task, impulse_amplitude):
@@ -157,15 +163,23 @@ def task_with_imp_amplitude(task, impulse_amplitude):
 
 def eval_func(key_eval, hps, models, task):
     """Vmap over impulse amplitude."""
-    return eqx.filter_vmap(
+    states = eqx.filter_vmap(
         lambda amplitude: vmap_eval_ensemble(
             key_eval,
             hps,
             models, 
             task_with_imp_amplitude(task, amplitude), 
-        )
+        ),
     )(hps.pert.amps)
     
+    # I am not sure why this moveaxis is necessary. 
+    # I tried using `out_axes=2` (with or without `in_axes=0`) and 
+    # the result has the trial (axis 0) and replicate (axis 1) swapped.
+    # (I had expected vmap to simply insert the new axis in the indicated position.)
+    return jt.map(
+        lambda arr: jnp.moveaxis(arr, 0, 2),
+        states,
+    )
     
 
 class States_SingleImpulseAmplitude(AbstractAnalysis):
@@ -187,78 +201,6 @@ class States_SingleImpulseAmplitude(AbstractAnalysis):
         )    
     
 
-class ExampleTrialSets(AbstractAnalysis):
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
-        single_impulse_amp_states=States_SingleImpulseAmplitude,
-    ))
-    variant: Optional[str] = "full"
-    conditions: tuple[str, ...] = ()
-    i_trial: int = 0
-    i_replicate: Optional[int] = None
-
-    def compute(self, data, *, single_impulse_amp_states, **dependencies):
-        return jt.map(WHERE_PLOT_PLANT_VARS, data.states, is_leaf=is_module)
-        
-        # # Split up the impulse amplitudes from array dim 0, into a tuple part of the PyTree,
-        # # and unzip them so `ExamplePlotVars` is on the inside
-        # plot_states = jt.map(
-        #     lambda plot_vars: jtree.unzip(
-        #         jt.map(
-        #             lambda arr: ImpulseAmpTuple(arr),
-        #             plot_vars,
-        #         ),
-        #         ImpulseAmpTuple,
-        #     ),
-        #     plot_states,
-        #     is_leaf=is_type(Responses),
-        # )
-        
-        # # Only plot the strongest impulse amplitude, here
-        # # (This makes the last step kind of superfluous but if we need to change this 
-        # # again later, it might be convenient for the impulse amplitudes to be part of 
-        # # the PyTree structure)
-        # plot_states = jt.map(
-        #     lambda t: t[i_impulse_amp_plot],
-        #     plot_states,
-        #     is_leaf=is_type(ImpulseAmpTuple),
-        # )
-
-    def make_figs(self, data: AnalysisInputData, *, result, replicate_info, **dependencies):
-        
-        if self.i_replicate is None:
-            get_replicate = lambda train_std: replicate_info[train_std]['best_replicate']
-        else:
-            get_replicate = lambda _: self.i_replicate
-            
-        figs = jt.map(  
-            lambda states: LDict.of("train__pert__std")({
-                train_std: fbp.trajectories_2D(
-                    jtree.take_multi(
-                        plot_vars, 
-                        [self.i_trial, get_replicate(train_std)],
-                        [0, 1]
-                    ),
-                    var_labels=PLANT_VAR_LABELS,
-                    axes_labels=('x', 'y'),
-                    curves_mode='markers+lines',
-                    ms=3,
-                    # colorscale=COLORSCALES['reach_condition'],
-                    # legend_title='Reach direction',
-                    scatter_kws=dict(line_width=0.75),
-                    layout_kws=dict(
-                        width=100 + len(PLANT_VAR_LABELS) * 300,
-                        height=400,
-                        legend_tracegroupgap=1,
-                    ),
-                )
-                for train_std, plot_vars in states.items()
-            }),
-            result,
-            is_leaf=LDict.is_of("train__pert__std"),
-        )  
-        return figs
-    
-
 class ResponseTrajectories(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         single_impulse_amp_states=States_SingleImpulseAmplitude,
@@ -271,6 +213,14 @@ class ResponseTrajectories(AbstractAnalysis):
         return figs        
 
 
+VARIANT = "full"
+
 ALL_ANALYSES = [
-    Effector_SingleEval(),
+    Effector_SingleEval(
+        variant=VARIANT,
+        #! TODO: This doesn't result in the impulse amplitude *values* showing up in the legend!
+        #! (could try to access `colorscale_key` from `hps`, in `Effector_SingleEval`)
+        legend_title="Impulse amplitude",
+        colorscale_key='pert__amp',
+    ),
 ]
