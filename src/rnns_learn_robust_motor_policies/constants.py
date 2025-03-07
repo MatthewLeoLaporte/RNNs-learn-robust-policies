@@ -27,7 +27,6 @@ MOTOR_NOISE_STD = 0.01
 
 
 ## Task parameters
-# TODO: Maybe move to config/task.yml
 N_STEPS = 100
 WORKSPACE = ((-1., -1.),
              (1., 1.))

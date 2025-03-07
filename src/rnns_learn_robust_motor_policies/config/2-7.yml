@@ -3,11 +3,6 @@ expt_id: 2-7
 #  Hyperparameters that uniquely identify the model(s)/training run(s) to analyze
 load:  
   expt_id: 2
-
-  pert:  # during training
-    type: curl
-    # list -> load multiple models
-    std: [0, 0.5, 1.0, 1.5]  
     
   model:  
     n_steps: 100  
@@ -17,6 +12,10 @@ load:
     feedback_delay_steps: 0
     
   train:
+    pert:  # during training
+      type: curl
+      # list -> load multiple models
+      std: [0, 0.5, 1.0, 1.5]  
     where: 
       0: ['step.net.hidden', 'step.net.readout']
     method: 'pai-asf'
@@ -24,16 +23,20 @@ load:
 eval_n: 10
 
 task:  # Passed to the base task constructor
-  full:
+  steady:
     eval_grid_n: 1
     eval_n_directions: 1
     eval_reach_length: 0
+  reach:
+    eval_grid_n: 2
+    eval_n_directions: 7
+    # eval_reach_length: 0.5
 
 pert:
   context:
     step: 30
-    c_min: 0
-    c_max: 1
+    c_init: 0
+    c_final: 1
 
 model:
   n_steps: null

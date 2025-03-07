@@ -24,3 +24,10 @@
 - [x] **In `types`, make the mapping algorithmic between custom dict types and the column names they map to. Thus `PertVarDict` keys correspond to `pert_var` column values.** 🗎 Next > Technical
 	- **Use `LDict`**
 	- Similarly, we can use the same system to automatically determine the axis labels for `get_violins`
+
+# 2025-03-06
+
+- [x] ~~Construction of the analysis graph might be too complicated; is there a way to make analysis classes cache their results for a particular input, without causing problems with JAX?~~ 🗎 Next > Debris
+- [x] ~~`seed`/base `key` column in each of the db tables~~ 🗎 Next > Technical
+- [x] ~~**In `AbstractAnalysis.save_figs`, format the dump filename based on `path_params` and not just an integer counter**~~ 🗎 Next
+	- Nope; instead I just modified

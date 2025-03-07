@@ -1,0 +1,326 @@
+from collections.abc import Sequence
+from types import MappingProxyType, SimpleNamespace
+from typing import ClassVar, Optional
+
+from equinox import field
+import jax.random as jr
+import jax.tree as jt
+from jaxtyping import PyTree, PRNGKeyArray
+import numpy as np
+import plotly.graph_objects as go
+
+from feedbax.bodies import SimpleFeedbackState
+from feedbax.misc import batch_reshape
+from jax_cookbook import is_type
+from sklearn.decomposition import PCA
+
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
+from rnns_learn_robust_motor_policies.analysis.state_utils import BestReplicateStates
+from rnns_learn_robust_motor_policies.constants import REPLICATE_CRITERION
+from rnns_learn_robust_motor_policies.plot_utils import get_label_str
+from rnns_learn_robust_motor_policies.plot_utils import calculate_array_minmax
+from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
+
+
+def activity_sample_units(
+    activities: LDict,
+    n_units_sample: int = 4,
+    unit_includes: Optional[Sequence[int]] = None,
+    colors: Optional[dict] = None,
+    row_height: int = 150,
+    layout_kws: Optional[dict] = None,
+    legend_title: Optional[str] = None,
+    *,
+    key: PRNGKeyArray,
+    **kwargs,
+) -> go.Figure:
+    """Plot activity over multiple conditions for a random sample of network units.
+    
+    Combines all values from activities dictionary into a single figure, with each value 
+    given a different color in the legend.
+    
+    Arguments:
+        activities: A dictionary or LDict of activity arrays. 
+            Each activity array should have shape (trials, time steps, units).
+        n_units_sample: The number of units to sample from the layer.
+        unit_includes: Indices of specific units to include in the plot.
+        colors: A dictionary mapping keys from activities to colors.
+        row_height: How tall (in pixels) to make the figure, as a factor of units sampled.
+        layout_kws: Additional kwargs for the figure layout.
+        legend_title: Title for the legend. If None, attempts to derive from activities.label.
+        key: A random key used to sample the units to plot.
+    """    
+    if colors is None:
+        colors = {}
+        
+    # Get legend title from activities.label if available and not provided
+    if legend_title is None:
+        legend_title = get_label_str(activities.label)
+    
+    # Get a sample of units
+    n_units_total = jt.leaves(activities)[0].shape[-1]
+    unit_idxs = jr.choice(
+        key, np.arange(n_units_total), (n_units_sample,), replace=False
+    )
+    if unit_includes is not None:
+        unit_idxs = np.concatenate([unit_idxs, np.array(unit_includes)])
+    unit_idxs = np.sort(unit_idxs)
+    unit_idx_strs = [str(i) for i in unit_idxs]
+    
+    # Create figure with a subplot for each unit)
+    from plotly.subplots import make_subplots
+    fig = make_subplots(
+        rows=len(unit_idxs), 
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.02,
+    )
+    fig.update_layout(height=row_height * len(unit_idxs))
+        
+    condition_values = list(activities.keys())
+    
+    # Process each condition
+    for condition_idx, condition in enumerate(condition_values):
+        activity_data = activities[condition]
+        
+        # Normalize the activities to shape (trials, time, units)
+        if len(activity_data.shape) == 2:  # (time, units)
+            activities_3d = activity_data[None, :, :]  # Add trial dimension
+        elif len(activity_data.shape) > 3:  # Extra dimensions
+            # Reshape to (trials, time, units)
+            activities_3d = activity_data.reshape(-1, activity_data.shape[-2], activity_data.shape[-1])
+        else:  # Already 3D
+            activities_3d = activity_data
+        
+        # Extract the selected units
+        activities_units = activities_3d[..., unit_idxs]
+        
+        # Flatten batch dimensions if needed - we'll use only first element of second dim
+        if activities_units.shape[1] == 1:
+            # If single timestep, just squeeze
+            batch_activities = activities_units[:, 0, :]
+        else:
+            # Keep as is
+            batch_activities = activities_units
+            
+        # Get the color for this condition
+        color = colors.get(condition, None)
+        
+        # For each eval (trial)
+        for trial_idx, batch_activity in enumerate(batch_activities):
+            # Ensure batch_activity has shape (time, n_selected_units)
+            if batch_activity.ndim == 1:
+                # If it's 1D (just time), reshape to (time, 1)
+                batch_activity = batch_activity.reshape(-1, 1)
+                
+            # Create a separate trace for each unit
+            for unit_idx, unit_str in enumerate(unit_idx_strs):
+                unit_activity = batch_activity[:, unit_idx]
+                timesteps = np.arange(len(unit_activity))
+                
+                trace_name = str(condition)
+                
+                # Add a trace for this trial
+                fig.add_trace(
+                    go.Scatter(
+                        x=timesteps,
+                        y=unit_activity,
+                        mode='lines',
+                        name=trace_name,
+                        legendgroup=trace_name,  # Group in legend by condition
+                        showlegend=unit_idx == 0 and trial_idx == 0,  # Show legend only once per condition
+                        line=dict(color=color, width=2),
+                    ),
+                    row=unit_idx + 1,  # 1-indexed subplot row
+                    col=1
+                )
+    
+    # Calculate global min and max for y-axis scaling
+    y_min, y_max = calculate_array_minmax(activities, indices=unit_idxs)
+    
+    # Update layout
+    fig.update_layout(
+        legend_title=legend_title,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        ),
+    )
+    
+    # Set all y-axes to have the same range for comparison
+    fig.update_yaxes(
+        title="", 
+        zerolinewidth=0.5, 
+        zerolinecolor='black',
+        range=[y_min, y_max]  # Set consistent y-range
+    )
+    
+    # Add Unit labels on the right side
+    for i, unit_str in enumerate(unit_idx_strs):
+        fig.add_annotation(
+            text=f"Unit {unit_str}",
+            x=1.02,  # Position to the right of the plot
+            y=0,  # Will be adjusted for each subplot
+            xref="paper",
+            yref=f"y{i+1 if i > 0 else ''}",
+            showarrow=False,
+            xanchor="left",
+            yanchor="middle",
+            textangle=90,  # Vertical text
+            font=dict(size=14)
+        )
+    
+    # Add the Activity label with more space
+    fig.add_annotation(
+        x=-0.12,  # Move further left to avoid tick labels
+        y=0.5,
+        text="Activity",
+        textangle=-90,
+        showarrow=False,
+        font=dict(size=14),
+        xref="paper",
+        yref="paper",
+    )
+    
+    # Update layout if provided
+    if layout_kws is not None:
+        fig.update_layout(layout_kws)
+    
+    return fig
+
+
+class NetworkActivities_SampleUnits(AbstractAnalysis):
+    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
+        best_replicate_states=BestReplicateStates,
+    ))
+    variant: Optional[str] = "small"
+    conditions: tuple[str, ...] = ()  
+    n_units_sample: int = 4
+    key: PRNGKeyArray = field(default_factory=lambda: jr.PRNGKey(0))
+    # legend_title: str = "Reach direction"
+    # colorscale_key: str = "reach_condition"
+
+    def make_figs(
+        self,
+        data: AnalysisInputData,
+        *,
+        best_replicate_states,
+        colors_0,
+        **kwargs,
+    ):
+        
+        activities = jt.map(
+            lambda states: states.net.hidden,
+            best_replicate_states[self.variant],
+            is_leaf=is_type(SimpleFeedbackState),
+        )
+        
+        # Here activities has structure LDict(label='pert__amp') -> LDict(label='train__pert__std') -> array
+        # First, transpose the tree so train__pert__std is the outer level
+        activities_transposed = jt.transpose(
+            jt.structure(activities, is_leaf=LDict.is_of('train__pert__std')),
+            None,
+            activities
+        )
+        
+        # Use dict comprehension with LDict.of() to create the figures
+        return LDict.of('train__pert__std')({
+            train_pert_std: activity_sample_units(
+                activities=pert_amps_dict,
+                n_samples=self.n_units_sample,
+                colors=colors_0[self.variant]['pert__amp']['dark'],
+                key=self.key,
+            )
+            for train_pert_std, pert_amps_dict in activities_transposed.items()
+        })
+
+    def _params_to_save(self, hps: PyTree[TreeNamespace], *, replicate_info, train_pert_std, **kwargs):
+        return dict(
+            i_replicate=replicate_info[train_pert_std]['best_replicates'][REPLICATE_CRITERION],
+        )
+
+
+class NetworkActivity_PCA(AbstractAnalysis):
+    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
+        best_replicate_states=BestReplicateStates,
+    ))
+    variant: Optional[str] = "small"
+    conditions: tuple[str, ...] = ()  
+    n_components: Optional[int] = None
+    start_step: int = 0
+    end_step: Optional[int] = None
+    
+    def compute(
+        self,
+        data: AnalysisInputData,
+        *,
+        hps_0,
+        best_replicate_states,
+        **kwargs,
+    ):
+        # TODO: Replace with `hps_0.model.hidden_size` once `model_info` loading into `hps` is implemented
+        hidden_size = hps_0.load.model.hidden_size
+        
+        idxs = slice(self.start_step, self.end_step)
+        
+        activities_for_pca = jt.map(
+            lambda states: states.net.hidden[..., idxs, :].reshape(-1, hidden_size),
+            best_replicate_states[self.variant],
+            is_leaf=is_type(SimpleFeedbackState),
+        ) 
+        
+        n_components = self.n_components
+        
+        pca = PCA(n_components=n_components).fit(activities_for_pca)
+        
+        batch_transform = lambda x: jt.map(batch_reshape(pca.transform), x)  # type: ignore
+        
+        return TreeNamespace(
+            pca=pca,
+            batch_transform=batch_transform,
+        )
+        
+
+class NetworkActivity_ProjectPCA(AbstractAnalysis):
+    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
+        pca=NetworkActivity_PCA,
+    ))
+    variant: Optional[str] = "small"
+    conditions: tuple[str, ...] = ()
+    variant_pca: Optional[str] = None  
+    n_components: Optional[int] = None
+    start_step: int = 0
+    end_step: Optional[int] = None
+    
+    def dependency_kwargs(self):
+        return dict(
+            pca=dict(
+                variant=self.variant_pca if self.variant_pca is not None else self.variant,
+                n_components=self.n_components,
+                start_step=self.start_step,
+                end_step=self.end_step,
+            )
+        )
+    
+    def compute(
+        self,
+        data: AnalysisInputData,
+        *,
+        pca,
+        hps_0,
+        **kwargs,
+    ):
+        pass 
+    
+    def make_figs(
+        self,
+        data: AnalysisInputData,
+        *,
+        pca,
+        hps_0,
+        **kwargs,
+    ):
+        pass

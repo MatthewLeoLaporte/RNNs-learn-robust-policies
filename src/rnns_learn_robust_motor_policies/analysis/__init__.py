@@ -1,15 +1,25 @@
 
+import pkgutil
+import importlib
 
-from .part1 import ANALYSIS_SETS as ANALYSIS_SETS_PART1
-from .part2 import ANALYSIS_SETS as ANALYSIS_SETS_PART2
-
-EVAL_N_DIRECTIONS = 1
-EVAL_REACH_LENGTH = 0.0 
-
-# TODO: This isn't ideal; an alternative would be to pass around *module* keys
-# (e.g. `"part1.plant_perts"`) and then load the required attributes from those modules, instead of 
-# loading from a central location based on an id (e.g. `"1-1"`)
-ANALYSIS_SETS = ANALYSIS_SETS_PART1 | ANALYSIS_SETS_PART2
+from rnns_learn_robust_motor_policies.analysis import modules as analysis_modules_pkg
 
 
+# TODO: Refactor to avoid repetition with the module traversal that follows;
+# also add recursion (i.e. nested subpackages)
+def discover_subpackages(package):
+    """Return all modules of a package."""
+    modules = []
+    for _, name, is_pkg in pkgutil.iter_modules(package.__path__, package.__name__ + '.'):
+        if is_pkg:
+            modules.append(importlib.import_module(name))
+    return modules
 
+
+ANALYSIS_REGISTRY = {}
+for subpkg in discover_subpackages(analysis_modules_pkg):
+    for _, name, _ in pkgutil.iter_modules(subpkg.__path__, subpkg.__name__ + '.'):
+        module = importlib.import_module(name)
+        if hasattr(module, 'ID'):
+            ANALYSIS_REGISTRY[module.ID] = module
+            

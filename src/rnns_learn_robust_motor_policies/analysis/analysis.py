@@ -82,7 +82,7 @@ class AbstractAnalysis(Module):
         self, 
         data: AnalysisInputData,
         **kwargs,
-    ) -> tuple[PyTree[Array], PyTree[go.Figure]]:
+    ) -> tuple[PyTree[Any], PyTree[go.Figure]]:
         result = self.compute(data, **kwargs)
         figs = self.make_figs(data, result=result, **kwargs)
         return result, figs
@@ -91,7 +91,7 @@ class AbstractAnalysis(Module):
         self, 
         data: AnalysisInputData,
         **kwargs,
-    ) -> Optional[PyTree[Array]]:
+    ) -> Optional[PyTree[Any]]:
         return 
     
     def make_figs(
@@ -179,9 +179,8 @@ class AbstractAnalysis(Module):
             if dump_path is not None:                                
                 # Create a unique filename
                 analysis_name = camel_to_snake(self.__class__.__name__)
-                filename = f"{analysis_name}__{i}"
+                filename = f"{analysis_name}__{self.variant}__{i}"
                 
-                # Save the figure
                 savefig(fig, filename, dump_path, ["json"])
                 
                 # Save parameters as YAML
@@ -191,6 +190,7 @@ class AbstractAnalysis(Module):
                     
     @cached_property
     def _field_params(self):
+        # TODO: Inherit from dependencies? e.g. if we depend on `BestReplicateStates`, maybe we should include `i_replicate` from there
         return get_dataclass_fields(self, exclude=('dependencies', 'conditions'))
 
 

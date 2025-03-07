@@ -1,28 +1,28 @@
 
 **See [[results-2|Part 2 results]] for ongoing analysis TODOs.
 
-- [ ] Feedbax: Why is the mean validation loss lower than the mean training loss? Is it because the training task has a different distribution of reach lengths?
-
 ## Next
 
-- [ ] **In `AbstractAnalysis.save_figs`, format the dump filename based on `path_params` and not just an integer counter**
+- Repeat `context_inputs` for reaching trials that are perturbed with a curl field; compare baseline optimal vs. robust to context-perturbed optimal vs. robust
+- Are the different thin lines in the effector plots from `context_inputs` showing replicate? Why are they so parallel?
 
-- [ ] [[#Influence of context input on network dynamics]]
-- [ ] [[#Variation in effective direction, over a reach]]
-- [ ] [[#Individual unit ablation]]
+- [ ] [[TODO-analysis#Influence of context input on network dynamics]]
+- [ ] [[TODO-analysis#Variation in effective direction, over a reach]]
+- [ ] [[TODO-analysis#Individual unit ablation]]
 
-Then: continue with [[#Network analysis Population level]].
+Then: continue with [[TODO-analysis#Network analysis Population level]].
 
-- [ ] [[#Variation in effective direction, with directional properties of fixed points]]
-- [ ] [[#Stimulation of Jacobian eigenvectors]] 
-- [ ] [[#Steady-state Hessian]]
-- [ ] [[#TMS/tDCS analogues]]
-### Convert notebooks for part 1
+- [ ] [[TODO-analysis#Variation in effective direction, with directional properties of fixed points]]
+- [ ] [[TODO-analysis#Stimulation of Jacobian eigenvectors]] 
+- [ ] [[TODO-analysis#Steady-state Hessian]]
+- [ ] [[TODO-analysis#TMS/tDCS analogues]]
+### Convert notebooks
 
 - [ ] 1-2
 - [ ] 2-2
 - [ ] 2-4
 - [ ] 2-5
+
 
 ## Analysis
 
@@ -42,7 +42,6 @@ See [[TODO-analysis]].
 	- As for the task variant, the differences between the variants is already found in the config file under the YAML key `task`, so we can access it from `hps_common`
 - [ ] Combine `Effector_ByEval`, `Effector_SingleEval`, `Effector_ByReplicate`
 	- Be careful about axes. For example, in `part1.feedback_perts` we add an impulse amplitude axis; we have to add it at position 2 so as not to interfere with trial/replicate indexing. However, for `Effector_ByReplicate` we will end up lumping the impulse amplitude axis, I think, and coloring by replicate. Is this the intended behaviour?
-- [x] ~~`seed`/base `key` column in each of the db tables~~
 - [ ] Move the constants out of `constants` and into config files, where possible. Including `REPLICATE_CRITERION`.
 - [ ] Add the calculation of `disturbance.amp` when loading hyperparams (e.g. 1-2)
 
@@ -89,16 +88,21 @@ One approach Claude suggested was to add an extra column that stores the entire 
 
 Each figure type also has certain parameters which may vary. We may want a function that tells us which parameters are seen to vary for each figure subtype. This will help with writing more specific queries in the figure table, once we know what train+test conditions we are interested in.
 
+## Publication
+
+- [ ] Make a release of feedbax (dependency reasons)
+
 ## Debris 
+
+- [ ] Feedbax: Why is the mean validation loss lower than the mean training loss? Is it because the training task has a different distribution of reach lengths?
 - [ ] A `replicate_info` file might sometimes be generated for a non-postprocessed ModelRecord; in that case, its `has_replicate_info` gets set to `1` by `check_model_files` and this results in a “duplicate” error being raised when trying to load the postprocessed model according to its `has_replicate_info` value. It seems this happened when I re-ran `train.py` after it raised an error on `post_training`; i.e. the second time it only ran `post_training` on a single model.
-- [x] ~~Construction of the analysis graph might be too complicated; is there a way to make analysis classes cache their results for a particular input, without causing problems with JAX?~~
 - [ ] Better CLI progress bars
 - [ ] Solve: Sometimes `AbstractTask.validation_trials` raises a `jax.errors.UnexpectedTracerError`, which suggests there is a side-effect from a compiled function. Strangely, the backtrace points to the `ticks = jax.vmap(...` line in `feedbax.task`. This might only happen when there is only one validation trial.
 - [ ] Separate train and eval seeds in `prng.yml` 
 - [ ] Write a `tree_stack` that works with models – can’t just use `apply_to_filtered_leaves` since the shape of the output is changed wrt the input 
 - [ ] Try vmapping over `schedule_intervenor`, to get batch dimensions in models and tasks. Batched tasks seems like a missing link to making some of the analyses easier to write.
-- [ ] Stop using `tmp` in figures dir
-- [ ] I’m not sure changing the `noise_stds` should be the responsibility of `query_and_load_model`. Otoh, `query_and_load_model` is only used in the scope of this project afaik…
+- [ ] ~~Stop using `tmp` in figures dir~~
+- [ ] I’m not sure changing the `noise_stds` should be the responsibility of `query_and_load_model`. Otoh, `query_and_load_model` is only used in the scope of this project…
 ### Equinox warning 
 
 This appears to be related to `train_step` inside of `eqx.filter_value_and_grad` in `feedbax.train`. I tried replacing all the nearby jax.vmap calls with `filter_vmap` but the warning remains

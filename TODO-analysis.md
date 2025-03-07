@@ -21,7 +21,7 @@
 
 ##### Steady-state
 
-- [ ] **Run a steady-state trial and change the context input (but nothing else) midway through**
+- [x] **Run a steady-state trial and change the context input (but nothing else) midway through**
 	- or, ramp the context input across the trial
 	- how does the activity change?
 	- does the point mass move? hopefully not, but the network was never trained with within-trial variation of the context

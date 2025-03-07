@@ -200,6 +200,7 @@ class LDict(Mapping[K, V], Generic[K, V]):
         return len(self._data)
     
     def __repr__(self) -> str:
+        #! TODO: Proper line breaks when nested
         return f"LDict({repr(self._label)}, {self._data})"
     
     def tree_flatten_with_keys(self):

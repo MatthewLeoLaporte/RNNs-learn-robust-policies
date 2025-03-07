@@ -408,7 +408,7 @@ class Measures_ByTrainStd(AbstractAnalysis):
     ):
         figs = get_violins_per_measure(
             measure_values[self.variant],
-            colors=colors_0[self.variant]['pert_amp']['dark'],
+            colors=colors_0[self.variant]['pert__amp']['dark'],
         )
         return figs
 

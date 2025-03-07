@@ -1,6 +1,6 @@
 from collections.abc import Callable
 from functools import partial
-from typing import Literal as L, Optional, TypeAlias
+from typing import Literal as L, TypeAlias
 
 import equinox as eqx
 import jax
@@ -11,7 +11,7 @@ from jaxtyping import PRNGKeyArray
 from feedbax.intervene import schedule_intervenor
 from feedbax.task import TrialSpecDependency
 from feedbax.xabdeef.models import point_mass_nn
-from jax_cookbook.tree import get_ensemble
+import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.types import TreeNamespace
 from rnns_learn_robust_motor_policies.misc import vector_with_gaussian_length, get_field_amplitude
@@ -25,6 +25,7 @@ from rnns_learn_robust_motor_policies.types import TaskModelPair, LDict
 
 
 TrainingMethodLabel: TypeAlias = L["bcs", "dai", "pai-asf", "pai-n"]
+
 
 # Separate this def by training method so that we can multiply by `field_std` in the "pai-asf" case,
 # without it affecting the context input. That is, in all three cases `field_std` is a factor of 
@@ -137,7 +138,7 @@ def setup_task_model_pair(
 
     task_base = get_base_reaching_task(n_steps=hps.model.n_steps)
     
-    models_base = get_ensemble(
+    models_base = jtree.get_ensemble(
         point_mass_nn,
         task_base,
         n_extra_inputs=1,  # Contextual input
@@ -190,3 +191,5 @@ def get_train_pairs(hps: TreeNamespace, key: PRNGKeyArray):
         #! Assume `hps.train.method` is a list of training method labels
         for method_label in hps.train.method
     }))
+    
+    return task_model_pairs, all_hps

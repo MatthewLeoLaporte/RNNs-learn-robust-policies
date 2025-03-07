@@ -33,6 +33,9 @@ from rnns_learn_robust_motor_policies.plot import get_violins
 from rnns_learn_robust_motor_policies.types import LDict
 
 
+ID = "1-1"
+
+
 """Labels of measures to include in the analysis."""
 MEASURE_KEYS = (
     "max_parallel_vel_forward",

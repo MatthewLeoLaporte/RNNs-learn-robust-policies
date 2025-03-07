@@ -18,6 +18,9 @@ from rnns_learn_robust_motor_policies.types import ImpulseAmpTuple, LDict, unfla
 from rnns_learn_robust_motor_policies.perturbations import feedback_impulse
 
 
+ID = "1-2"
+
+
 #! TODO: Move
 PERT_VAR_NAMES = ('fb_pos', 'fb_vel')
 COORD_NAMES = ('x', 'y')

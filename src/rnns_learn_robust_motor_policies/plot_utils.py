@@ -10,6 +10,7 @@ import jax
 import jax.numpy as jnp
 import jax.tree as jt
 import matplotlib.figure as mplfig
+import numpy as np
 import plotly
 import plotly.graph_objects as go
 import pyperclip as clip
@@ -353,3 +354,41 @@ def get_underlay_fig(fig):
     fig.update_traces(opacity=0.3, line_color='grey')
     fig.update_layout(showlegend=False, xaxis_visible=False, yaxis_visible=False)
     return fig
+
+
+def calculate_array_minmax(arrays_dict, indices=None, padding=0.05):
+    """Calculate min and max values from multiple arrays with optional padding.
+
+    Arguments:
+        arrays_dict: A dictionary or LDict of arrays.
+        indices: Optional indices to select from the last dimension of each array.
+            If None, uses the full arrays.
+        padding: Percentage of range to add as padding on both sides (default: 0.05 or 5%).
+
+    Returns:
+        Tuple of (min_val, max_val) with specified padding.
+    """
+    all_values = []
+    for array in arrays_dict.values():
+        # Extract specified indices if provided, otherwise use full array
+        if indices is not None:
+            # Select indices from last dimension
+            selected_values = array[..., indices]
+        else:
+            selected_values = array
+        all_values.append(selected_values)
+
+    # Combine all values and find min/max
+    if all_values:
+        all_values_flat = np.concatenate([v.flatten() for v in all_values])
+        min_val = np.min(all_values_flat)
+        max_val = np.max(all_values_flat)
+
+        # Add padding
+        range_val = max_val - min_val
+        min_val -= padding * range_val
+        max_val += padding * range_val
+    else:
+        min_val, max_val = None, None
+
+    return min_val, max_val

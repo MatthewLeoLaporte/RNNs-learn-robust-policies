@@ -18,10 +18,12 @@ from rnns_learn_robust_motor_policies.analysis.state_utils import get_constant_t
 from rnns_learn_robust_motor_policies.types import LDict
 
 
+ID = "2-6"
+
+
 COLOR_FUNCS = dict(
     context_input=lambda hps: hps.context_input,
 )
-
 
 def setup_eval_tasks_and_models(task_base, models_base, hps):
     # 1. Tasks are steady-state 
@@ -136,7 +138,7 @@ def setup_ss_unit_stim_task(unit_idx, *, task_base, models_base, hps):
     )
     
 
-def eval_func(models, task, hps, key):
+def eval_func(key, hps, models, task):
     """Vmap over directions or units, depending on task."""
     return eqx.filter_vmap(
         partial(vmap_eval_ensemble, key, hps),
