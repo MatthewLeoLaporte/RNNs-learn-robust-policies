@@ -7,7 +7,7 @@ from pathlib import Path
 import platform
 import re
 import subprocess
-from types import ModuleType
+from types import ModuleType, GeneratorType
 from typing import Any, Optional
 
 import equinox as eqx
@@ -263,3 +263,16 @@ def get_dataclass_fields(
 def filename_join(strs, joinwith="__"):
     """Helper for formatting filenames from lists of strings."""
     return joinwith.join(s for s in strs if s)
+
+
+def is_json_serializable(value):
+    """Recursive helper function for isinstance-based checking"""
+    json_types = (str, int, float, bool, type(None))
+    
+    if isinstance(value, json_types):
+        return True
+    elif isinstance(value, Mapping):
+        return all(isinstance(k, str) and is_json_serializable(v) for k, v in value.items())
+    elif isinstance(value, (list, tuple)) and not isinstance(value, GeneratorType):
+        return all(is_json_serializable(item) for item in value)
+    return False

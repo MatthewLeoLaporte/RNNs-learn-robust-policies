@@ -355,7 +355,7 @@ if __name__ == '__main__':
     parser.add_argument("config_path", type=str, help="Path to the config file, or `expt_id` of a default config.")
     parser.add_argument("--fig-dump-path", type=str, default="/tmp/fig_dump", help="Path to dump figures.")
     args = parser.parse_args()
-    hps = load_hps(args.config_path)
+    hps = load_hps(args.config_path, config_type='analysis')
 
     db_session = get_db_session()
     

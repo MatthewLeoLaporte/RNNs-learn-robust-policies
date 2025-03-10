@@ -3,21 +3,9 @@ from typing import Any
 import jax.numpy as jnp
 import numpy as np
 
-from feedbax.intervene import (
-    CurlField, 
-    FixedField, 
-)
-
 
 # Separator to use in labels for DB columns and flattened hps 
 LEVEL_LABEL_SEP = "__"
-
-INTERVENOR_LABEL = "DisturbanceField"
-DISTURBANCE_CLASSES = {
-    'curl': CurlField,
-    'constant': FixedField,
-}
-
 
 ## Model parameters  n_grid: 5
 MASS = 1.0

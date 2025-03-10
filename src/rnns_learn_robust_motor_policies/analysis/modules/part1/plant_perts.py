@@ -22,12 +22,12 @@ from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis,
 from rnns_learn_robust_motor_policies.analysis.effector import Effector_ByEval
 from rnns_learn_robust_motor_policies.analysis.effector import Effector_SingleEval
 from rnns_learn_robust_motor_policies.analysis.effector import Effector_ByReplicate
-from rnns_learn_robust_motor_policies.analysis.disturbance import PERT_FUNCS
+from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_PERT_FUNCS
 from rnns_learn_robust_motor_policies.analysis.measures import output_corr
 from rnns_learn_robust_motor_policies.analysis.measures import Measures_LoHiSummary
 from rnns_learn_robust_motor_policies.analysis.profiles import VelocityProfiles
 from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
-from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL
+from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVENOR_LABEL
 from rnns_learn_robust_motor_policies.types import TreeNamespace
 from rnns_learn_robust_motor_policies.plot import get_violins
 from rnns_learn_robust_motor_policies.types import LDict
@@ -59,7 +59,7 @@ COLOR_FUNCS = dict()
 
 def setup_eval_tasks_and_models(task_base, models_base, hps):
     try:
-        disturbance = PERT_FUNCS[hps.pert.type]
+        disturbance = PLANT_PERT_FUNCS[hps.pert.type]
     except KeyError:
         raise ValueError(f"Unknown perturbation type: {hps.pert.type}")
 
@@ -71,7 +71,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
             # The first key is the model stage where to insert the disturbance field;
             # `None` means prior to the first stage.
             # The field parameters will come from the task, so use an amplitude 0.0 placeholder.
-            {None: {INTERVENOR_LABEL: disturbance(0.0)}},
+            {None: {PLANT_INTERVENOR_LABEL: disturbance(0.0)}},
         ),
         models_base,
         is_leaf=is_module,
@@ -85,7 +85,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
             task_base, models,
             lambda model: model.step.mechanics,
             disturbance(pert_amp),
-            label=INTERVENOR_LABEL,  
+            label=PLANT_INTERVENOR_LABEL,  
             default_active=False,
         ),
         LDict.of("pert__amp")(

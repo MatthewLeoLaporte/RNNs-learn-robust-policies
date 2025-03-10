@@ -3,8 +3,11 @@
 
 ## Next
 
-- Repeat `context_inputs` for reaching trials that are perturbed with a curl field; compare baseline optimal vs. robust to context-perturbed optimal vs. robust
-- Are the different thin lines in the effector plots from `context_inputs` showing replicate? Why are they so parallel?
+- [x] Fix mean curve calculation in `trajectories_2d`: if there are multiple batch dimensions, it will average them all
+	- e.g. if the reach direction is not the color axis, we’ll end up averaging over reach directions and getting
+- [ ] Aligned vars plotting function for `context_pert` which plots all four conditions (+/- plant pert, +/- context pert) on the same figure (one per training std)
+- [x] Control coloraxis from analysis subclasses
+- [x] Pass legend values to plotting functions
 
 - [ ] [[TODO-analysis#Influence of context input on network dynamics]]
 - [ ] [[TODO-analysis#Variation in effective direction, over a reach]]
@@ -22,6 +25,7 @@ Then: continue with [[TODO-analysis#Network analysis Population level]].
 - [ ] 2-2
 - [ ] 2-4
 - [ ] 2-5
+
 
 
 ## Analysis

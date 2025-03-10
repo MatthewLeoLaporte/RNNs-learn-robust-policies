@@ -16,12 +16,12 @@ import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.aligned import AlignedVars, plot_condition_trajectories
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
-from rnns_learn_robust_motor_policies.analysis.disturbance import PERT_FUNCS
+from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS
 from rnns_learn_robust_motor_policies.analysis.measures import MEASURE_LABELS
 from rnns_learn_robust_motor_policies.analysis.measures import Measures
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_constant_task_input, vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.colors import COLORSCALES
-from rnns_learn_robust_motor_policies.constants import INTERVENOR_LABEL, POS_ENDPOINTS_ALIGNED
+from rnns_learn_robust_motor_policies.constants import POS_ENDPOINTS_ALIGNED
 from rnns_learn_robust_motor_policies.plot import add_endpoint_traces, get_violins
 from rnns_learn_robust_motor_policies.types import TreeNamespace
 from rnns_learn_robust_motor_policies.types import (
@@ -66,7 +66,7 @@ eval_func = vmap_eval_ensemble
 
 def setup_eval_tasks_and_models(task_base, models_base, hps):
     try:
-        disturbance = PERT_FUNCS[hps.pert.type]
+        disturbance = PLANT_PERT_FUNCS[hps.pert.type]
     except KeyError:
         raise ValueError(f"Unknown disturbance type: {hps.pert.type}")
     
@@ -77,7 +77,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
             task_base, jt.leaves(models_base, is_leaf=is_module)[0],
             lambda model: model.step.mechanics,
             disturbance(pert_amp),
-            label=INTERVENOR_LABEL,
+            label=PLANT_INTERVENOR_LABEL,
             default_active=False,
         ),
         LDict.of("pert__amp")(
@@ -111,7 +111,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
             # The first key is the model stage where to insert the disturbance field;
             # `None` means prior to the first stage.
             # The field parameters will come from the task, so use an amplitude 0.0 placeholder.
-            {None: {INTERVENOR_LABEL: disturbance(0.0)}},
+            {None: {PLANT_INTERVENOR_LABEL: disturbance(0.0)}},
         ),
         models_base,
         is_leaf=is_module,

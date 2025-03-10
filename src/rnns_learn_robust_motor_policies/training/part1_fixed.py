@@ -11,9 +11,8 @@ from feedbax.xabdeef.models import point_mass_nn
 from feedbax.xabdeef.losses import simple_reach_loss
 from jax_cookbook.tree import get_ensemble
 
+from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_DISTURBANCE_CLASSES, PLANT_INTERVENOR_LABEL
 from rnns_learn_robust_motor_policies.constants import (
-    DISTURBANCE_CLASSES, 
-    INTERVENOR_LABEL, 
     MASS,
 )
 from rnns_learn_robust_motor_policies.types import TreeNamespace
@@ -81,7 +80,7 @@ def setup_task_model_pair(hps: TreeNamespace, *, key):
     )
     
     def disturbance(field_std, active=True):
-        return DISTURBANCE_CLASSES[hps.train.pert.type].with_params(
+        return PLANT_DISTURBANCE_CLASSES[hps.train.pert.type].with_params(
             scale=field_std,
             active=active,
             **disturbance_params(
@@ -93,7 +92,7 @@ def setup_task_model_pair(hps: TreeNamespace, *, key):
         task_base, models,
         lambda model: model.step.mechanics,
         disturbance(hps.train.pert.std),
-        label=INTERVENOR_LABEL,
+        label=PLANT_INTERVENOR_LABEL,
         default_active=False,
     ))
 

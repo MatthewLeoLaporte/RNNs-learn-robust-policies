@@ -56,7 +56,7 @@ if __name__ == '__main__':
     
     key = jr.PRNGKey(PROJECT_SEED)
     
-    hps_common: TreeNamespace = load_hps(args.config_path)
+    hps_common: TreeNamespace = load_hps(args.config_path, config_type='training')
     
     trained_models, train_histories, model_records = train_and_save_models(
         db_session, 

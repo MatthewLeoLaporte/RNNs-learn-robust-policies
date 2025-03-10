@@ -1,3 +1,4 @@
+from collections.abc import Callable, Sequence
 from functools import partial
 from types import MappingProxyType
 from typing import ClassVar, Optional, Literal as L
@@ -24,23 +25,35 @@ class Effector_ByEval(AbstractAnalysis):
     conditions: tuple[str, ...] = ('any_system_noise',)  # Skip this analysis, if only one eval
     legend_title: str = "Reach direction"
     colorscale_key: str = "reach_condition"
+    colorscale_axis: int = 1
+    mean_exclude_axes: Sequence[int] = ()
+    legend_labels: Optional[Sequence | Callable] = None
 
     def make_figs(
         self,
         data: AnalysisInputData,
         *,
         best_replicate_states,
+        hps_common,
         **kwargs,
     ):
         plot_states = best_replicate_states[self.variant]
+        
+        if isinstance(self.legend_labels, Callable):
+            legend_labels = self.legend_labels(data.hps, hps_common)
+        else:
+            legend_labels = self.legend_labels
+        
         figs = jt.map(
             partial(
                 plot_2d_effector_trajectories,
                 legend_title=self.legend_title,
+                legend_labels=legend_labels,
                 colorscale_key=self.colorscale_key,
                 curves_mode='lines',
-                colorscale_axis=1,
+                colorscale_axis=self.colorscale_axis,
                 mean_trajectory_line_width=2.5,
+                mean_exclude_axes=self.mean_exclude_axes,
                 darken_mean=MEAN_LIGHTEN_FACTOR,
                 scatter_kws=dict(line_width=0.5),
             ),
@@ -63,6 +76,7 @@ class Effector_SingleEval(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     legend_title: str = "Reach direction"
     colorscale_key: str = "reach_condition"
+    colorscale_axis: int = 0
     i_trial: int = 0
 
     def make_figs(
@@ -82,6 +96,7 @@ class Effector_SingleEval(AbstractAnalysis):
                 legend_title=self.legend_title,
                 colorscale_key=self.colorscale_key,
                 mode='markers+lines',
+                colorscale_axis=self.colorscale_axis,
                 ms=3,
                 scatter_kws=dict(line_width=0.75),
             ),
@@ -102,6 +117,7 @@ class Effector_ByReplicate(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     legend_title: str = "Reach direction"
     colorscale_key: str = "reach_condition"
+    colorscale_axis: int = 1
     i_trial: int = 0
 
     def make_figs(
@@ -117,7 +133,7 @@ class Effector_ByReplicate(AbstractAnalysis):
                 legend_title=self.legend_title,
                 colorscale_key=self.colorscale_key,
                 curves_mode='lines',
-                colorscale_axis=1,
+                colorscale_axis=self.colorscale_axis,
                 mean_trajectory_line_width=2.5,
                 darken_mean=MEAN_LIGHTEN_FACTOR,
                 scatter_kws=dict(line_width=0.75),

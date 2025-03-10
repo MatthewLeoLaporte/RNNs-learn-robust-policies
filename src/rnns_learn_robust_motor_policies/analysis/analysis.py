@@ -16,7 +16,7 @@ import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.database import EvaluationRecord, add_evaluation_figure, savefig
 from rnns_learn_robust_motor_policies.tree_utils import tree_level_labels
-from rnns_learn_robust_motor_policies.misc import camel_to_snake, get_dataclass_fields
+from rnns_learn_robust_motor_policies.misc import camel_to_snake, get_dataclass_fields, is_json_serializable
 from rnns_learn_robust_motor_policies.plot_utils import figs_flatten_with_paths
 from rnns_learn_robust_motor_policies.types import TreeNamespace
 
@@ -154,9 +154,12 @@ class AbstractAnalysis(Module):
         for i, (path, fig) in enumerate(figs_with_paths_flat):
             path_params = dict(zip(param_keys, tuple(jtree.node_key_to_value(p) for p in path)))
             
+            # Include fields from this instance, but only if they are JSON serializable
+            field_params = {k: v for k, v in self._field_params.items() if is_json_serializable(v)}
+            
             params = dict(
                 **path_params,  # Inferred from the structure of the figs PyTree
-                **self._field_params,  # From the fields of this subclass
+                **field_params,  # From the fields of this subclass
                 **self._params_to_save(
                     hps, 
                     result=result, 
@@ -193,11 +196,4 @@ class AbstractAnalysis(Module):
         # TODO: Inherit from dependencies? e.g. if we depend on `BestReplicateStates`, maybe we should include `i_replicate` from there
         return get_dataclass_fields(self, exclude=('dependencies', 'conditions'))
 
-
-
-
-
-
-
-            
 

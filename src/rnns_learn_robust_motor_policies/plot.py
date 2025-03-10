@@ -503,7 +503,7 @@ def plot_traj_and_fp_pcs_3D(
     return fig
 
 
-PLANT_VAR_LABELS = Responses('pos', 'vel', 'force')
+PLANT_VAR_LABELS = Responses('Pos.', 'Vel.', 'Force')
 WHERE_PLOT_PLANT_VARS = lambda states: Responses(
     states.mechanics.effector.pos,
     states.mechanics.effector.vel,

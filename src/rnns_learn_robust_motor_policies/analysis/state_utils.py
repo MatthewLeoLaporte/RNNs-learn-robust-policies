@@ -4,15 +4,16 @@ import equinox as eqx
 import jax.numpy as jnp 
 import jax.random as jr
 import jax.tree as jt
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, PRNGKeyArray
 
 from feedbax.intervene import AbstractIntervenor
+from feedbax.task import AbstractTask
 import jax_cookbook.tree as jtree
 from jax_cookbook import is_type, is_module
 
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
 from rnns_learn_robust_motor_policies.constants import REPLICATE_CRITERION
-from rnns_learn_robust_motor_policies.types import LDict
+from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
 
 
 def angle_between_vectors(v2, v1):
@@ -103,14 +104,6 @@ def get_lateral_distance(
     return lateral_dist
 
 
-def orthogonal_field(trial_spec, _, key):
-    init_pos = trial_spec.inits['mechanics.effector'].pos
-    goal_pos = jnp.take(trial_spec.targets['mechanics.effector.pos'].value, -1, axis=-2)
-    direction_vec = goal_pos - init_pos
-    direction_vec = direction_vec / jnp.linalg.norm(direction_vec)
-    return jnp.array([-direction_vec[1], direction_vec[0]])
-
-
 def get_pos_endpoints(trial_specs):
     """Given a set of `SimpleReaches` trial specifications, return the stacked start and end positions."""
     return jnp.stack([
@@ -134,7 +127,12 @@ def _get_eval_ensemble(models, task):
 
     
 @eqx.filter_jit
-def vmap_eval_ensemble(key, hps, models, task):
+def vmap_eval_ensemble(
+    key: PRNGKeyArray, 
+    hps: TreeNamespace, 
+    models: eqx.Module, 
+    task: AbstractTask,
+):
     """Evaluate an ensemble of models on `n` random repeats of a task's validation set."""
     return eqx.filter_vmap(_get_eval_ensemble(models, task))(
         jr.split(key, hps.eval_n)

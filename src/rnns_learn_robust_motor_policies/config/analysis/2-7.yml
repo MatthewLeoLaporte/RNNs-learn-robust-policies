@@ -28,15 +28,23 @@ task:  # Passed to the base task constructor
     eval_n_directions: 1
     eval_reach_length: 0
   reach:
-    eval_grid_n: 2
-    eval_n_directions: 7
-    # eval_reach_length: 0.5
+    eval_grid_n: 1
+    eval_n_directions: 3
+  # reach_pca:
+  #   eval_grid_n: 2
+  #   eval_n_directions: 7
 
 pert:
   context:
-    step: 30
-    c_init: 0
-    c_final: 1
+    # Timestep of context input step 
+    step: 25  
+    # Values pre and post step
+    init: 0  
+    final: [0, 1]
+  plant:
+    type: curl
+    amp: [0.0, 2.0] 
+    # constant -> [0.0, 0.1, 0.4],
 
 model:
   n_steps: null

@@ -31,3 +31,7 @@
 - [x] ~~`seed`/base `key` column in each of the db tables~~ 🗎 Next > Technical
 - [x] ~~**In `AbstractAnalysis.save_figs`, format the dump filename based on `path_params` and not just an integer counter**~~ 🗎 Next
 	- Nope; instead I just modified
+
+# 2025-03-10
+
+- [x] ~~Are the different thin lines in the effector plots from `context_inputs` showing replicate? Why are they so parallel?~~ Yeah, I was using `Effector_ByReplicate` instead of `Effector_ByEval` 🗎 Next

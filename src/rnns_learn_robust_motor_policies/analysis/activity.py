@@ -192,7 +192,7 @@ def activity_sample_units(
     return fig
 
 
-class NetworkActivities_SampleUnits(AbstractAnalysis):
+class NetworkActivity_SampleUnits(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         best_replicate_states=BestReplicateStates,
     ))
@@ -218,23 +218,21 @@ class NetworkActivities_SampleUnits(AbstractAnalysis):
             is_leaf=is_type(SimpleFeedbackState),
         )
         
-        # Here activities has structure LDict(label='pert__amp') -> LDict(label='train__pert__std') -> array
-        # First, transpose the tree so train__pert__std is the outer level
-        activities_transposed = jt.transpose(
+        #! Move to specific analysis modules, e.g. `context_pert`, so as not to assume this structure
+        activities = jt.transpose(
             jt.structure(activities, is_leaf=LDict.is_of('train__pert__std')),
             None,
-            activities
+            activities,
         )
         
-        # Use dict comprehension with LDict.of() to create the figures
-        return LDict.of('train__pert__std')({
-            train_pert_std: activity_sample_units(
-                activities=pert_amps_dict,
+        return LDict.of(activities.label)({
+            outer_value: activity_sample_units(
+                activities=inner_dict,
                 n_samples=self.n_units_sample,
-                colors=colors_0[self.variant]['pert__amp']['dark'],
+                colors=colors_0[self.variant][inner_dict.label]['dark'],
                 key=self.key,
             )
-            for train_pert_std, pert_amps_dict in activities_transposed.items()
+            for outer_value, inner_dict in activities.items()
         })
 
     def _params_to_save(self, hps: PyTree[TreeNamespace], *, replicate_info, train_pert_std, **kwargs):
@@ -287,6 +285,7 @@ class NetworkActivity_PCA(AbstractAnalysis):
 class NetworkActivity_ProjectPCA(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         pca=NetworkActivity_PCA,
+        best_replicate_states=BestReplicateStates,
     ))
     variant: Optional[str] = "small"
     conditions: tuple[str, ...] = ()
@@ -310,11 +309,17 @@ class NetworkActivity_ProjectPCA(AbstractAnalysis):
         data: AnalysisInputData,
         *,
         pca,
+        best_replicate_states,
         hps_0,
         **kwargs,
     ):
-        pass 
-    
+        return jt.map(
+            lambda states: pca.batch_transform(states.net.hidden),
+            best_replicate_states[self.variant],
+            is_leaf=is_type(SimpleFeedbackState),
+        ) 
+
+            
     def make_figs(
         self,
         data: AnalysisInputData,

@@ -4,6 +4,8 @@ import importlib
 
 from rnns_learn_robust_motor_policies.analysis import modules as analysis_modules_pkg
 
+from .analysis import AbstractAnalysis, AnalysisInputData
+
 
 # TODO: Refactor to avoid repetition with the module traversal that follows;
 # also add recursion (i.e. nested subpackages)

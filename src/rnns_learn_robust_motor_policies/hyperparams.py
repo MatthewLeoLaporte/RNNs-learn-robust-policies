@@ -5,7 +5,7 @@ from copy import deepcopy
 import logging
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Optional, TypeVar
+from typing import Literal, Optional, TypeVar
 
 import jax.tree as jt
 from jaxtyping import ArrayLike, PyTree
@@ -13,7 +13,7 @@ from jaxtyping import ArrayLike, PyTree
 from jax_cookbook import is_type, anyf
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.config import load_config, load_default_config
+from rnns_learn_robust_motor_policies.config import load_config, load_named_config
 from rnns_learn_robust_motor_policies.constants import LEVEL_LABEL_SEP, get_iterations_to_save_model_parameters
 from rnns_learn_robust_motor_policies.tree_utils import (
     tree_level_labels,
@@ -67,7 +67,7 @@ def process_hps(hps: TreeNamespace) -> TreeNamespace:
     return hps
 
 
-def load_hps(config_path: str | Path) -> TreeNamespace:
+def load_hps(config_path: str | Path, config_type: Optional[Literal['training', 'analysis']] = None) -> TreeNamespace:
     """Given a path to a YAML hyperparameters file, load and prepare them prior to training.
     
     If the path is not found, pass it as the experiment id to try to get a default config. 
@@ -82,7 +82,7 @@ def load_hps(config_path: str | Path) -> TreeNamespace:
         config = dict()
         expt_id = str(config_path)
     # Load the defaults and update with the user-specified config
-    default_config = load_default_config(expt_id)
+    default_config = load_named_config(expt_id, config_type)
     config = deep_update(default_config, config)
     # Convert to a (nested) namespace instead of a dict, for attribute access
     hps = dict_to_namespace(config, to_type=TreeNamespace, exclude=is_dict_with_int_keys)

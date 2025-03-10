@@ -13,11 +13,10 @@ from feedbax.task import TrialSpecDependency
 from feedbax.xabdeef.models import point_mass_nn
 import jax_cookbook.tree as jtree
 
+from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_DISTURBANCE_CLASSES, PLANT_INTERVENOR_LABEL
 from rnns_learn_robust_motor_policies.types import TreeNamespace
 from rnns_learn_robust_motor_policies.misc import vector_with_gaussian_length, get_field_amplitude
 from rnns_learn_robust_motor_policies.constants import (
-    DISTURBANCE_CLASSES,
-    INTERVENOR_LABEL, 
     MASS,
 )
 from rnns_learn_robust_motor_policies.setup_utils import get_base_reaching_task, get_train_pairs_by_pert_std
@@ -73,9 +72,9 @@ disturbance_active: LDict[str, Callable] = LDict.of("train__method")({
 
 # Define how the network's context input will be determined from the trial specs, to which it is then added
 CONTEXT_INPUT_FUNCS = LDict.of("train__method")({
-    "bcs": lambda trial_specs, key: trial_specs.intervene[INTERVENOR_LABEL].active.astype(float),
-    "dai": lambda trial_specs, key: get_field_amplitude(trial_specs.intervene[INTERVENOR_LABEL]),
-    "pai-asf": lambda trial_specs, key: trial_specs.intervene[INTERVENOR_LABEL].scale,
+    "bcs": lambda trial_specs, key: trial_specs.intervene[PLANT_INTERVENOR_LABEL].active.astype(float),
+    "dai": lambda trial_specs, key: get_field_amplitude(trial_specs.intervene[PLANT_INTERVENOR_LABEL]),
+    "pai-asf": lambda trial_specs, key: trial_specs.intervene[PLANT_INTERVENOR_LABEL].scale,
 })
 
 
@@ -103,7 +102,7 @@ SCALE_FUNCS = LDict.of("train__method")({
 
 
 def disturbance(pert_type, field_std, method):
-    return DISTURBANCE_CLASSES[pert_type].with_params(
+    return PLANT_DISTURBANCE_CLASSES[pert_type].with_params(
         scale=SCALE_FUNCS[method](field_std),
         active=disturbance_active[method](P_PERTURBED[method]),
         **disturbance_params[method](
@@ -172,7 +171,7 @@ def setup_task_model_pair(
             # p_perturbed,
             hps.train.method,
         ),
-        label=INTERVENOR_LABEL,
+        label=PLANT_INTERVENOR_LABEL,
         default_active=False,
     ))
 

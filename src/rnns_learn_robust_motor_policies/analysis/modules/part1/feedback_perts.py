@@ -10,7 +10,8 @@ import jax_cookbook.tree as jtree
 from feedbax.intervene import schedule_intervenor
 import feedbax.plotly as fbp
 
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
+from rnns_learn_robust_motor_policies.analysis import AbstractAnalysis, AnalysisInputData
+from rnns_learn_robust_motor_policies.analysis.disturbance import FB_INTERVENOR_LABEL, get_pert_amp_vmap_eval_func, task_with_pert_amp
 from rnns_learn_robust_motor_policies.analysis.effector import Effector_SingleEval
 from rnns_learn_robust_motor_policies.plot import PLANT_VAR_LABELS, WHERE_PLOT_PLANT_VARS
 from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
@@ -54,6 +55,7 @@ def _setup_rand(task_base, models_base, hps):
             ),
             default_active=False,
             stage_name="update_queue",
+            label=FB_INTERVENOR_LABEL,
         ),
         LDict.of("pert__var")(dict(fb_pos=0, fb_vel=1)),
         is_leaf=is_type(tuple),
@@ -62,7 +64,7 @@ def _setup_rand(task_base, models_base, hps):
     # Get the perturbation directions, for later:
     #? I think these values are equivalent to `line_vec` in the functions in `state_utils`
     impulse_directions = jt.map(
-        lambda task: task.validation_trials.intervene['ConstantInput'].arrays[:, hps.pert.start_step],
+        lambda task: task.validation_trials.intervene[FB_INTERVENOR_LABEL].arrays[:, hps.pert.start_step],
         all_tasks,
         is_leaf=is_module,
     )
@@ -155,34 +157,36 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     return all_tasks, all_models, all_hps, extras
 
 
-def task_with_imp_amplitude(task, impulse_amplitude):
-    """Returns a task with the given disturbance amplitude."""
-    return eqx.tree_at(
-        lambda task: task.intervention_specs.validation['ConstantInput'].intervenor.params.scale,
-        task,
-        impulse_amplitude,
-    ) 
+# def task_with_imp_amplitude(task, impulse_amplitude):
+#     """Returns a task with the given disturbance amplitude."""
+#     return eqx.tree_at(
+#         lambda task: task.intervention_specs.validation[FB_INTERVENOR_LABEL].intervenor.params.scale,
+#         task,
+#         impulse_amplitude,
+#     ) 
 
 
-def eval_func(key_eval, hps, models, task):
-    """Vmap over impulse amplitude."""
-    states = eqx.filter_vmap(
-        lambda amplitude: vmap_eval_ensemble(
-            key_eval,
-            hps,
-            models, 
-            task_with_imp_amplitude(task, amplitude), 
-        ),
-    )(hps.pert.amps)
+# def eval_func(key_eval, hps, models, task):
+#     """Vmap over impulse amplitude."""
+#     states = eqx.filter_vmap(
+#         lambda amplitude: vmap_eval_ensemble(
+#             key_eval,
+#             hps,
+#             models, 
+#             task_with_pert_amp(task, amplitude, FB_INTERVENOR_LABEL), 
+#         ),
+#     )(hps.pert.amps)
     
-    # I am not sure why this moveaxis is necessary. 
-    # I tried using `out_axes=2` (with or without `in_axes=0`) and 
-    # the result has the trial (axis 0) and replicate (axis 1) swapped.
-    # (I had expected vmap to simply insert the new axis in the indicated position.)
-    return jt.map(
-        lambda arr: jnp.moveaxis(arr, 0, 2),
-        states,
-    )
+#     # I am not sure why this moveaxis is necessary. 
+#     # I tried using `out_axes=2` (with or without `in_axes=0`) and 
+#     # the result has the trial (axis 0) and replicate (axis 1) swapped.
+#     # (I had expected vmap to simply insert the new axis in the indicated position.)
+#     return jt.map(
+#         lambda arr: jnp.moveaxis(arr, 0, 2),
+#         states,
+#     )
+    
+eval_func = get_pert_amp_vmap_eval_func(lambda hps: hps.pert.amp, FB_INTERVENOR_LABEL)
     
 
 class States_SingleImpulseAmplitude(AbstractAnalysis):

@@ -1,15 +1,11 @@
 from importlib import resources
 import os
-from pathlib import Path 
+from pathlib import Path
+from typing import Literal, Optional 
 import yaml
 
 
 CONFIG_DIR_ENV_VARIABLE_NAME = 'RLRMP_CONFIG_DIR'
-
-
-def load_default_config(nb_id: str) -> dict:
-    """Load config from file or use defaults"""
-    return load_named_config(nb_id)
 
 
 def get_user_config_dir():
@@ -26,7 +22,7 @@ def load_config(path: str):
         return yaml.safe_load(f)
 
 
-def load_named_config(name: str):
+def load_named_config(name: str, config_type: Optional[Literal['training', 'analysis']] = None):
     user_config_dir = get_user_config_dir()
     
     # If the user has specified a config directory, try to load the paths config from it
@@ -37,6 +33,11 @@ def load_named_config(name: str):
         except:  # TODO
             pass
     
+    if config_type is None:
+        subpackage_name = 'rnns_learn_robust_motor_policies.config'
+    else:
+        subpackage_name = f'rnns_learn_robust_motor_policies.config.{config_type}'
+    
     # Otherwise, load the default
-    with resources.open_text('rnns_learn_robust_motor_policies.config', f'{name}.yml') as f:
+    with resources.open_text(subpackage_name, f'{name}.yml') as f:
         return yaml.safe_load(f)

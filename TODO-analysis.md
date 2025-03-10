@@ -19,22 +19,33 @@
 
 #### Influence of context input on network dynamics 
 
+Module: `part2.context_pert`.
 ##### Steady-state
 
-- [x] **Run a steady-state trial and change the context input (but nothing else) midway through**
+- [x] Run a steady-state trial and change the context input (but nothing else) midway through
 	- or, ramp the context input across the trial
 	- how does the activity change?
 	- does the point mass move? hopefully not, but the network was never trained with within-trial variation of the context
 
 ##### Reaching
 
-Repeat but change the context input during a reach, either step or ramp
+Repeat `context_inputs` for reaching trials that are perturbed with a curl field; compare baseline optimal vs. robust to context-perturbed optimal vs. robust
+
+##### Interpretation
+
+When we perturb context input at steady-state, we observe that the unit activities change, but the point mass more or less does not move. 
+This suggests that the direct influence of the context input is in the null space of the network.
+
+When we perturb during a reach, the trajectories are altered and the point mass moves differently?
+
+In either case, when we project into PC space (based on workspace-covering reach trajectories) the context perturbation should *cause* us to move in a null direction.
 
 #### Preferred versus effective directions of units at steady state 
 
+Module: `part2.unit_perts`.
+
 > [!warning] 
 > Make sure where the intervention is taking place in Feedbax! Do we perturb before or after the recurrent update? If after, then the immediate consequence of stimulation is entirely determined by the readout, which isn’t very interesting. But we’ll still get the recurrent effects on the next step, of course.
-
 
 > [!NOTE] 
 > Also we can analyze these two individually at steady state, but the preferred directions on their own don’t tell us much.)
