@@ -24,6 +24,7 @@ from rnns_learn_robust_motor_policies.misc import filename_join
 VAR_TITLES = {
     'train__pert__std': "Train pert. std.",
     'pert__amp': "Pert. amp.",
+    'trial': "Trial",
 }
 
 # If these appear in a label to format, append a period 

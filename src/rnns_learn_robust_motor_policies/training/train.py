@@ -23,11 +23,7 @@ import jax_cookbook.tree as jtree
 from jax_cookbook import is_type
 
 from rnns_learn_robust_motor_policies.database import ModelRecord, get_record, save_model_and_add_record
-from rnns_learn_robust_motor_policies.hyperparams import (
-    flatten_hps, 
-    promote_model_hps, 
-    # fill_out_hps,
-)
+from rnns_learn_robust_motor_policies.hyperparams import flatten_hps
 from rnns_learn_robust_motor_policies.types import namespace_to_dict
 from rnns_learn_robust_motor_policies.tree_utils import pp
 from rnns_learn_robust_motor_policies.types import TaskModelPair, TreeNamespace
@@ -156,7 +152,7 @@ def where_strs_to_funcs(where_strs: Sequence[str] | dict[int, Sequence[str]]):
 
 def train_and_save_models(
     db_session: Session,
-    hps_common: TreeNamespace, 
+    hps_train: TreeNamespace, 
     key: PRNGKeyArray,
     untrained_only: bool = True,
     postprocess: bool = True,
@@ -172,13 +168,13 @@ def train_and_save_models(
     key_init, key_train, key_eval = jr.split(key, 3)
 
     # User specifies which variant to run using the `id` key
-    get_train_pairs = EXPERIMENTS[hps_common.expt_id]
+    get_train_pairs = EXPERIMENTS[hps_train.expt_id]
     
     # `all_hps` is a tree of pair-specific hps
-    task_model_pairs, all_hps = jtree.unzip(get_train_pairs(hps_common, key_init))
+    task_model_pairs, all_hps_train = jtree.unzip(get_train_pairs(hps_train, key_init))
 
     if untrained_only:
-        task_model_pairs = skip_already_trained(db_session, task_model_pairs, all_hps, n_std_exclude, save_figures)
+        task_model_pairs = skip_already_trained(db_session, task_model_pairs, all_hps_train, n_std_exclude, save_figures)
         
     if not any(jt.leaves(task_model_pairs, is_leaf=is_type(TaskModelPair))):
         logger.info("No models to train. Exiting.")
@@ -188,32 +184,32 @@ def train_and_save_models(
     # TODO: Also get `trainer`, `loss_func`, ... as trees like `task_model_pairs`
     # Otherwise certain hyperparameters (e.g. learning rate) will be constant 
     # when the user might expect them to vary due to their config file. 
-    trainer, loss_func = train_setup(hps_common.train)
+    trainer, loss_func = train_setup(hps_train)
     
     ## Train and save all the models.
     # TODO: Is this correct? Or should we pass the task for the respective training method?
     task_baseline: AbstractTask = jt.leaves(task_model_pairs, is_leaf=is_type(TaskModelPair))[0].task
 
-    def train_and_save_pair(pair, hps):
+    def train_and_save_pair(pair, hps_train):
         trained_model, train_history = train_pair(
             trainer, 
             pair,
-            hps.train.n_batches, 
+            hps_train.n_batches, 
             key=key_train,  #! Use the same PRNG key for all training runs
             ensembled=True,
             loss_func=loss_func,
             task_baseline=task_baseline,  
-            where_train=where_strs_to_funcs(dict(hps.train.where)),
-            batch_size=hps.train.batch_size, 
+            where_train=where_strs_to_funcs(dict(hps_train.where)),
+            batch_size=hps_train.batch_size, 
             log_step=LOG_STEP,
-            save_model_parameters=hps.train.save_model_parameters,
-            state_reset_iterations=hps.train.state_reset_iterations,
+            save_model_parameters=hps_train.save_model_parameters,
+            state_reset_iterations=hps_train.state_reset_iterations,
             # disable_tqdm=True,
         )
         model_record = save_model_and_add_record(
             db_session,
             trained_model,
-            hps,
+            hps_train,
             train_history=train_history,
             version_info=version_info,
         )
@@ -232,7 +228,7 @@ def train_and_save_models(
     trained_models, train_histories, model_records = jtree.unzip(jtree.map_tqdm(
         train_and_save_pair,
         task_model_pairs, 
-        all_hps,
+        all_hps_train,
         label="Training all pairs",
         is_leaf=is_type(TaskModelPair),
     ))
@@ -250,20 +246,18 @@ def concat_save_iterations(iterations: Array, n_batches_seq: Sequence[int]):
 def skip_already_trained(
     db_session: Session, 
     task_model_pairs: PyTree[TaskModelPair, 'T'], 
-    all_hps: PyTree[dict, 'T'],
+    all_hps_train: PyTree[dict, 'T'],
     n_std_exclude: int,
     save_figures: bool,
     post_process: bool = True,
 ):
     """Replace leaves in the tree of training pairs with None, where those models were already trained.
     """
-    all_hps = arrays_to_lists(all_hps)
+    all_hps_train = arrays_to_lists(all_hps_train)
     
     def get_query_hps(hps: TreeNamespace, **kwargs) -> TreeNamespace:
         hps = deepcopy(hps)
         hps.is_path_defunct = False
-        # flatten the `model` key into the top level
-        hps = promote_model_hps(hps)
         for k, v in kwargs.items():
             setattr(hps, k, v)
         return hps
@@ -274,7 +268,7 @@ def skip_already_trained(
             ModelRecord, 
             **namespace_to_dict(flatten_hps(get_query_hps(hps, postprocessed=False)))
         ),   
-        task_model_pairs, all_hps,
+        task_model_pairs, all_hps_train,
          is_leaf=is_type(TaskModelPair),
     )
     
@@ -299,12 +293,12 @@ def skip_already_trained(
     if post_process:  
         # Find which of the models have already been post-processed
         records_pp = jt.map(
-            lambda _, hps: get_record(
+            lambda _, hps_train: get_record(
                 db_session, 
                 ModelRecord, 
-                **namespace_to_dict(flatten_hps(get_query_hps(hps, postprocessed=True)))
+                **namespace_to_dict(flatten_hps(get_query_hps(hps_train, postprocessed=True)))
             ),   
-            task_model_pairs, all_hps,
+            task_model_pairs, all_hps_train,
             is_leaf=is_type(TaskModelPair),
         )     
         

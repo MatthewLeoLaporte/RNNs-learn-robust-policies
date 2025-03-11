@@ -37,9 +37,9 @@ disturbance_params = lambda scale_func: {
 }
 
 
-def setup_task_model_pair(hps: TreeNamespace, *, key):
+def setup_task_model_pair(hps_train: TreeNamespace, *, key):
     """Returns a skeleton PyTree for reloading trained models."""      
-    scaleup_batches = hps.train.intervention_scaleup_batches
+    scaleup_batches = hps_train.intervention_scaleup_batches
     n_batches_scaleup = scaleup_batches[1] - scaleup_batches[0]
     if n_batches_scaleup > 0:
         def batch_scale_up(batch_start, n_batches, batch_info, x):
@@ -56,53 +56,53 @@ def setup_task_model_pair(hps: TreeNamespace, *, key):
     loss_func = eqx.tree_at(
         lambda loss_func: loss_func.weights['nn_output'],
         loss_func,
-        hps.model.control_loss_scale * loss_func.weights['nn_output'],
+        hps_train.model.control_loss_scale * loss_func.weights['nn_output'],
     )
     
     task_base = get_base_reaching_task(
-        n_steps=hps.model.n_steps,
+        n_steps=hps_train.model.n_steps,
         loss_func=loss_func,
     )
     
     models = get_ensemble(
         point_mass_nn,
         task_base,
-        n=hps.model.n_replicates,
-        dt=hps.model.dt,
+        n=hps_train.model.n_replicates,
+        dt=hps_train.model.dt,
         mass=MASS,
-        damping=hps.model.damping,
-        hidden_size=hps.model.hidden_size, 
-        n_steps=hps.model.n_steps,
-        feedback_delay_steps=hps.model.feedback_delay_steps,
-        feedback_noise_std=hps.model.feedback_noise_std,
-        motor_noise_std=hps.model.motor_noise_std,
+        damping=hps_train.model.damping,
+        hidden_size=hps_train.model.hidden_size, 
+        n_steps=hps_train.model.n_steps,
+        feedback_delay_steps=hps_train.model.feedback_delay_steps,
+        feedback_noise_std=hps_train.model.feedback_noise_std,
+        motor_noise_std=hps_train.model.motor_noise_std,
         key=key,
     )
     
     def disturbance(field_std, active=True):
-        return PLANT_DISTURBANCE_CLASSES[hps.train.pert.type].with_params(
+        return PLANT_DISTURBANCE_CLASSES[hps_train.pert.type].with_params(
             scale=field_std,
             active=active,
             **disturbance_params(
                 partial(batch_scale_up, scaleup_batches[0], n_batches_scaleup)
-            )[hps.train.pert.type],
+            )[hps_train.pert.type],
         )
         
     return TaskModelPair(*schedule_intervenor(
         task_base, models,
         lambda model: model.step.mechanics,
-        disturbance(hps.train.pert.std),
+        disturbance(hps_train.pert.std),
         label=PLANT_INTERVENOR_LABEL,
         default_active=False,
     ))
 
 
-def get_train_pairs(hps: TreeNamespace, key: PRNGKeyArray):
+def get_train_pairs(hps_train: TreeNamespace, key: PRNGKeyArray):
     """Given hyperparams and a particular task-model pair setup function, return the PyTree of task-model pairs.
     
     Here in Part 1 this is trivial since we're only training a single set of models, by training pert std.
     """
-    task_model_pairs, all_hps = get_train_pairs_by_pert_std(
-        setup_task_model_pair, hps, key=key
+    task_model_pairs, all_hps_train = get_train_pairs_by_pert_std(
+        setup_task_model_pair, hps_train, key=key
     )
-    return task_model_pairs, all_hps
+    return task_model_pairs, all_hps_train

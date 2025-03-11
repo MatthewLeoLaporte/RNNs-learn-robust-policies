@@ -57,8 +57,8 @@ from rnns_learn_robust_motor_policies.types import LDict
 logger = logging.getLogger(os.path.basename(__file__))
 
 
-def load_model_and_train_task(db_session: Session, hps: TreeNamespace):
-    setup_task_model_pair = TRAINPAIR_SETUP_FUNCS[int(hps.load.expt_id)]
+def load_model_and_training_task(db_session: Session, hps: TreeNamespace):
+    setup_task_model_pair = TRAINPAIR_SETUP_FUNCS[int(hps.train.expt_id)]
     
     pairs, model_info, replicate_info, n_replicates_included = jtree.unzip(
         #? Should this structure be hardcoded here?
@@ -66,8 +66,8 @@ def load_model_and_train_task(db_session: Session, hps: TreeNamespace):
             train_pert_std: query_and_load_model(
                 db_session,
                 setup_task_model_pair,
-                params_query=namespace_to_dict(flatten_hps(hps.load)) | dict(
-                    train__pert__std=train_pert_std
+                params_query=namespace_to_dict(flatten_hps(hps.train)) | dict(
+                    pert__std=train_pert_std
                 ),
                 noise_stds=dict(
                     feedback=hps.model.feedback_noise_std,
@@ -79,7 +79,7 @@ def load_model_and_train_task(db_session: Session, hps: TreeNamespace):
                 exclude_underperformers_by=REPLICATE_CRITERION,
                 return_task=True,
             )
-            for train_pert_std in hps.load.train.pert.std
+            for train_pert_std in hps.train.pert.std
         })
     )
     
@@ -96,12 +96,12 @@ def copy_delattr(obj: Any, *attr_names: str):
     return obj
 
 
-def use_load_hps_when_none(hps: TreeNamespace) -> TreeNamespace:
+def use_train_hps_when_none(hps: TreeNamespace) -> TreeNamespace:
     """Replace any unspecified evaluation params with matching loading (training) params"""
-    hps_load = hps.load
-    hps_other = copy_delattr(hps, 'load')
-    hps = hps_other.update_none_leaves(hps_load)
-    hps.load = hps_load  
+    hps_train = hps.train
+    hps_other = copy_delattr(hps, 'train')
+    hps = hps_other.update_none_leaves(hps_train)
+    hps.train = hps_train  
     return hps
 
 
@@ -112,7 +112,7 @@ Values are hyperparameter where-functions so we can try to load them one-by-one.
 COMMON_COLOR_FUNCS = dict(
     # context_input= 
     pert__amp=lambda hps: hps.pert.amp,
-    train__pert__std=lambda hps: hps.load.train.pert.std,
+    train__pert__std=lambda hps: hps.train.pert.std,
     # pert_var=  #? Discrete
     #  reach_condition=  #? Discrete
     trial=lambda hps: range(hps.eval_n),  #? Discrete
@@ -128,10 +128,10 @@ def main(
 ):    
     # If some config values (other than those under the `load` key) are unspecified, replace them with 
     # respective values from the `load` key
-    # e.g. if trained on curl fields and hps.pert.type is None, use hps.load.pert.type
+    # e.g. if trained on curl fields and hps.pert.type is None, use hps.train.pert.type
     # (In `setup_tasks_and_models` we then fill out any fields that are entirely missing from the config, 
     #  but which are given by the loaded model records.)
-    hps_common = use_load_hps_when_none(hps_common)
+    hps_common = use_train_hps_when_none(hps_common)
 
     analysis_module = ANALYSIS_REGISTRY[hps_common.expt_id]
     
@@ -214,7 +214,7 @@ def main(
 def setup_tasks_and_models(hps: TreeNamespace, setup_func: Callable, db_session: Session):
     # Load models
     models_base, model_info, replicate_info, tasks_base, n_replicates_included = \
-        load_model_and_train_task(db_session, hps)
+        load_model_and_training_task(db_session, hps)
     
     #! TODO: Use the hyperparameters of the loaded model(s), where they were absent from the load spec
     #! (This should probably be moved to the model loading function)
@@ -243,8 +243,8 @@ def setup_tasks_and_models(hps: TreeNamespace, setup_func: Callable, db_session:
     #         replicate_info[std]['best_replicates'][REPLICATE_CRITERION],
     #         replicate_info[std]['included_replicates'][REPLICATE_CRITERION],
     #     ) 
-    #     # Assumes that `load.pert.std` is given as a sequence
-    #     for std in hps.load.train.pert.std
+    #     # Assumes that `train.pert.std` is given as a sequence
+    #     for std in hps.train.pert.std
     # }))
     
     version_info = log_version_info(

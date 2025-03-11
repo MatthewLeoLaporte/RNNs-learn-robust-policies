@@ -113,12 +113,12 @@ class ModelRecord(RecordBase):
     
     # Explicitly define some parameter columns to avoid typing issues, though our dynamic column 
     # migration would handle whatever parameters the user happens to pass, without this.
-    n_replicates: Mapped[int]
-    train__pert__type: Mapped[str]
-    train__pert__std: Mapped[float]
-    train__where: Mapped[dict[str, Sequence[str]]]
-    train__n_batches: Mapped[int]
-    train__save_model_parameters: Mapped[Sequence[int]]
+    model__n_replicates: Mapped[int]
+    pert__type: Mapped[str]
+    pert__std: Mapped[float]
+    where: Mapped[dict[str, Sequence[str]]]
+    n_batches: Mapped[int]
+    save_model_parameters: Mapped[Sequence[int]]
     
     @hybrid_property
     def path(self):
@@ -139,7 +139,7 @@ class ModelRecord(RecordBase):
     def where_train(self):
         return {
             int(i): attr_str_tree_to_where_func(strs) 
-            for i, strs in self.train_where.items()
+            for i, strs in self.where.items()
         }
     
 
@@ -564,17 +564,17 @@ def load_tree_with_hps(
 def save_model_and_add_record(
     session: Session,
     model: Any,
-    hps: TreeNamespace,
+    hps_train: TreeNamespace,
     train_history: Optional[Any] = None,
     replicate_info: Optional[Any] = None,
     version_info: Optional[Dict[str, str]] = None,
 ) -> ModelRecord:
     """Save model files with hash-based names and add database record."""
     
-    hps = arrays_to_lists(hps)
+    hps_train = arrays_to_lists(hps_train)
     
     # Replace LDict with plain dict so it is serialisable
-    record_hps = flatten_hps(hps, ldict_to_dict=True) | dict(version_info=version_info)
+    record_hps = flatten_hps(hps_train, ldict_to_dict=True) | dict(version_info=version_info)
     # If any LDicts have made their way here, 
     record_params = namespace_to_dict(record_hps)   
     
@@ -582,7 +582,7 @@ def save_model_and_add_record(
     # TODO: Optionally, let the hash/existence checks be independent of `version_info`
     # i.e. so we don't retrain models just because Equinox got a minor update or something
     # (alternatively, could just fix the package versions for the project)
-    model_hash, _ = save_tree(model, MODELS_DIR, hps)
+    model_hash, _ = save_tree(model, MODELS_DIR, hps_train)
     
     # Save associated files if provided
     for tree, suffix in (
@@ -590,7 +590,7 @@ def save_model_and_add_record(
         (replicate_info, REPLICATE_INFO_FILE_LABEL),
     ):
         if tree is not None:
-            save_tree(tree, MODELS_DIR, hps, hash_=model_hash, suffix=suffix)
+            save_tree(tree, MODELS_DIR, hps_train, hash_=model_hash, suffix=suffix)
         
     update_table_schema(session.bind, MODELS_TABLE_NAME, record_params)    
     

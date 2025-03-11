@@ -114,16 +114,16 @@ def disturbance(pert_type, field_std, method):
 
 
 def setup_task_model_pair(
-    hps: TreeNamespace = TreeNamespace(),
+    hps_train: TreeNamespace = TreeNamespace(),
     *,
     key: PRNGKeyArray,
     **kwargs,
 ):
     """Returns a skeleton PyTree for reloading trained models."""   
-    hps = hps | kwargs
+    hps_train = hps_train | kwargs
     
     # TODO: Implement scale-up for this experiment
-    scaleup_batches = hps.train.intervention_scaleup_batches
+    scaleup_batches = hps_train.intervention_scaleup_batches
     n_batches_scaleup = scaleup_batches[1] - scaleup_batches[0]
     if n_batches_scaleup > 0:
         def batch_scale_up(batch_start, n_batches, batch_info, x):
@@ -135,21 +135,21 @@ def setup_task_model_pair(
         def batch_scale_up(batch_start, n_batches, batch_info, x):
             return x
 
-    task_base = get_base_reaching_task(n_steps=hps.model.n_steps)
+    task_base = get_base_reaching_task(n_steps=hps_train.model.n_steps)
     
     models_base = jtree.get_ensemble(
         point_mass_nn,
         task_base,
         n_extra_inputs=1,  # Contextual input
-        n=hps.model.n_replicates,
-        dt=hps.model.dt,
+        n=hps_train.model.n_replicates,
+        dt=hps_train.model.dt,
         mass=MASS,
-        damping=hps.model.damping,
-        hidden_size=hps.model.hidden_size, 
-        n_steps=hps.model.n_steps,
-        feedback_delay_steps=hps.model.feedback_delay_steps,
-        feedback_noise_std=hps.model.feedback_noise_std,
-        motor_noise_std=hps.model.motor_noise_std,
+        damping=hps_train.model.damping,
+        hidden_size=hps_train.model.hidden_size, 
+        n_steps=hps_train.model.n_steps,
+        feedback_delay_steps=hps_train.model.feedback_delay_steps,
+        feedback_noise_std=hps_train.model.feedback_noise_std,
+        motor_noise_std=hps_train.model.motor_noise_std,
         key=key,
     )
     
@@ -157,26 +157,26 @@ def setup_task_model_pair(
         task = eqx.tree_at(
             lambda task: task.input_dependencies,
             task_base,
-            dict(context=TrialSpecDependency(CONTEXT_INPUT_FUNCS[hps.train.method]))
+            dict(context=TrialSpecDependency(CONTEXT_INPUT_FUNCS[hps_train.method]))
         )
     except AttributeError:
-        raise ValueError("No training method label assigned to hps.train.method")
+        raise ValueError("No training method label assigned to hps_train.method")
     
     return TaskModelPair(*schedule_intervenor(
         task, models_base,
         lambda model: model.step.mechanics,
         disturbance(
-            hps.train.pert.type,
-            hps.train.pert.std, 
+            hps_train.pert.type,
+            hps_train.pert.std, 
             # p_perturbed,
-            hps.train.method,
+            hps_train.method,
         ),
         label=PLANT_INTERVENOR_LABEL,
         default_active=False,
     ))
 
 
-def get_train_pairs(hps: TreeNamespace, key: PRNGKeyArray):
+def get_train_pairs(hps_train: TreeNamespace, key: PRNGKeyArray):
     """Given hyperparams and a particular task-model pair setup function, return the PyTree of task-model pairs."""
     
     get_train_pairs_partial = partial(
@@ -185,10 +185,10 @@ def get_train_pairs(hps: TreeNamespace, key: PRNGKeyArray):
         key=key,  # Use the same PRNG key for all training methods
     )
     
-    task_model_pairs, all_hps = jtree.unzip(LDict.of("train__method")({
-        method_label: get_train_pairs_partial(hps | dict(train=dict(method=method_label)))
-        #! Assume `hps.train.method` is a list of training method labels
-        for method_label in hps.train.method
+    task_model_pairs, all_hps_train = jtree.unzip(LDict.of("method")({
+        method_label: get_train_pairs_partial(hps_train | dict(method=method_label))
+        #! Assume `hps_train.method` is a list of training method labels
+        for method_label in hps_train.method
     }))
     
-    return task_model_pairs, all_hps
+    return task_model_pairs, all_hps_train

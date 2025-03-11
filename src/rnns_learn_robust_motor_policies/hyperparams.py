@@ -7,10 +7,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Literal, Optional, TypeVar
 
+import equinox as eqx
 import jax.tree as jt
 from jaxtyping import ArrayLike, PyTree
 
-from jax_cookbook import is_type, anyf
+from jax_cookbook import is_type, anyf, where_attr_strs_to_func
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.config import load_config, load_named_config
@@ -39,36 +40,63 @@ DT = TypeVar("DT", bound=dict)
 logger = logging.getLogger(__name__)
 
 
-def process_hps(hps: TreeNamespace) -> TreeNamespace:
-    """Resolve any dependencies and do any clean-up or validation of hyperparameters."""
+class _Placeholder:
+    ...
+
+
+def _get_key(hps: TreeNamespace, attr_str: str):
+    attr_strs = attr_str.split('.')
+    obj = hps
+    for s in attr_strs:
+        obj = getattr(obj, s, _Placeholder)
+        if obj is _Placeholder:
+            return None 
+    return obj
+
+def _key_not_none(hps: TreeNamespace, attr_str: str):
+    return _get_key(hps, attr_str) is not None
+                
+
+def set_dependent_hps(hps: TreeNamespace, config_type: Optional[Literal['training', 'analysis']] = None) -> TreeNamespace:
+    """Calculate and add any hyperparameters, which depend on other hyperparameters.
+    """
     # Avoid in-place modification 
     hps = deepcopy(hps)
     
-    # Only train configs should have the train key
-    if getattr(hps, 'train', None) is not None:
-        if getattr(hps.train, 'where', None) is not None:
-            # Wrap in an LDict so it doesn't get flattened by `flatten_hps`
-            hps.train.where = LDict.of("train__where")(hps.train.where)
-        hps.train.intervention_scaleup_batches = [
-            hps.train.n_batches_baseline,
-            hps.train.n_batches_baseline + hps.train.n_scaleup_batches,
+    if config_type == "training":
+        hps.intervention_scaleup_batches = [
+            hps.n_batches_baseline,
+            hps.n_batches_baseline + hps.n_scaleup_batches,
         ]
-        hps.train.n_batches = hps.train.n_batches_baseline + hps.train.n_batches_condition
-        hps.train.save_model_parameters = get_iterations_to_save_model_parameters(
-            hps.train.n_batches
-        )
+        hps.n_batches = hps.n_batches_baseline + hps.n_batches_condition
+        hps.save_model_parameters = get_iterations_to_save_model_parameters(hps.n_batches)
         
-    # Not all experiments will load an existing model 
-    #? Collapse the load params into the 
-    if getattr(hps, 'load', None) is not None:        
-        if getattr(hps.load, 'train', None) is not None:
-            hps.load.train.where = LDict.of("train__where")(hps.load.train.where)      
+    return hps
 
+
+def cast_hps(hps: TreeNamespace, config_type: Optional[Literal['training', 'analysis']] = None) -> TreeNamespace:
+    """Cast any hyperparameters to their appropriate types."""
+    hps = deepcopy(hps)
+
+    if config_type is not None:
+        train_where_attr_str = {"training": "where", "analysis": "train.where"}[config_type]
+        train_where_where = where_attr_strs_to_func(train_where_attr_str)
+        # train_where_key = train_where_attr_str.replace('.', LEVEL_LABEL_SEP)
+        
+        if _key_not_none(hps, train_where_attr_str):
+            # Wrap in an LDict so it doesn't get flattened by `flatten_hps`
+            hps = eqx.tree_at(
+                lambda hps: _get_key(hps, train_where_attr_str),
+                hps,
+                # Use the same key for simplicity in `flatten_hps`
+                LDict.of("train__where")(train_where_where(hps)),
+            )
+            
     return hps
 
 
 def load_hps(config_path: str | Path, config_type: Optional[Literal['training', 'analysis']] = None) -> TreeNamespace:
-    """Given a path to a YAML hyperparameters file, load and prepare them prior to training.
+    """Given a path to a YAML config file, load it and convert to a PyTree of hyperparameters.
     
     If the path is not found, pass it as the experiment id to try to get a default config. 
     So you can pass e.g. `"1-1"` to load the default hyperparameters for analysis module 1-1. 
@@ -87,15 +115,16 @@ def load_hps(config_path: str | Path, config_type: Optional[Literal['training', 
     # Convert to a (nested) namespace instead of a dict, for attribute access
     hps = dict_to_namespace(config, to_type=TreeNamespace, exclude=is_dict_with_int_keys)
     # Make corrections and add in any derived values
-    hps = process_hps(hps)
+    hps = set_dependent_hps(hps, config_type)
+    hps = cast_hps(hps, config_type)
     return hps
 
 
-def promote_model_hps(hps: TreeNamespace) -> TreeNamespace:
+def promote_hps(hps: TreeNamespace, *keys: str) -> TreeNamespace:
     """Remove the `model` attribute, and bring its own attributes out to the top level."""
     hps = deepcopy(hps)
     # Bring out the parameters under the `model` key; i.e. "model" won't appear in their flattened keys
-    for key in ('model',):
+    for key in keys:
         subtree = getattr(hps, key, None)
         if subtree is not None:
             hps.__dict__.update(subtree.__dict__)
@@ -105,33 +134,26 @@ def promote_model_hps(hps: TreeNamespace) -> TreeNamespace:
 
 def flatten_hps(
     hps: TreeNamespace, 
-    keep_load: bool = True, 
-    is_leaf: Optional[Callable] = anyf(is_type(list), LDict.is_of("train__where")),
+    prefix: Optional[str] = None,
+    is_leaf: Optional[Callable] = anyf(is_type(list), is_type(LDict)),
     ldict_to_dict: bool = True,
     join_with: str = LEVEL_LABEL_SEP,
 ) -> TreeNamespace:
     """Flatten the hyperparameter namespace, joining keys with underscores."""
     hps = deepcopy(hps)
-    # The structure under the `load` key mimics that of the full hps namespace
-    if getattr(hps, 'load', None) is not None:
-        if keep_load:
-            hps.load = promote_model_hps(hps.load)
-        else:
-            del hps.load
-    
-    #! TODO: Don't do this, since we can't unflatten from DB column names later 
-    #! without confusing model params with other top-level params
-    hps = promote_model_hps(hps)
 
-    hp_values = jt.leaves(hps, is_leaf=is_leaf)
+    values = jt.leaves(hps, is_leaf=is_leaf)
     
+    # TODO: More general function that inverts all relevant operations in `cast_hps`?
     if ldict_to_dict:
-        hp_values = [dict(v) if isinstance(v, LDict) else v for v in hp_values]
+        values = [dict(v) if isinstance(v, LDict) else v for v in values]
 
-    return TreeNamespace(**dict(zip(
-        jt.leaves(jtree.labels(hps, join_with=join_with, is_leaf=is_leaf)),
-        hp_values,
-    )))
+    keys = jt.leaves(jtree.labels(hps, join_with=join_with, is_leaf=is_leaf))
+    
+    if prefix is not None:
+        keys = [join_with.join([prefix, k]) for k in keys]
+
+    return TreeNamespace(**dict(zip(keys, values)))
 
 
 def update_hps_given_tree_path(hps: TreeNamespace, path: tuple, labels: Sequence[str]) -> TreeNamespace:
@@ -205,3 +227,7 @@ def take_train_histories_hps(hps: TreeNamespace) -> TreeNamespace:
     )
 
 
+def flat_key_to_where_func(key: str, sep: str = LEVEL_LABEL_SEP) -> Callable:
+    """Convert a flattened hyperparameter key to a where-function."""
+    where_str = key.replace(sep, '.')
+    return where_attr_strs_to_func(where_str)

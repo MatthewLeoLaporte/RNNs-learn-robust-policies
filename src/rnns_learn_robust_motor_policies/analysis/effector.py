@@ -23,10 +23,10 @@ class Effector_ByEval(AbstractAnalysis):
     ))
     variant: Optional[str] = "small"
     conditions: tuple[str, ...] = ('any_system_noise',)  # Skip this analysis, if only one eval
-    legend_title: str = "Reach direction"
-    colorscale_key: str = "reach_condition"
     colorscale_axis: int = 1
+    colorscale_key: str = "reach_condition"
     mean_exclude_axes: Sequence[int] = ()
+    legend_title: str = "Reach direction"
     legend_labels: Optional[Sequence | Callable] = None
 
     def make_figs(

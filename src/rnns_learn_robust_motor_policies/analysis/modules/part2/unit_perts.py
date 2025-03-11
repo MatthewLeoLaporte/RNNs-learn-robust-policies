@@ -37,7 +37,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     #     # TODO: I think we can remove this since we just tree_at `input_dependencies` again, immediately
     #     lambda task: task.input_dependencies,
     #     task_base,
-    #     dict(context=TrialSpecDependency(CONTEXT_INPUT_FUNCS[hps.load.train.method]))
+    #     dict(context=TrialSpecDependency(CONTEXT_INPUT_FUNCS[hps.train.method]))
     # )
     
     task_by_context = LDict.of("context_input")({
@@ -65,7 +65,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
         )
         for part_label, (setup_part_func, n)  in {
             'plant_pert': (setup_ss_plant_pert_task, hps.pert.plant.directions),
-            'unit_stim': (setup_ss_unit_stim_task, hps.load.model.hidden_size),
+            'unit_stim': (setup_ss_unit_stim_task, hps.train.model.hidden_size),
         }.items()
     })
     
@@ -85,7 +85,7 @@ def force_impulse(direction_idx, *, hps):
         hps.pert.plant.start_step, 
         hps.pert.plant.start_step + hps.pert.plant.duration,
     )
-    trial_mask = jnp.zeros((hps.load.model.n_steps - 1,), bool).at[idxs].set(True)
+    trial_mask = jnp.zeros((hps.train.model.n_steps - 1,), bool).at[idxs].set(True)
     
     angle = 2 * jnp.pi * direction_idx / hps.pert.plant.directions
     array = jnp.array([jnp.cos(angle), jnp.sin(angle)])
@@ -103,9 +103,9 @@ def activity_impulse(unit_idx, *, hps):
         hps.pert.unit.start_step, 
         hps.pert.unit.start_step + hps.pert.unit.duration,
     )
-    trial_mask = jnp.zeros((hps.load.model.n_steps - 1,), bool).at[idxs].set(True)
+    trial_mask = jnp.zeros((hps.train.model.n_steps - 1,), bool).at[idxs].set(True)
     
-    unit_spec = jnp.full(hps.load.model.hidden_size, jnp.nan)
+    unit_spec = jnp.full(hps.train.model.hidden_size, jnp.nan)
     unit_spec = unit_spec.at[unit_idx].set(hps.pert.unit.amp)
     
     return NetworkConstantInput.with_params(

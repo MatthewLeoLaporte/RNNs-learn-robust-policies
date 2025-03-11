@@ -68,27 +68,27 @@ def get_base_reaching_task(
 
 def get_train_pairs_by_pert_std(
     setup_task_model_pair: Callable, 
-    hps: TreeNamespace,
+    hps_train: TreeNamespace,
     *,
     key: PRNGKeyArray, 
 ) -> tuple[LDict[float, TaskModelPair], LDict[float, TreeNamespace]]:       
     def get_pair(pert_std):
-        hps_i = deepcopy(hps)
-        hps_i.train.pert.std = pert_std
-        return setup_task_model_pair(hps_i, key=key), hps_i
+        hps_train_i = deepcopy(hps_train)
+        hps_train_i.pert.std = pert_std
+        return setup_task_model_pair(hps_train_i, key=key), hps_train_i
 
-    task_model_pairs, all_hps = jtree.unzip(LDict.of("train__pert__std")({
+    task_model_pairs, all_hps_train = jtree.unzip(LDict.of("train__pert__std")({
         std: get_pair(std)
         #! Assume that `hps.train.pert.std` is a sequence
-        for std in hps.train.pert.std
+        for std in hps_train.pert.std
     }))
     
-    return task_model_pairs, all_hps
+    return task_model_pairs, all_hps_train
 
 
 def setup_train_histories(
     models_tree,
-    hps: TreeNamespace,
+    hps_train: TreeNamespace,
     *,
     key,
 ) -> dict[float, TaskTrainerHistory]:
@@ -105,18 +105,18 @@ def setup_train_histories(
     # Assume that where funcs may be lists (normally defined as tuples, but retrieved through sqlite JSON)
     where_train = jt.map(
         attr_str_tree_to_where_func, 
-        hps.train.where,
+        hps_train.where,
         is_leaf=is_type(list),
     )
     
     loss_func = simple_reach_loss()
-    if getattr(hps.train, 'readout_norm_loss_weight', None) is not None:
-        assert getattr(hps.train, 'readout_norm_value', None) is not None, (
+    if getattr(hps_train, 'readout_norm_loss_weight', None) is not None:
+        assert getattr(hps_train, 'readout_norm_value', None) is not None, (
             "readout_norm_value must be provided if readout_norm_loss_weight is not None"
         )
         loss_func_validation = loss_func + (
-            hps.train.readout_norm_loss_weight 
-            * get_readout_norm_loss(hps.train.readout_norm_value)
+            hps_train.readout_norm_loss_weight 
+            * get_readout_norm_loss(hps_train.readout_norm_value)
         )
     else:
         loss_func_validation = loss_func
@@ -124,13 +124,13 @@ def setup_train_histories(
     return jt.map(
         lambda models: init_task_trainer_history(
             loss_func,
-            hps.train.n_batches,
-            hps.model.n_replicates,
+            hps_train.n_batches,
+            hps_train.model.n_replicates,
             ensembled=True,
             ensemble_random_trials=False,
-            save_model_parameters=jnp.array(hps.train.save_model_parameters),
+            save_model_parameters=jnp.array(hps_train.save_model_parameters),
             save_trial_specs=None,
-            batch_size=hps.train.batch_size,
+            batch_size=hps_train.batch_size,
             loss_func_validation=loss_func_validation,
             model=models,
             where_train=dict(where_train),  
@@ -444,7 +444,7 @@ def query_and_load_model(
         partial(setup_replicate_info, model),
     )
     
-    n_replicates_included = model_info.n_replicates
+    n_replicates_included = model_info.model__n_replicates
     
     if surgeries is not None:
         for path, value in surgeries.items():

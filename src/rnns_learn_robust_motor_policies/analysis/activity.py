@@ -255,12 +255,12 @@ class NetworkActivity_PCA(AbstractAnalysis):
         self,
         data: AnalysisInputData,
         *,
-        hps_0,
+        hps_common,
         best_replicate_states,
         **kwargs,
     ):
         # TODO: Replace with `hps_0.model.hidden_size` once `model_info` loading into `hps` is implemented
-        hidden_size = hps_0.load.model.hidden_size
+        hidden_size = hps_common.train.model.hidden_size
         
         idxs = slice(self.start_step, self.end_step)
         

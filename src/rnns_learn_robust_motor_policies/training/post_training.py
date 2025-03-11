@@ -203,7 +203,7 @@ def get_best_models(
     if isinstance(where_train, dict):
         where_train_idxs = _get_most_recent_idxs(
             [int(k) for k in where_train.keys()],
-            model_record.train__n_batches,        
+            model_record.n_batches,        
         )
         get_where_train = lambda idx: where_train[str(where_train_idxs[idx])]
     else:
@@ -524,12 +524,12 @@ def process_model_post_training(
     
     where_train = jt.map(
         attr_str_tree_to_where_func,
-        model_record.train__where,
+        model_record.where,
         is_leaf=is_type(list),
     )
-    # where_train = attr_str_tree_to_where_func(tuple(set(jt.leaves(model_record.train__where))))
-    n_replicates = int(model_record.n_replicates)       
-    save_model_parameters = jnp.array(model_record.train__save_model_parameters)
+    # where_train = attr_str_tree_to_where_func(tuple(set(jt.leaves(model_record.where))))
+    n_replicates = int(model_record.model__n_replicates)       
+    save_model_parameters = jnp.array(model_record.save_model_parameters)
     
     all_data = load_data(model_record)
     
