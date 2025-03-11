@@ -3,11 +3,7 @@
 
 ## Next
 
-- [x] Fix mean curve calculation in `trajectories_2d`: if there are multiple batch dimensions, it will average them all
-	- e.g. if the reach direction is not the color axis, we’ll end up averaging over reach directions and getting
 - [ ] Aligned vars plotting function for `context_pert` which plots all four conditions (+/- plant pert, +/- context pert) on the same figure (one per training std)
-- [x] Control coloraxis from analysis subclasses
-- [x] Pass legend values to plotting functions
 
 - [ ] [[TODO-analysis#Influence of context input on network dynamics]]
 - [ ] [[TODO-analysis#Variation in effective direction, over a reach]]
@@ -105,7 +101,6 @@ Each figure type also has certain parameters which may vary. We may want a funct
 - [ ] Separate train and eval seeds in `prng.yml` 
 - [ ] Write a `tree_stack` that works with models – can’t just use `apply_to_filtered_leaves` since the shape of the output is changed wrt the input 
 - [ ] Try vmapping over `schedule_intervenor`, to get batch dimensions in models and tasks. Batched tasks seems like a missing link to making some of the analyses easier to write.
-- [ ] ~~Stop using `tmp` in figures dir~~
 - [ ] I’m not sure changing the `noise_stds` should be the responsibility of `query_and_load_model`. Otoh, `query_and_load_model` is only used in the scope of this project…
 ### Equinox warning 
 

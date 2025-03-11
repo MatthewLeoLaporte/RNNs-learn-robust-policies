@@ -11,8 +11,9 @@ from feedbax.intervene import schedule_intervenor
 from feedbax.task import TrialSpecDependency
 import jax_cookbook.tree as jtree
 
+from rnns_learn_robust_motor_policies.analysis import AbstractAnalysis, AnalysisInputData
 from rnns_learn_robust_motor_policies.analysis.activity import NetworkActivity_ProjectPCA, NetworkActivity_SampleUnits
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
+from rnns_learn_robust_motor_policies.analysis.aligned import AlignedTrajectories
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_PERT_FUNCS, get_pert_amp_vmap_eval_func
 from rnns_learn_robust_motor_policies.analysis.disturbance import task_with_pert_amp
 from rnns_learn_robust_motor_policies.analysis.effector import Effector_ByEval, Effector_ByReplicate
@@ -99,8 +100,14 @@ ALL_ANALYSES = [
     NetworkActivity_SampleUnits(variant=VARIANT),
     
     # 3. Plot aligned vars for +/- plant pert, +/- context pert on same plot
-    
-    
+    AlignedTrajectories(
+        variant=VARIANT,
+    ),
+
+    AlignedTrajectories(
+        variant="reach",
+    ),
+
     # 4. Perform PCA wrt baseline `reach` variant, and project `steady` variant into that space
     # (To show that context input causally varies the network activity in a null direction)
     # NetworkActivity_ProjectPCA(

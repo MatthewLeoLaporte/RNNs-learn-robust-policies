@@ -1,4 +1,6 @@
+import dataclasses
 from functools import cached_property
+import logging
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Optional, Dict
 from pathlib import Path
@@ -20,17 +22,35 @@ from rnns_learn_robust_motor_policies.misc import camel_to_snake, get_dataclass_
 from rnns_learn_robust_motor_policies.plot_utils import figs_flatten_with_paths
 from rnns_learn_robust_motor_policies.types import TreeNamespace
 
-
 if TYPE_CHECKING:
     from typing import ClassVar as AbstractClassVar
 else:
     from equinox import AbstractClassVar
 
 
+logger = logging.getLogger(__name__)
+
+
 # Define a string representer for objects PyYAML doesn't know how to handle
 def represent_undefined(dumper, data):
     return dumper.represent_scalar('tag:yaml.org,2002:str', str(data))
 yaml.add_representer(object, represent_undefined)
+
+
+def create_analysis(analysis_class, *args, **kwargs):
+    provided = kwargs.copy()
+    for i, arg in enumerate(args):
+        sig = inspect.signature(analysis_class.__init__)
+        param_names = list(sig.parameters.keys())[1:]  # Skip 'self'
+        if i < len(param_names):
+            provided[param_names[i]] = arg
+    
+    # Create instance with captured args
+    instance = analysis_class(*args, **kwargs)
+    
+    # Set _provided_fields using Equinox's update mechanism
+    instance = eqx.tree_at(lambda x: x._provided_fields, instance, provided)
+    return instance
 
 
 class AnalysisInputData(Module):
@@ -178,11 +198,18 @@ class AbstractAnalysis(Module):
                 **params,
             )
             
+            # Include any fields that have non-default values in the filename; 
+            # this serves to distinguish different instances of the same analysis,
+            # according to the kwargs passed by the user upon instantiation.
+            non_default_field_params_str = '__'.join([
+                f"{k}-{v}" for k, v in self._non_default_field_params.items()
+            ])
+            
             # Additionally dump to specified path if provided
             if dump_path is not None:                                
                 # Create a unique filename
                 analysis_name = camel_to_snake(self.__class__.__name__)
-                filename = f"{analysis_name}__{self.variant}__{i}"
+                filename = f"{analysis_name}__{self.variant}__{non_default_field_params_str}__{i}"
                 
                 savefig(fig, filename, dump_path, ["json"])
                 
@@ -194,6 +221,42 @@ class AbstractAnalysis(Module):
     @cached_property
     def _field_params(self):
         # TODO: Inherit from dependencies? e.g. if we depend on `BestReplicateStates`, maybe we should include `i_replicate` from there
-        return get_dataclass_fields(self, exclude=('dependencies', 'conditions'))
+        return get_dataclass_fields(self, exclude=self._exclude_fields)
 
+    @property
+    @staticmethod
+    def _exclude_fields(self):
+        return ('dependencies', 'conditions')
 
+    @property
+    def _non_default_field_params(self) -> Dict[str, Any]:
+        """
+        Returns a dictionary of fields that have non-default values.
+        Works without knowing field names in advance.
+        """
+        result = {}
+        
+        # Get all dataclass fields for this instance
+        for field in dataclasses.fields(self):
+            if field.name in self._exclude_fields:
+                continue
+
+            current_value = getattr(self, field.name)
+            
+            # Check if this field has a default value defined
+            has_default = field.default is not dataclasses.MISSING
+            has_default_factory = field.default_factory is not dataclasses.MISSING
+            
+            if has_default and current_value != field.default:
+                # Field has a different value than its default
+                result[field.name] = current_value
+            elif has_default_factory:
+                # For default_factory fields, we can't easily tell if the value
+                # was explicitly provided, so we include the current value
+                # This is an approximation - we'll include fields with default_factory
+                result[field.name] = current_value
+            elif not has_default and not has_default_factory:
+                # Field has no default, so it must have been provided
+                result[field.name] = current_value
+                
+        return result

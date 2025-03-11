@@ -15,9 +15,7 @@ from feedbax.intervene import add_intervenors, schedule_intervenor
 from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.analysis.aligned import Aligned_IdxTrial, AlignedTrajectories
-from rnns_learn_robust_motor_policies.analysis.aligned import Aligned_IdxPertAmp
-from rnns_learn_robust_motor_policies.analysis.aligned import Aligned_IdxTrainStd
+from rnns_learn_robust_motor_policies.analysis.aligned import AlignedTrajectories
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
 from rnns_learn_robust_motor_policies.analysis.effector import Effector_ByEval
 from rnns_learn_robust_motor_policies.analysis.effector import Effector_SingleEval
@@ -175,6 +173,6 @@ ALL_ANALYSES = [
     # VelocityProfiles(),
     # Measures_ByTrainStd(measure_keys=MEASURE_KEYS),
     # Measures_CompareReplicatesLoHi(measure_keys=MEASURE_KEYS),
-    # Measures_LoHiSummary(measure_keys=MEASURE_KEYS),
+    Measures_LoHiSummary(measure_keys=MEASURE_KEYS),
     # OutputWeightCorrelation(),
 ]

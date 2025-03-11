@@ -12,6 +12,10 @@
 - [ ] **Direction of max net force**
 	- at start of trial?
 
+#### Training evolution
+
+- [ ] Animate the aligned trajectories (comparing train std) over training batches
+
 ### Network analysis: Unit level
 
 > [!NOTE]

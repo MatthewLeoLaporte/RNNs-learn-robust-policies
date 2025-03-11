@@ -35,3 +35,11 @@
 # 2025-03-10
 
 - [x] ~~Are the different thin lines in the effector plots from `context_inputs` showing replicate? Why are they so parallel?~~ Yeah, I was using `Effector_ByReplicate` instead of `Effector_ByEval` 🗎 Next
+
+# 2025-03-11
+
+- [x] ~~Stop using `tmp` in figures dir~~ 🗎 Next > Debris
+- [x] Pass legend values to plotting functions 🗎 Next
+- [x] Control coloraxis from analysis subclasses 🗎 Next
+- [x] Fix mean curve calculation in `trajectories_2d`: if there are multiple batch dimensions, it will average them all 🗎 Next
+	- e.g. if the reach direction is not the color axis, we’ll end up averaging over reach directions and getting
