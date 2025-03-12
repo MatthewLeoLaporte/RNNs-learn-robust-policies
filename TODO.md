@@ -67,6 +67,8 @@ See [[TODO-analysis]].
 
 ## Database 
 
+- [ ] Don’t keep `train_histories` file for both the original and the post-processed models; they’re just duplicates anyway
+	- Either 1) delete the train_history for the original upon post processing, 2) only keep it for the original, and add a column so that the postprocessed model can refer back to the original and we can try to obtain train history from the reference, 3) give the postprocessed model the same hash as the original (though this violates the idea that the hash is of the file) and don’t save the train history when post-processing
 - [ ] Switch to a document database like MongoDB (or TinyDB)
 	- See [this](https://console.anthropic.com/workbench/279b86f6-39f9-4c42-947f-6f1b02df1224) convo with Claude. 
 	- I’m not sure I’ll do this for this project, however it is appealing because it seems to 1) avoid issues with flattening/unflattening hyperparameters, 2) allow more complex queries, 3) doesn’t require an ORM to be defined

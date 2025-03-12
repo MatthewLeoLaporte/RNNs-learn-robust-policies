@@ -30,7 +30,7 @@ from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree  
 
 import rnns_learn_robust_motor_policies
-from rnns_learn_robust_motor_policies import PROJECT_SEED
+from rnns_learn_robust_motor_policies.config import PATHS, PRNG_CONFIG
 from rnns_learn_robust_motor_policies.analysis import ANALYSIS_REGISTRY
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
 from rnns_learn_robust_motor_policies.analysis._dependencies import compute_dependencies
@@ -43,7 +43,7 @@ from rnns_learn_robust_motor_policies.database import (
     add_evaluation, 
     check_model_files, 
     get_db_session, 
-    record_to_namespace,
+    # record_to_namespace,
 )
 from rnns_learn_robust_motor_policies.hyperparams import flatten_hps, load_hps
 from rnns_learn_robust_motor_policies.misc import log_version_info
@@ -204,7 +204,7 @@ def main(
         data,
         model_info, 
         eval_info, 
-        fig_dump_path=Path(fig_dump_path),
+        fig_dump_path=Path(PATHS.figures_dump),
         **common_inputs,
     )
     
@@ -361,7 +361,7 @@ if __name__ == '__main__':
     
     check_model_files(db_session)  # Mark any records with missing model files
     
-    key = jr.PRNGKey(PROJECT_SEED)
+    key = jr.PRNGKey(PRNG_CONFIG.seed)
     _, _, key_eval = jr.split(key, 3)
     
     main(db_session, hps, fig_dump_path=args.fig_dump_path, key=key)

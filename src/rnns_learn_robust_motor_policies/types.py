@@ -16,13 +16,14 @@ import yaml
 TaskModelPair = namedtuple("TaskModelPair", ["task", "model"])
 
 
+# This can't be placed in `config.STRINGS` since that would cause a circular import
+TNS_REPR_INDENT_STR = "  "
+
+
 K = TypeVar('K')
 V = TypeVar('V')
 NT = TypeVar("NT", bound=SimpleNamespace)
 DT = TypeVar("DT", bound=dict)
-
-
-TREENAMESPACE_REPR_INDENT = "  "  
 
 
 def convert_kwargy_node_type(x, to_type: type, from_type: type, exclude: Callable = lambda x: False):
@@ -89,8 +90,8 @@ class TreeNamespace(SimpleNamespace):
                 attr_repr = repr(attr)
             attr_strs.append(f"{name}={attr_repr},")
 
-        current_indent = TREENAMESPACE_REPR_INDENT * level
-        inner_str = '\n'.join(current_indent + TREENAMESPACE_REPR_INDENT + s for s in attr_strs)
+        current_indent = TNS_REPR_INDENT_STR * level
+        inner_str = '\n'.join(current_indent + TNS_REPR_INDENT_STR + s for s in attr_strs)
         
         return f"{cls_name}(\n" + inner_str + f"\n{current_indent})"
 

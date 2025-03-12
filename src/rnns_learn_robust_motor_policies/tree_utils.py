@@ -14,7 +14,7 @@ from feedbax.intervene import AbstractIntervenor
 from jax_cookbook import anyf, is_module, is_type
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.constants import LEVEL_LABEL_SEP
+from rnns_learn_robust_motor_policies.config import STRINGS
 from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
 
 
@@ -107,7 +107,7 @@ def tree_level_labels(tree: LDict, is_leaf=falsef, sep=None) -> list[str]:
             break
         
     if sep is not None:
-        labels = [label.replace(LEVEL_LABEL_SEP, sep) for label in labels]
+        labels = [label.replace(STRINGS.hps_level_label_sep, sep) for label in labels]
         
     return labels
 

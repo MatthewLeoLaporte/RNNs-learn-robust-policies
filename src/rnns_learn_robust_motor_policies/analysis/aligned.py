@@ -12,7 +12,8 @@ import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_aligned_vars, get_pos_endpoints
-from rnns_learn_robust_motor_policies.colors import COLORSCALES, MEAN_LIGHTEN_FACTOR
+from rnns_learn_robust_motor_policies.config import PLOTLY_CONFIG
+from rnns_learn_robust_motor_policies.colors import COLORSCALES
 from rnns_learn_robust_motor_policies.hyperparams import flat_key_to_where_func
 from rnns_learn_robust_motor_policies.plot_utils import get_label_str
 from rnns_learn_robust_motor_policies.types import TreeNamespace
@@ -65,7 +66,7 @@ plot_condition_trajectories = partial(
     # mode='std',
     mean_trajectory_line_width=3,
     # n_curves_max=n_curves_max,
-    darken_mean=MEAN_LIGHTEN_FACTOR,
+    darken_mean=PLOTLY_CONFIG.mean_lighten_factor,
     layout_kws=dict(
         width=900,
         height=400,

@@ -4,9 +4,6 @@ import jax.numpy as jnp
 import numpy as np
 
 
-# Separator to use in labels for DB columns and flattened hps 
-LEVEL_LABEL_SEP = "__"
-
 ## Model parameters  n_grid: 5
 MASS = 1.0
 # Default noise levels

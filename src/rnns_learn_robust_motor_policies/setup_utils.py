@@ -31,7 +31,7 @@ from feedbax.xabdeef.losses import simple_reach_loss
 from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies import MODELS_DIR
+from rnns_learn_robust_motor_policies.config import PATHS
 from rnns_learn_robust_motor_policies.constants import (
     TASK_EVAL_PARAMS,
     N_STEPS,
@@ -220,7 +220,7 @@ def wait_for_value(variable, timeout: float = 3600):
 
 def choose_model_file(filter_pattern="*.eqx", timeout: float = 3600) -> str:
     """Displays a file chooser in the model directory until """
-    fc = display_model_filechooser(MODELS_DIR, filter_pattern=filter_pattern)
+    fc = display_model_filechooser(PATHS.models, filter_pattern=filter_pattern)
     
     if wait_for_value(fc, timeout=timeout):
         assert fc.selected is not None

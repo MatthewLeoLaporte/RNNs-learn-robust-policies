@@ -59,24 +59,10 @@ from jax_cookbook import (
 import jax_cookbook.tree as jtree
 
 
-from rnns_learn_robust_motor_policies import (
-    DB_DIR, 
-    FIGS_BASE_DIR, 
-    MODELS_DIR, 
-    QUARTO_OUT_DIR,
-    REPLICATE_INFO_FILE_LABEL,
-    TRAIN_HISTORY_FILE_LABEL, 
-)
+from rnns_learn_robust_motor_policies.config import PATHS, STRINGS
 from rnns_learn_robust_motor_policies.hyperparams import flatten_hps, load_hps, take_train_histories_hps
-from rnns_learn_robust_motor_policies.tree_utils import (
-    pp
-)
+from rnns_learn_robust_motor_policies.tree_utils import pp
 from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace, dict_to_namespace, is_dict_with_int_keys, namespace_to_dict
-
-
-MODELS_TABLE_NAME = 'models'
-EVALUATIONS_TABLE_NAME = 'evaluations'
-FIGURES_TABLE_NAME = 'figures'
 
 
 logger = logging.getLogger(__name__)
@@ -100,7 +86,7 @@ BaseT = TypeVar("BaseT", bound=RecordBase)
 
 
 class ModelRecord(RecordBase):
-    __tablename__ = MODELS_TABLE_NAME
+    __tablename__ = STRINGS.db_table_names.models
     
     id: Mapped[int] = mapped_column(primary_key=True)
     hash: Mapped[str] = mapped_column(String, unique=True, nullable=False)
@@ -122,18 +108,18 @@ class ModelRecord(RecordBase):
     
     @hybrid_property
     def path(self):
-        return get_hash_path(MODELS_DIR, self.hash)
+        return get_hash_path(PATHS.models, self.hash)
 
     @hybrid_property
     def replicate_info_path(self):
         if self.has_replicate_info:
-            return get_hash_path(MODELS_DIR, self.hash, suffix=REPLICATE_INFO_FILE_LABEL)
+            return get_hash_path(PATHS.models, self.hash, suffix=STRINGS.file_suffixes.replicate_info)
         else: 
             return None
     
     @hybrid_property
     def train_history_path(self):
-        return get_hash_path(MODELS_DIR, self.hash, suffix=TRAIN_HISTORY_FILE_LABEL)
+        return get_hash_path(PATHS.models, self.hash, suffix=STRINGS.file_suffixes.train_history)
 
     @hybrid_property 
     def where_train(self):
@@ -150,7 +136,7 @@ MODEL_RECORD_BASE_ATTRS = [
     
 class EvaluationRecord(RecordBase):
     """Represents a single evaluation."""
-    __tablename__ = EVALUATIONS_TABLE_NAME
+    __tablename__ = STRINGS.db_table_names.evaluations
 
     # model = relationship("ModelRecord")
     figures = relationship("FigureRecord", back_populates="evaluation")
@@ -167,12 +153,12 @@ class EvaluationRecord(RecordBase):
     
     @hybrid_property
     def figure_dir(self):
-        return FIGS_BASE_DIR / self.hash
+        return PATHS.figures / self.hash
     
 
 class FigureRecord(RecordBase):
     """Represents a figure generated during evaluation."""
-    __tablename__ = FIGURES_TABLE_NAME
+    __tablename__ = STRINGS.db_table_names.figures
 
     evaluation = relationship("EvaluationRecord", back_populates="figures")
     # model = relationship("ModelRecord")
@@ -180,7 +166,9 @@ class FigureRecord(RecordBase):
     id: Mapped[int] = mapped_column(primary_key=True)
     hash: Mapped[str] = mapped_column(unique=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
-    evaluation_hash: Mapped[str] = mapped_column(ForeignKey(f'{EVALUATIONS_TABLE_NAME}.hash'))
+    evaluation_hash: Mapped[str] = mapped_column(ForeignKey(
+        f'{STRINGS.db_table_names.evaluations}.hash'
+    ))
     identifier: Mapped[str]
     figure_type: Mapped[str]
     saved_formats: Mapped[Sequence[str]]
@@ -287,7 +275,7 @@ def init_db_session(db_path: str = "sqlite:///models.db"):
 
 def get_db_session(name: str = "main"):
     """Create a database session for the project database with the given name."""
-    return init_db_session(f"sqlite:///{DB_DIR}/{name}.db")
+    return init_db_session(f"sqlite:///{PATHS.db}/{name}.db")
     
     
 def hash_file(path: Path) -> str:
@@ -443,9 +431,9 @@ def check_model_files(
         known_hashes = {record.hash for record in records}
         
         for record in records:
-            model_file_exists = get_hash_path(MODELS_DIR, record.hash).exists()
+            model_file_exists = get_hash_path(PATHS.models, record.hash).exists()
             replicate_info_file_exists = get_hash_path(
-                MODELS_DIR, record.hash, suffix=REPLICATE_INFO_FILE_LABEL,
+                PATHS.models, record.hash, suffix=STRINGS.file_suffixes.replicate_info,
             ).exists()
             
             if record.is_path_defunct and model_file_exists:
@@ -457,8 +445,8 @@ def check_model_files(
             record.has_replicate_info = replicate_info_file_exists
         
         if clean_orphaned_files != 'no':
-            archive_dir = MODELS_DIR / "archive"
-            for file_path in MODELS_DIR.glob("*.eqx"):
+            archive_dir = PATHS.models / "archive"
+            for file_path in PATHS.models.glob("*.eqx"):
                 file_hash = file_path.stem 
                 if file_hash not in known_hashes: 
                     if clean_orphaned_files == 'delete':
@@ -475,10 +463,7 @@ def check_model_files(
     except Exception as e:
         session.rollback()
         logger.error(f"Error checking model files: {e}")
-        raise e
-
-
-HPS_SERIALISATION_SEP_CHAR = chr(29)  # ASCII group separator character
+        raise e 
 
 
 def yaml_dump(data: Any) -> str:
@@ -490,7 +475,7 @@ def yaml_dump(data: Any) -> str:
     Importantly, the string output of `yaml.dump` does not need to be on a single line,
     for this to work.
     """
-    return yaml.dump(data) + f"\n{HPS_SERIALISATION_SEP_CHAR}"
+    return yaml.dump(data) + f"\n{chr(STRINGS.serialisation.sep_chr)}"
 
 
 def save_tree(
@@ -550,7 +535,7 @@ def load_tree_with_hps(
 ) -> tuple[PyTree, TreeNamespace]:
     """Similar to `feedbax.load_with_hyperparameters, but for namespace-based hyperparameters"""
     with open(path, "rb") as f:
-        hps_dict = yaml.safe_load(_read_until_special(f, HPS_SERIALISATION_SEP_CHAR))
+        hps_dict = yaml.safe_load(_read_until_special(f, chr(STRINGS.serialisation.sep_chr)))
     
         hps = dict_to_namespace(hps_dict, to_type=TreeNamespace, exclude=is_dict_with_int_keys)
         
@@ -582,17 +567,17 @@ def save_model_and_add_record(
     # TODO: Optionally, let the hash/existence checks be independent of `version_info`
     # i.e. so we don't retrain models just because Equinox got a minor update or something
     # (alternatively, could just fix the package versions for the project)
-    model_hash, _ = save_tree(model, MODELS_DIR, hps_train)
+    model_hash, _ = save_tree(model, PATHS.models, hps_train)
     
     # Save associated files if provided
     for tree, suffix in (
-        (train_history, TRAIN_HISTORY_FILE_LABEL), 
-        (replicate_info, REPLICATE_INFO_FILE_LABEL),
+        (train_history, STRINGS.file_suffixes.train_history), 
+        (replicate_info, STRINGS.file_suffixes.replicate_info),
     ):
         if tree is not None:
-            save_tree(tree, MODELS_DIR, hps_train, hash_=model_hash, suffix=suffix)
+            save_tree(tree, PATHS.models, hps_train, hash_=model_hash, suffix=suffix)
         
-    update_table_schema(session.bind, MODELS_TABLE_NAME, record_params)    
+    update_table_schema(session.bind, STRINGS.db_table_names.models, record_params)    
     
     # Create database record
     model_record = ModelRecord(
@@ -668,13 +653,13 @@ def add_evaluation(
     )
     
     # Migrate the evaluations table so it has all the necessary columns
-    update_table_schema(session.bind, EVALUATIONS_TABLE_NAME, eval_parameters)
+    update_table_schema(session.bind, STRINGS.db_table_names.evaluations, eval_parameters)
     
-    figure_dir = FIGS_BASE_DIR / eval_hash
+    figure_dir = PATHS.figures / eval_hash
     figure_dir.mkdir(exist_ok=True)
     
-    quarto_output_dir = QUARTO_OUT_DIR / eval_hash
-    quarto_output_dir.mkdir(exist_ok=True)
+    # quarto_output_dir = QUARTO_OUT_DIR / eval_hash
+    # quarto_output_dir.mkdir(exist_ok=True)
     
     # Delete existing record with same hash, if it exists
     existing_record = get_record(session, EvaluationRecord, hash=eval_hash)
@@ -776,7 +761,7 @@ def add_evaluation_figure(
     savefig(figure, figure_hash, eval_record.figure_dir, save_formats)
     
     # Update schema with new parameters
-    update_table_schema(session.bind, FIGURES_TABLE_NAME, parameters)
+    update_table_schema(session.bind, STRINGS.db_table_names.figures, parameters)
     
     if model_records is None:
         model_hashes = None
@@ -951,6 +936,7 @@ def retrieve_figures(
         Tuple of (list of plotly figures, list of record tuples)
         Each record tuple contains (figure_record, evaluation_record, model_record)
     """
+    #! TODO: Update this to work with `model_hashes`
     # Start with base query joining all three tables
     query = (
         session.query(FigureRecord, EvaluationRecord, ModelRecord)
@@ -984,7 +970,7 @@ def retrieve_figures(
     records = []
     for record_tuple in query.all():
         figure_record, _, _ = record_tuple
-        json_path = FIGS_BASE_DIR / figure_record.evaluation_hash / f"{figure_record.hash}.json"
+        json_path = PATHS.figures / figure_record.evaluation_hash / f"{figure_record.hash}.json"
         if json_path.exists():
             try:
                 figures.append(plotly.io.read_json(json_path))
@@ -1004,27 +990,27 @@ class _Box(eqx.Module):
         return self.data
 
 
-def record_to_namespace(record: RecordBase, split_by='__') -> TreeNamespace:
-    """Convert an SQLAlchemy record to a TreeNamespace with nested structure.
+# def record_to_namespace(record: RecordBase, split_by='__') -> TreeNamespace:
+#     """Convert an SQLAlchemy record to a TreeNamespace with nested structure.
     
-    Column names with underscores are converted to nested attributes.
-    For example, 'foo_bar_baz' becomes foo.bar.baz in the namespace.
-    """    
-    # Get all column values as a dictionary
-    record_dict = {
-        # Wrap in `_Box` so that when we convert the dict to namespace, any dict-valued keys don't get converted
-        column_name: _Box(getattr(record, column_name)) 
-        for column_name in record.__table__.columns.keys()
-    }
+#     Column names with underscores are converted to nested attributes.
+#     For example, 'foo_bar_baz' becomes foo.bar.baz in the namespace.
+#     """    
+#     # Get all column values as a dictionary
+#     record_dict = {
+#         # Wrap in `_Box` so that when we convert the dict to namespace, any dict-valued keys don't get converted
+#         column_name: _Box(getattr(record, column_name)) 
+#         for column_name in record.__table__.columns.keys()
+#     }
     
-    record_key_paths = [
-        list(column_name.split(split_by)) for column_name in record_dict.keys()
-    ]
+#     record_key_paths = [
+#         list(column_name.split(split_by)) for column_name in record_dict.keys()
+#     ]
     
-    # Unflatten dict
-    hps_dict = None 
+#     # Unflatten dict
+#     hps_dict = None 
     
-    # Convert to `TreeNamespace`
+#     # Convert to `TreeNamespace`
     
-    # Unbox values
+#     # Unbox values
     

@@ -11,10 +11,13 @@ from jaxtyping import PyTree
 
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
 from rnns_learn_robust_motor_policies.analysis.state_utils import BestReplicateStates
-from rnns_learn_robust_motor_policies.colors import MEAN_LIGHTEN_FACTOR
+from rnns_learn_robust_motor_policies.config import PLOTLY_CONFIG
 from rnns_learn_robust_motor_policies.constants import REPLICATE_CRITERION
 from rnns_learn_robust_motor_policies.plot import plot_2d_effector_trajectories
 from rnns_learn_robust_motor_policies.types import TreeNamespace
+
+
+MEAN_LIGHTEN_FACTOR = PLOTLY_CONFIG.mean_lighten_factor
 
 
 class Effector_ByEval(AbstractAnalysis):

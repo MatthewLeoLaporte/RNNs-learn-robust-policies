@@ -14,8 +14,8 @@ from jaxtyping import ArrayLike, PyTree
 from jax_cookbook import is_type, anyf, where_attr_strs_to_func
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.config import load_config, load_named_config
-from rnns_learn_robust_motor_policies.constants import LEVEL_LABEL_SEP, get_iterations_to_save_model_parameters
+from rnns_learn_robust_motor_policies.config import STRINGS, load_config, load_yaml_config
+from rnns_learn_robust_motor_policies.constants import get_iterations_to_save_model_parameters
 from rnns_learn_robust_motor_policies.tree_utils import (
     tree_level_labels,
     deep_update,
@@ -32,7 +32,7 @@ from rnns_learn_robust_motor_policies.types import (
 # We use LDict labels to identify levels in task-model pair trees
 # The label format is expected to be double-underscore separated parts that map to hyperparameter paths
 # For example, "train__method" maps to hps.train.method and "train__pert__std" maps to hps.train.pert.std
-
+T = TypeVar("T")
 NT = TypeVar("NT", bound=SimpleNamespace)
 DT = TypeVar("DT", bound=dict)
 
@@ -81,7 +81,7 @@ def cast_hps(hps: TreeNamespace, config_type: Optional[Literal['training', 'anal
     if config_type is not None:
         train_where_attr_str = {"training": "where", "analysis": "train.where"}[config_type]
         train_where_where = where_attr_strs_to_func(train_where_attr_str)
-        # train_where_key = train_where_attr_str.replace('.', LEVEL_LABEL_SEP)
+        # train_where_key = train_where_attr_str.replace('.', STRINGS.hps_level_label_sep)
         
         if _key_not_none(hps, train_where_attr_str):
             # Wrap in an LDict so it doesn't get flattened by `flatten_hps`
@@ -110,7 +110,7 @@ def load_hps(config_path: str | Path, config_type: Optional[Literal['training', 
         config = dict()
         expt_id = str(config_path)
     # Load the defaults and update with the user-specified config
-    default_config = load_named_config(expt_id, config_type)
+    default_config = load_yaml_config(expt_id, config_type)
     config = deep_update(default_config, config)
     # Convert to a (nested) namespace instead of a dict, for attribute access
     hps = dict_to_namespace(config, to_type=TreeNamespace, exclude=is_dict_with_int_keys)
@@ -137,7 +137,7 @@ def flatten_hps(
     prefix: Optional[str] = None,
     is_leaf: Optional[Callable] = anyf(is_type(list), is_type(LDict)),
     ldict_to_dict: bool = True,
-    join_with: str = LEVEL_LABEL_SEP,
+    join_with: str = STRINGS.hps_level_label_sep,
 ) -> TreeNamespace:
     """Flatten the hyperparameter namespace, joining keys with underscores."""
     hps = deepcopy(hps)
@@ -172,7 +172,7 @@ def update_hps_given_tree_path(hps: TreeNamespace, path: tuple, labels: Sequence
     for node_key, label in zip(path, labels):
         # Split the label to get the path into `hps`
         # For example: "train__method" -> ["train", "method"]
-        parts = label.split(LEVEL_LABEL_SEP)
+        parts = label.split(STRINGS.hps_level_label_sep)
 
         if not parts:
             continue
@@ -227,7 +227,7 @@ def take_train_histories_hps(hps: TreeNamespace) -> TreeNamespace:
     )
 
 
-def flat_key_to_where_func(key: str, sep: str = LEVEL_LABEL_SEP) -> Callable:
+def flat_key_to_where_func(key: str, sep: str = STRINGS.hps_level_label_sep) -> Callable:
     """Convert a flattened hyperparameter key to a where-function."""
     where_str = key.replace(sep, '.')
     return where_attr_strs_to_func(where_str)

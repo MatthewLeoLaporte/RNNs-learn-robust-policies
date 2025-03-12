@@ -1,0 +1,2 @@
+format_str: "%(asctime)s [%(levelname)s] %(name)s,%(lineno)d: %(message)s"
+level: DEBUG

@@ -1,6 +1,6 @@
 
 from collections.abc import Callable, Hashable, Sequence
-from typing import Literal, Optional
+from typing import Literal, Optional, TypeVar
 
 import jax.tree as jt
 from jaxtyping import PyTree
@@ -10,12 +10,14 @@ import feedbax.plotly as fbp
 from jax_cookbook import is_type
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.types import TreeNamespace
-from rnns_learn_robust_motor_policies.types import LDict
+from rnns_learn_robust_motor_policies.config import PLOTLY_CONFIG
+from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
 
 
-# How much to darken (<1) or lighten (>1) plots of means, versus plots of individual trials
-MEAN_LIGHTEN_FACTOR = 0.7
+MEAN_LIGHTEN_FACTOR = PLOTLY_CONFIG.mean_lighten_factor
+
+
+T = TypeVar('T')
 
 
 # Colorscales

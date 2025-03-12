@@ -22,13 +22,12 @@ import optax
 import feedbax
 
 import rnns_learn_robust_motor_policies
-from rnns_learn_robust_motor_policies import PROJECT_SEED
-
-from rnns_learn_robust_motor_policies.hyperparams import load_hps
-from rnns_learn_robust_motor_policies.types import TreeNamespace
+from rnns_learn_robust_motor_policies.config import PRNG_CONFIG
 from rnns_learn_robust_motor_policies.database import get_db_session
+from rnns_learn_robust_motor_policies.hyperparams import load_hps
 from rnns_learn_robust_motor_policies.misc import log_version_info
 from rnns_learn_robust_motor_policies.training import train_and_save_models
+from rnns_learn_robust_motor_policies.types import TreeNamespace
 
 
 # TODO: Figure out why the warning from this module appears.
@@ -54,7 +53,7 @@ if __name__ == '__main__':
     
     db_session = get_db_session()
     
-    key = jr.PRNGKey(PROJECT_SEED)
+    key = jr.PRNGKey(PRNG_CONFIG.seed)
     
     hps_common: TreeNamespace = load_hps(args.config_path, config_type='training')
     

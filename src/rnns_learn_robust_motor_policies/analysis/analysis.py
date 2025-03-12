@@ -94,6 +94,7 @@ class AbstractAnalysis(Module):
             when there is system noise (i.e. multiple evals per condition), and in 
             that case we could give the condition `"any_system_noise"` to those analyses.
     """
+    _exclude_fields = ('dependencies', 'conditions')
     dependencies: AbstractClassVar[MappingProxyType[str, "type[AbstractAnalysis]"]]
     variant: AbstractVar[Optional[str]] 
     conditions: AbstractVar[tuple[str, ...]]
@@ -221,12 +222,7 @@ class AbstractAnalysis(Module):
     @cached_property
     def _field_params(self):
         # TODO: Inherit from dependencies? e.g. if we depend on `BestReplicateStates`, maybe we should include `i_replicate` from there
-        return get_dataclass_fields(self, exclude=self._exclude_fields)
-
-    @property
-    @staticmethod
-    def _exclude_fields(self):
-        return ('dependencies', 'conditions')
+        return get_dataclass_fields(self, exclude=AbstractAnalysis._exclude_fields)
 
     @property
     def _non_default_field_params(self) -> Dict[str, Any]:
@@ -238,7 +234,7 @@ class AbstractAnalysis(Module):
         
         # Get all dataclass fields for this instance
         for field in dataclasses.fields(self):
-            if field.name in self._exclude_fields:
+            if field.name in AbstractAnalysis._exclude_fields:
                 continue
 
             current_value = getattr(self, field.name)

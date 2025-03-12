@@ -134,7 +134,7 @@ def get_field_amplitude(intervenor_params):
     if isinstance(intervenor_params, FixedFieldParams):
         return jnp.linalg.norm(intervenor_params.field, axis=-1)
     elif isinstance(intervenor_params, CurlFieldParams):
-        return jnp.abs(intervenor_params.amp)
+        return jnp.abs(intervenor_params.amplitude)
     else:
         raise ValueError(f"Unknown intervenor parameters type: {type(intervenor_params)}")
 
