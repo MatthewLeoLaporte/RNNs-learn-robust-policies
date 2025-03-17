@@ -34,7 +34,7 @@ task:  # Passed to the base task constructor
 pert:
   context:
     # Timestep of context input step 
-    step: 25  
+    step: 15 
     # Values pre and post step
     init: 0  
     final: [0, 1]

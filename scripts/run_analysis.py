@@ -115,6 +115,7 @@ COMMON_COLOR_FUNCS = dict(
     train__pert__std=lambda hps: hps.train.pert.std,
     # pert_var=  #? Discrete
     #  reach_condition=  #? Discrete
+    context_input=lambda hps: hps.context_input,
     trial=lambda hps: range(hps.eval_n),  #? Discrete
 )
 

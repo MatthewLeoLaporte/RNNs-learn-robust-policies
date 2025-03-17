@@ -17,6 +17,7 @@ from rnns_learn_robust_motor_policies.analysis.aligned import AlignedTrajectorie
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_PERT_FUNCS, get_pert_amp_vmap_eval_func
 from rnns_learn_robust_motor_policies.analysis.disturbance import task_with_pert_amp
 from rnns_learn_robust_motor_policies.analysis.effector import Effector_ByEval, Effector_ByReplicate
+from rnns_learn_robust_motor_policies.analysis.profiles import VelocityProfiles
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_step_task_input
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVENOR_LABEL
 from rnns_learn_robust_motor_policies.types import LDict
@@ -27,6 +28,7 @@ ID = "2-7"
 
 COLOR_FUNCS = dict(
     pert__amp=lambda hps: [final - hps.pert.context.init for final in hps.pert.context.final],
+    context_input=lambda hps: [final - hps.pert.context.init for final in hps.pert.context.final],
 )
 
 
@@ -47,8 +49,8 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
         label=PLANT_INTERVENOR_LABEL,
     )
     
-    # 
-    tasks, models, hps = jtree.unzip(LDict.of("pert__amp")({
+    #! Neither `pert__amp` nor `context__input` are entirely valid here, I think
+    tasks, models, hps = jtree.unzip(LDict.of("context_input")({
         context_final: (
             eqx.tree_at(
                 lambda task: task.input_dependencies,
@@ -78,35 +80,34 @@ VARIANT = "steady"
     
 
 ALL_ANALYSES = [
-    # 0. Show that context perturbation does not cause a significant change in force output at steady-state.
-    #! (might want to go to zero noise, to show how true this actually is)
-    Effector_ByEval(
-        variant=VARIANT, 
-        legend_title="Pert. field amp.",
-        mean_exclude_axes=(-3,),  # Average over all extra batch axes *except* reach direction/condition
-    ),
+    # # 0. Show that context perturbation does not cause a significant change in force output at steady-state.
+    # #! (might want to go to zero noise, to show how true this actually is)
+    # Effector_ByEval(
+    #     variant=VARIANT, 
+    #     legend_title="Pert. field amp.",
+    #     mean_exclude_axes=(-3,),  # Average over all extra batch axes *except* reach direction/condition
+    # ),
     
-    # 1. Sample center-out plots for perturbation during reaches; 
-    # these aren't very useful once we have the aligned plots.
-    Effector_ByEval(
-        variant="reach", 
-        legend_title="Pert. field amp.",
-        mean_exclude_axes=(-3,),
-        legend_labels=lambda hps, hps_common: hps_common.pert.plant.amp,   
-    ),
+    # # 1. Sample center-out plots for perturbation during reaches; 
+    # # these aren't very useful once we have the aligned plots.
+    # Effector_ByEval(
+    #     variant="reach", 
+    #     legend_title="Pert. field amp.",
+    #     mean_exclude_axes=(-3,),
+    #     legend_labels=lambda hps, hps_common: hps_common.pert.plant.amp,   
+    # ),
     
-    # 2. Activity of sample units, to show they change when context input does
-    NetworkActivity_SampleUnits(variant=VARIANT),
+    # # 2. Activity of sample units, to show they change when context input does
+    # NetworkActivity_SampleUnits(variant=VARIANT),
     
     # 3. Plot aligned vars for +/- plant pert, +/- context pert on same plot
-    AlignedTrajectories(
-        variant=VARIANT,
-    ),
-
+    # (It only makes sense to do this for reaches (not ss), at least for curl fields.)
     AlignedTrajectories(
         variant="reach",
+        stack_by="context_input",
+        legend_title="Final context<br>input",
     ),
-
+    VelocityProfiles(variant="reach", tmp_transpose=True),
     # 4. Perform PCA wrt baseline `reach` variant, and project `steady` variant into that space
     # (To show that context input causally varies the network activity in a null direction)
     # NetworkActivity_ProjectPCA(

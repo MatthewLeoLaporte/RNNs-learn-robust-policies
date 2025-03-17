@@ -202,6 +202,8 @@ class AbstractAnalysis(Module):
             # Include any fields that have non-default values in the filename; 
             # this serves to distinguish different instances of the same analysis,
             # according to the kwargs passed by the user upon instantiation.
+            # TODO: Exclude non-determining fields like `legend_title` 
+            # TODO: (could group all the figure layout kwargs under a single field and exclude it)
             non_default_field_params_str = '__'.join([
                 f"{k}-{v}" for k, v in self._non_default_field_params.items()
             ])

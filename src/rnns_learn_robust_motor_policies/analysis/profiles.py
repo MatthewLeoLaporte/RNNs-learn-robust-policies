@@ -26,6 +26,7 @@ class VelocityProfiles(AbstractAnalysis):
     ))
     variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
+    tmp_transpose: bool = False
 
     def compute(
         self,
@@ -34,11 +35,19 @@ class VelocityProfiles(AbstractAnalysis):
         aligned_vars,
         **kwargs,
     ):
-        return jt.map(
+        result = jt.map(
             lambda responses: responses.vel,
             aligned_vars[self.variant],
             is_leaf=is_type(Responses),
         )
+        if self.tmp_transpose:
+            result = jt.transpose(
+                jt.structure(result, is_leaf=LDict.is_of('train__pert__std')),
+                None,
+                result,
+            )
+        return result
+        
 
     def make_figs(
         self,

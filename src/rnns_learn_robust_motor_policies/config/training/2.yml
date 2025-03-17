@@ -23,7 +23,7 @@ where:
   # Example: Stop training the readout weights on iteration 1000:
   # 1000: ['step.net.hidden']
 learning_rate_0: 0.01
-n_batches_condition: 2500  #! 10000
+n_batches_condition: 10_000
 n_batches_baseline: 0
 n_scaleup_batches: 0
 constant_lr_iterations: 0

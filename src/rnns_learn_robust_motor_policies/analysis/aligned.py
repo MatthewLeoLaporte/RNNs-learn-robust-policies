@@ -90,7 +90,7 @@ class AlignedTrajectories(AbstractAnalysis):
     colorscale_axis: int = 0
     colorscale_key: Optional[str] = None
     legend_title: Optional[str] = None
-    n_curves_max: int = 20
+    n_curves_max: int = 50
 
     def make_figs(
         self,
@@ -101,6 +101,7 @@ class AlignedTrajectories(AbstractAnalysis):
         **kwargs,
     ):
         if self.stack_by is not None:
+            # Fails if an LDict of `stack_by` is not present in the PyTree
             vars_plot = jt.map(
                 lambda d: jtree.stack(list(d.values())),
                 aligned_vars[self.variant],
@@ -110,8 +111,12 @@ class AlignedTrajectories(AbstractAnalysis):
         else:
             vars_plot = aligned_vars[self.variant]
             if self.colorscale_key is None:
-                raise ValueError("both colorscale_key and stack_by are None")
-            colorscale_key = self.colorscale_key
+                if isinstance(vars_plot, LDict):
+                    colorscale_key = vars_plot.label
+                else:
+                    raise ValueError("both colorscale_key and stack_by are None")
+            else:
+                colorscale_key = self.colorscale_key
         
         if self.legend_title is None:
             legend_title = get_label_str(colorscale_key)
@@ -131,6 +136,7 @@ class AlignedTrajectories(AbstractAnalysis):
                 legend_title=legend_title,
                 legend_labels=legend_labels,
                 curves_mode='lines',
+                n_curves_max=self.n_curves_max,
             ),
             vars_plot,
             is_leaf=is_type(Responses),
