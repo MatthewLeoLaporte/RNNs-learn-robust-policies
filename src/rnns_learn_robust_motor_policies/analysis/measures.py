@@ -403,12 +403,12 @@ class Measures_ByTrainStd(AbstractAnalysis):
         data: AnalysisInputData,
         *,
         measure_values,
-        colors_0,
+        colors,
         **kwargs,
     ):
         figs = get_violins_per_measure(
             measure_values[self.variant],
-            colors=colors_0[self.variant]['pert__amp']['dark'],
+            colors=colors['pert__amp'].dark,
         )
         return figs
 
@@ -489,7 +489,7 @@ class Measures_CompareReplicatesLoHi(AbstractAnalysis):
         data: AnalysisInputData,
         *,
         measure_values_lohi_train_pert_std,
-        colors_0,
+        colors,
         replicate_info,
         **kwargs,
     ):
@@ -498,7 +498,7 @@ class Measures_CompareReplicatesLoHi(AbstractAnalysis):
         figs = get_one_measure_plot_per_eval_condition(
             get_measure_replicate_comparisons,
             measure_values_lohi_train_pert_std,
-            lohi(colors_0[self.variant]["train__pert__std"]["dark"]),
+            lohi(colors["train__pert__std"].dark),
             included_replicates=np.where(replicates_all_lohi_included)[0],
         )
         return figs
@@ -544,7 +544,7 @@ class Measures_LoHiSummary(AbstractAnalysis):
         data: AnalysisInputData,
         *,
         result,
-        colors_0,
+        colors,
         **kwargs,
     ):
         _, outer_label, inner_label = tree_level_labels(result)
@@ -554,7 +554,7 @@ class Measures_LoHiSummary(AbstractAnalysis):
                 yaxis_title=MEASURE_LABELS[key],
                 xaxis_title=get_label_str(inner_label),
                 legend_title=get_label_str(outer_label),
-                colors=colors_0[self.variant][outer_label]['dark'],
+                colors=colors[outer_label].dark,
                 layout_kws=dict(
                     width=300, height=300,
                 )

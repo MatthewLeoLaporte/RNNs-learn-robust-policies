@@ -1,13 +1,29 @@
 [project]
 name = "rnns-learn-robust-motor-policies"
-version = "0.1"
+version = "0.1.0"
 description = ""
-# url = ""
 authors = [
-    {name = "Matthew Leo", email = "mail@matthewleo.net"}
+    {name = "Matthew Leo", email = "admin@matthewleo.net"}
 ]
-# license = {file = "LICENSE"}
-# readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "alembic>=1.15.1",
+    "diffrax>=0.7.0",
+    # "jax_cookbook>=0.1.0",  # Installed from local with `uv pip install` until release
+     # TODO: Update feedbax version on release
+    "feedbax>=0.1.2", 
+    "ipyfilechooser>=0.6.0",
+    "ipywidgets>=8.1.5",
+    "jax>=0.5.2",
+    "kaleido==0.2.1",
+    "plotly>=6.0.0",
+    "polars>=1.24.0",
+    "pyperclip>=1.9.0",
+    "pyyaml>=6.0.2",
+    "rich>=13.9.4",
+    "scikit-learn>=1.6.1",
+    "tqdm>=4.67.1",
+]
 keywords = [
     'jax',
     'neural-networks',
@@ -15,7 +31,6 @@ keywords = [
     'optimal-feedback-control',
     'motor-control',
 ]
-requires-python = ">=3.11"
 classifiers = [
     # "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -27,23 +42,12 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
-dependencies = [
-    "feedbax", 
-    "plotly", 
-    "polars", 
-    "rich",
-    # Necessary for converting notebooks
-    "jupytext",
-    # JAX complains if this isn't installed:
-    # "cuda-cupti",
-    # tqdm-related:
-    "tqdm",
-    "ipywidgets",
-    "jupyter",
-]
 
-# [tool.setuptools.package-data]
-# rnns_learn_robust_motor_policies = ["config/*.yml"]
+[project.optional-dependencies]
+plotlyviewer = [
+    "pyqt5>=5.15.11",
+    "pyqtwebengine>=5.15.7",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -54,3 +58,10 @@ packages = ["src/rnns_learn_robust_motor_policies"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rnns_learn_robust_motor_policies"]
+
+[tool.uv]
+config-settings = { editable-mode = "compat" }
+
+[tool.uv.sources.feedbax]
+path = "../20 Feedbax/feedbax"
+editable = true

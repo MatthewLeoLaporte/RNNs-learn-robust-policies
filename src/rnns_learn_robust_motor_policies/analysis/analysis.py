@@ -214,7 +214,7 @@ class AbstractAnalysis(Module):
                 analysis_name = camel_to_snake(self.__class__.__name__)
                 filename = f"{analysis_name}__{self.variant}__{non_default_field_params_str}__{i}"
                 
-                savefig(fig, filename, dump_path, ["json"])
+                savefig(fig, filename, dump_path, ["html"])
                 
                 # Save parameters as YAML
                 params_path = dump_path / f"{filename}.yaml"

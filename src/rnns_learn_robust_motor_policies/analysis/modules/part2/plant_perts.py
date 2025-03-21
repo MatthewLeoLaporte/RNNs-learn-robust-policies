@@ -20,7 +20,6 @@ from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVEN
 from rnns_learn_robust_motor_policies.analysis.measures import MEASURE_LABELS
 from rnns_learn_robust_motor_policies.analysis.measures import Measures
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_constant_task_input, vmap_eval_ensemble
-from rnns_learn_robust_motor_policies.colors import COLORSCALES
 from rnns_learn_robust_motor_policies.constants import POS_ENDPOINTS_ALIGNED
 from rnns_learn_robust_motor_policies.plot import add_endpoint_traces, get_violins
 from rnns_learn_robust_motor_policies.types import TreeNamespace
@@ -139,6 +138,7 @@ class Aligned_IdxContextInput(AbstractAnalysis):
         data: AnalysisInputData,
         *,
         aligned_vars,
+        colorscales,
         **kwargs,
     ):
         plot_vars_stacked: LDict[float, Any] = jt.map(
@@ -153,7 +153,7 @@ class Aligned_IdxContextInput(AbstractAnalysis):
         figs = jt.map(
             partial(
                 plot_condition_trajectories, 
-                colorscale=COLORSCALES['context_input'],
+                colorscale=colorscales['context_input'],
                 colorscale_axis=0,
                 # stride=stride,
                 legend_title="Context input",
@@ -195,6 +195,7 @@ class Aligned_IdxTrainStd_PerContext(AbstractAnalysis):
         data: AnalysisInputData,
         *,
         aligned_vars,
+        colorscales,
         **kwargs,
     ):
         plot_vars_stacked: LDict[float, Any] = jt.map(
@@ -222,7 +223,7 @@ class Aligned_IdxTrainStd_PerContext(AbstractAnalysis):
         figs = jt.map(
             partial(
                 plot_condition_trajectories,
-                colorscale=COLORSCALES['train__pert__std'],
+                colorscale=colorscales['train__pert__std'],
                 colorscale_axis=0,
                 legend_title="Train<br>field std.",
                 legend_labels=train_pert_stds,
@@ -271,7 +272,7 @@ class Measures_CompareTrainStdAndContext(AbstractAnalysis):
         data: AnalysisInputData,
         *,
         all_measure_values,
-        colors_0,
+        colors,
         **kwargs,
     ):
         # Move the disturbance amplitude level to the outside of each measure.
@@ -298,7 +299,7 @@ class Measures_CompareTrainStdAndContext(AbstractAnalysis):
                     yaxis_title=MEASURE_LABELS[measure_key],
                     xaxis_title="Context input",
                     legend_title="Train std.",
-                    colors=colors_0[self.variant]['context_input']['dark'],
+                    colors=colors['context_input'].dark,
                     arr_axis_labels=["Evaluation", "Replicate", "Condition"],
                     zero_hline=True,
                     layout_kws=dict(

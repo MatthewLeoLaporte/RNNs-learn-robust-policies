@@ -56,7 +56,7 @@ class FrequencyResponse(AbstractAnalysis):
             phases=all_phases,
         )
 
-    def make_figs(self, data: AnalysisInputData, *, result, colors_0, **dependencies):
+    def make_figs(self, data: AnalysisInputData, *, result, colors, **dependencies):
         gains_plot, phases_plot = jt.map(
             lambda arr: jnp.moveaxis(
                 arr, -1, 0
@@ -71,7 +71,7 @@ class FrequencyResponse(AbstractAnalysis):
                     keep_axis=None,
                     mode='std',
                     varname="Gain (dB)",
-                    colors=list(colors_0[self.variant]["train__pert__std"]["dark"].values()),
+                    colors=list(colors["train__pert__std"].dark.values()),
                     # labels=disturbance_stds_load,
                     layout_kws=dict(
                         legend_title="Train<br>field std.",
@@ -94,7 +94,7 @@ class FrequencyResponse(AbstractAnalysis):
                     keep_axis=None,
                     mode='std',
                     varname="Phase (rad)",
-                    colors=list(colors_0[self.variant]["train__pert__std"]["dark"].values()),
+                    colors=list(colors[self.variant]["train__pert__std"]["dark"].values()),
                     # labels=disturbance_stds_load,
                     layout_kws=dict(
                         legend_title="Train<br>field std.",

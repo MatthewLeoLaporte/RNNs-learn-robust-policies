@@ -1,5 +1,9 @@
 # RNNs-learn-robust-policies
 
+## Installation
+
+
+
 ## Configuration
 
 Set environment variable `RLRMP_CONFIG_DIR` to the path of your configuration directory.
@@ -23,3 +27,6 @@ In particular, consider the `load` subtree found in config files for the analysi
 which indicates the hyperparameters of the model(s)/training run(s) to load for analysis. We should only include those 
 parameters that uniquely identify the model(s) we want to load, so we may omit some of the hyperparameters
 that must appear in the default *training* configs.
+
+If you have a space or other special character in your venv path, it may be necessary to modify your kaleido executable script slightly, for Plotly image export to work: https://github.com/plotly/Kaleido/issues/57#issuecomment-1024462647
+

@@ -34,24 +34,6 @@ from rnns_learn_robust_motor_policies.types import LDict
 ID = "1-1"
 
 
-"""Labels of measures to include in the analysis."""
-MEASURE_KEYS = (
-    "max_parallel_vel_forward",
-    "max_orthogonal_vel_left",
-    "max_orthogonal_vel_right",
-    "max_orthogonal_distance_left",
-    "sum_orthogonal_distance",
-    "end_position_error",
-    "end_velocity_error",
-    "max_parallel_force_forward",
-    "sum_parallel_force",
-    "max_orthogonal_force_right",  
-    "sum_orthogonal_force_abs",
-    "max_net_force",
-    "sum_net_force",
-)
-
-
 COLOR_FUNCS = dict()
 
 
@@ -142,7 +124,7 @@ class OutputWeightCorrelation(AbstractAnalysis):
         data: AnalysisInputData,
         *, 
         result, 
-        colors_0, 
+        colors, 
         **kwargs,
     ):
         #! TODO: Generalize
@@ -151,7 +133,7 @@ class OutputWeightCorrelation(AbstractAnalysis):
             result, 
             yaxis_title="Output correlation", 
             xaxis_title="Train field std.",
-            colors=colors_0[self.variant]['pert__amp']['dark'],
+            colors=colors['pert__amp'].dark,
         )
         return fig
 
@@ -162,14 +144,32 @@ class OutputWeightCorrelation(AbstractAnalysis):
         )    
 
 
+"""Labels of measures to include in the analysis."""
+MEASURE_KEYS = (
+    "max_parallel_vel_forward",
+    "max_orthogonal_vel_left",
+    "max_orthogonal_vel_right",
+    "max_orthogonal_distance_left",
+    "sum_orthogonal_distance",
+    "end_position_error",
+    "end_velocity_error",
+    "max_parallel_force_forward",
+    "sum_parallel_force",
+    "max_orthogonal_force_right",  
+    "sum_orthogonal_force_abs",
+    "max_net_force",
+    "sum_net_force",
+)
+
+
 """All the analyses to perform in this part."""
 ALL_ANALYSES = [
-    # Effector_ByEval(),
-    # Effector_SingleEval(i_trial=0),
-    # Effector_ByReplicate(i_trial=0),
+    Effector_ByEval(),
+    Effector_SingleEval(i_trial=0),
+    Effector_ByReplicate(i_trial=0),
     AlignedTrajectories(colorscale_key='trial'),
-    AlignedTrajectories(stack_by='pert__amp'),
-    AlignedTrajectories(stack_by='train__pert__std'),
+    AlignedTrajectories(stack_by_level='pert__amp'),
+    AlignedTrajectories(stack_by_level='train__pert__std'),
     # VelocityProfiles(),
     # Measures_ByTrainStd(measure_keys=MEASURE_KEYS),
     # Measures_CompareReplicatesLoHi(measure_keys=MEASURE_KEYS),

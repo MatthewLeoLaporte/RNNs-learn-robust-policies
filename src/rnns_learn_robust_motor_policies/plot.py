@@ -433,15 +433,15 @@ def plot_fp_pcs(
     if fig is not None:  
         fig.add_trace(
             go.Scatter3d(
-                    x=fps_flat_pc[0:emax, 0], 
-                    y=fps_flat_pc[0:emax, 1], 
-                    z=fps_flat_pc[0:emax, 2], 
-                    mode='markers',
-                    marker_color=colors,
-                    marker_colorscale='phase',
-                    marker_size=marker_size,
-                    marker_symbol=marker_symbol,
-                    name=label,
+                x=fps_flat_pc[0:emax, 0], 
+                y=fps_flat_pc[0:emax, 1], 
+                z=fps_flat_pc[0:emax, 2], 
+                mode='markers',
+                marker_color=colors,
+                marker_colorscale='phase',
+                marker_size=marker_size,
+                marker_symbol=marker_symbol,
+                name=label,
             ),
         )
         
@@ -524,6 +524,7 @@ def plot_2d_effector_trajectories(
         WHERE_PLOT_PLANT_VARS(states),
         var_labels=PLANT_VAR_LABELS,
         axes_labels=('x', 'y'),
+        #! TODO: Replace with `colorscales` (common analysis dependency)
         colorscale=COLORSCALES[colorscale_key],
         legend_title=legend_title,
         # scatter_kws=dict(line_width=0.5),

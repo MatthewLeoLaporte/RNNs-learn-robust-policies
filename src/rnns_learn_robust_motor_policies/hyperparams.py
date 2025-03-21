@@ -113,6 +113,7 @@ def load_hps(config_path: str | Path, config_type: Optional[Literal['training', 
     default_config = load_yaml_config(expt_id, config_type)
     config = deep_update(default_config, config)
     # Convert to a (nested) namespace instead of a dict, for attribute access
+    #? Move this after `cast_hps` and exclude all `LDict` 
     hps = dict_to_namespace(config, to_type=TreeNamespace, exclude=is_dict_with_int_keys)
     # Make corrections and add in any derived values
     hps = set_dependent_hps(hps, config_type)

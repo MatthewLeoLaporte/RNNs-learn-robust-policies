@@ -295,6 +295,36 @@ for cls in (ImpulseAmpTuple,):
     ) 
 
 
+def pprint_ldict_structure(
+        tree: LDict, 
+        indent: int = 0, 
+        indent_str: str = "  ", 
+        homogeneous: bool = True,
+):
+    """Pretty print the structure of a nested LDict PyTree.
+    
+    Args:
+        tree: An LDict or nested structure of LDicts
+        indent: Current indentation level (used recursively)
+        indent_str: String used for each level of indentation
+        homogeneous: If True, assumes all nodes at each level have the same label and keys,
+                    so only prints the first occurrence at each level
+    """
+    if not isinstance(tree, LDict):
+        return
+    
+    # Print current level's label and keys
+    current_indent = indent_str * indent
+    print(f"{current_indent}LDict('{tree.label}') with keys: {list(tree.keys())}")
+    
+    # Process LDict values, breaking after first one if homogeneous
+    for value in tree.values():
+        if isinstance(value, LDict):
+            pprint_ldict_structure(value, indent + 2, indent_str, homogeneous)
+            if homogeneous:
+                break
+
+
 # TODO: Rename to Effector, or something; also this probably shouldn't be in this module.
 class ResponseVar(str, Enum):
     """Variables available in response state."""

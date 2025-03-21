@@ -2,13 +2,14 @@
 from types import MappingProxyType
 from typing import ClassVar, Optional
 
-import feedbax.plotly as fbp
 import jax.tree as jt
-import jax_cookbook.tree as jtree
 import numpy as np
 from equinox import Module
-from jax_cookbook import is_type
 from jaxtyping import PyTree
+
+import feedbax.plotly as fbp
+from jax_cookbook import is_type
+import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.aligned import AlignedVars
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
@@ -65,7 +66,7 @@ class VelocityProfiles(AbstractAnalysis):
                 mode='std', # or 'curves'
                 n_std_plot=1,
                 hline=dict(y=0, line_color="grey"),
-                colors=list(colors[fig_data.label]['dark'].values()),
+                colors=list(colors[fig_data.label].dark.values()),
                 # stride_curves=500,
                 # curves_kws=dict(opacity=0.7),
                 layout_kws=dict(
@@ -77,8 +78,8 @@ class VelocityProfiles(AbstractAnalysis):
         
         figs = LDict.of(result.label)({
             value: LDict.of("direction")({
-                label.lower(): _get_fig(result[value], i, label, colors[self.variant][value])
-                for i, label in enumerate(("Forward", "Lateral"))
+                label: _get_fig(result[value], coord_idx, label, colors[self.variant])
+                for coord_idx, label in enumerate(("forward", "lateral"))
             })
             for value in result.keys()
         })

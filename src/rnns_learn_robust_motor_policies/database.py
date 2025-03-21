@@ -705,11 +705,14 @@ def savefig(
             )
     
     elif isinstance(fig, go.Figure):
-        # This will use the `orjson` package (faster) if installed
-        fig.write_json(path.format(ext='json'), engine="auto")
-
         for ext in image_formats:
-            fig.write_image(path.format(ext=ext), scale=2, **kwargs)
+            path_i = path.format(ext=ext)
+            if ext == 'html':
+                fig.write_html(path_i, **kwargs)
+            elif ext == 'json':
+                fig.write_json(path_i, engine="auto", **kwargs)
+            else:
+                fig.write_image(path_i, scale=2, **kwargs)
     
 
 def add_evaluation_figure(

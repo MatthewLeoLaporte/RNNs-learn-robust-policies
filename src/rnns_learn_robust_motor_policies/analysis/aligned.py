@@ -13,7 +13,6 @@ import jax_cookbook.tree as jtree
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_aligned_vars, get_pos_endpoints
 from rnns_learn_robust_motor_policies.config import PLOTLY_CONFIG
-from rnns_learn_robust_motor_policies.colors import COLORSCALES
 from rnns_learn_robust_motor_policies.hyperparams import flat_key_to_where_func
 from rnns_learn_robust_motor_policies.plot_utils import get_label_str
 from rnns_learn_robust_motor_policies.types import TreeNamespace
@@ -86,7 +85,7 @@ class AlignedTrajectories(AbstractAnalysis):
     ))
     variant: Optional[str] = "small"
     conditions: tuple[str, ...] = ()
-    stack_by: Optional[str] = None
+    stack_by_level: Optional[str] = None
     colorscale_axis: int = 0
     colorscale_key: Optional[str] = None
     legend_title: Optional[str] = None
@@ -98,23 +97,26 @@ class AlignedTrajectories(AbstractAnalysis):
         *,
         aligned_vars,
         hps_common,
+        colorscales,
         **kwargs,
     ):
-        if self.stack_by is not None:
-            # Fails if an LDict of `stack_by` is not present in the PyTree
+        if self.stack_by_level is not None:
+            # Fails if an LDict of `stack_by_level` is not present in the PyTree
             vars_plot = jt.map(
                 lambda d: jtree.stack(list(d.values())),
                 aligned_vars[self.variant],
-                is_leaf=LDict.is_of(self.stack_by),
+                is_leaf=LDict.is_of(self.stack_by_level),
             )
-            colorscale_key = self.stack_by 
+            colorscale_axis = 0
+            colorscale_key = self.stack_by_level 
         else:
             vars_plot = aligned_vars[self.variant]
+            colorscale_axis = self.colorscale_axis
             if self.colorscale_key is None:
                 if isinstance(vars_plot, LDict):
                     colorscale_key = vars_plot.label
                 else:
-                    raise ValueError("both colorscale_key and stack_by are None")
+                    raise ValueError("both colorscale_key and stack_by_level are None")
             else:
                 colorscale_key = self.colorscale_key
         
@@ -131,8 +133,8 @@ class AlignedTrajectories(AbstractAnalysis):
         figs = jt.map(
             partial(
                 plot_condition_trajectories,
-                colorscale=COLORSCALES[colorscale_key],
-                colorscale_axis=self.colorscale_axis,
+                colorscale=colorscales[colorscale_key],
+                colorscale_axis=colorscale_axis,
                 legend_title=legend_title,
                 legend_labels=legend_labels,
                 curves_mode='lines',

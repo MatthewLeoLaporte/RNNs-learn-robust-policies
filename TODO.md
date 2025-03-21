@@ -3,8 +3,6 @@
 
 ## Next
 
-- [ ] Aligned vars plotting function for `context_pert` which plots all four conditions (+/- plant pert, +/- context pert) on the same figure (one per training std)
-
 - [ ] [[TODO-analysis#Influence of context input on network dynamics]]
 - [ ] [[TODO-analysis#Variation in effective direction, over a reach]]
 - [ ] [[TODO-analysis#Individual unit ablation]]
@@ -22,6 +20,24 @@ Then: continue with [[TODO-analysis#Network analysis Population level]].
 - [ ] 2-4
 - [ ] 2-5
 
+### `AbstractAnalysis`
+
+Examples of what I want to achieve: 
+
+- [ ] Aligned vars plotting function for `context_pert` which plots all four conditions (+/- plant pert, +/- context pert) on the same figure (one per training std)
+
+Steps:
+
+- [ ] **Syntax for pre-stacking certain PyTree levels**
+	- e.g. `AlignedTrajectories` should not do this specifically; instead it just takes `colorscale_axis` and we should assume that the right data is already stacked in that axis
+	- this is a common enough operation that I don’t want `StackLevel` to be a usual analysis class, or something
+	- instead, we should be able to do something like `AlignedTrajectories(...).after_stacking("some_level")`
+- [ ] **Syntax for combining traces from single plots**
+	- This is also a common operation: we don’t just want to compare across a single axis/variable – we want to show multiple axes of variation on the same plot, as in a 2x2 condition
+	- This is a bit trickier, since it may depend on the specific plotting function being used, and how we would like to visually differentiate the plots; however we could assume that the user knows (or provide them info about) the plotting function so that they can pass the relevant kwargs
+	- The general idea is to run `make_figs` multiple times with slightly different kwargs, and then merge the traces from the resulting pytrees
+	- e.g. `AlignedTrajectories(...).merge_figs_by("some_other_level)` 
+- [ ] Syntax for constructing subplots? This is also kind of tricky, but not so different in principle to 
 
 
 ## Analysis

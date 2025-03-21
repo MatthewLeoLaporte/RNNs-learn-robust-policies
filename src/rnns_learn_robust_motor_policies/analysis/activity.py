@@ -208,7 +208,7 @@ class NetworkActivity_SampleUnits(AbstractAnalysis):
         data: AnalysisInputData,
         *,
         best_replicate_states,
-        colors_0,
+        colors,
         **kwargs,
     ):
         
@@ -229,7 +229,7 @@ class NetworkActivity_SampleUnits(AbstractAnalysis):
             outer_value: activity_sample_units(
                 activities=inner_dict,
                 n_samples=self.n_units_sample,
-                colors=colors_0[self.variant][inner_dict.label]['dark'],
+                colors=colors[inner_dict.label].dark,
                 key=self.key,
             )
             for outer_value, inner_dict in activities.items()

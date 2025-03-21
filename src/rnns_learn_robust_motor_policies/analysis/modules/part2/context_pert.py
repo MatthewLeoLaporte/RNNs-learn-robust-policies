@@ -1,22 +1,15 @@
-"""What happens if we change nothing but the network's context input, at steady state?
+"""What happens if we change the network's context input, at steady state or during a reach?
 """
 
-from types import MappingProxyType
-from typing import ClassVar, Optional
 import equinox as eqx
-import jax.random as jr
-from jaxtyping import PRNGKeyArray
 
 from feedbax.intervene import schedule_intervenor
 from feedbax.task import TrialSpecDependency
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.analysis import AbstractAnalysis, AnalysisInputData
-from rnns_learn_robust_motor_policies.analysis.activity import NetworkActivity_ProjectPCA, NetworkActivity_SampleUnits
 from rnns_learn_robust_motor_policies.analysis.aligned import AlignedTrajectories
+from rnns_learn_robust_motor_policies.colors import ColorscaleSpec
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_PERT_FUNCS, get_pert_amp_vmap_eval_func
-from rnns_learn_robust_motor_policies.analysis.disturbance import task_with_pert_amp
-from rnns_learn_robust_motor_policies.analysis.effector import Effector_ByEval, Effector_ByReplicate
 from rnns_learn_robust_motor_policies.analysis.profiles import VelocityProfiles
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_step_task_input
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVENOR_LABEL
@@ -27,8 +20,12 @@ ID = "2-7"
 
 
 COLOR_FUNCS = dict(
-    pert__amp=lambda hps: [final - hps.pert.context.init for final in hps.pert.context.final],
-    context_input=lambda hps: [final - hps.pert.context.init for final in hps.pert.context.final],
+    # pert__amp=lambda hps: [final - hps.pert.context.init for final in hps.pert.context.final],
+    # context_input=lambda hps: [final - hps.pert.context.init for final in hps.pert.context.final],
+    pert__context_input__amp=ColorscaleSpec(
+        sequence_func=lambda hps: [final - hps.pert.context.init for final in hps.pert.context.final],
+        colorscale="thermal",
+    ),
 )
 
 
@@ -49,8 +46,8 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
         label=PLANT_INTERVENOR_LABEL,
     )
     
-    #! Neither `pert__amp` nor `context__input` are entirely valid here, I think
-    tasks, models, hps = jtree.unzip(LDict.of("context_input")({
+    #! Neither `pert__amp` nor `context__input` are entirely valid as labels here, I think
+    tasks, models, hps = jtree.unzip(LDict.of("pert__context_input__amp")({
         context_final: (
             eqx.tree_at(
                 lambda task: task.input_dependencies,
@@ -76,14 +73,11 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
 eval_func = get_pert_amp_vmap_eval_func(lambda hps: hps.pert.plant.amp, PLANT_INTERVENOR_LABEL)
 
 
-VARIANT = "steady"
-    
-
 ALL_ANALYSES = [
     # # 0. Show that context perturbation does not cause a significant change in force output at steady-state.
     # #! (might want to go to zero noise, to show how true this actually is)
     # Effector_ByEval(
-    #     variant=VARIANT, 
+    #     variant="steady", 
     #     legend_title="Pert. field amp.",
     #     mean_exclude_axes=(-3,),  # Average over all extra batch axes *except* reach direction/condition
     # ),
@@ -98,20 +92,23 @@ ALL_ANALYSES = [
     # ),
     
     # # 2. Activity of sample units, to show they change when context input does
-    # NetworkActivity_SampleUnits(variant=VARIANT),
+    # NetworkActivity_SampleUnits(variant="steady"),
     
     # 3. Plot aligned vars for +/- plant pert, +/- context pert on same plot
     # (It only makes sense to do this for reaches (not ss), at least for curl fields.)
     AlignedTrajectories(
         variant="reach",
-        stack_by="context_input",
+        stack_by_level="pert__context_input__amp",
         legend_title="Final context<br>input",
     ),
-    VelocityProfiles(variant="reach", tmp_transpose=True),
+    VelocityProfiles(
+        variant="reach", 
+        tmp_transpose=True,
+    ),
     # 4. Perform PCA wrt baseline `reach` variant, and project `steady` variant into that space
     # (To show that context input causally varies the network activity in a null direction)
     # NetworkActivity_ProjectPCA(
-    #     variant=VARIANT, 
+    #     variant="steady", 
     #     variant_pca="reach_pca",
     # ),
 ]

@@ -12,7 +12,7 @@ train:
   pert:  # during training
     type: curl
     # list -> load multiple models
-    std: [0, 0.5, 1.0] #! , 1.5]  
+    std: [0, 0.5, 1.0, 1.5]  
   where: 
     0: ['step.net.hidden', 'step.net.readout']
   method: 'pai-asf'
