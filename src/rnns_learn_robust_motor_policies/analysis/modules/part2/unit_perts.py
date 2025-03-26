@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from functools import partial
 from types import MappingProxyType
 from typing import ClassVar, Optional, Literal as L
@@ -12,7 +13,7 @@ from feedbax.task import TrialSpecDependency
 from jax_cookbook import is_module
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, FigParams
 from rnns_learn_robust_motor_policies.analysis.state_utils import angle_between_vectors, vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_constant_task_input
 from rnns_learn_robust_motor_policies.types import LDict
@@ -149,6 +150,8 @@ class UnitPreferredDirections(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType({})
     variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
+    _pre_ops: tuple[tuple[str, Callable]] = ()
+    fig_params: FigParams = FigParams()
     
     # TODO: Separate into two `AbstractAnalysis` classes in serial
     def compute(self, data: AnalysisInputData, **dependencies):
@@ -206,7 +209,9 @@ class UnitStimDirections(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType({})
     variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
-    
+    _pre_ops: tuple[tuple[str, Callable]] = ()
+    fig_params: FigParams = FigParams()
+
     def compute(self, data: AnalysisInputData, **dependencies):
         # Compute the direction of maximum force for each perturbed unit
         def get_angle_of_max_force(state: SimpleFeedbackState):
@@ -252,6 +257,8 @@ class UnitPreferenceAlignment(AbstractAnalysis):
     ))
     variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
+    _pre_ops: tuple[tuple[str, Callable]] = ()
+    fig_params: FigParams = FigParams()
 
     def compute(self, data: AnalysisInputData, *, results1, results2, **dependencies):
         """Compute the alignment between preferred and stim directions"""
@@ -309,6 +316,8 @@ class AllResults(AbstractAnalysis):
     ))
     variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
+    _pre_ops: tuple[tuple[str, Callable]] = ()
+    fig_params: FigParams = FigParams()
 
     def compute(
         self, 

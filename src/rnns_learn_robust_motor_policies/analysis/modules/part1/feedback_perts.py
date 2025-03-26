@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from types import MappingProxyType, SimpleNamespace
 from typing import ClassVar, Literal, Optional
 import jax.numpy as jnp
@@ -11,6 +12,7 @@ from feedbax.intervene import schedule_intervenor
 import feedbax.plotly as fbp
 
 from rnns_learn_robust_motor_policies.analysis import AbstractAnalysis, AnalysisInputData
+from rnns_learn_robust_motor_policies.analysis.analysis import FigParams
 from rnns_learn_robust_motor_policies.analysis.disturbance import FB_INTERVENOR_LABEL, get_pert_amp_vmap_eval_func, task_with_pert_amp
 from rnns_learn_robust_motor_policies.analysis.effector import Effector_SingleEval
 from rnns_learn_robust_motor_policies.plot import PLANT_VAR_LABELS, WHERE_PLOT_PLANT_VARS
@@ -193,6 +195,8 @@ class States_SingleImpulseAmplitude(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType({})
     variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
+    _pre_ops: tuple[tuple[str, Callable]] = ()
+    fig_params: FigParams = FigParams()
     i_impulse_amp_plot: int = -1 
     
     def compute(self, data: AnalysisInputData, **dependencies):
@@ -214,6 +218,8 @@ class ResponseTrajectories(AbstractAnalysis):
     ))
     variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
+    _pre_ops: tuple[tuple[str, Callable]] = ()
+    fig_params: FigParams = FigParams()
     
     def make_figs(self, data: AnalysisInputData, *, result, **dependencies):
         figs = {}  # Define figs to fix the linter error
@@ -227,7 +233,6 @@ ALL_ANALYSES = [
         variant=VARIANT,
         #! TODO: This doesn't result in the impulse amplitude *values* showing up in the legend!
         #! (could try to access `colorscale_key` from `hps`, in `Effector_SingleEval`)
-        legend_title="Impulse amplitude",
         colorscale_key='pert__amp',
-    ),
+    ).with_fig_params(legend_title="Impulse amplitude"),
 ]

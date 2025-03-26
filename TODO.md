@@ -28,7 +28,7 @@ Examples of what I want to achieve:
 
 Steps:
 
-- [ ] **Syntax for pre-stacking certain PyTree levels**
+- [x] **Syntax for pre-stacking certain PyTree levels**
 	- e.g. `AlignedTrajectories` should not do this specifically; instead it just takes `colorscale_axis` and we should assume that the right data is already stacked in that axis
 	- this is a common enough operation that I don’t want `StackLevel` to be a usual analysis class, or something
 	- instead, we should be able to do something like `AlignedTrajectories(...).after_stacking("some_level")`

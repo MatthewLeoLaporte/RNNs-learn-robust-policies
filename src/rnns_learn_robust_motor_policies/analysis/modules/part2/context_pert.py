@@ -22,7 +22,7 @@ ID = "2-7"
 COLOR_FUNCS = dict(
     # pert__amp=lambda hps: [final - hps.pert.context.init for final in hps.pert.context.final],
     # context_input=lambda hps: [final - hps.pert.context.init for final in hps.pert.context.final],
-    pert__context_input__amp=ColorscaleSpec(
+    pert__context__amp=ColorscaleSpec(
         sequence_func=lambda hps: [final - hps.pert.context.init for final in hps.pert.context.final],
         colorscale="thermal",
     ),
@@ -47,7 +47,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     )
     
     #! Neither `pert__amp` nor `context__input` are entirely valid as labels here, I think
-    tasks, models, hps = jtree.unzip(LDict.of("pert__context_input__amp")({
+    tasks, models, hps = jtree.unzip(LDict.of("pert__context__amp")({
         context_final: (
             eqx.tree_at(
                 lambda task: task.input_dependencies,
@@ -78,29 +78,25 @@ ALL_ANALYSES = [
     # #! (might want to go to zero noise, to show how true this actually is)
     # Effector_ByEval(
     #     variant="steady", 
-    #     legend_title="Pert. field amp.",
     #     mean_exclude_axes=(-3,),  # Average over all extra batch axes *except* reach direction/condition
-    # ),
+    # ).with_fig_params(legend_title="Pert. field amp."),
     
     # # 1. Sample center-out plots for perturbation during reaches; 
     # # these aren't very useful once we have the aligned plots.
     # Effector_ByEval(
     #     variant="reach", 
-    #     legend_title="Pert. field amp.",
     #     mean_exclude_axes=(-3,),
     #     legend_labels=lambda hps, hps_common: hps_common.pert.plant.amp,   
-    # ),
+    # ).with_fig_params(legend_title="Pert. field amp."),
     
     # # 2. Activity of sample units, to show they change when context input does
     # NetworkActivity_SampleUnits(variant="steady"),
     
     # 3. Plot aligned vars for +/- plant pert, +/- context pert on same plot
     # (It only makes sense to do this for reaches (not ss), at least for curl fields.)
-    AlignedTrajectories(
-        variant="reach",
-        stack_by_level="pert__context_input__amp",
-        legend_title="Final context<br>input",
-    ),
+    AlignedTrajectories(variant="reach")
+        .after_stacking(level="pert__context__amp")
+        .with_fig_params(legend_title="Final context<br>input"),
     VelocityProfiles(
         variant="reach", 
         tmp_transpose=True,

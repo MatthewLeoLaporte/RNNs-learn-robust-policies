@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from types import MappingProxyType
 from typing import ClassVar, Optional
 import equinox as eqx
@@ -11,7 +12,7 @@ from feedbax.task import AbstractTask
 import jax_cookbook.tree as jtree
 from jax_cookbook import is_type, is_module
 
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, FigParams
 from rnns_learn_robust_motor_policies.constants import REPLICATE_CRITERION
 from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
 
@@ -174,6 +175,8 @@ class BestReplicateStates(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
     variant: Optional[str] = None
     conditions: tuple[str, ...] = ()
+    _pre_ops: tuple[tuple[str, Callable]] = ()
+    fig_params: FigParams = FigParams()
     i_replicate: Optional[int] = None
 
     def compute(

@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from types import MappingProxyType, SimpleNamespace
 from typing import ClassVar, Optional
 
@@ -14,7 +14,7 @@ from feedbax.misc import batch_reshape
 from jax_cookbook import is_type
 from sklearn.decomposition import PCA
 
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, FigParams
 from rnns_learn_robust_motor_policies.analysis.state_utils import BestReplicateStates
 from rnns_learn_robust_motor_policies.constants import REPLICATE_CRITERION
 from rnns_learn_robust_motor_policies.plot_utils import get_label_str
@@ -198,6 +198,8 @@ class NetworkActivity_SampleUnits(AbstractAnalysis):
     ))
     variant: Optional[str] = "small"
     conditions: tuple[str, ...] = ()  
+    _pre_ops: tuple[tuple[str, Callable]] = ()
+    fig_params: FigParams = FigParams()
     n_units_sample: int = 4
     key: PRNGKeyArray = field(default_factory=lambda: jr.PRNGKey(0))
     # legend_title: str = "Reach direction"
@@ -247,6 +249,8 @@ class NetworkActivity_PCA(AbstractAnalysis):
     ))
     variant: Optional[str] = "small"
     conditions: tuple[str, ...] = ()  
+    _pre_ops: tuple[tuple[str, Callable]] = ()
+    fig_params: FigParams = FigParams()
     n_components: Optional[int] = None
     start_step: int = 0
     end_step: Optional[int] = None
@@ -289,6 +293,8 @@ class NetworkActivity_ProjectPCA(AbstractAnalysis):
     ))
     variant: Optional[str] = "small"
     conditions: tuple[str, ...] = ()
+    _pre_ops: tuple[tuple[str, Callable]] = ()
+    fig_params: FigParams = FigParams()
     variant_pca: Optional[str] = None  
     n_components: Optional[int] = None
     start_step: int = 0

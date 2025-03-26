@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from functools import partial 
 from types import MappingProxyType
 from typing import ClassVar, Optional, Dict, Any, Literal as L
@@ -15,7 +16,7 @@ from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.aligned import AlignedVars, plot_condition_trajectories
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, FigParams
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS
 from rnns_learn_robust_motor_policies.analysis.measures import MEASURE_LABELS
 from rnns_learn_robust_motor_policies.analysis.measures import Measures
@@ -130,8 +131,11 @@ class Aligned_IdxContextInput(AbstractAnalysis):
     ))
     variant: Optional[str] = "small"
     conditions: tuple[str, ...] = ()
+    _pre_ops: tuple[tuple[str, Callable]] = ()
+    fig_params: FigParams = FigParams(
+        n_curves_max=20,
+    )
     # n_conditions: int  # all_tasks['small'][pert_amp].n_validation_trials
-    n_curves_max: int = 20
     
     def make_figs(
         self,
@@ -187,8 +191,11 @@ class Aligned_IdxTrainStd_PerContext(AbstractAnalysis):
     ))
     variant: Optional[str] = "small"
     conditions: tuple[str, ...] = ()
+    _pre_ops: tuple[tuple[str, Callable]] = ()
+    fig_params: FigParams = FigParams(
+        n_curves_max=20,
+    )
     # n_conditions: int  # all_tasks['small'][pert_amp].n_validation_trials
-    n_curves_max: int = 20
 
     def make_figs(
         self,
@@ -257,7 +264,10 @@ class Measures_CompareTrainStdAndContext(AbstractAnalysis):
     measure_keys: tuple[str, ...]
     variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
-    n_curves_max: int = 20    
+    _pre_ops: tuple[tuple[str, Callable]] = ()
+    fig_params: FigParams = FigParams(
+        n_curves_max=20,
+    )
 
     def dependency_kwargs(self) -> Dict[str, Dict[str, Any]]:
         return dict(

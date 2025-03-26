@@ -1,5 +1,7 @@
+from collections.abc import Callable, Sequence
 import dataclasses
 from functools import cached_property
+import inspect
 import logging
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Optional, Dict
@@ -13,14 +15,14 @@ from jaxtyping import PyTree, Array
 import plotly.graph_objects as go
 from sqlalchemy.orm import Session
 
-from jax_cookbook import is_type
+from jax_cookbook import is_type, is_none
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.database import EvaluationRecord, add_evaluation_figure, savefig
 from rnns_learn_robust_motor_policies.tree_utils import tree_level_labels
 from rnns_learn_robust_motor_policies.misc import camel_to_snake, get_dataclass_fields, is_json_serializable
-from rnns_learn_robust_motor_policies.plot_utils import figs_flatten_with_paths
-from rnns_learn_robust_motor_policies.types import TreeNamespace
+from rnns_learn_robust_motor_policies.plot_utils import figs_flatten_with_paths, get_label_str
+from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
 
 if TYPE_CHECKING:
     from typing import ClassVar as AbstractClassVar
@@ -37,20 +39,20 @@ def represent_undefined(dumper, data):
 yaml.add_representer(object, represent_undefined)
 
 
-def create_analysis(analysis_class, *args, **kwargs):
-    provided = kwargs.copy()
-    for i, arg in enumerate(args):
-        sig = inspect.signature(analysis_class.__init__)
-        param_names = list(sig.parameters.keys())[1:]  # Skip 'self'
-        if i < len(param_names):
-            provided[param_names[i]] = arg
+# def create_analysis(analysis_class, *args, **kwargs):
+#     provided = kwargs.copy()
+#     for i, arg in enumerate(args):
+#         sig = inspect.signature(analysis_class.__init__)
+#         param_names = list(sig.parameters.keys())[1:]  # Skip 'self'
+#         if i < len(param_names):
+#             provided[param_names[i]] = arg
     
-    # Create instance with captured args
-    instance = analysis_class(*args, **kwargs)
+#     # Create instance with captured args
+#     instance = analysis_class(*args, **kwargs)
     
-    # Set _provided_fields using Equinox's update mechanism
-    instance = eqx.tree_at(lambda x: x._provided_fields, instance, provided)
-    return instance
+#     # Set _provided_fields using Equinox's update mechanism
+#     instance = eqx.tree_at(lambda x: x._provided_fields, instance, provided)
+#     return instance
 
 
 class AnalysisInputData(Module):
@@ -59,6 +61,30 @@ class AnalysisInputData(Module):
     states: PyTree[Module]
     hps: PyTree[TreeNamespace]  
     extras: PyTree[TreeNamespace] 
+
+
+#! TODO: Replace with something other than `Module`, and move `colorscale_key` and `colorscale_axis`
+#! to `AbstractAnalysis`, so that the user can pass arbitrary kwargs to the plotting function
+class FigParams(Module):
+    """Parameters used for figure generation."""
+    colorscale_key: Optional[str] = None
+    colorscale_axis: Optional[int] = None
+    legend_title: Optional[str] = None
+    legend_labels: Optional[Sequence[str]] = None
+    
+    # Additional params that might be used by different subclasses
+    n_curves_max: Optional[int] = None
+    curves_mode: Optional[str] = None
+
+    def with_updates(self, **kwargs):
+        """Create a new FigParams with specific fields updated."""
+        # Start with current values
+        current_values = {
+            field.name: getattr(self, field.name) 
+            for field in dataclasses.fields(self)
+        }
+        
+        return FigParams(**current_values | kwargs)
 
 
 class AbstractAnalysis(Module):
@@ -94,18 +120,49 @@ class AbstractAnalysis(Module):
             when there is system noise (i.e. multiple evals per condition), and in 
             that case we could give the condition `"any_system_noise"` to those analyses.
     """
-    _exclude_fields = ('dependencies', 'conditions')
+    _exclude_fields = ('dependencies', 'conditions', '_pre_ops')
     dependencies: AbstractClassVar[MappingProxyType[str, "type[AbstractAnalysis]"]]
     variant: AbstractVar[Optional[str]] 
     conditions: AbstractVar[tuple[str, ...]]
+    fig_params: AbstractVar[FigParams]
+    _pre_ops: AbstractVar[tuple[tuple[str, Callable]]] 
+
+    def with_fig_params(self, **kwargs):
+        """Returns a copy of this analysis with updated figure parameters."""
+        updated_fig_params = self.fig_params.with_updates(**kwargs)
+        
+        return eqx.tree_at(
+            lambda x: x.fig_params,
+            self,
+            updated_fig_params
+        )
     
     def __call__(
         self, 
         data: AnalysisInputData,
         **kwargs,
     ) -> tuple[PyTree[Any], PyTree[go.Figure]]:
+        
+        # Transform dependencies prior to performing the analysis
+        # e.g. see `after_stacking` for an example of defining a pre-op
+        for dep_name, transform_func in self._pre_ops:
+            if dep_name is None:
+                # Transform all dependencies
+                for dependency_name in self.dependencies.keys():
+                    # Key should always be present in kwargs, due to dependency resolution
+                    assert dependency_name in kwargs, ""
+                    kwargs[dependency_name] = transform_func(kwargs[dependency_name])
+
+            else:
+                if dep_name in kwargs:
+                    # Transform a specific dependency
+                    kwargs[dep_name] = transform_func(kwargs[dep_name])
+                else:
+                    raise ValueError(f"Analysis pre-op cannot be performed: {dep_name} not found in kwargs")
+
         result = self.compute(data, **kwargs)
         figs = self.make_figs(data, result=result, **kwargs)
+
         return result, figs
         
     def compute(
@@ -220,7 +277,49 @@ class AbstractAnalysis(Module):
                 params_path = dump_path / f"{filename}.yaml"
                 with open(params_path, 'w') as f:
                     yaml.dump(params, f, default_flow_style=False, sort_keys=False)
-                    
+
+    def after_stacking(self, level: str, dependency_name: Optional[str] = None):
+        """
+        Returns a copy of this analysis that will stack the specified dependency and
+        update figure parameters accordingly.
+        
+        Args:
+            level: The label of the `LDict` level in the PyTree to stack by. 
+            dependency_name: Optional name of the specific dependency to stack.
+                If None, will stack all dependencies listed in self.dependencies.
+            
+        Returns:
+            A copy of this analysis with stacking operation and updated parameters
+        """
+        # Define the stacking function
+        def stack_dependency(dep_data):
+            return jt.map(
+                lambda d: jtree.stack(list(d.values())),
+                dep_data,
+                is_leaf=LDict.is_of(level),
+            )
+        
+        # Create updated fig_params with stacking-related settings
+        updated_fig_params = eqx.tree_at(
+            lambda p: (p.colorscale_key, p.colorscale_axis, p.legend_title),
+            self.fig_params,
+            # When stacking, colorscale axis is always 0
+            (level, 0, get_label_str(level)),
+            is_leaf=is_none,
+        )
+        
+        modified_analysis = eqx.tree_at(
+            lambda a: (a.fig_params, a._pre_ops),
+            self,
+            (
+                updated_fig_params,
+                self._pre_ops + ((dependency_name, stack_dependency),)
+            )
+        )
+        
+        return modified_analysis 
+    
+                      
     @cached_property
     def _field_params(self):
         # TODO: Inherit from dependencies? e.g. if we depend on `BestReplicateStates`, maybe we should include `i_replicate` from there

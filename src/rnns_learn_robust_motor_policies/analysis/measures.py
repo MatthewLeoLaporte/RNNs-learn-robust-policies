@@ -16,7 +16,7 @@ import numpy as np
 from rnns_learn_robust_motor_policies.plot_utils import get_label_str
 from rnns_learn_robust_motor_policies.types import Responses, TreeNamespace
 from rnns_learn_robust_motor_policies.analysis.aligned import AlignedVars
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, FigParams
 from rnns_learn_robust_motor_policies.constants import EVAL_REACH_LENGTH, REPLICATE_CRITERION
 from rnns_learn_robust_motor_policies.misc import lohi
 from rnns_learn_robust_motor_policies.plot import get_measure_replicate_comparisons, get_violins
@@ -357,6 +357,8 @@ class Measures(AbstractAnalysis):
     measure_keys: Sequence[str]
     variant: Optional[str] = None
     conditions: tuple[str, ...] = ()
+    _pre_ops: tuple[tuple[str, Callable]] = ()
+    fig_params: FigParams = FigParams()
 
     def compute(
         self,
@@ -389,6 +391,8 @@ class Measures_ByTrainStd(AbstractAnalysis):
     measure_keys: Sequence[str]
     variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
+    _pre_ops: tuple[tuple[str, Callable]] = ()
+    fig_params: FigParams = FigParams()
 
     def dependency_kwargs(self) -> Dict[str, Dict[str, Any]]:
         return dict(
@@ -475,6 +479,8 @@ class Measures_CompareReplicatesLoHi(AbstractAnalysis):
     measure_keys: tuple[str, ...]
     variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
+    _pre_ops: tuple[tuple[str, Callable]] = ()
+    fig_params: FigParams = FigParams()
     
     def dependency_kwargs(self) -> Dict[str, Dict[str, Any]]:
         return dict(
@@ -516,6 +522,8 @@ class Measures_LoHiSummary(AbstractAnalysis):
     measure_keys: tuple[str, ...]
     variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
+    _pre_ops: tuple[tuple[str, Callable]] = ()
+    fig_params: FigParams = FigParams()
     
     def dependency_kwargs(self) -> Dict[str, Dict[str, Any]]:
         return dict(

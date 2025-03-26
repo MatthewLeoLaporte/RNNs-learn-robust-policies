@@ -16,7 +16,7 @@ from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.aligned import AlignedTrajectories
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, FigParams
 from rnns_learn_robust_motor_policies.analysis.effector import Effector_ByEval
 from rnns_learn_robust_motor_policies.analysis.effector import Effector_SingleEval
 from rnns_learn_robust_motor_policies.analysis.effector import Effector_ByReplicate
@@ -86,6 +86,8 @@ class OutputWeightCorrelation(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
     variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
+    _pre_ops: tuple[tuple[str, Callable]] = ()
+    fig_params: FigParams = FigParams()
     
     def compute(
         self, 
@@ -167,9 +169,9 @@ ALL_ANALYSES = [
     Effector_ByEval(),
     Effector_SingleEval(i_trial=0),
     Effector_ByReplicate(i_trial=0),
-    AlignedTrajectories(colorscale_key='trial'),
-    AlignedTrajectories(stack_by_level='pert__amp'),
-    AlignedTrajectories(stack_by_level='train__pert__std'),
+    AlignedTrajectories().with_fig_params(colorscale_key='trial'),
+    AlignedTrajectories().after_stacking(level='pert__amp'),
+    AlignedTrajectories().after_stacking(level='train__pert__std'),
     # VelocityProfiles(),
     # Measures_ByTrainStd(measure_keys=MEASURE_KEYS),
     # Measures_CompareReplicatesLoHi(measure_keys=MEASURE_KEYS),

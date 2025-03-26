@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from types import MappingProxyType, SimpleNamespace
 from typing import ClassVar, Literal as L, Optional
 
@@ -8,7 +9,7 @@ import feedbax.plotly as fbp
 from jax_cookbook import is_module
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, FigParams
 from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.types import LDict
 
@@ -35,6 +36,8 @@ class FrequencyResponse(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType({})
     variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
+    _pre_ops: tuple[tuple[str, Callable]] = ()
+    fig_params: FigParams = FigParams()
     
     def compute(self, data: AnalysisInputData, **dependencies):
         all_freqs, all_gains, all_phases = jtree.unzip(jt.map(

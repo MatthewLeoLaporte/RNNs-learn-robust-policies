@@ -9,7 +9,7 @@ from equinox import Module
 from jax_cookbook import is_module
 from jaxtyping import PyTree
 
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, FigParams
 from rnns_learn_robust_motor_policies.analysis.state_utils import BestReplicateStates
 from rnns_learn_robust_motor_policies.config import PLOTLY_CONFIG
 from rnns_learn_robust_motor_policies.constants import REPLICATE_CRITERION
@@ -26,11 +26,14 @@ class Effector_ByEval(AbstractAnalysis):
     ))
     variant: Optional[str] = "small"
     conditions: tuple[str, ...] = ('any_system_noise',)  # Skip this analysis, if only one eval
+    _pre_ops: tuple[tuple[str, Callable]] = ()
+    fig_params: FigParams = FigParams(
+        legend_title="Reach direction"
+    )
+    legend_labels: Optional[Sequence | Callable] = None
+    mean_exclude_axes: Sequence[int] = ()
     colorscale_axis: int = 1
     colorscale_key: str = "reach_condition"
-    mean_exclude_axes: Sequence[int] = ()
-    legend_title: str = "Reach direction"
-    legend_labels: Optional[Sequence | Callable] = None
 
     def make_figs(
         self,
@@ -50,7 +53,7 @@ class Effector_ByEval(AbstractAnalysis):
         figs = jt.map(
             partial(
                 plot_2d_effector_trajectories,
-                legend_title=self.legend_title,
+                legend_title=self.fig_params.legend_title,
                 legend_labels=legend_labels,
                 colorscale_key=self.colorscale_key,
                 curves_mode='lines',
@@ -77,7 +80,10 @@ class Effector_SingleEval(AbstractAnalysis):
     ))
     variant: Optional[str] = "small"
     conditions: tuple[str, ...] = ()
-    legend_title: str = "Reach direction"
+    _pre_ops: tuple[tuple[str, Callable]] = ()
+    fig_params: FigParams = FigParams(
+        legend_title="Reach direction",
+    )
     colorscale_key: str = "reach_condition"
     colorscale_axis: int = 0
     i_trial: int = 0
@@ -96,7 +102,7 @@ class Effector_SingleEval(AbstractAnalysis):
         figs = jt.map(
             partial(
                 plot_2d_effector_trajectories,
-                legend_title=self.legend_title,
+                legend_title=self.fig_params.legend_title,
                 colorscale_key=self.colorscale_key,
                 mode='markers+lines',
                 colorscale_axis=self.colorscale_axis,
@@ -118,7 +124,10 @@ class Effector_ByReplicate(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
     variant: Optional[str] = "small"
     conditions: tuple[str, ...] = ()
-    legend_title: str = "Reach direction"
+    _pre_ops: tuple[tuple[str, Callable]] = ()
+    fig_params: FigParams = FigParams(
+        legend_title="Reach direction",
+    )
     colorscale_key: str = "reach_condition"
     colorscale_axis: int = 1
     i_trial: int = 0

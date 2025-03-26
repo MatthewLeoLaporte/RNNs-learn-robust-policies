@@ -1,4 +1,5 @@
 
+from collections.abc import Callable
 from types import MappingProxyType
 from typing import ClassVar, Optional
 
@@ -12,7 +13,7 @@ from jax_cookbook import is_type
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.aligned import AlignedVars
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, FigParams
 from rnns_learn_robust_motor_policies.plot_utils import get_label_str
 from rnns_learn_robust_motor_policies.types import Responses
 from rnns_learn_robust_motor_policies.types import TreeNamespace
@@ -27,6 +28,8 @@ class VelocityProfiles(AbstractAnalysis):
     ))
     variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
+    _pre_ops: tuple[tuple[str, Callable]] = ()
+    fig_params: FigParams = FigParams()
     tmp_transpose: bool = False
 
     def compute(
@@ -78,7 +81,7 @@ class VelocityProfiles(AbstractAnalysis):
         
         figs = LDict.of(result.label)({
             value: LDict.of("direction")({
-                label: _get_fig(result[value], coord_idx, label, colors[self.variant])
+                label: _get_fig(result[value], coord_idx, label, colors)
                 for coord_idx, label in enumerate(("forward", "lateral"))
             })
             for value in result.keys()
