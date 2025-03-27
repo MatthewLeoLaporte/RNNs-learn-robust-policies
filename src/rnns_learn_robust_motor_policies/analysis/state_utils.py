@@ -12,7 +12,7 @@ from feedbax.task import AbstractTask
 import jax_cookbook.tree as jtree
 from jax_cookbook import is_type, is_module
 
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, FigParams
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.constants import REPLICATE_CRITERION
 from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
 
@@ -172,11 +172,10 @@ def get_step_task_input(x1, x2, step_step, n_steps, n_trials):
 
 
 class BestReplicateStates(AbstractAnalysis):
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
-    variant: Optional[str] = None
     conditions: tuple[str, ...] = ()
-    _pre_ops: tuple[tuple[str, Callable]] = ()
-    fig_params: FigParams = FigParams()
+    variant: Optional[str] = None
+    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
     i_replicate: Optional[int] = None
 
     def compute(

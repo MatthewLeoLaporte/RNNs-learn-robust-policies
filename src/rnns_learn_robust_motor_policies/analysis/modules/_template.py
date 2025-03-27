@@ -10,7 +10,7 @@ from typing import ClassVar, Optional
 from equinox import Module
 
 from rnns_learn_robust_motor_policies.analysis import AbstractAnalysis
-from rnns_learn_robust_motor_policies.analysis.analysis import FigParams
+from rnns_learn_robust_motor_policies.analysis.analysis import DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.types import TreeNamespace
 from rnns_learn_robust_motor_policies.types import LDict
@@ -60,11 +60,10 @@ eval_func: Callable = vmap_eval_ensemble
 
 # Define any subclasses of `AbstractAnalysis` that are specific to this task
 class SomeAnalysis(AbstractAnalysis):
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
-    variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
-    _pre_ops: tuple[tuple[str, Callable]] = ()
-    fig_params: FigParams = FigParams()
+    variant: Optional[str] = "full"
+    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
     
     ...
  

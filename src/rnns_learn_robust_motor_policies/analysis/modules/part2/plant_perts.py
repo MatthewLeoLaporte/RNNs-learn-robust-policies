@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from functools import partial 
 from types import MappingProxyType
-from typing import ClassVar, Optional, Dict, Any, Literal as L
+from typing import ClassVar, Optional, Dict, Any, Literal as L, Sequence
 
 import equinox as eqx
 from equinox import Module
@@ -16,17 +16,17 @@ from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.aligned import AlignedVars, plot_condition_trajectories
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, FigParams
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS
-from rnns_learn_robust_motor_policies.analysis.measures import MEASURE_LABELS
+from rnns_learn_robust_motor_policies.analysis.measures import ALL_MEASURE_KEYS, MEASURE_LABELS
 from rnns_learn_robust_motor_policies.analysis.measures import Measures
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_constant_task_input, vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.constants import POS_ENDPOINTS_ALIGNED
 from rnns_learn_robust_motor_policies.plot import add_endpoint_traces, get_violins
-from rnns_learn_robust_motor_policies.types import TreeNamespace
 from rnns_learn_robust_motor_policies.types import (
     LDict,
     Responses,
+    TreeNamespace,
 )
 
 
@@ -126,13 +126,12 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
 
 
 class Aligned_IdxContextInput(AbstractAnalysis):
+    conditions: tuple[str, ...] = ()
+    variant: Optional[str] = "small"
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         aligned_vars=AlignedVars,
     ))
-    variant: Optional[str] = "small"
-    conditions: tuple[str, ...] = ()
-    _pre_ops: tuple[tuple[str, Callable]] = ()
-    fig_params: FigParams = FigParams(
+    fig_params: FigParamNamespace = DefaultFigParamNamespace(
         n_curves_max=20,
     )
     # n_conditions: int  # all_tasks['small'][pert_amp].n_validation_trials
@@ -152,7 +151,7 @@ class Aligned_IdxContextInput(AbstractAnalysis):
         )
         
         # Context inputs do not depend on pert amp
-        context_inputs = jt.leaves(hps, is_leaf=is_type(TreeNamespace))[0].context_input
+        context_inputs = jt.leaves(data.hps, is_leaf=is_type(TreeNamespace))[0].context_input
         
         figs = jt.map(
             partial(
@@ -186,13 +185,12 @@ class Aligned_IdxContextInput(AbstractAnalysis):
 
 #! I think this is replaceable with `aligned.AlignedIdxTrainStd` if we move the plot var stacking to a separate analysis
 class Aligned_IdxTrainStd_PerContext(AbstractAnalysis):
+    conditions: tuple[str, ...] = ()
+    variant: Optional[str] = "small"
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         aligned_vars=AlignedVars,
     ))
-    variant: Optional[str] = "small"
-    conditions: tuple[str, ...] = ()
-    _pre_ops: tuple[tuple[str, Callable]] = ()
-    fig_params: FigParams = FigParams(
+    fig_params: FigParamNamespace = DefaultFigParamNamespace(
         n_curves_max=20,
     )
     # n_conditions: int  # all_tasks['small'][pert_amp].n_validation_trials
@@ -258,16 +256,15 @@ class Aligned_IdxTrainStd_PerContext(AbstractAnalysis):
 
 
 class Measures_CompareTrainStdAndContext(AbstractAnalysis):
+    conditions: tuple[str, ...] = ()
+    variant: Optional[str] = "full"
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         all_measure_values=Measures,
     ))
-    measure_keys: tuple[str, ...]
-    variant: Optional[str] = "full"
-    conditions: tuple[str, ...] = ()
-    _pre_ops: tuple[tuple[str, Callable]] = ()
-    fig_params: FigParams = FigParams(
+    fig_params: FigParamNamespace = DefaultFigParamNamespace(
         n_curves_max=20,
     )
+    measure_keys: Sequence[str] = ALL_MEASURE_KEYS
 
     def dependency_kwargs(self) -> Dict[str, Dict[str, Any]]:
         return dict(

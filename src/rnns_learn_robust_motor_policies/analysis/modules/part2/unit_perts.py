@@ -13,7 +13,7 @@ from feedbax.task import TrialSpecDependency
 from jax_cookbook import is_module
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, FigParams
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.analysis.state_utils import angle_between_vectors, vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_constant_task_input
 from rnns_learn_robust_motor_policies.types import LDict
@@ -147,11 +147,10 @@ def eval_func(key, hps, models, task):
 
 
 class UnitPreferredDirections(AbstractAnalysis):
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType({})
-    variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
-    _pre_ops: tuple[tuple[str, Callable]] = ()
-    fig_params: FigParams = FigParams()
+    variant: Optional[str] = "full"
+    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType({})
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
     
     # TODO: Separate into two `AbstractAnalysis` classes in serial
     def compute(self, data: AnalysisInputData, **dependencies):
@@ -206,11 +205,10 @@ class UnitPreferredDirections(AbstractAnalysis):
     
 
 class UnitStimDirections(AbstractAnalysis):
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType({})
-    variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
-    _pre_ops: tuple[tuple[str, Callable]] = ()
-    fig_params: FigParams = FigParams()
+    variant: Optional[str] = "full"
+    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType({})
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
 
     def compute(self, data: AnalysisInputData, **dependencies):
         # Compute the direction of maximum force for each perturbed unit
@@ -251,14 +249,13 @@ def angle_to_direction(angle):
 
 
 class UnitPreferenceAlignment(AbstractAnalysis):
+    conditions: tuple[str, ...] = ()
+    variant: Optional[str] = "full"
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         results1=UnitPreferredDirections,
         results2=UnitStimDirections,
     ))
-    variant: Optional[str] = "full"
-    conditions: tuple[str, ...] = ()
-    _pre_ops: tuple[tuple[str, Callable]] = ()
-    fig_params: FigParams = FigParams()
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
 
     def compute(self, data: AnalysisInputData, *, results1, results2, **dependencies):
         """Compute the alignment between preferred and stim directions"""
@@ -309,15 +306,14 @@ class UnitPreferenceAlignment(AbstractAnalysis):
 
 class AllResults(AbstractAnalysis):
     """Collect all the results for this analysis in one place, for interactive reasons."""
+    conditions: tuple[str, ...] = ()
+    variant: Optional[str] = "full"
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         results1=UnitPreferredDirections,
         results2=UnitStimDirections,
         results3=UnitPreferenceAlignment,
     ))
-    variant: Optional[str] = "full"
-    conditions: tuple[str, ...] = ()
-    _pre_ops: tuple[tuple[str, Callable]] = ()
-    fig_params: FigParams = FigParams()
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
 
     def compute(
         self, 

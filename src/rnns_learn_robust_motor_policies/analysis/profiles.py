@@ -13,7 +13,7 @@ from jax_cookbook import is_type
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.aligned import AlignedVars
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, FigParams
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.plot_utils import get_label_str
 from rnns_learn_robust_motor_policies.types import Responses
 from rnns_learn_robust_motor_policies.types import TreeNamespace
@@ -23,13 +23,12 @@ from rnns_learn_robust_motor_policies.types import LDict
 class VelocityProfiles(AbstractAnalysis):
     """Generates forward and lateral velocity profile figures.
     """
+    conditions: tuple[str, ...] = ()
+    variant: Optional[str] = "full"
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         aligned_vars=AlignedVars,
     ))
-    variant: Optional[str] = "full"
-    conditions: tuple[str, ...] = ()
-    _pre_ops: tuple[tuple[str, Callable]] = ()
-    fig_params: FigParams = FigParams()
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
     tmp_transpose: bool = False
 
     def compute(

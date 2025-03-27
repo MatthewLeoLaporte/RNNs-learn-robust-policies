@@ -127,9 +127,9 @@ class TreeNamespace(SimpleNamespace):
         return _update_none_leaves(self, other)
 
     def __or__(self, other: 'TreeNamespace | dict') -> 'TreeNamespace':
-        """Merge two TreeNamespaces, with values from other taking precedence.
+        """Merge two TreeNamespaces, or a TreeNamespace and a dict, with values from `other` taking precedence.
 
-        Handles nested TreeNamespaces recursively.
+        Handles nested inputs recursively.
         """
         result = deepcopy(self)
 

@@ -14,7 +14,7 @@ from feedbax.misc import batch_reshape
 from jax_cookbook import is_type
 from sklearn.decomposition import PCA
 
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, FigParams
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.analysis.state_utils import BestReplicateStates
 from rnns_learn_robust_motor_policies.constants import REPLICATE_CRITERION
 from rnns_learn_robust_motor_policies.plot_utils import get_label_str
@@ -193,16 +193,16 @@ def activity_sample_units(
 
 
 class NetworkActivity_SampleUnits(AbstractAnalysis):
+    conditions: tuple[str, ...] = ()  
+    variant: Optional[str] = "small"
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         best_replicate_states=BestReplicateStates,
     ))
-    variant: Optional[str] = "small"
-    conditions: tuple[str, ...] = ()  
-    _pre_ops: tuple[tuple[str, Callable]] = ()
-    fig_params: FigParams = FigParams()
-    n_units_sample: int = 4
-    key: PRNGKeyArray = field(default_factory=lambda: jr.PRNGKey(0))
-    # legend_title: str = "Reach direction"
+    fig_params: FigParamNamespace = DefaultFigParamNamespace(
+        n_units_sample=4,
+        key=jr.PRNGKey(0),
+        # legend_title="Reach direction",
+    )
     # colorscale_key: str = "reach_condition"
 
     def make_figs(
@@ -232,7 +232,7 @@ class NetworkActivity_SampleUnits(AbstractAnalysis):
                 activities=inner_dict,
                 n_samples=self.n_units_sample,
                 colors=colors[inner_dict.label].dark,
-                key=self.key,
+                key=self.fig_params.key,
             )
             for outer_value, inner_dict in activities.items()
         })
@@ -244,13 +244,12 @@ class NetworkActivity_SampleUnits(AbstractAnalysis):
 
 
 class NetworkActivity_PCA(AbstractAnalysis):
+    conditions: tuple[str, ...] = ()  
+    variant: Optional[str] = "small"
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         best_replicate_states=BestReplicateStates,
     ))
-    variant: Optional[str] = "small"
-    conditions: tuple[str, ...] = ()  
-    _pre_ops: tuple[tuple[str, Callable]] = ()
-    fig_params: FigParams = FigParams()
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
     n_components: Optional[int] = None
     start_step: int = 0
     end_step: Optional[int] = None
@@ -287,14 +286,13 @@ class NetworkActivity_PCA(AbstractAnalysis):
         
 
 class NetworkActivity_ProjectPCA(AbstractAnalysis):
+    conditions: tuple[str, ...] = ()
+    variant: Optional[str] = "small"
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         pca=NetworkActivity_PCA,
         best_replicate_states=BestReplicateStates,
     ))
-    variant: Optional[str] = "small"
-    conditions: tuple[str, ...] = ()
-    _pre_ops: tuple[tuple[str, Callable]] = ()
-    fig_params: FigParams = FigParams()
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
     variant_pca: Optional[str] = None  
     n_components: Optional[int] = None
     start_step: int = 0

@@ -13,7 +13,7 @@ from jax_cookbook import is_type
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.config import PLOTLY_CONFIG
-from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace, dict_to_namespace
+from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
 
 
 logger = logging.getLogger(__name__)

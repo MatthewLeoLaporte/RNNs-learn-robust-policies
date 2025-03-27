@@ -73,6 +73,12 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
 eval_func = get_pert_amp_vmap_eval_func(lambda hps: hps.pert.plant.amp, PLANT_INTERVENOR_LABEL)
 
 
+def fig_params_fn_context_pert(fig_params, i, item):
+    return fig_params | dict(
+        line_dash={0: "solid", 1: "dash"}[i],
+    )
+
+
 ALL_ANALYSES = [
     # # 0. Show that context perturbation does not cause a significant change in force output at steady-state.
     # #! (might want to go to zero noise, to show how true this actually is)
@@ -96,11 +102,13 @@ ALL_ANALYSES = [
     # (It only makes sense to do this for reaches (not ss), at least for curl fields.)
     AlignedTrajectories(variant="reach")
         .after_stacking(level="pert__context__amp")
-        .with_fig_params(legend_title="Final context<br>input"),
-    VelocityProfiles(
-        variant="reach", 
-        tmp_transpose=True,
-    ),
+        .with_fig_params(legend_title="Final context<br>input")
+        # Axis 3 and not 2, because of the prior stacking
+        .combine_figs_by_axis(axis=3, fig_params_fn=fig_params_fn_context_pert)
+    # VelocityProfiles(
+    #     variant="reach", 
+    #     tmp_transpose=True,
+    # ),
     # 4. Perform PCA wrt baseline `reach` variant, and project `steady` variant into that space
     # (To show that context input causally varies the network activity in a null direction)
     # NetworkActivity_ProjectPCA(

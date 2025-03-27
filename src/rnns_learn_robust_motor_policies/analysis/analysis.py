@@ -4,12 +4,12 @@ from functools import cached_property
 import inspect
 import logging
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Optional, Dict
+from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Dict
 from pathlib import Path
 import yaml
 
 import equinox as eqx
-from equinox import AbstractVar, Module
+from equinox import AbstractVar, AbstractClassVar, Module
 import jax.tree as jt
 from jaxtyping import PyTree, Array
 import plotly.graph_objects as go
@@ -39,22 +39,6 @@ def represent_undefined(dumper, data):
 yaml.add_representer(object, represent_undefined)
 
 
-# def create_analysis(analysis_class, *args, **kwargs):
-#     provided = kwargs.copy()
-#     for i, arg in enumerate(args):
-#         sig = inspect.signature(analysis_class.__init__)
-#         param_names = list(sig.parameters.keys())[1:]  # Skip 'self'
-#         if i < len(param_names):
-#             provided[param_names[i]] = arg
-    
-#     # Create instance with captured args
-#     instance = analysis_class(*args, **kwargs)
-    
-#     # Set _provided_fields using Equinox's update mechanism
-#     instance = eqx.tree_at(lambda x: x._provided_fields, instance, provided)
-#     return instance
-
-
 class AnalysisInputData(Module):
     models: PyTree[Module]
     tasks: PyTree[Module]
@@ -63,31 +47,88 @@ class AnalysisInputData(Module):
     extras: PyTree[TreeNamespace] 
 
 
-#! TODO: Replace with something other than `Module`, and move `colorscale_key` and `colorscale_axis`
-#! to `AbstractAnalysis`, so that the user can pass arbitrary kwargs to the plotting function
-class FigParams(Module):
-    """Parameters used for figure generation."""
-    colorscale_key: Optional[str] = None
-    colorscale_axis: Optional[int] = None
-    legend_title: Optional[str] = None
-    legend_labels: Optional[Sequence[str]] = None
+# #! TODO: Replace with something other than `Module`, and move `colorscale_key` and `colorscale_axis`
+# #! to `AbstractAnalysis`, so that the user can pass arbitrary kwargs to the plotting function
+# class FigParams(Module):
+#     """Parameters used for figure generation."""
+#     legend_title: Optional[str] = None
+#     legend_labels: Optional[Sequence[str]] = None
     
-    # Additional params that might be used by different subclasses
-    n_curves_max: Optional[int] = None
-    curves_mode: Optional[str] = None
+#     # Additional params that might be used by different subclasses
+#     n_curves_max: Optional[int] = None
+#     curves_mode: Optional[str] = None
 
-    def with_updates(self, **kwargs):
-        """Create a new FigParams with specific fields updated."""
-        # Start with current values
-        current_values = {
-            field.name: getattr(self, field.name) 
-            for field in dataclasses.fields(self)
-        }
+#     def with_updates(self, **kwargs):
+#         """Create a new TreeNamespace with specific fields updated."""
+#         # Start with current values
+#         current_values = {
+#             field.name: getattr(self, field.name) 
+#             for field in dataclasses.fields(self)
+#         }
         
-        return FigParams(**current_values | kwargs)
+#         return TreeNamespace(**current_values | kwargs)
 
 
-class AbstractAnalysis(Module):
+class FigParamNamespace(TreeNamespace):
+    """Namespace PyTree whose attributes are all `None` unless assigned.
+    
+    This is useful because different subclasses of `AbstractAnalysis` may call different
+    plotting functions, each of which may take arbitrary keyword arguments. Thus we can 
+    define defaults for any subset of these arguments in the implementation of 
+    `fig_params: ClassVar[FigParamNamespace]` for the subclass, while still passing `None` to the plotting 
+    functions for those parameters which do not need to be explicitly specified. 
+    Likewise, the user can pass arbitrary kwargs to the `with_fig_params` method without 
+    their having to be hardcoded into the subclass implementation.
+    """
+
+    # Only called if the attribute is not found in the instance `__dict__`
+    def __getattr__(self, item: str) -> Any:
+        if item.startswith('__'):
+            # Avert issues with methods like `copy.deepcopy` which check for presence of dunder methods
+            return super().__getattr__(item)
+        return None
+    
+
+# Alias for constructing `FigParamNamespace` defaults in Equinox Module fields
+DefaultFigParamNamespace = lambda **kwargs: eqx.field(default_factory=lambda: FigParamNamespace(**kwargs))
+
+
+class _PrepOp(NamedTuple):
+    dep_name: Optional[str]  # Name of dependency to operate on, or None for all
+    transform_func: Callable[[Any], Any]  # Function to transform the dependency
+
+
+class _FigOp(NamedTuple):
+    dep_name: Optional[str]  # Name of dependency to operate on, or None for all
+    is_leaf: Callable[[Any], bool]  # Function to identify leaf nodes
+    slice_fn: Callable[[Any, Any], Any]  # Function to slice a node
+    items_fn: Callable[[Any], Any]  # Function to get items to iterate over
+    fig_params_fn: Optional[Callable[[Any, int], TreeNamespace]]  # Function to modify fig_params for each item
+
+
+def _combine_figures(figs_list):
+    def combine_figs(*figs):
+        if not figs:
+            return None
+        
+        # Use first figure as base (make a copy to avoid modifying original)
+        base_fig = go.Figure(figs[0])
+        
+        # Add traces from other figures
+        for fig in figs[1:]:
+            if fig is not None:
+                base_fig.add_traces(fig.data)
+        
+        return base_fig
+    
+    return jt.map(
+        combine_figs,
+        *figs_list,
+        is_leaf=is_type(go.Figure),
+    ) 
+
+
+class AbstractAnalysis(Module, strict=False):
     """Component in an analysis pipeline.
     
     In `run_analysis`, multiple sets of evaluations may be performed
@@ -120,21 +161,26 @@ class AbstractAnalysis(Module):
             when there is system noise (i.e. multiple evals per condition), and in 
             that case we could give the condition `"any_system_noise"` to those analyses.
     """
-    _exclude_fields = ('dependencies', 'conditions', '_pre_ops')
+    _exclude_fields = ('dependencies', 'conditions', '_prep_ops', '_fig_ops')
+
+    conditions: AbstractVar[tuple[str, ...]]
     dependencies: AbstractClassVar[MappingProxyType[str, "type[AbstractAnalysis]"]]
     variant: AbstractVar[Optional[str]] 
-    conditions: AbstractVar[tuple[str, ...]]
-    fig_params: AbstractVar[FigParams]
-    _pre_ops: AbstractVar[tuple[tuple[str, Callable]]] 
+    fig_params: AbstractVar[FigParamNamespace]
+
+    # By using `strict=False`, we can define some private fields without needing to 
+    # implement them trivially in subclasses. This violates the abstract-final design
+    # pattern. This is intentional. If it leads to problems, I will learn from that.
+    #! This means no non-default arguments in subclasses
+    _prep_ops: tuple[_PrepOp, ...] = ()
+    _fig_ops: tuple[_FigOp, ...] = ()
 
     def with_fig_params(self, **kwargs):
         """Returns a copy of this analysis with updated figure parameters."""
-        updated_fig_params = self.fig_params.with_updates(**kwargs)
-        
         return eqx.tree_at(
             lambda x: x.fig_params,
             self,
-            updated_fig_params
+            self.fig_params | kwargs,
         )
     
     def __call__(
@@ -145,23 +191,72 @@ class AbstractAnalysis(Module):
         
         # Transform dependencies prior to performing the analysis
         # e.g. see `after_stacking` for an example of defining a pre-op
-        for dep_name, transform_func in self._pre_ops:
-            if dep_name is None:
+        for prep_op in self._prep_ops:
+            if prep_op.dep_name is None:
                 # Transform all dependencies
                 for dependency_name in self.dependencies.keys():
-                    # Key should always be present in kwargs, due to dependency resolution
                     assert dependency_name in kwargs, ""
-                    kwargs[dependency_name] = transform_func(kwargs[dependency_name])
-
+                    kwargs[dependency_name] = prep_op.transform_func(kwargs[dependency_name])
             else:
-                if dep_name in kwargs:
-                    # Transform a specific dependency
-                    kwargs[dep_name] = transform_func(kwargs[dep_name])
+                if prep_op.dep_name in kwargs:
+                    kwargs[prep_op.dep_name] = prep_op.transform_func(kwargs[prep_op.dep_name])
                 else:
-                    raise ValueError(f"Analysis pre-op cannot be performed: {dep_name} not found in kwargs")
+                    msg = f"Prep-op cannot be performed: {prep_op.dep_name} not found in kwargs"
+                    raise ValueError(msg)
 
         result = self.compute(data, **kwargs)
-        figs = self.make_figs(data, result=result, **kwargs)
+
+        # Handle figure operations
+        if not self._fig_ops:
+            # No figure operations, just call make_figs normally
+            figs = self.make_figs(data, result=result, **kwargs)
+        else:
+            # Execute the figure operations
+            for fig_op in self._fig_ops:
+                # Determine which dependencies to process
+                if fig_op.dep_name is None:
+                    dependencies_to_process = {k: v for k, v in kwargs.items() if k in self.dependencies}
+                else:
+                    if fig_op.dep_name not in kwargs:
+                        raise ValueError(f"Figure operation cannot be performed: {fig_op.dep_name} not found in kwargs")
+                    dependencies_to_process = {fig_op.dep_name: kwargs[fig_op.dep_name]}
+                
+                # Get the first leaf node that matches our leaf predicate
+                first_dep = next(iter(dependencies_to_process.values()))
+                first_leaf = jt.leaves(first_dep, is_leaf=fig_op.is_leaf)[0]
+                
+                # Get the items to iterate over
+                items_to_iterate = fig_op.items_fn(first_leaf)
+                
+                # Generate figures for each item
+                figs_list = []
+                for i, item in enumerate(items_to_iterate):
+                    # Each call to make_figs receives a single element along some level/axis/...
+                    sliced_kwargs = kwargs.copy()
+                    for k, v in dependencies_to_process.items():
+                        sliced_kwargs[k] = jt.map(
+                            lambda x: fig_op.slice_fn(x, item) if fig_op.is_leaf(x) else x,
+                            v,
+                            is_leaf=fig_op.is_leaf
+                        )
+                    
+                    # Create a modified analysis with custom fig_params for this item, if provided
+                    #? TODO: Could pass `fig_params` as a dependency instead of storing as a field
+                    analysis_for_item = self
+                    if fig_op.fig_params_fn is not None:
+                        modified_fig_params = fig_op.fig_params_fn(i, item)
+                        analysis_for_item = eqx.tree_at(
+                            lambda a: a.fig_params,
+                            self,
+                            modified_fig_params
+                        )
+                    
+                    # Generate figures for this slice using the modified analysis
+                    slice_figs = analysis_for_item.make_figs(data, result=result, **sliced_kwargs)
+                    figs_list.append(slice_figs)
+                
+                # Combine figures
+                figs = _combine_figures(figs_list)
 
         return result, figs
         
@@ -214,7 +309,8 @@ class AbstractAnalysis(Module):
         dump_path: Optional[Path] = None,
         **dependencies,
     ):
-        """Save to disk and record in the database each figure in a PyTree of figures, for this analysis.
+        """
+        Save to disk and record in the database each figure in a PyTree of figures, for this analysis.
         """
         # `sep="_"`` switches the label dunders for single underscores, so 
         # in `_params_to_save` we can use an argument e.g. `train_pert_std` rather than `train__pert__std`
@@ -299,26 +395,96 @@ class AbstractAnalysis(Module):
                 is_leaf=LDict.is_of(level),
             )
         
-        # Create updated fig_params with stacking-related settings
-        updated_fig_params = eqx.tree_at(
-            lambda p: (p.colorscale_key, p.colorscale_axis, p.legend_title),
-            self.fig_params,
-            # When stacking, colorscale axis is always 0
-            (level, 0, get_label_str(level)),
+        modified_analysis = eqx.tree_at(
+            lambda obj: (obj.colorscale_key, obj.colorscale_axis, obj.fig_params),
+            self,
+            (
+                level,
+                0,
+                self.fig_params | dict(legend_title=get_label_str(level)),
+            ),
             is_leaf=is_none,
         )
         
-        modified_analysis = eqx.tree_at(
-            lambda a: (a.fig_params, a._pre_ops),
+        return modified_analysis._add_prep_op(_PrepOp(
+            dep_name=dependency_name,
+            transform_func=stack_dependency
+        ))
+    
+    def _add_prep_op(self, prep_op: _PrepOp):
+        return eqx.tree_at(
+            lambda a: a._prep_ops,
             self,
-            (
-                updated_fig_params,
-                self._pre_ops + ((dependency_name, stack_dependency),)
-            )
+            self._prep_ops + (prep_op,)
+        )
+    
+    def combine_figs_by_axis(
+        self, 
+        axis: int, 
+        dependency_name: Optional[str] = None,
+        fig_params_fn: Optional[Callable[[FigParamNamespace, int, Any], FigParamNamespace]] = None
+    ):
+        """
+        Returns a copy of this analysis that will combine figures by slicing along
+        the specified axis of arrays in the input PyTree(s).
+        
+        Args:
+            axis: The axis to slice and combine along
+            dependency_name: Optional name of specific dependency to slice.
+                If None, will slice all dependencies listed in self.dependencies.
+        """
+        wrapped_fig_params_fn = None
+        if fig_params_fn:
+            wrapped_fig_params_fn = lambda i, item: fig_params_fn(self.fig_params, i, item)
+
+        fig_op = _FigOp(
+            dep_name=dependency_name,
+            is_leaf=eqx.is_array,
+            slice_fn=lambda x, i: x[(slice(None),) * axis + (i,)],
+            items_fn=lambda x: range(x.shape[axis]),
+            fig_params_fn=wrapped_fig_params_fn,
+        )
+
+        return self._add_fig_op(fig_op)
+        
+    def combine_figs_by_level(
+        self, 
+        level: str, 
+        dependency_name: Optional[str] = None,
+        fig_params_fn: Optional[Callable[[FigParamNamespace, int, Any], FigParamNamespace]] = None
+    ):
+        """
+        Returns a copy of this analysis that will combine figures by iterating over
+        the keys of an LDict level in the dependency PyTree.
+        
+        Args:
+            level: The LDict level to iterate over and combine across
+            dependency_name: Optional name of specific dependency to iterate over.
+                If None, will iterate over all dependencies listed in self.dependencies.
+        
+        Returns:
+            A copy of this analysis with figure combination operation added
+        """
+        wrapped_fig_params_fn = None
+        if fig_params_fn:
+            wrapped_fig_params_fn = lambda i, item: fig_params_fn(self.fig_params, i, item)
+
+        fig_op = _FigOp(
+            dep_name=dependency_name,
+            is_leaf=LDict.is_of(level),
+            slice_fn=lambda x, key: x[key],
+            items_fn=lambda x: x.keys(),
+            fig_params_fn=wrapped_fig_params_fn,
         )
         
-        return modified_analysis 
-    
+        return self._add_fig_op(fig_op)
+
+    def _add_fig_op(self, fig_op: _FigOp):
+        return eqx.tree_at(
+            lambda a: a._fig_ops,
+            self,
+            self._fig_ops + (fig_op,)
+        )
                       
     @cached_property
     def _field_params(self):

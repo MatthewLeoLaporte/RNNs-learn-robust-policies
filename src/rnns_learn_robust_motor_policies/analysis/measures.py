@@ -1,4 +1,4 @@
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from functools import cached_property, partial
 from types import MappingProxyType
 from typing import ClassVar, Optional, Dict, Any
@@ -16,7 +16,7 @@ import numpy as np
 from rnns_learn_robust_motor_policies.plot_utils import get_label_str
 from rnns_learn_robust_motor_policies.types import Responses, TreeNamespace
 from rnns_learn_robust_motor_policies.analysis.aligned import AlignedVars
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, FigParams
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.constants import EVAL_REACH_LENGTH, REPLICATE_CRITERION
 from rnns_learn_robust_motor_policies.misc import lohi
 from rnns_learn_robust_motor_policies.plot import get_measure_replicate_comparisons, get_violins
@@ -263,7 +263,7 @@ def set_timesteps(measure: Measure, timesteps) -> Measure:
     )
 
 
-MEASURES = LDict.of("measure")(dict(
+ALL_MEASURES = LDict.of("measure")(dict(
     max_net_force=max_net_force,
     sum_net_force=sum_net_force,
     max_parallel_force_forward=max_parallel_force,
@@ -315,6 +315,9 @@ MEASURE_LABELS = LDict.of("measure")(dict(
 ))
 
 
+ALL_MEASURE_KEYS = tuple(ALL_MEASURES.keys())
+
+
 def compute_all_measures(measures: PyTree[Measure], all_responses: PyTree[Responses]):
     """Maps the tree of measures over the tree of response conditions."""
     return jt.map(
@@ -354,11 +357,10 @@ class Measures(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         aligned_vars=AlignedVars,
     ))
-    measure_keys: Sequence[str]
+    measure_keys: Sequence[str] = ALL_MEASURE_KEYS
     variant: Optional[str] = None
     conditions: tuple[str, ...] = ()
-    _pre_ops: tuple[tuple[str, Callable]] = ()
-    fig_params: FigParams = FigParams()
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
 
     def compute(
         self,
@@ -367,7 +369,7 @@ class Measures(AbstractAnalysis):
         aligned_vars,
         **kwargs,
     ):
-        all_measures: LDict[str, Measure] = subdict(MEASURES, self.measure_keys)  # type: ignore
+        all_measures: LDict[str, Measure] = subdict(ALL_MEASURES, self.measure_keys)  # type: ignore
         all_measure_values = compute_all_measures(all_measures, aligned_vars.get(self.variant, aligned_vars))
         return all_measure_values
 
@@ -385,14 +387,13 @@ def get_violins_per_measure(measure_values, **kwargs):
 
 
 class Measures_ByTrainStd(AbstractAnalysis):
+    conditions: tuple[str, ...] = ()
+    variant: Optional[str] = "full"
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         measure_values=Measures,
     ))
-    measure_keys: Sequence[str]
-    variant: Optional[str] = "full"
-    conditions: tuple[str, ...] = ()
-    _pre_ops: tuple[tuple[str, Callable]] = ()
-    fig_params: FigParams = FigParams()
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
+    measure_keys: Sequence[str] = ALL_MEASURE_KEYS  
 
     def dependency_kwargs(self) -> Dict[str, Dict[str, Any]]:
         return dict(
@@ -438,12 +439,13 @@ def get_one_measure_plot_per_eval_condition(plot_func, measures, colors, **kwarg
 
 
 class MeasuresLoHiPertStd(AbstractAnalysis):
+    conditions: tuple[str, ...] = ()
+    variant: Optional[str] = None
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         measure_values=Measures,
     ))
-    measure_keys: tuple[str, ...]
-    variant: Optional[str] = None
-    conditions: tuple[str, ...] = ()
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
+    measure_keys: Sequence[str] = ALL_MEASURE_KEYS
         
     def dependency_kwargs(self) -> Dict[str, Dict[str, Any]]:
         return dict(
@@ -473,14 +475,13 @@ class MeasuresLoHiPertStd(AbstractAnalysis):
 
 
 class Measures_CompareReplicatesLoHi(AbstractAnalysis):
+    conditions: tuple[str, ...] = ()
+    variant: Optional[str] = "full"
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         measure_values_lohi_train_pert_std=MeasuresLoHiPertStd,
     ))
-    measure_keys: tuple[str, ...]
-    variant: Optional[str] = "full"
-    conditions: tuple[str, ...] = ()
-    _pre_ops: tuple[tuple[str, Callable]] = ()
-    fig_params: FigParams = FigParams()
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
+    measure_keys: Sequence[str] = ALL_MEASURE_KEYS
     
     def dependency_kwargs(self) -> Dict[str, Dict[str, Any]]:
         return dict(
@@ -516,14 +517,13 @@ class Measures_CompareReplicatesLoHi(AbstractAnalysis):
 
 
 class Measures_LoHiSummary(AbstractAnalysis):
+    conditions: tuple[str, ...] = ()
+    variant: Optional[str] = "full"
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         measure_values_lohi_train_pert_std=MeasuresLoHiPertStd,
     ))
-    measure_keys: tuple[str, ...]
-    variant: Optional[str] = "full"
-    conditions: tuple[str, ...] = ()
-    _pre_ops: tuple[tuple[str, Callable]] = ()
-    fig_params: FigParams = FigParams()
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
+    measure_keys: Sequence[str] = ALL_MEASURE_KEYS
     
     def dependency_kwargs(self) -> Dict[str, Dict[str, Any]]:
         return dict(

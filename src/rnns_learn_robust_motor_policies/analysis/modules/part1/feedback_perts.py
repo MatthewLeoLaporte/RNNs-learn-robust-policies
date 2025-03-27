@@ -12,7 +12,7 @@ from feedbax.intervene import schedule_intervenor
 import feedbax.plotly as fbp
 
 from rnns_learn_robust_motor_policies.analysis import AbstractAnalysis, AnalysisInputData
-from rnns_learn_robust_motor_policies.analysis.analysis import FigParams
+from rnns_learn_robust_motor_policies.analysis.analysis import DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.analysis.disturbance import FB_INTERVENOR_LABEL, get_pert_amp_vmap_eval_func, task_with_pert_amp
 from rnns_learn_robust_motor_policies.analysis.effector import Effector_SingleEval
 from rnns_learn_robust_motor_policies.plot import PLANT_VAR_LABELS, WHERE_PLOT_PLANT_VARS
@@ -192,11 +192,10 @@ eval_func = get_pert_amp_vmap_eval_func(lambda hps: hps.pert.amp, FB_INTERVENOR_
     
 
 class States_SingleImpulseAmplitude(AbstractAnalysis):
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType({})
-    variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
-    _pre_ops: tuple[tuple[str, Callable]] = ()
-    fig_params: FigParams = FigParams()
+    variant: Optional[str] = "full"
+    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType({})
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
     i_impulse_amp_plot: int = -1 
     
     def compute(self, data: AnalysisInputData, **dependencies):
@@ -213,13 +212,12 @@ class States_SingleImpulseAmplitude(AbstractAnalysis):
     
 
 class ResponseTrajectories(AbstractAnalysis):
+    conditions: tuple[str, ...] = ()
+    variant: Optional[str] = "full"
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         single_impulse_amp_states=States_SingleImpulseAmplitude,
     ))
-    variant: Optional[str] = "full"
-    conditions: tuple[str, ...] = ()
-    _pre_ops: tuple[tuple[str, Callable]] = ()
-    fig_params: FigParams = FigParams()
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
     
     def make_figs(self, data: AnalysisInputData, *, result, **dependencies):
         figs = {}  # Define figs to fix the linter error
@@ -234,5 +232,5 @@ ALL_ANALYSES = [
         #! TODO: This doesn't result in the impulse amplitude *values* showing up in the legend!
         #! (could try to access `colorscale_key` from `hps`, in `Effector_SingleEval`)
         colorscale_key='pert__amp',
-    ).with_fig_params(legend_title="Impulse amplitude"),
+    )#.with_fig_params(legend_title="Impulse amplitude"),
 ]

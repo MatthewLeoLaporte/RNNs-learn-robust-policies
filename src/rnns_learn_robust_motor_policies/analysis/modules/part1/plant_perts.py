@@ -16,7 +16,7 @@ from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.aligned import AlignedTrajectories
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, FigParams
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.analysis.effector import Effector_ByEval
 from rnns_learn_robust_motor_policies.analysis.effector import Effector_SingleEval
 from rnns_learn_robust_motor_policies.analysis.effector import Effector_ByReplicate
@@ -83,11 +83,10 @@ eval_func = vmap_eval_ensemble
 
 
 class OutputWeightCorrelation(AbstractAnalysis):
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
-    variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
-    _pre_ops: tuple[tuple[str, Callable]] = ()
-    fig_params: FigParams = FigParams()
+    variant: Optional[str] = "full"
+    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
     
     def compute(
         self, 

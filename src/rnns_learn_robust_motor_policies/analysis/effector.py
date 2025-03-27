@@ -9,7 +9,7 @@ from equinox import Module
 from jax_cookbook import is_module
 from jaxtyping import PyTree
 
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, FigParams
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.analysis.state_utils import BestReplicateStates
 from rnns_learn_robust_motor_policies.config import PLOTLY_CONFIG
 from rnns_learn_robust_motor_policies.constants import REPLICATE_CRITERION
@@ -21,17 +21,16 @@ MEAN_LIGHTEN_FACTOR = PLOTLY_CONFIG.mean_lighten_factor
 
 
 class Effector_ByEval(AbstractAnalysis):
+    conditions: tuple[str, ...] = ('any_system_noise',)  # TODO: Skip this analysis, if only one eval
+    variant: Optional[str] = "small"
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         best_replicate_states=BestReplicateStates,
     ))
-    variant: Optional[str] = "small"
-    conditions: tuple[str, ...] = ('any_system_noise',)  # Skip this analysis, if only one eval
-    _pre_ops: tuple[tuple[str, Callable]] = ()
-    fig_params: FigParams = FigParams(
-        legend_title="Reach direction"
+    fig_params: FigParamNamespace = DefaultFigParamNamespace(
+        legend_title="Reach direction",
+        mean_exclude_axes=(),
     )
     legend_labels: Optional[Sequence | Callable] = None
-    mean_exclude_axes: Sequence[int] = ()
     colorscale_axis: int = 1
     colorscale_key: str = "reach_condition"
 
@@ -45,10 +44,13 @@ class Effector_ByEval(AbstractAnalysis):
     ):
         plot_states = best_replicate_states[self.variant]
         
-        if isinstance(self.legend_labels, Callable):
-            legend_labels = self.legend_labels(data.hps, hps_common)
+        if self.fig_params.legend_labels is None:
+            if isinstance(self.legend_labels, Callable):
+                legend_labels = self.legend_labels(data.hps, hps_common)
+            else:
+                legend_labels = self.legend_labels
         else:
-            legend_labels = self.legend_labels
+            legend_labels = self.fig_params.legend_labels
         
         figs = jt.map(
             partial(
@@ -59,7 +61,7 @@ class Effector_ByEval(AbstractAnalysis):
                 curves_mode='lines',
                 colorscale_axis=self.colorscale_axis,
                 mean_trajectory_line_width=2.5,
-                mean_exclude_axes=self.mean_exclude_axes,
+                mean_exclude_axes=self.fig_params.mean_exclude_axes,
                 darken_mean=MEAN_LIGHTEN_FACTOR,
                 scatter_kws=dict(line_width=0.5),
             ),
@@ -75,13 +77,12 @@ class Effector_ByEval(AbstractAnalysis):
 
 
 class Effector_SingleEval(AbstractAnalysis):
+    conditions: tuple[str, ...] = ()
+    variant: Optional[str] = "small"
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         best_replicate_states=BestReplicateStates,
     ))
-    variant: Optional[str] = "small"
-    conditions: tuple[str, ...] = ()
-    _pre_ops: tuple[tuple[str, Callable]] = ()
-    fig_params: FigParams = FigParams(
+    fig_params: FigParamNamespace = DefaultFigParamNamespace(
         legend_title="Reach direction",
     )
     colorscale_key: str = "reach_condition"
@@ -121,11 +122,10 @@ class Effector_SingleEval(AbstractAnalysis):
 
 
 class Effector_ByReplicate(AbstractAnalysis):
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
-    variant: Optional[str] = "small"
     conditions: tuple[str, ...] = ()
-    _pre_ops: tuple[tuple[str, Callable]] = ()
-    fig_params: FigParams = FigParams(
+    variant: Optional[str] = "small"
+    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
+    fig_params: FigParamNamespace = DefaultFigParamNamespace(
         legend_title="Reach direction",
     )
     colorscale_key: str = "reach_condition"
