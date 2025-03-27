@@ -41,7 +41,7 @@ from rnns_learn_robust_motor_policies.database import (
     ModelRecord,
     RecordBase, 
     add_evaluation, 
-    check_model_files, 
+    check_model_files,
     get_db_session, 
     # record_to_namespace,
 )
@@ -74,6 +74,7 @@ def load_model_and_training_task(db_session: Session, hps: TreeNamespace):
                     motor=hps.model.motor_noise_std,
                 ),
                 surgeries={
+                    # Change
                     ('n_steps',): hps.model.n_steps,
                 },  
                 exclude_underperformers_by=REPLICATE_CRITERION,

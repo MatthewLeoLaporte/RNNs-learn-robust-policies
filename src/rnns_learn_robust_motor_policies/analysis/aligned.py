@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from copy import deepcopy
 from functools import partial
 from types import MappingProxyType
 from typing import ClassVar, Optional, Literal as L
@@ -58,27 +59,6 @@ class AlignedVars(AbstractAnalysis):
             data.states,
             is_leaf=is_module,
         )
-
-
-plot_condition_trajectories = partial(
-    fbp.trajectories_2D,
-    var_labels=RESPONSE_VAR_LABELS,
-    axes_labels=('x', 'y'),
-    # mode='std',
-    mean_trajectory_line_width=3,
-    # n_curves_max=n_curves_max,
-    darken_mean=PLOTLY_CONFIG.mean_lighten_factor,
-    layout_kws=dict(
-        width=900,
-        height=400,
-        legend_tracegroupgap=1,
-        margin_t=75,
-    ),
-    scatter_kws=dict(
-        line_width=1,
-        opacity=0.6,
-    ),
-)
         
         
 class AlignedTrajectories(AbstractAnalysis):
@@ -88,7 +68,23 @@ class AlignedTrajectories(AbstractAnalysis):
         aligned_vars=AlignedVars,
     ))
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
-        n_curves_max=50,
+        var_labels=RESPONSE_VAR_LABELS,
+        axes_labels=('x', 'y'),
+        # mode='std',
+        mean_trajectory_line_width=3,
+        # n_curves_max=n_curves_max,
+        darken_mean=PLOTLY_CONFIG.mean_lighten_factor,
+        n_curves_max=20,
+        layout_kws=dict(
+            width=900,
+            height=400,
+            legend_tracegroupgap=1,
+            margin_t=75,
+        ),
+        scatter_kws=dict(
+            line_width=1,
+            opacity=0.6,
+        ),
     )
     colorscale_key: Optional[str] = None 
     colorscale_axis: Optional[int] = None
@@ -102,25 +98,23 @@ class AlignedTrajectories(AbstractAnalysis):
         colorscales,
         **kwargs,
     ):
-        if self.fig_params.legend_title is None and self.colorscale_key is not None:
-            legend_title = get_label_str(self.colorscale_key)
-        else:
-            legend_title = self.fig_params.legend_title 
+        fig_params = deepcopy(self.fig_params)
+
+        if fig_params.legend_title is None and self.colorscale_key is not None:
+            fig_params.legend_title = get_label_str(self.colorscale_key)
             
         try:
-            legend_labels = flat_key_to_where_func(self.colorscale_key)(hps_common)
+            fig_params.legend_labels = flat_key_to_where_func(self.colorscale_key)(hps_common)
         except:
-            legend_labels = self.fig_params.legend_labels
+            pass
 
         figs = jt.map(
             partial(
-                plot_condition_trajectories,
+                fbp.trajectories_2D,
                 colorscale=colorscales[self.colorscale_key],
                 colorscale_axis=self.colorscale_axis,
-                legend_title=legend_title,
-                legend_labels=legend_labels,
                 curves_mode='lines',
-                n_curves_max=self.fig_params.n_curves_max,
+                **fig_params,
             ),
             aligned_vars[self.variant],
             is_leaf=is_type(Responses),

@@ -28,8 +28,15 @@ class VelocityProfiles(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         aligned_vars=AlignedVars,
     ))
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
-    tmp_transpose: bool = False
+    fig_params: FigParamNamespace = DefaultFigParamNamespace(
+        mode='std', # or 'curves'
+        n_std_plot=1,
+        layout_kws=dict(
+            width=600,
+            height=400,
+            legend_tracegroupgap=1,
+        ),
+    )
 
     def compute(
         self,
@@ -43,12 +50,6 @@ class VelocityProfiles(AbstractAnalysis):
             aligned_vars[self.variant],
             is_leaf=is_type(Responses),
         )
-        if self.tmp_transpose:
-            result = jt.transpose(
-                jt.structure(result, is_leaf=LDict.is_of('train__pert__std')),
-                None,
-                result,
-            )
         return result
         
 
@@ -65,17 +66,11 @@ class VelocityProfiles(AbstractAnalysis):
                 jtree.take(fig_data, i, -1),
                 varname=f"{label} velocity",
                 legend_title=get_label_str(fig_data.label),
-                mode='std', # or 'curves'
-                n_std_plot=1,
                 hline=dict(y=0, line_color="grey"),
                 colors=list(colors[fig_data.label].dark.values()),
                 # stride_curves=500,
                 # curves_kws=dict(opacity=0.7),
-                layout_kws=dict(
-                    width=600,
-                    height=400,
-                    legend_tracegroupgap=1,
-                ),
+                **self.fig_params,
             )
         
         figs = LDict.of(result.label)({

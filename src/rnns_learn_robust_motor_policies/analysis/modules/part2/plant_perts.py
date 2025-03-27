@@ -11,19 +11,22 @@ import numpy as np
 import plotly.graph_objects as go
 
 from feedbax.intervene import add_intervenors, schedule_intervenor
+import feedbax.plotly as fbp
 from feedbax.task import TrialSpecDependency
 from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.analysis.aligned import AlignedVars, plot_condition_trajectories
+from rnns_learn_robust_motor_policies.analysis.aligned import AlignedVars
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS
 from rnns_learn_robust_motor_policies.analysis.measures import ALL_MEASURE_KEYS, MEASURE_LABELS
 from rnns_learn_robust_motor_policies.analysis.measures import Measures
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_constant_task_input, vmap_eval_ensemble
+from rnns_learn_robust_motor_policies.config.config import PLOTLY_CONFIG
 from rnns_learn_robust_motor_policies.constants import POS_ENDPOINTS_ALIGNED
 from rnns_learn_robust_motor_policies.plot import add_endpoint_traces, get_violins
 from rnns_learn_robust_motor_policies.types import (
+    RESPONSE_VAR_LABELS,
     LDict,
     Responses,
     TreeNamespace,
@@ -132,7 +135,27 @@ class Aligned_IdxContextInput(AbstractAnalysis):
         aligned_vars=AlignedVars,
     ))
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
+        var_labels=RESPONSE_VAR_LABELS,
+        axes_labels=('x', 'y'),
+        colorscale_axis=0,
+        # mode='std',
+        mean_trajectory_line_width=3,
+        darken_mean=PLOTLY_CONFIG.mean_lighten_factor,
+        legend_title="Context input",
         n_curves_max=20,
+        curves_mode='lines',
+        var_endpoint_ms=0,
+        layout_kws=dict(
+            width=900,
+            height=400,
+            legend_tracegroupgap=1,
+            margin_t=75,
+        ),
+        scatter_kws=dict(
+            line_width=0.5,
+            opacity=0.3,
+        ),
+        # ref_endpoints=(pos_endpoints, None),
     )
     # n_conditions: int  # all_tasks['small'][pert_amp].n_validation_trials
     
@@ -155,16 +178,10 @@ class Aligned_IdxContextInput(AbstractAnalysis):
         
         figs = jt.map(
             partial(
-                plot_condition_trajectories, 
+                fbp.trajectories_2D, 
                 colorscale=colorscales['context_input'],
-                colorscale_axis=0,
-                # stride=stride,
-                legend_title="Context input",
                 legend_labels=context_inputs,
-                curves_mode='lines',
-                var_endpoint_ms=0,
-                scatter_kws=dict(line_width=0.5, opacity=0.3),
-                # ref_endpoints=(pos_endpoints, None),
+                **self.fig_params,
             ),
             plot_vars_stacked,
             is_leaf=is_type(Responses),
@@ -191,7 +208,27 @@ class Aligned_IdxTrainStd_PerContext(AbstractAnalysis):
         aligned_vars=AlignedVars,
     ))
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
+        var_labels=RESPONSE_VAR_LABELS,
+        axes_labels=('x', 'y'),
+        colorscale_axis=0,
+        # mode='std',
+        mean_trajectory_line_width=3,
+        darken_mean=PLOTLY_CONFIG.mean_lighten_factor,
+        legend_title="Train<br>field std.",
         n_curves_max=20,
+        curves_mode='lines',
+        var_endpoint_ms=0,
+        layout_kws=dict(
+            width=900,
+            height=400,
+            legend_tracegroupgap=1,
+            margin_t=75,
+        ),
+        scatter_kws=dict(
+            line_width=0.5,
+            opacity=0.3,
+        ),
+        # ref_endpoints=(pos_endpoints['full'], None),
     )
     # n_conditions: int  # all_tasks['small'][pert_amp].n_validation_trials
 
@@ -227,15 +264,10 @@ class Aligned_IdxTrainStd_PerContext(AbstractAnalysis):
         
         figs = jt.map(
             partial(
-                plot_condition_trajectories,
+                fbp.trajectories_2D,
                 colorscale=colorscales['train__pert__std'],
-                colorscale_axis=0,
-                legend_title="Train<br>field std.",
                 legend_labels=train_pert_stds,
-                curves_mode='lines',
-                var_endpoint_ms=0,
-                scatter_kws=dict(line_width=0.5, opacity=0.3),
-                # ref_endpoints=(pos_endpoints['full'], None),
+                **self.fig_params,
             ),
             plot_vars,
             is_leaf=is_type(Responses),

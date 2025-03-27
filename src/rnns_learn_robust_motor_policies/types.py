@@ -48,6 +48,19 @@ def dict_to_namespace(
     return convert_kwargy_node_type(d, to_type=to_type, from_type=dict, exclude=exclude)
 
 
+def namespace_to_dict(
+    ns: SimpleNamespace,
+    to_type: type[DT] = dict,
+    exclude: Callable = lambda x: False,
+) -> DT:
+    """Convert a nested SimpleNamespace to a nested dictionary.
+
+    This is the inverse operation of dict_to_namespace.
+    """
+    # TODO: Now that `TreeNamespace` implements the mapping protocol, we might be able to simplify this
+    return convert_kwargy_node_type(ns, to_type=to_type, from_type=SimpleNamespace, exclude=exclude)
+
+
 def is_dict_with_int_keys(d: dict) -> bool:
     return isinstance(d, dict) and len(d) > 0 and all(isinstance(k, int) for k in d.keys())
 
@@ -134,18 +147,46 @@ class TreeNamespace(SimpleNamespace):
         result = deepcopy(self)
 
         if isinstance(other, dict):
-            other = dict_to_namespace(other, to_type=TreeNamespace, exclude=is_dict_with_int_keys)
+            other = dict_to_namespace(other, to_type=type(self), exclude=is_type(LDict))
 
         for attr_name, other_value in vars(other).items():
             self_value = getattr(result, attr_name, None)
 
-            if isinstance(other_value, TreeNamespace) and isinstance(self_value, TreeNamespace):
-                # Recursively merge nested TreeNamespaces
-                setattr(result, attr_name, self_value | other_value)
+            if isinstance(self_value, TreeNamespace):
+                if isinstance(other_value, dict):
+                    other_value = dict_to_namespace(
+                        other_value, 
+                        to_type=type(self_value), 
+                        exclude=is_type(LDict),
+                    )
+                if isinstance(other_value, TreeNamespace):
+                    # Recursively merge nested TreeNamespaces
+                    setattr(result, attr_name, self_value | other_value)
             else:
                 setattr(result, attr_name, other_value)
 
         return result
+
+    # Implement the mapping protocol so we can treat the namespace as a dict sometimes
+    def __iter__(self):
+        """Return an iterator over the keys of the namespace."""
+        return iter(self.__dict__)
+    
+    def __getitem__(self, key):
+        """Get an item using dictionary-style access."""
+        return self.__dict__[key]
+    
+    def keys(self):
+        """Return the keys of the namespace, enabling dict(**tree_namespace)."""
+        return self.__dict__.keys()
+    
+    def items(self):
+        """Return the items of the namespace."""
+        return self.__dict__.items()
+    
+    def values(self):
+        """Return the values of the namespace."""
+        return self.__dict__.values()    
     
 
 def unflatten_dict_keys(flat_dict: dict, sep: str = '__') -> dict:
@@ -391,15 +432,3 @@ def _convert_value(value: Any, to_type: type, from_type: type, exclude: Callable
             return map_recurse_func(value)
 
     return value
-
-
-def namespace_to_dict(
-    ns: SimpleNamespace,
-    to_type: type[DT] = dict,
-    exclude: Callable = lambda x: False,
-) -> DT:
-    """Convert a nested SimpleNamespace to a nested dictionary.
-
-    This is the inverse operation of dict_to_namespace.
-    """
-    return convert_kwargy_node_type(ns, to_type=to_type, from_type=SimpleNamespace, exclude=exclude)

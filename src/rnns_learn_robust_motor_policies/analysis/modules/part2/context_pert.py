@@ -74,8 +74,17 @@ eval_func = get_pert_amp_vmap_eval_func(lambda hps: hps.pert.plant.amp, PLANT_IN
 
 
 def fig_params_fn_context_pert(fig_params, i, item):
-    return fig_params | dict(
-        line_dash={0: "solid", 1: "dash"}[i],
+    PLANT_PERT_LABELS = {0: "no curl", 1: "curl"}
+    PLANT_PERT_STYLES = dict(line_dash={0: "dot", 1: "solid"})
+
+    return dict(
+        # legend_labels=[
+        #     f"{label} ({PLANT_PERT_LABELS[i]})"
+        #     for label in fig_params.legend_labels
+        # ],
+        scatter_kws=dict(
+            line_dash=PLANT_PERT_STYLES['line_dash'][i],
+        ),
     )
 
 
@@ -102,13 +111,14 @@ ALL_ANALYSES = [
     # (It only makes sense to do this for reaches (not ss), at least for curl fields.)
     AlignedTrajectories(variant="reach")
         .after_stacking(level="pert__context__amp")
-        .with_fig_params(legend_title="Final context<br>input")
         # Axis 3 and not 2, because of the prior stacking
         .combine_figs_by_axis(axis=3, fig_params_fn=fig_params_fn_context_pert)
-    # VelocityProfiles(
-    #     variant="reach", 
-    #     tmp_transpose=True,
-    # ),
+        .with_fig_params(legend_title="Final context<br>input"),
+
+    VelocityProfiles(variant="reach")
+        .after_level_to_top('train__pert__std')
+        .combine_figs_by_axis(axis=2, fig_params_fn=fig_params_fn_context_pert),
+
     # 4. Perform PCA wrt baseline `reach` variant, and project `steady` variant into that space
     # (To show that context input causally varies the network activity in a null direction)
     # NetworkActivity_ProjectPCA(

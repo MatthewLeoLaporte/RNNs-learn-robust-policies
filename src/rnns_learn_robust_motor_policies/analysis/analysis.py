@@ -4,7 +4,7 @@ from functools import cached_property
 import inspect
 import logging
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Dict
+from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Dict, Self
 from pathlib import Path
 import yaml
 
@@ -94,16 +94,17 @@ DefaultFigParamNamespace = lambda **kwargs: eqx.field(default_factory=lambda: Fi
 
 
 class _PrepOp(NamedTuple):
+    #! TODO: Multiple user-specified dependencies
     dep_name: Optional[str]  # Name of dependency to operate on, or None for all
     transform_func: Callable[[Any], Any]  # Function to transform the dependency
 
 
 class _FigOp(NamedTuple):
     dep_name: Optional[str]  # Name of dependency to operate on, or None for all
-    is_leaf: Callable[[Any], bool]  # Function to identify leaf nodes
-    slice_fn: Callable[[Any, Any], Any]  # Function to slice a node
-    items_fn: Callable[[Any], Any]  # Function to get items to iterate over
-    fig_params_fn: Optional[Callable[[Any, int], TreeNamespace]]  # Function to modify fig_params for each item
+    is_leaf: Callable[[Any], bool]  
+    slice_fn: Callable[[Any, Any], Any]  
+    items_fn: Callable[[Any], Any]  # Function to get items to iterate over by calls to `make_figs`
+    fig_params_fn: Optional[Callable[[FigParamNamespace, int, Any], dict[str, Any]]]  # Modify fig_params for each iteration
 
 
 def _combine_figures(figs_list):
@@ -161,10 +162,10 @@ class AbstractAnalysis(Module, strict=False):
             when there is system noise (i.e. multiple evals per condition), and in 
             that case we could give the condition `"any_system_noise"` to those analyses.
     """
-    _exclude_fields = ('dependencies', 'conditions', '_prep_ops', '_fig_ops')
+    _exclude_fields = ('dependencies', 'conditions', 'fig_params', '_prep_ops', '_fig_ops')
 
     conditions: AbstractVar[tuple[str, ...]]
-    dependencies: AbstractClassVar[MappingProxyType[str, "type[AbstractAnalysis]"]]
+    dependencies: AbstractClassVar[MappingProxyType[str, type[Self]]]
     variant: AbstractVar[Optional[str]] 
     fig_params: AbstractVar[FigParamNamespace]
 
@@ -175,7 +176,7 @@ class AbstractAnalysis(Module, strict=False):
     _prep_ops: tuple[_PrepOp, ...] = ()
     _fig_ops: tuple[_FigOp, ...] = ()
 
-    def with_fig_params(self, **kwargs):
+    def with_fig_params(self, **kwargs) -> Self:
         """Returns a copy of this analysis with updated figure parameters."""
         return eqx.tree_at(
             lambda x: x.fig_params,
@@ -196,10 +197,17 @@ class AbstractAnalysis(Module, strict=False):
                 # Transform all dependencies
                 for dependency_name in self.dependencies.keys():
                     assert dependency_name in kwargs, ""
-                    kwargs[dependency_name] = prep_op.transform_func(kwargs[dependency_name])
+                    # Apply to the subtrees below the top (variant) level
+                    kwargs[dependency_name] = {
+                        variant_label: prep_op.transform_func(variant_kwarg)
+                        for variant_label, variant_kwarg in kwargs[dependency_name].items()
+                    }
             else:
                 if prep_op.dep_name in kwargs:
-                    kwargs[prep_op.dep_name] = prep_op.transform_func(kwargs[prep_op.dep_name])
+                    kwargs[prep_op.dep_name] = {
+                        variant_label: prep_op.transform_func(variant_kwarg)
+                        for variant_label, variant_kwarg in kwargs[prep_op.dep_name].items()
+                    }
                 else:
                     msg = f"Prep-op cannot be performed: {prep_op.dep_name} not found in kwargs"
                     raise ValueError(msg)
@@ -228,7 +236,7 @@ class AbstractAnalysis(Module, strict=False):
                 # Get the items to iterate over
                 items_to_iterate = fig_op.items_fn(first_leaf)
                 
-                # Generate figures for each item
+                # Generate figures for eac43h item
                 figs_list = []
                 for i, item in enumerate(items_to_iterate):
                     # Each call to make_figs receives a single element along some level/axis/...
@@ -248,7 +256,7 @@ class AbstractAnalysis(Module, strict=False):
                         analysis_for_item = eqx.tree_at(
                             lambda a: a.fig_params,
                             self,
-                            modified_fig_params
+                            self.fig_params | modified_fig_params
                         )
                     
                     # Generate figures for this slice using the modified analysis
@@ -277,7 +285,7 @@ class AbstractAnalysis(Module, strict=False):
         return 
     
     @property
-    def name(self):
+    def name(self) -> str:
         return self.__class__.__name__
     
     def _params_to_save(self, hps: PyTree[TreeNamespace], **kwargs):
@@ -308,7 +316,7 @@ class AbstractAnalysis(Module, strict=False):
         model_info=None,
         dump_path: Optional[Path] = None,
         **dependencies,
-    ):
+    ) -> None:
         """
         Save to disk and record in the database each figure in a PyTree of figures, for this analysis.
         """
@@ -374,10 +382,15 @@ class AbstractAnalysis(Module, strict=False):
                 with open(params_path, 'w') as f:
                     yaml.dump(params, f, default_flow_style=False, sort_keys=False)
 
-    def after_stacking(self, level: str, dependency_name: Optional[str] = None):
+    def after_stacking(self, level: str, dependency_name: Optional[str] = None) -> Self:
         """
-        Returns a copy of this analysis that will stack the specified dependency and
-        update figure parameters accordingly.
+        Returns a copy of this analysis that will stack its inputs along the specified level.
+
+        This is useful when we have a PyTree of results with an `LDict` level representing 
+        the values across some variable we want to visually compare, and our analysis 
+        uses a plotting function that compares across the first axis of input arrays.
+        By stacking first, we collapse the `LDict` level into the first axis so that the 
+        plotting function will compare (e.g. colour differently) across the variable.
         
         Args:
             level: The label of the `LDict` level in the PyTree to stack by. 
@@ -411,7 +424,27 @@ class AbstractAnalysis(Module, strict=False):
             transform_func=stack_dependency
         ))
     
-    def _add_prep_op(self, prep_op: _PrepOp):
+    def after_level_to_top(self, label: str, dependency_name: Optional[str] = None) -> Self:
+        """
+        Returns a copy of this analysis that will transpose `LDict` levels of its inputs.
+
+        This is useful when our analysis uses a plotting function that compares across 
+        the outer PyTree level, but for whatever reason this level is not already 
+        the outer level of our results PyTree.
+        """
+        def transpose_dependency(dep_data):
+            return jt.transpose(
+                jt.structure(dep_data, is_leaf=LDict.is_of(label)),
+                None,
+                dep_data,
+            )
+        
+        return self._add_prep_op(_PrepOp(
+            dep_name=dependency_name,
+            transform_func=transpose_dependency,
+        ))
+        
+    def _add_prep_op(self, prep_op: _PrepOp) -> Self:
         return eqx.tree_at(
             lambda a: a._prep_ops,
             self,
@@ -423,10 +456,15 @@ class AbstractAnalysis(Module, strict=False):
         axis: int, 
         dependency_name: Optional[str] = None,
         fig_params_fn: Optional[Callable[[FigParamNamespace, int, Any], FigParamNamespace]] = None
-    ):
+    ) -> Self:
         """
-        Returns a copy of this analysis that will combine figures by slicing along
-        the specified axis of arrays in the input PyTree(s).
+        Returns a copy of this analysis that will merge individual figures generated by slicing along
+        the specified axis of the arrays in the dependency PyTree(s).
+
+        This is useful when we want to include an additional dimension of comparison in a figure. 
+        For example, our plotting function may already compare across the first axis of the input 
+        arrays, or the outer level of the input PyTree; but perhaps we also want a secondary 
+        comparison across a different axis of the input arrays.
         
         Args:
             axis: The axis to slice and combine along
@@ -452,18 +490,20 @@ class AbstractAnalysis(Module, strict=False):
         level: str, 
         dependency_name: Optional[str] = None,
         fig_params_fn: Optional[Callable[[FigParamNamespace, int, Any], FigParamNamespace]] = None
-    ):
+    ) -> Self:
         """
-        Returns a copy of this analysis that will combine figures by iterating over
-        the keys of an LDict level in the dependency PyTree.
+        Returns a copy of this analysis that will merge individual figures generated by iterating over
+        the keys of an LDict level in the dependency PyTree(s).
+
+        This is useful when we want to include an additional dimension of comparison in a figure. 
+        For example, our plotting function may already compare across the first axis of the input 
+        arrays, or the outer level of the input PyTree; but perhaps we also want a secondary 
+        comparison across a different level of the input PyTree.
         
         Args:
             level: The LDict level to iterate over and combine across
             dependency_name: Optional name of specific dependency to iterate over.
                 If None, will iterate over all dependencies listed in self.dependencies.
-        
-        Returns:
-            A copy of this analysis with figure combination operation added
         """
         wrapped_fig_params_fn = None
         if fig_params_fn:
@@ -479,7 +519,7 @@ class AbstractAnalysis(Module, strict=False):
         
         return self._add_fig_op(fig_op)
 
-    def _add_fig_op(self, fig_op: _FigOp):
+    def _add_fig_op(self, fig_op: _FigOp) -> Self:
         return eqx.tree_at(
             lambda a: a._fig_ops,
             self,
