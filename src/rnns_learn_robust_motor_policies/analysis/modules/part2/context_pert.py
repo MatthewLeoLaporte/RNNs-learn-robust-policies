@@ -7,6 +7,7 @@ from feedbax.intervene import schedule_intervenor
 from feedbax.task import TrialSpecDependency
 import jax_cookbook.tree as jtree
 
+from rnns_learn_robust_motor_policies.analysis.activity import NetworkActivity_SampleUnits
 from rnns_learn_robust_motor_policies.analysis.aligned import AlignedTrajectories
 from rnns_learn_robust_motor_policies.colors import ColorscaleSpec
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_PERT_FUNCS, get_pert_amp_vmap_eval_func
@@ -105,7 +106,7 @@ ALL_ANALYSES = [
     # ).with_fig_params(legend_title="Pert. field amp."),
     
     # # 2. Activity of sample units, to show they change when context input does
-    # NetworkActivity_SampleUnits(variant="steady"),
+    NetworkActivity_SampleUnits(variant="steady"),
     
     # 3. Plot aligned vars for +/- plant pert, +/- context pert on same plot
     # (It only makes sense to do this for reaches (not ss), at least for curl fields.)

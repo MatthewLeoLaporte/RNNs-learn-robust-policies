@@ -2,6 +2,7 @@ from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from functools import partial
 import logging
+from types import NoneType
 from typing import Optional
 
 import equinox as eqx
@@ -224,13 +225,13 @@ def train_and_save_models(
             
         return trained_model, train_history, model_record
         
-
     trained_models, train_histories, model_records = jtree.unzip(jtree.map_tqdm(
-        train_and_save_pair,
+        # TODO: Could return already-trained models instead of None; would need to return `already_trained` bool from `skip_already_trained`
+        lambda pair, hps: train_and_save_pair(pair, hps) if pair is not None else None,
         task_model_pairs, 
         all_hps_train,
         label="Training all pairs",
-        is_leaf=is_type(TaskModelPair),
+        is_leaf=is_type(TaskModelPair, NoneType),
     ))
     
     return trained_models, train_histories, model_records
@@ -261,15 +262,16 @@ def skip_already_trained(
         for k, v in kwargs.items():
             setattr(hps, k, v)
         return hps
-        
+    
+    # Get records for models that have already been trained and post-processed
     records = jt.map(
-        lambda _, hps: get_record(
+        lambda hps: get_record(
             db_session, 
             ModelRecord, 
-            **namespace_to_dict(flatten_hps(get_query_hps(hps, postprocessed=False)))
+            **namespace_to_dict(flatten_hps(get_query_hps(hps, postprocessed=True)))
         ),   
-        task_model_pairs, all_hps_train,
-         is_leaf=is_type(TaskModelPair),
+        all_hps_train,
+         is_leaf=is_type(TreeNamespace),
     )
     
     record_exists = jt.map(
@@ -278,6 +280,35 @@ def skip_already_trained(
         is_leaf=lambda x: x is None or isinstance(x, ModelRecord),
     )
     
+    if post_process:  
+        # Get models have not been post-processed
+        records_not_pp = jt.map(
+            lambda hps: get_record(
+                db_session, 
+                ModelRecord, 
+                **namespace_to_dict(flatten_hps(get_query_hps(hps, postprocessed=False)))
+            ),   
+            all_hps_train,
+            is_leaf=is_type(TreeNamespace),
+        )     
+        
+        # Post-process any models for which there is only a non-post-processed record
+        jt.map(
+            lambda record_not_pp, record: (
+                process_model_post_training(
+                    db_session,
+                    record_not_pp,
+                    n_std_exclude,
+                    process_all=True,
+                    save_figures=save_figures,
+                )
+                if record_not_pp is not None and record is None 
+                else None
+            ),
+            records_not_pp, records,
+            is_leaf=is_type(ModelRecord),
+        )
+
     pairs_to_skip, task_model_pairs = eqx.partition(
         task_model_pairs,
         record_exists, 
@@ -289,33 +320,6 @@ def skip_already_trained(
         f"Skipping training of {len(pairs_to_skip_flat)} models whose hyperparameters "
         "match models already in the database"
     )
-    
-    if post_process:  
-        # Find which of the models have already been post-processed
-        records_pp = jt.map(
-            lambda _, hps_train: get_record(
-                db_session, 
-                ModelRecord, 
-                **namespace_to_dict(flatten_hps(get_query_hps(hps_train, postprocessed=True)))
-            ),   
-            task_model_pairs, all_hps_train,
-            is_leaf=is_type(TaskModelPair),
-        )     
-        
-        jt.map(
-            lambda record, record_pp: (
-                process_model_post_training(
-                    db_session,
-                    record,
-                    n_std_exclude,
-                    process_all=True,
-                    save_figures=save_figures,
-                )
-                if record_pp is None else None
-            ),
-            records, records_pp,
-            is_leaf=is_type(ModelRecord),
-        )
 
     return task_model_pairs
 

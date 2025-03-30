@@ -579,7 +579,7 @@ def process_model_post_training(
         new_record = save_model_and_add_record(
             session,
             best_models,
-            hps | dict(n_std_exclude=n_std_exclude),
+            hps | dict(n_std_exclude=n_std_exclude, postprocessed=True),
             train_history=train_histories,
             replicate_info=replicate_info,
             version_info=log_version_info(jax, eqx),
@@ -611,7 +611,6 @@ def process_model_post_training(
             replicate_info,
         )
     
-    model_record.postprocessed = True
     session.commit()
     logger.info(f"Processed model {model_record.hash}")
     

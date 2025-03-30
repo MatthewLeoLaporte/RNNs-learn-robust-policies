@@ -11,7 +11,7 @@ import yaml
 import equinox as eqx
 from equinox import AbstractVar, AbstractClassVar, Module
 import jax.tree as jt
-from jaxtyping import PyTree, Array
+from jaxtyping import ArrayLike, PyTree, Array
 import plotly.graph_objects as go
 from sqlalchemy.orm import Session
 
@@ -19,7 +19,7 @@ from jax_cookbook import is_type, is_none
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.database import EvaluationRecord, add_evaluation_figure, savefig
-from rnns_learn_robust_motor_policies.tree_utils import tree_level_labels
+from rnns_learn_robust_motor_policies.tree_utils import subdict, tree_level_labels
 from rnns_learn_robust_motor_policies.misc import camel_to_snake, get_dataclass_fields, is_json_serializable
 from rnns_learn_robust_motor_policies.plot_utils import figs_flatten_with_paths, get_label_str
 from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
@@ -382,9 +382,36 @@ class AbstractAnalysis(Module, strict=False):
                 with open(params_path, 'w') as f:
                     yaml.dump(params, f, default_flow_style=False, sort_keys=False)
 
+    def after_indexing(self, axis: int, idxs: ArrayLike, dependency_name: Optional[str] = None) -> Self:
+        """
+        Returns a copy of this analysis that slices its inputs along an axis before proceeding.
+        """
+
+        return self._add_prep_op(
+            dep_name=dependency_name,
+            transform_func=lambda dep_data: jtree.take(dep_data, axis, idxs),
+        )
+    
+    def after_subset_at_level(self, level: str, keys: Sequence, dependency_name: Optional[str] = None) -> Self:
+        """
+        Returns a copy of this analysis that slices its inputs along an `LDict` PyTree level before proceeding.
+        """
+
+        def subset_level(dep_data):
+            return jt.map(
+                lambda d: subdict(d, keys),
+                dep_data,
+                is_leaf=LDict.is_of(level),
+            )
+        
+        return self._add_prep_op(
+            dep_name=dependency_name,
+            transform_func=subset_level,
+        )
+
     def after_stacking(self, level: str, dependency_name: Optional[str] = None) -> Self:
         """
-        Returns a copy of this analysis that will stack its inputs along the specified level.
+        Returns a copy of this analysis that stacks its inputs along an `LDict` PyTree level before proceeding.
 
         This is useful when we have a PyTree of results with an `LDict` level representing 
         the values across some variable we want to visually compare, and our analysis 
@@ -419,10 +446,10 @@ class AbstractAnalysis(Module, strict=False):
             is_leaf=is_none,
         )
         
-        return modified_analysis._add_prep_op(_PrepOp(
+        return modified_analysis._add_prep_op(
             dep_name=dependency_name,
             transform_func=stack_dependency
-        ))
+        )
     
     def after_level_to_top(self, label: str, dependency_name: Optional[str] = None) -> Self:
         """
@@ -439,16 +466,16 @@ class AbstractAnalysis(Module, strict=False):
                 dep_data,
             )
         
-        return self._add_prep_op(_PrepOp(
+        return self._add_prep_op(
             dep_name=dependency_name,
             transform_func=transpose_dependency,
-        ))
+        )
         
-    def _add_prep_op(self, prep_op: _PrepOp) -> Self:
+    def _add_prep_op(self, dep_name: Optional[str], transform_func: Callable) -> Self:
         return eqx.tree_at(
             lambda a: a._prep_ops,
             self,
-            self._prep_ops + (prep_op,)
+            self._prep_ops + (_PrepOp(dep_name=dep_name, transform_func=transform_func),)
         )
     
     def combine_figs_by_axis(

@@ -5,19 +5,21 @@ import jax.numpy as jnp
 import jax.tree as jt 
 
 import equinox as eqx
-from jax_cookbook import is_type, is_module
+from jax_cookbook import is_type, is_module, is_none
 import jax_cookbook.tree as jtree
 
 from feedbax.intervene import schedule_intervenor
 import feedbax.plotly as fbp
 
+
+from rnns_learn_robust_motor_policies import measures
 from rnns_learn_robust_motor_policies.analysis import AbstractAnalysis, AnalysisInputData
 from rnns_learn_robust_motor_policies.analysis.analysis import DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.analysis.disturbance import FB_INTERVENOR_LABEL, get_pert_amp_vmap_eval_func, task_with_pert_amp
 from rnns_learn_robust_motor_policies.analysis.effector import Effector_SingleEval
 from rnns_learn_robust_motor_policies.plot import PLANT_VAR_LABELS, WHERE_PLOT_PLANT_VARS
 from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
-from rnns_learn_robust_motor_policies.types import ImpulseAmpTuple, LDict, unflatten_dict_keys
+from rnns_learn_robust_motor_policies.types import LDict, unflatten_dict_keys
 from rnns_learn_robust_motor_policies.perturbations import feedback_impulse
 
 
@@ -82,7 +84,7 @@ def _setup_xy(task_base, models_base, hps):
     
     impulse_xy_conditions = LDict.of("pert__var").fromkeys(PERT_VAR_NAMES, dict.fromkeys(COORD_NAMES))
     impulse_xy_conditions_keys = jtree.key_tuples(
-        impulse_xy_conditions, keys_to_strs=True, is_leaf=lambda x: x is None,
+        impulse_xy_conditions, keys_to_strs=True, is_leaf=is_none,
     )
 
     all_tasks, all_models = jtree.unzip(jt.map(
@@ -158,79 +160,63 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     
     return all_tasks, all_models, all_hps, extras
 
-
-# def task_with_imp_amplitude(task, impulse_amplitude):
-#     """Returns a task with the given disturbance amplitude."""
-#     return eqx.tree_at(
-#         lambda task: task.intervention_specs.validation[FB_INTERVENOR_LABEL].intervenor.params.scale,
-#         task,
-#         impulse_amplitude,
-#     ) 
+    
+eval_func = get_pert_amp_vmap_eval_func(lambda hps: hps.pert.amps, FB_INTERVENOR_LABEL)   
 
 
-# def eval_func(key_eval, hps, models, task):
-#     """Vmap over impulse amplitude."""
-#     states = eqx.filter_vmap(
-#         lambda amplitude: vmap_eval_ensemble(
-#             key_eval,
-#             hps,
-#             models, 
-#             task_with_pert_amp(task, amplitude, FB_INTERVENOR_LABEL), 
+MEASURE_KEYS = [
+    "max_net_force",
+    "max_parallel_force_reverse",
+    "sum_net_force",
+    "max_parallel_vel_forward",
+    "max_parallel_vel_reverse",
+    "max_orthogonal_vel_left",
+    "max_orthogonal_vel_right",
+    "max_deviation",
+    "sum_deviation",
+]
+
+#! Add a couple more measures over specific intervals of the trials
+# shortly_after_impulse = slice(impulse_end_step, impulse_end_step + impulse_duration)
+# after_impulse = slice(impulse_end_step, None)
+# custom_measures, custom_measure_labels = jtree.unzip({
+#     "max_parallel_force_forward_shortly_after_impulse": (
+#         measures.set_timesteps(
+#             measures.max_parallel_force, shortly_after_impulse,
 #         ),
-#     )(hps.pert.amps)
-    
-#     # I am not sure why this moveaxis is necessary. 
-#     # I tried using `out_axes=2` (with or without `in_axes=0`) and 
-#     # the result has the trial (axis 0) and replicate (axis 1) swapped.
-#     # (I had expected vmap to simply insert the new axis in the indicated position.)
-#     return jt.map(
-#         lambda arr: jnp.moveaxis(arr, 0, 2),
-#         states,
-#     )
-    
-eval_func = get_pert_amp_vmap_eval_func(lambda hps: hps.pert.amp, FB_INTERVENOR_LABEL)
-    
-
-class States_SingleImpulseAmplitude(AbstractAnalysis):
-    conditions: tuple[str, ...] = ()
-    variant: Optional[str] = "full"
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType({})
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
-    i_impulse_amp_plot: int = -1 
-    
-    def compute(self, data: AnalysisInputData, **dependencies):
-        #! This was used in getting `pert_amp` for `add_evaluation_figure` params; I don't think we need it anymore
-        # impulse_amplitude_plot = {
-        #     pert_var: v[self.i_impulse_amp_plot] for pert_var, v in hps.pert.amp.items()
-        # }
-        
-        return jt.map(
-            lambda t: t[self.i_impulse_amp_plot],
-            data.states,
-            is_leaf=is_type(ImpulseAmpTuple),
-        )    
-    
-
-class ResponseTrajectories(AbstractAnalysis):
-    conditions: tuple[str, ...] = ()
-    variant: Optional[str] = "full"
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
-        single_impulse_amp_states=States_SingleImpulseAmplitude,
-    ))
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
-    
-    def make_figs(self, data: AnalysisInputData, *, result, **dependencies):
-        figs = {}  # Define figs to fix the linter error
-        return figs        
+#         f"Max forward force within {impulse_duration} steps of pert. end",
+#     ),
+#     "max_net_force_during_impulse": (
+#         measures.set_timesteps(
+#             measures.max_net_force, impulse_time_idxs,
+#         ),
+#         "Max net force during pert.",
+#     ),
+#     "max_net_force_after_impulse": (
+#         measures.set_timesteps(
+#             measures.max_net_force, after_impulse,
+#         ),
+#         "Max net force after pert.",
+#     ),
+# })
+# all_measures = subdict(MEASURES, measure_keys) | custom_measures
+# measure_labels = MEASURE_LABELS | custom_measure_labels
 
 
-VARIANT = "full"
+
 
 ALL_ANALYSES = [
-    Effector_SingleEval(
-        variant=VARIANT,
-        #! TODO: This doesn't result in the impulse amplitude *values* showing up in the legend!
-        #! (could try to access `colorscale_key` from `hps`, in `Effector_SingleEval`)
-        colorscale_key='pert__amp',
-    )#.with_fig_params(legend_title="Impulse amplitude"),
+    # 1. Example trial sets (single trial, single replicate)
+    # 2. Aligned profiles: compare training conditions 
+    # 3. Aligned profiles: compare feedback variables for lo-hi train conditions
+    # 4. Measures: Comparison across train conditions
+    # 5. Measures: Comparison across lo-hi train conditions
+    # 6. Measures: Comparison across impulse amplitudes
+
+    # Effector_SingleEval(
+    #     variant="full",
+    #     #! TODO: This doesn't result in the impulse amplitude *values* showing up in the legend!
+    #     #! (could try to access `colorscale_key` from `hps`, in `Effector_SingleEval`)
+    #     colorscale_key='pert__amp',
+    # ).with_fig_params(legend_title="Impulse amplitude"),
 ]

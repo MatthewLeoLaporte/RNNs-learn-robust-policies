@@ -153,7 +153,7 @@ class UnitPreferredDirections(AbstractAnalysis):
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
     
     # TODO: Separate into two `AbstractAnalysis` classes in serial
-    def compute(self, data: AnalysisInputData, **dependencies):
+    def compute(self, data: AnalysisInputData, **kwargs):
         # 1. Get activities of all units at the time step of max forward force 
         def get_activity_at_max_force(state: SimpleFeedbackState):
             net_force = jnp.linalg.norm(state.efferent.output, axis=-1)  
@@ -197,7 +197,7 @@ class UnitPreferredDirections(AbstractAnalysis):
             activity_at_max_force=activity_at_max_force,
         )
     
-    def make_figs(self, data, *, result, **dependencies):
+    def make_figs(self, data, *, result, **kwargs):
         # Plot the distribution of preferred directions across units, for each context input
         # (Should remain uniform? However maybe the tuning curves get narrower.)
         preferred_directions = result['preferred_directions']
@@ -210,7 +210,7 @@ class UnitStimDirections(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType({})
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
 
-    def compute(self, data: AnalysisInputData, **dependencies):
+    def compute(self, data: AnalysisInputData, **kwargs):
         # Compute the direction of maximum force for each perturbed unit
         def get_angle_of_max_force(state: SimpleFeedbackState):
             net_force = jnp.linalg.norm(state.efferent.output, axis=-1)
@@ -239,7 +239,7 @@ class UnitStimDirections(AbstractAnalysis):
             angle_of_max_force=angle_of_max_force,
         )
     
-    def make_figs(self, data: AnalysisInputData, **dependencies):
+    def make_figs(self, data: AnalysisInputData, **kwargs):
         # Plot the distribution of stim directions, for each condition
         ...
 
@@ -257,7 +257,7 @@ class UnitPreferenceAlignment(AbstractAnalysis):
     ))
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
 
-    def compute(self, data: AnalysisInputData, *, results1, results2, **dependencies):
+    def compute(self, data: AnalysisInputData, *, results1, results2, **kwargs):
         """Compute the alignment between preferred and stim directions"""
         unit_preferred_direction_idx = results1['preferred_direction']
         # activity_at_max_force = results1['activity_at_max_force']
@@ -299,7 +299,7 @@ class UnitPreferenceAlignment(AbstractAnalysis):
         )
 
     
-    def make_figs(self, data: AnalysisInputData, *, result, **dependencies):
+    def make_figs(self, data: AnalysisInputData, *, result, **kwargs):
         # 1. Distribution of (absolute?) angles between pref and stim, versus context input
         ...
         
@@ -322,7 +322,7 @@ class AllResults(AbstractAnalysis):
         results1,
         results2, 
         results3,  
-        **dependencies,
+        **kwargs,
     ):
         updi = results1['preferred_direction']
         aatmf = results1['activity_at_max_force']

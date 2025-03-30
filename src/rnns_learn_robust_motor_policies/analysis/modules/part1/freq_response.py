@@ -38,7 +38,7 @@ class FrequencyResponse(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType({})
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
     
-    def compute(self, data: AnalysisInputData, **dependencies):
+    def compute(self, data: AnalysisInputData, **kwargs):
         all_freqs, all_gains, all_phases = jtree.unzip(jt.map(
             lambda fb_idx: jt.map(
                 lambda states: frequency_analysis(
@@ -58,7 +58,7 @@ class FrequencyResponse(AbstractAnalysis):
             phases=all_phases,
         )
 
-    def make_figs(self, data: AnalysisInputData, *, result, colors, **dependencies):
+    def make_figs(self, data: AnalysisInputData, *, result, colors, **kwargs):
         gains_plot, phases_plot = jt.map(
             lambda arr: jnp.moveaxis(
                 arr, -1, 0

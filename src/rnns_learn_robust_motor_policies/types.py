@@ -323,17 +323,17 @@ def _ldict_multi_constructor(loader, tag_suffix, node):
 yaml.SafeLoader.add_multi_constructor('!LDict:', _ldict_multi_constructor)
     
 
-class ImpulseAmpTuple(tuple, Generic[K, V]):
-    def __repr__(self):
-        return f"ImpulseAmpTuple({tuple.__repr__(self)})"
+# class ImpulseAmpTuple(tuple, Generic[K, V]):
+#     def __repr__(self):
+#         return f"ImpulseAmpTuple({tuple.__repr__(self)})"
     
     
-for cls in (ImpulseAmpTuple,): 
-    jtu.register_pytree_node(
-        cls, 
-        lambda x: (x, None), 
-        lambda _, children: cls(children)  # type: ignore
-    ) 
+# for cls in (ImpulseAmpTuple,): 
+#     jtu.register_pytree_node(
+#         cls, 
+#         lambda x: (x, None), 
+#         lambda _, children: cls(children)  # type: ignore
+#     ) 
 
 
 def pprint_ldict_structure(

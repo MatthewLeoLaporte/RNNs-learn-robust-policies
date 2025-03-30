@@ -353,6 +353,18 @@ def output_corr(
     return jnp.moveaxis(corrs, 0, 1)
 
 
+def get_violins_per_measure(measure_values, **kwargs):
+    return {
+        key: get_violins(
+            values,
+            yaxis_title=MEASURE_LABELS[key],
+            # xaxis_title="Train field std.",
+            **kwargs,
+        )
+        for key, values in measure_values.items()
+    }
+
+
 class Measures(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         aligned_vars=AlignedVars,
@@ -360,7 +372,9 @@ class Measures(AbstractAnalysis):
     measure_keys: Sequence[str] = ALL_MEASURE_KEYS
     variant: Optional[str] = None
     conditions: tuple[str, ...] = ()
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
+    fig_params: FigParamNamespace = DefaultFigParamNamespace(
+        # arr_axis_labels=["Evaluation", "Replicate", "Condition"],  #!
+    )
 
     def compute(
         self,
@@ -373,17 +387,39 @@ class Measures(AbstractAnalysis):
         all_measure_values = compute_all_measures(all_measures, aligned_vars.get(self.variant, aligned_vars))
         return all_measure_values
 
+    #! TODO: Generalize to replace all the other subclasses in this file
+    # def make_figs(
+    #     self,
+    #     data: AnalysisInputData,
+    #     *,
+    #     measure_values,
+    #     colors,
+    #     **kwargs,
+    # ):
+    #     figs = get_violins_per_measure(
+    #         measure_values[self.variant],
+    #         colors=colors['pert__amp'].dark,  #! TODO
+    #         **self.fig_params,
+    #     )
+    #     return figs
 
-def get_violins_per_measure(measure_values, **kwargs):
-    return {
-        key: get_violins(
-            values,
-            yaxis_title=MEASURE_LABELS[key],
-            xaxis_title="Train field std.",
-            **kwargs,
-        )
-        for key, values in measure_values.items()
-    }
+    # def _params_to_save(self, hps: PyTree[TreeNamespace], *, result, **kwargs):
+    #     return dict(
+    #         n=int(np.prod(jt.leaves(result)[0].shape)),
+    #     )
+
+#? TODO: Compute this 
+# measure_ranges = {
+#     key: (
+#             jnp.nanmin(measure_data_stacked),
+#             jnp.nanmax(measure_data_stacked),   
+#     )
+#     for key, measure_data_stacked in {
+#         key: jnp.stack(jt.leaves(measure_data))
+#         for key, measure_data in all_measure_values.items()
+#     }.items()
+# }
+
 
 
 class Measures_ByTrainStd(AbstractAnalysis):
@@ -392,7 +428,9 @@ class Measures_ByTrainStd(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         measure_values=Measures,
     ))
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
+    fig_params: FigParamNamespace = DefaultFigParamNamespace(
+        xaxis_title="Train field std.",
+    )
     measure_keys: Sequence[str] = ALL_MEASURE_KEYS  
 
     def dependency_kwargs(self) -> Dict[str, Dict[str, Any]]:
@@ -413,13 +451,14 @@ class Measures_ByTrainStd(AbstractAnalysis):
     ):
         figs = get_violins_per_measure(
             measure_values[self.variant],
-            colors=colors['pert__amp'].dark,
+            colors=colors['pert__amp'].dark,  #! TODO
+            **self.fig_params,
         )
         return figs
 
     def _params_to_save(self, hps: PyTree[TreeNamespace], *, result, **kwargs):
         return dict(
-            n=int(np.prod(jt.leaves(result)[0].shape))
+            n=int(np.prod(jt.leaves(result)[0].shape)),
         )
 
 
@@ -438,6 +477,7 @@ def get_one_measure_plot_per_eval_condition(plot_func, measures, colors, **kwarg
     }
 
 
+#! TODO: Replace with general slicing method on `AbstractAnalysis`
 class MeasuresLoHiPertStd(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = None
@@ -474,6 +514,9 @@ class MeasuresLoHiPertStd(AbstractAnalysis):
         )
 
 
+#! TODO: Just `Measures_CompareReplicates`? Or even just `Measures`, with methods on 
+#! `AbstractAnalysis` to move replicate axis to the front / expand it into a PyTree level, 
+#! along with slicing method to take lo-hi
 class Measures_CompareReplicatesLoHi(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
@@ -516,6 +559,7 @@ class Measures_CompareReplicatesLoHi(AbstractAnalysis):
         )
 
 
+#! TODO: Replace with generalized `Measures` with the appropriate methods on `AbstractAnalysis`
 class Measures_LoHiSummary(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"

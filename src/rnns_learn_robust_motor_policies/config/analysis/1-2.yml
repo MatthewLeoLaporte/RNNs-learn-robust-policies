@@ -13,9 +13,9 @@ train:
     0: ['step.net.hidden', 'step.net.readout']
   pert:  # during training
     type: curl
-    std: [0.0, 0.5, 1.0, 1.5]  # list -> load multiple models
+    std: [0.0, 0.5] #, 1.0, 1.5]  # list -> load multiple models
 
-eval_n: 5
+eval_n: 6  #! 5
 
 task:  # Passed to the base task constructor
   full:
