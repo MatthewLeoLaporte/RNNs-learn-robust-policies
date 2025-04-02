@@ -15,23 +15,22 @@ train:
     type: curl
     # list -> load multiple models
     std: [0.0, 0.5, 1.0, 1.5]  
-  n_batches: 25  #! 10_000
   # intervention_scaleup_batches=[0,0],
   # state_reset_iterations=[],
   # readout_norm_loss_weight: 0.0
   # readout_norm_value: 2.0
   
-eval_n: 5
+eval_n: 3 #! 5
   
 task:  # Passed to the base task constructor
   full:
-    eval_grid_n: 2
-    eval_n_directions: 24
-    # eval_reach_length: 0.5
+    eval_grid_n: 1  #! 2
+    eval_n_directions: 12  #! 24
+    eval_reach_length: 0.5
   small:
     eval_grid_n: 1
     eval_n_directions: 7
-    # eval_reach_length: 0.5
+    eval_reach_length: 0.5
 
 pert:
   #! Can't use null here, since pert.type doesn't match with train.pert.type, under `load`.

@@ -12,11 +12,12 @@ from feedbax.intervene import schedule_intervenor
 import feedbax.plotly as fbp
 
 
-from rnns_learn_robust_motor_policies import measures
+# from rnns_learn_robust_motor_policies.analysis import measures
 from rnns_learn_robust_motor_policies.analysis import AbstractAnalysis, AnalysisInputData
 from rnns_learn_robust_motor_policies.analysis.analysis import DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.analysis.disturbance import FB_INTERVENOR_LABEL, get_pert_amp_vmap_eval_func, task_with_pert_amp
 from rnns_learn_robust_motor_policies.analysis.effector import Effector_SingleEval
+from rnns_learn_robust_motor_policies.analysis.measures import Measures
 from rnns_learn_robust_motor_policies.plot import PLANT_VAR_LABELS, WHERE_PLOT_PLANT_VARS
 from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.types import LDict, unflatten_dict_keys
@@ -212,6 +213,7 @@ ALL_ANALYSES = [
     # 4. Measures: Comparison across train conditions
     # 5. Measures: Comparison across lo-hi train conditions
     # 6. Measures: Comparison across impulse amplitudes
+    Measures(measure_keys=MEASURE_KEYS),
 
     # Effector_SingleEval(
     #     variant="full",

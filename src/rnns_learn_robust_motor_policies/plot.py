@@ -94,6 +94,8 @@ def add_endpoint_traces(
                 )
             ]
         )
+    
+    return fig
 
 
 def get_violins(
@@ -153,12 +155,12 @@ def get_violins(
             ),
             yaxis=dict(
                 title=yaxis_title,
-                titlefont_size=12,
+                title_font_size=12,
                 range=[0, None],
             ),
             xaxis=dict(
                 title=xaxis_title, 
-                titlefont_size=12,
+                title_font_size=12,
                 type='category',
                 range=[-0.75, n_violins - 0.25],
                 # tickmode='array',
@@ -503,6 +505,8 @@ def plot_traj_and_fp_pcs_3D(
     return fig
 
 
+#! TODO: Not sure this should be here. It also redundant with 
+#! `analysis.aligned.GET_VARS_TO_ALIGN` except for the origin subtraction
 PLANT_VAR_LABELS = Responses('Pos.', 'Vel.', 'Force')
 WHERE_PLOT_PLANT_VARS = lambda states: Responses(
     states.mechanics.effector.pos,

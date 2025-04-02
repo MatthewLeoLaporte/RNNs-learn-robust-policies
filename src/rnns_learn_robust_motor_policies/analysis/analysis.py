@@ -355,7 +355,7 @@ class AbstractAnalysis(Module, strict=False):
                 db_session, 
                 eval_info, 
                 fig, 
-                camel_to_snake(self.__class__.__name__), 
+                camel_to_snake(self.name), 
                 model_records=model_info, 
                 **params,
             )
@@ -372,7 +372,7 @@ class AbstractAnalysis(Module, strict=False):
             # Additionally dump to specified path if provided
             if dump_path is not None:                                
                 # Create a unique filename
-                analysis_name = camel_to_snake(self.__class__.__name__)
+                analysis_name = camel_to_snake(self.name)
                 filename = f"{analysis_name}__{self.variant}__{non_default_field_params_str}__{i}"
                 
                 savefig(fig, filename, dump_path, ["html"])
@@ -381,6 +381,14 @@ class AbstractAnalysis(Module, strict=False):
                 params_path = dump_path / f"{filename}.yaml"
                 with open(params_path, 'w') as f:
                     yaml.dump(params, f, default_flow_style=False, sort_keys=False)
+
+    def __str__(self) -> str:
+        params = dict(self._non_default_field_params)
+        params = dict(variant=self.variant) | params
+        non_default_field_params_str = ', '.join([
+            f"{k}={v}" for k, v in params.items()
+        ])
+        return f"{self.name}({non_default_field_params_str})"
 
     def after_indexing(self, axis: int, idxs: ArrayLike, dependency_name: Optional[str] = None) -> Self:
         """
@@ -556,9 +564,13 @@ class AbstractAnalysis(Module, strict=False):
     @cached_property
     def _field_params(self):
         # TODO: Inherit from dependencies? e.g. if we depend on `BestReplicateStates`, maybe we should include `i_replicate` from there
-        return get_dataclass_fields(self, exclude=AbstractAnalysis._exclude_fields)
+        return get_dataclass_fields(
+            self, 
+            exclude=AbstractAnalysis._exclude_fields,
+            include_internal=False,
+        )
 
-    @property
+    @cached_property
     def _non_default_field_params(self) -> Dict[str, Any]:
         """
         Returns a dictionary of fields that have non-default values.
@@ -569,6 +581,10 @@ class AbstractAnalysis(Module, strict=False):
         # Get all dataclass fields for this instance
         for field in dataclasses.fields(self):
             if field.name in AbstractAnalysis._exclude_fields:
+                continue
+            
+            # Skip fields that are marked as subclass-internal
+            if field.metadata.get('internal', False):
                 continue
 
             current_value = getattr(self, field.name)

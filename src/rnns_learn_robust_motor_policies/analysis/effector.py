@@ -1,19 +1,23 @@
 from collections.abc import Callable, Sequence
 from functools import partial
 from types import MappingProxyType
-from typing import ClassVar, Optional, Literal as L
+from typing import ClassVar, Optional
 
 import jax.tree as jt
-import jax_cookbook.tree as jtree
 from equinox import Module
-from jax_cookbook import is_module
 from jaxtyping import PyTree
+import plotly.graph_objects as go
+
+from feedbax.task import AbstractTask
+from jax_cookbook import is_module, is_type
+import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
-from rnns_learn_robust_motor_policies.analysis.state_utils import BestReplicateStates
+from rnns_learn_robust_motor_policies.analysis.state_utils import BestReplicateStates, get_pos_endpoints
+from rnns_learn_robust_motor_policies.colors import COLORSCALES
 from rnns_learn_robust_motor_policies.config import PLOTLY_CONFIG
 from rnns_learn_robust_motor_policies.constants import REPLICATE_CRITERION
-from rnns_learn_robust_motor_policies.plot import plot_2d_effector_trajectories
+from rnns_learn_robust_motor_policies.plot import add_endpoint_traces, plot_2d_effector_trajectories
 from rnns_learn_robust_motor_policies.types import TreeNamespace
 
 
@@ -33,6 +37,7 @@ class Effector_ByEval(AbstractAnalysis):
     legend_labels: Optional[Sequence | Callable] = None
     colorscale_axis: int = 1
     colorscale_key: str = "reach_condition"
+    pos_endpoints: bool = True
 
     def make_figs(
         self,
@@ -51,7 +56,17 @@ class Effector_ByEval(AbstractAnalysis):
                 legend_labels = self.legend_labels
         else:
             legend_labels = self.fig_params.legend_labels
-        
+
+        if self.pos_endpoints:
+            pos_endpoints = jt.map(
+                #? Will this always be `validation_trials`? For this project, perhaps.
+                lambda task: get_pos_endpoints(task.validation_trials),
+                data.tasks[self.variant],
+                is_leaf=is_type(AbstractTask),
+            )
+        else: 
+            pos_endpoints = None
+
         figs = jt.map(
             partial(
                 plot_2d_effector_trajectories,
@@ -68,6 +83,21 @@ class Effector_ByEval(AbstractAnalysis):
             plot_states,
             is_leaf=is_module,
         )
+
+        if self.pos_endpoints:
+            figs = jt.map(
+                lambda fig, pos_endpoints: add_endpoint_traces(
+                    fig, 
+                    pos_endpoints, 
+                    xaxis='x1', 
+                    yaxis='y1', 
+                    colorscale=COLORSCALES[self.colorscale_key],
+                ),
+                figs,
+                pos_endpoints,
+                is_leaf=is_type(go.Figure),
+            )
+
         return figs
 
     def _params_to_save(self, hps: PyTree[TreeNamespace], *, replicate_info, train_pert_std, **kwargs):
@@ -142,7 +172,7 @@ class Effector_ByReplicate(AbstractAnalysis):
         figs = jt.map(
             partial(
                 plot_2d_effector_trajectories,
-                legend_title=self.legend_title,
+                legend_title=self.fig_params.legend_title,
                 colorscale_key=self.colorscale_key,
                 curves_mode='lines',
                 colorscale_axis=self.colorscale_axis,

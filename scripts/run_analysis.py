@@ -268,7 +268,7 @@ def setup_tasks_and_models(hps: TreeNamespace, setup_func: Callable, db_session:
         version_info=version_info,
     )
 
-    def get_task_variant(task_base, models_base, hps, **kwargs):
+    def get_task_variant(task_base, models_base, hps, variant_key, **kwargs):
         task = task_base
         
         for attr_name, attr_value in kwargs.items():
@@ -279,20 +279,31 @@ def setup_tasks_and_models(hps: TreeNamespace, setup_func: Callable, db_session:
             )
     
         tasks, models, hps, extras = setup_func(task, models_base, hps)
+
+        hps = jt.map(
+            lambda hps: eqx.tree_at(
+                lambda hps: hps.task,
+                hps,
+                getattr(hps.task, variant_key),
+            ),
+            hps,
+            is_leaf=is_type(TreeNamespace),
+        )
         
         return tasks, models, hps, extras
     
     # Outer level is task variants, inner is the structure returned by `setup_func`
     # i.e. "task variants" are a way to evaluate different sets of conditions
     all_tasks, all_models, all_hps, all_extras = jtree.unzip({
-        k: get_task_variant(
+        variant_key: get_task_variant(
             task_base, 
             models_base, 
             hps, 
+            variant_key,
             n_steps=hps.model.n_steps,  #? Is this the only one we need to pass explicitly?
-            **task_params,
+            **variant_params,
         )
-        for k, task_params in namespace_to_dict(hps.task).items()
+        for variant_key, variant_params in namespace_to_dict(hps.task).items()
     })
     
     return (
@@ -329,8 +340,8 @@ def perform_all_analyses(
     
     def analyse_and_save(analysis: AbstractAnalysis):
         # Get all figures and results for this analysis.
-        # Pass *all* dependencies to every analysis!
-        logger.info(f"Start analysis: {analysis.name}")
+        # Pass *all* dependencies to every analysis
+        logger.info(f"Start analysis: {analysis}")
         result, figs = analysis(data, **dependencies)
         analysis.save_figs(
             db_session, 
@@ -342,7 +353,7 @@ def perform_all_analyses(
             dump_path=fig_dump_path,
             **dependencies,
         )
-        logger.info(f"Results saved: {analysis.name}")
+        logger.info(f"Results saved: {analysis}")
         return result, figs
     
     all_results, all_figs = jtree.unzip(jt.map(

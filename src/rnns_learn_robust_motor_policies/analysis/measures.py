@@ -353,24 +353,15 @@ def output_corr(
     return jnp.moveaxis(corrs, 0, 1)
 
 
-def get_violins_per_measure(measure_values, **kwargs):
-    return {
-        key: get_violins(
-            values,
-            yaxis_title=MEASURE_LABELS[key],
-            # xaxis_title="Train field std.",
-            **kwargs,
-        )
-        for key, values in measure_values.items()
-    }
-
-
 class Measures(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         aligned_vars=AlignedVars,
     ))
-    measure_keys: Sequence[str] = ALL_MEASURE_KEYS
-    variant: Optional[str] = None
+    measure_keys: Sequence[str] = eqx.field(
+        default=ALL_MEASURE_KEYS,
+        metadata=dict(internal=True),  # Exclude this field from database columns / dump filenames
+    )
+    variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
         # arr_axis_labels=["Evaluation", "Replicate", "Condition"],  #!
@@ -386,27 +377,32 @@ class Measures(AbstractAnalysis):
         all_measures: LDict[str, Measure] = subdict(ALL_MEASURES, self.measure_keys)  # type: ignore
         all_measure_values = compute_all_measures(all_measures, aligned_vars.get(self.variant, aligned_vars))
         return all_measure_values
+    
+    def make_figs(self, data: AnalysisInputData, *, result, colors, **kwargs):
+        _, outer_label, inner_label = tree_level_labels(result)
+        figs = self._get_violins_per_measure(
+            result,
+            colors=colors[outer_label].dark,  
+            legend_title=get_label_str(outer_label),
+            xaxis_title=get_label_str(inner_label),
+            **self.fig_params,
+        )
+        return figs
+    
+    def _get_violins_per_measure(self, measure_values, **kwargs):
+        return LDict.of("measure")({
+            key: get_violins(
+                values,
+                yaxis_title=MEASURE_LABELS[key],
+                **kwargs,
+            )
+            for key, values in measure_values.items()
+        })
 
-    #! TODO: Generalize to replace all the other subclasses in this file
-    # def make_figs(
-    #     self,
-    #     data: AnalysisInputData,
-    #     *,
-    #     measure_values,
-    #     colors,
-    #     **kwargs,
-    # ):
-    #     figs = get_violins_per_measure(
-    #         measure_values[self.variant],
-    #         colors=colors['pert__amp'].dark,  #! TODO
-    #         **self.fig_params,
-    #     )
-    #     return figs
-
-    # def _params_to_save(self, hps: PyTree[TreeNamespace], *, result, **kwargs):
-    #     return dict(
-    #         n=int(np.prod(jt.leaves(result)[0].shape)),
-    #     )
+    def _params_to_save(self, hps: PyTree[TreeNamespace], *, result, **kwargs):
+        return dict(
+            n=int(np.prod(jt.leaves(result)[0].shape)),
+        )
 
 #? TODO: Compute this 
 # measure_ranges = {

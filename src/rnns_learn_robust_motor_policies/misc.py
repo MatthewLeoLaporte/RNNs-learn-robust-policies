@@ -251,12 +251,14 @@ def take_model(*args, **kwargs):
 def get_dataclass_fields(
     obj: Any, 
     exclude: tuple[str, ...] = (),
+    include_internal: bool = False,
 ) -> dict[str, Any]:
     """Get the fields of a dataclass object as a dictionary."""
     return {
         field.name: getattr(obj, field.name)
         for field in fields(obj)
         if field.name not in exclude
+        and (include_internal or not field.metadata.get('internal', False))
     }
 
 

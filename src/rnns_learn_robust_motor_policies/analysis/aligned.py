@@ -5,10 +5,13 @@ from types import MappingProxyType
 from typing import ClassVar, Optional, Literal as L
 
 from equinox import Module
+import jax.numpy as jnp
 import jax.tree as jt
-from jaxtyping import PyTree
+from jaxtyping import PyTree, Array
+import plotly.graph_objects as go
 
 import feedbax.plotly as fbp
+from feedbax.task import AbstractTask
 from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
@@ -16,6 +19,7 @@ from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis,
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_aligned_vars, get_pos_endpoints
 from rnns_learn_robust_motor_policies.config import PLOTLY_CONFIG
 from rnns_learn_robust_motor_policies.hyperparams import flat_key_to_where_func
+from rnns_learn_robust_motor_policies.plot import add_endpoint_traces
 from rnns_learn_robust_motor_policies.plot_utils import get_label_str
 from rnns_learn_robust_motor_policies.types import (
     RESPONSE_VAR_LABELS, 
@@ -24,13 +28,14 @@ from rnns_learn_robust_motor_policies.types import (
     TreeNamespace,
 )
 
-
+#! See also `plot.WHERE_PLOT_PLANT_VARS`
 WHERE_VARS_TO_ALIGN = lambda states, pos_endpoints: Responses(
     # Positions with respect to the origin
     states.mechanics.effector.pos - pos_endpoints[0][..., None, :],
     states.mechanics.effector.vel,
     states.efferent.output,
 )
+
 
 
 class AlignedVars(AbstractAnalysis):
@@ -88,6 +93,7 @@ class AlignedTrajectories(AbstractAnalysis):
     )
     colorscale_key: Optional[str] = None 
     colorscale_axis: Optional[int] = None
+    pos_endpoints: bool = True
 
     def make_figs(
         self,
@@ -120,7 +126,21 @@ class AlignedTrajectories(AbstractAnalysis):
             is_leaf=is_type(Responses),
         )
 
+        if self.pos_endpoints:
+            figs = jt.map(
+                lambda fig, hps: add_endpoint_traces(
+                    fig, 
+                    self._get_pos_endpoints(hps.task.eval_reach_length)
+                ),
+                figs,
+                data.hps[self.variant],
+                is_leaf=is_type(go.Figure),
+            )
+
         return figs
+
+    def _get_pos_endpoints(self, eval_reach_length: TreeNamespace) -> Array:
+        return jnp.array([[0., 0.], [eval_reach_length, 0.]])
 
     def _params_to_save(self, hps: PyTree[TreeNamespace], *, hps_common, **kwargs):
         return dict(

@@ -153,7 +153,7 @@ def compute_dependencies(
         base_name = node_id.rsplit('_', 1)[0]
         
         # Compute and store the result
-        logger.debug(f"Computing dependency: {dep_class.__name__} with params {params}")
+        logger.debug(f"Computing dependency: {dep_instance}")
         result = dep_instance.compute(data, **results, **params)
         
         # Store in both dictionaries
@@ -164,7 +164,7 @@ def compute_dependencies(
     for analysis in analyses:
         for dep_name, dep_class in analysis.dependencies.items():
             if dep_name not in results:
-                raise ValueError(f"Dependency '{dep_name}' for {analysis.__class__.__name__} was not computed")
+                raise ValueError(f"Dependency '{dep_name}' for {analysis.name} was not computed")
 
             params = analysis.dependency_kwargs().get(dep_name, {})
             node_id = f"{dep_name}_{param_hash(params)}"

@@ -316,10 +316,11 @@ def skip_already_trained(
     )
     
     pairs_to_skip_flat = jt.leaves(pairs_to_skip, is_leaf=is_type(TaskModelPair))
-    logger.info(
-        f"Skipping training of {len(pairs_to_skip_flat)} models whose hyperparameters "
-        "match models already in the database"
-    )
+    if len(pairs_to_skip_flat) > 0:
+        logger.info(
+            f"Skipping training of {len(pairs_to_skip_flat)} models whose hyperparameters "
+            "match models already in the database"
+        )
 
     return task_model_pairs
 

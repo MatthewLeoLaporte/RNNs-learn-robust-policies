@@ -1,6 +1,12 @@
 .gitmessage
 COMMIT_MSG.txt
 
+# Mac
+.DS_Store
+
+# Misc
+kaleido
+
 # Quarto
 _output*
 _freeze
