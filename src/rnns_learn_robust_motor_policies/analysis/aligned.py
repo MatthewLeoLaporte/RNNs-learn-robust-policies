@@ -17,6 +17,7 @@ import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_aligned_vars, get_pos_endpoints
+from rnns_learn_robust_motor_policies.colors import COLORSCALES
 from rnns_learn_robust_motor_policies.config import PLOTLY_CONFIG
 from rnns_learn_robust_motor_policies.hyperparams import flat_key_to_where_func
 from rnns_learn_robust_motor_policies.plot import add_endpoint_traces
@@ -127,19 +128,28 @@ class AlignedTrajectories(AbstractAnalysis):
         )
 
         if self.pos_endpoints:
+            #! Assume all tasks are straight reaches with the same length.
+            #! TODO: Remove this assumption. Depending on `_pre_ops`/`_fig_ops`, the 
+            #! PyTree structure of `data.tasks[self.variant]` may differ from that of `figs`
+            #! and thus we have to be careful about how to perform the mapping. 
+            #! (In the simplest case, without ops, the task PyTree is a prefix of `figs`)
+            task_0 = jt.leaves(data.tasks[self.variant], is_leaf=is_type(AbstractTask))[0]
+            pos_endpoints = self._get_aligned_pos_endpoints(task_0.eval_reach_length)
+
             figs = jt.map(
-                lambda fig, hps: add_endpoint_traces(
+                lambda fig: add_endpoint_traces(
                     fig, 
-                    self._get_pos_endpoints(hps.task.eval_reach_length)
+                    pos_endpoints, 
+                    xaxis='x1', 
+                    yaxis='y1', 
                 ),
                 figs,
-                data.hps[self.variant],
                 is_leaf=is_type(go.Figure),
             )
 
         return figs
 
-    def _get_pos_endpoints(self, eval_reach_length: TreeNamespace) -> Array:
+    def _get_aligned_pos_endpoints(self, eval_reach_length: TreeNamespace) -> Array:
         return jnp.array([[0., 0.], [eval_reach_length, 0.]])
 
     def _params_to_save(self, hps: PyTree[TreeNamespace], *, hps_common, **kwargs):

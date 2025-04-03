@@ -52,24 +52,36 @@ def add_endpoint_traces(
         pos_endpoints = jnp.expand_dims(pos_endpoints, axis=1)
     
     if colorscale is not None:
-        constant_color_axes = (0,) + tuple(i for i in range(len(pos_endpoints.shape[1:-1])) if i != colorscale_axis)
-        color_values = jnp.reshape(
-            jnp.broadcast_to(
-                jnp.expand_dims(
-                    # jnp.ones(pos_endpoints.shape[colorscale_axis + 1]),
-                    jnp.linspace(0, 1, pos_endpoints.shape[colorscale_axis + 1], endpoint=False),
-                    constant_color_axes, 
-                ),
-                pos_endpoints.shape[:-1],
-            ),
-            (2, -1),
+        # --- Calculate colors based on trial dimensions only ---
+        trial_shape = pos_endpoints.shape[1:-1]
+        if not trial_shape:  # Handle case with only one trial dimension
+             trial_shape = (pos_endpoints.shape[1],)
+             
+        color_linspace = jnp.linspace(
+            0, 1, pos_endpoints.shape[colorscale_axis + 1], endpoint=False
         )
+        
+        # Axes within trial_shape that are *not* the colorscale_axis
+        expand_dims_axes = tuple(i for i in range(len(trial_shape)) if i != colorscale_axis)
+        
+        # Expand and broadcast linspace to match the full trial shape
+        broadcasted_colors = jnp.broadcast_to(
+            jnp.expand_dims(color_linspace, expand_dims_axes),
+            trial_shape,
+        )
+        
+        # Flatten colors to match the flattened trial dimension used later
+        flat_colors = jnp.reshape(broadcasted_colors, (-1,))
+        # --- End color calculation ---
+        
         for i, key in enumerate(marker_kws):
             marker_kws[key].update(
-                line_color=color_values[i].item(), 
-                color=color_values[i].item(),
+                # Apply the flat color array to markers
+                line_color=flat_colors, 
+                color=flat_colors,
                 cmin=0,
                 cmax=1,
+                # colorscale=colorscale, # This should be set on the trace, not marker
             )
     
     if len(pos_endpoints.shape) > 3:

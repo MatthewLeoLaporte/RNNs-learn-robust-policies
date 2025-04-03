@@ -230,7 +230,7 @@ class NetworkActivity_SampleUnits(AbstractAnalysis):
         return LDict.of(activities.label)({
             outer_value: activity_sample_units(
                 activities=inner_dict,
-                n_samples=self.n_units_sample,
+                n_samples=self.fig_params.n_units_sample,
                 colors=colors[inner_dict.label].dark,
                 key=self.fig_params.key,
             )

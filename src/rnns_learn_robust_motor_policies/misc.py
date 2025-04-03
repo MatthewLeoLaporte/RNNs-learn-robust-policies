@@ -60,7 +60,7 @@ def get_gpu_memory(gpu_idx=0):
 
 def lohi(x: Iterable):
     """Returns a tuple containing the first and last values of a sequence, mapping, or other iterable."""
-    if isinstance(x, dict):
+    if isinstance(x, Mapping):
         # TODO: Maybe should return first and last key-value pairs?
         return subdict(x, tuple(lohi(tuple(x.keys()))))
     

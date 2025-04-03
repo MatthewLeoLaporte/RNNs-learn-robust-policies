@@ -214,7 +214,7 @@ def unflatten_dict_keys(flat_dict: dict, sep: str = '__') -> dict:
 
 @jax.tree_util.register_pytree_with_keys_class
 class LDict(Mapping[K, V], Generic[K, V]):
-    """Immutable dictionary with a string label for distinguishing dictionary types.
+    """Immutable dictionary with a distinguishingstring label.
     
     Our PyTrees will contain levels corresponding to training conditions (standard deviation
     of disturbance amplitude during training), evaluation conditions (disturbance

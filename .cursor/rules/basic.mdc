@@ -1,0 +1,15 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+- Prefer `jax.tree as jt` to `jax.tree_util as jtu` when possible. So for example,
+  use `jt.map`, `jt.leaves`, `jt.flatten` rather than `jtu.tree_map` etc.
+  Some functions are only available from `jax.tree_util` however, in particular 
+  PyTree node registry decorators like `register_pytree_node`.
+- Use try-except blocks as rarely as possible. Prefer typing-based flow and 
+  `isinstance` checks.
+- Use `logger.error` instead of `raise`, so that the user/dev can control the 
+  handling of exceptions.
+- 

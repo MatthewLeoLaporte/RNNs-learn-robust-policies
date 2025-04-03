@@ -57,16 +57,6 @@ class Effector_ByEval(AbstractAnalysis):
         else:
             legend_labels = self.fig_params.legend_labels
 
-        if self.pos_endpoints:
-            pos_endpoints = jt.map(
-                #? Will this always be `validation_trials`? For this project, perhaps.
-                lambda task: get_pos_endpoints(task.validation_trials),
-                data.tasks[self.variant],
-                is_leaf=is_type(AbstractTask),
-            )
-        else: 
-            pos_endpoints = None
-
         figs = jt.map(
             partial(
                 plot_2d_effector_trajectories,
@@ -85,8 +75,12 @@ class Effector_ByEval(AbstractAnalysis):
         )
 
         if self.pos_endpoints:
+            #! See comment in `aligned.AlignedTrajectories`
+            task_0 = jt.leaves(data.tasks[self.variant], is_leaf=is_type(AbstractTask))[0]
+            pos_endpoints = get_pos_endpoints(task_0.validation_trials)
+
             figs = jt.map(
-                lambda fig, pos_endpoints: add_endpoint_traces(
+                lambda fig: add_endpoint_traces(
                     fig, 
                     pos_endpoints, 
                     xaxis='x1', 
@@ -94,7 +88,6 @@ class Effector_ByEval(AbstractAnalysis):
                     colorscale=COLORSCALES[self.colorscale_key],
                 ),
                 figs,
-                pos_endpoints,
                 is_leaf=is_type(go.Figure),
             )
 

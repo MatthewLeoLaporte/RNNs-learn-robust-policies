@@ -22,10 +22,10 @@ from rnns_learn_robust_motor_policies.analysis.effector import Effector_SingleEv
 from rnns_learn_robust_motor_policies.analysis.effector import Effector_ByReplicate
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_PERT_FUNCS
 from rnns_learn_robust_motor_policies.analysis.measures import Measures, output_corr
-from rnns_learn_robust_motor_policies.analysis.measures import Measures_LoHiSummary
 from rnns_learn_robust_motor_policies.analysis.profiles import VelocityProfiles
 from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVENOR_LABEL
+from rnns_learn_robust_motor_policies.misc import lohi
 from rnns_learn_robust_motor_policies.types import TreeNamespace
 from rnns_learn_robust_motor_policies.plot import get_violins
 from rnns_learn_robust_motor_policies.types import LDict
@@ -172,11 +172,16 @@ ALL_ANALYSES = [
     #     colorscale_axis=1,
     #     colorscale_key='trial',
     # ),
-    # AlignedTrajectories().after_stacking(level='pert__amp'),
-    # AlignedTrajectories().after_stacking(level='train__pert__std'),
-    # VelocityProfiles(),
+    AlignedTrajectories().after_stacking(level='pert__amp'),
+    AlignedTrajectories().after_stacking(level='train__pert__std'),
+    VelocityProfiles(),
     Measures(measure_keys=MEASURE_KEYS),
+    Measures(measure_keys=MEASURE_KEYS)
+        .after_transform_level(['train__pert__std', 'pert__amp'], lohi),
     # Measures_CompareReplicatesLoHi(measure_keys=MEASURE_KEYS),
+    #! TODO: Integrate `Measures_CompareReplicatesLoHi` into `Measures`...
+    #! Measures(measure_keys=MEASURE_KEYS)
+    #!     .after_unstacking(axis=1, label='replicate'),
     # Measures_LoHiSummary(measure_keys=MEASURE_KEYS),
     # OutputWeightCorrelation(),
 ]

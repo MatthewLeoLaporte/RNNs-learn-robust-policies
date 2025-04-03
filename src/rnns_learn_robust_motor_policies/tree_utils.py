@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 import logging
 from types import SimpleNamespace
 from typing import Any, TypeVar, Sequence
@@ -20,6 +20,7 @@ from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
 
 
 T = TypeVar("T")
+M = TypeVar("M", bound=Mapping)
 
 
 logger = logging.getLogger(__name__)
@@ -33,20 +34,24 @@ def swap_model_trainables(model: PyTree[..., "T"], trained: PyTree[..., "T"], wh
     )
 
 
-def get_dict_constructor(d: dict):
+def _get_mapping_constructor(d: Mapping):
     if isinstance(d, LDict):
         return LDict.of(d.label)   
     else:
         return type(d)
 
 
-def subdict(d: dict[T, Any], keys: Sequence[T]):
-    """Returns the dict containing only the keys `keys`."""
-    return get_dict_constructor(d)({k: d[k] for k in keys})
+def subdict(d: Mapping[T, Any], keys: Sequence[T]):
+    """Returns the mapping containing only the keys `keys`."""
+    return _get_mapping_constructor(d)({k: d[k] for k in keys})
 
 
-def dictmerge(*dicts: dict) -> dict:
-    return {k: v for d in dicts for k, v in d.items()}
+def dictmerge(*dicts: Mapping) -> Mapping:
+    if len(set(type(d) for d in dicts)) == 1:
+        constructor = _get_mapping_constructor(dicts[0])
+    else: 
+        constructor = dict
+    return constructor({k: v for d in dicts for k, v in d.items()})
 
 
 # TODO: This exists because I was thinking of generalizing the way that

@@ -319,7 +319,7 @@ ALL_MEASURE_KEYS = tuple(ALL_MEASURES.keys())
 
 
 def compute_all_measures(measures: PyTree[Measure], all_responses: PyTree[Responses]):
-    """Maps the tree of measures over the tree of response conditions."""
+    """Evaluates a tree of measures over a tree of responses."""
     return jt.map(
         lambda func: jt.map(
             lambda responses: func(responses),
@@ -390,6 +390,7 @@ class Measures(AbstractAnalysis):
         return figs
     
     def _get_violins_per_measure(self, measure_values, **kwargs):
+        #! TODO: Deal with multiple figures per measure, as in 1-2 
         return LDict.of("measure")({
             key: get_violins(
                 values,
@@ -417,49 +418,8 @@ class Measures(AbstractAnalysis):
 # }
 
 
-
-class Measures_ByTrainStd(AbstractAnalysis):
-    conditions: tuple[str, ...] = ()
-    variant: Optional[str] = "full"
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
-        measure_values=Measures,
-    ))
-    fig_params: FigParamNamespace = DefaultFigParamNamespace(
-        xaxis_title="Train field std.",
-    )
-    measure_keys: Sequence[str] = ALL_MEASURE_KEYS  
-
-    def dependency_kwargs(self) -> Dict[str, Dict[str, Any]]:
-        return dict(
-            measure_values=dict(
-                measure_keys=self.measure_keys,
-                variant=self.variant,
-            ),
-        )
-
-    def make_figs(
-        self,
-        data: AnalysisInputData,
-        *,
-        measure_values,
-        colors,
-        **kwargs,
-    ):
-        figs = get_violins_per_measure(
-            measure_values[self.variant],
-            colors=colors['pert__amp'].dark,  #! TODO
-            **self.fig_params,
-        )
-        return figs
-
-    def _params_to_save(self, hps: PyTree[TreeNamespace], *, result, **kwargs):
-        return dict(
-            n=int(np.prod(jt.leaves(result)[0].shape)),
-        )
-
-
 def get_one_measure_plot_per_eval_condition(plot_func, measures, colors, **kwargs):
-    return {
+    return LDict.of("measure")({
         key: LDict.of("pert__amp")({
             pert_amp: plot_func(
                 measure[pert_amp],
@@ -470,148 +430,46 @@ def get_one_measure_plot_per_eval_condition(plot_func, measures, colors, **kwarg
             for pert_amp in measure
         })
         for key, measure in measures.items()
-    }
+    })
 
 
-#! TODO: Replace with general slicing method on `AbstractAnalysis`
-class MeasuresLoHiPertStd(AbstractAnalysis):
-    conditions: tuple[str, ...] = ()
-    variant: Optional[str] = None
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
-        measure_values=Measures,
-    ))
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
-    measure_keys: Sequence[str] = ALL_MEASURE_KEYS
-        
-    def dependency_kwargs(self) -> Dict[str, Dict[str, Any]]:
-        return dict(
-            measure_values=dict(
-                measure_keys=self.measure_keys,
-                variant=self.variant,
-            ),
-        )
-
-    def compute(
-        self,
-        data: AnalysisInputData,
-        *,
-        measure_values,
-        **kwargs,
-    ):
-        # Map over analysis variants (e.g. full task vs. small task)
-        return jt.map(
-            lambda measure_values_by_std: LDict.of("train__pert__std")({
-                std: measure_values
-                for std, measure_values in measure_values_by_std.items()
-                if std in (min(measure_values_by_std), max(measure_values_by_std))
-            }),
-            measure_values,
-            is_leaf=LDict.is_of("train__pert__std"),
-        )
-
-
-#! TODO: Just `Measures_CompareReplicates`? Or even just `Measures`, with methods on 
-#! `AbstractAnalysis` to move replicate axis to the front / expand it into a PyTree level, 
-#! along with slicing method to take lo-hi
-class Measures_CompareReplicatesLoHi(AbstractAnalysis):
-    conditions: tuple[str, ...] = ()
-    variant: Optional[str] = "full"
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
-        measure_values_lohi_train_pert_std=MeasuresLoHiPertStd,
-    ))
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
-    measure_keys: Sequence[str] = ALL_MEASURE_KEYS
+# class Measures_CompareReplicatesLoHi(AbstractAnalysis):
+#     conditions: tuple[str, ...] = ()
+#     variant: Optional[str] = "full"
+#     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
+#         measure_values_lohi_train_pert_std=MeasuresLoHiPertStd,
+#     ))
+#     fig_params: FigParamNamespace = DefaultFigParamNamespace()
+#     measure_keys: Sequence[str] = ALL_MEASURE_KEYS
     
-    def dependency_kwargs(self) -> Dict[str, Dict[str, Any]]:
-        return dict(
-            measure_values_lohi_train_pert_std=dict(
-                measure_keys=self.measure_keys,
-                variant=self.variant,
-            )
-        )
+#     def dependency_kwargs(self) -> Dict[str, Dict[str, Any]]:
+#         return dict(
+#             measure_values_lohi_train_pert_std=dict(
+#                 measure_keys=self.measure_keys,
+#                 variant=self.variant,
+#             )
+#         )
 
-    def make_figs(
-        self,
-        data: AnalysisInputData,
-        *,
-        measure_values_lohi_train_pert_std,
-        colors,
-        replicate_info,
-        **kwargs,
-    ):
-        included_replicates = replicate_info['included_replicates'][REPLICATE_CRITERION]
-        replicates_all_lohi_included = jt.reduce(jnp.logical_and, lohi(included_replicates))
-        figs = get_one_measure_plot_per_eval_condition(
-            get_measure_replicate_comparisons,
-            measure_values_lohi_train_pert_std,
-            lohi(colors["train__pert__std"].dark),
-            included_replicates=np.where(replicates_all_lohi_included)[0],
-        )
-        return figs
+#     def make_figs(
+#         self,
+#         data: AnalysisInputData,
+#         *,
+#         measure_values_lohi_train_pert_std,
+#         colors,
+#         replicate_info,
+#         **kwargs,
+#     ):
+#         included_replicates = replicate_info['included_replicates'][REPLICATE_CRITERION]
+#         replicates_all_lohi_included = jt.reduce(jnp.logical_and, lohi(included_replicates))
+#         figs = get_one_measure_plot_per_eval_condition(
+#             get_measure_replicate_comparisons,
+#             measure_values_lohi_train_pert_std,
+#             lohi(colors["train__pert__std"].dark),
+#             included_replicates=np.where(replicates_all_lohi_included)[0],
+#         )
+#         return figs
 
-    def _params_to_save(self, hps: PyTree[TreeNamespace], *, measure_values_lohi_train_pert_std, **kwargs):
-        return dict(
-            n=int(np.prod(jt.leaves(measure_values_lohi_train_pert_std)[0].shape))
-        )
-
-
-#! TODO: Replace with generalized `Measures` with the appropriate methods on `AbstractAnalysis`
-class Measures_LoHiSummary(AbstractAnalysis):
-    conditions: tuple[str, ...] = ()
-    variant: Optional[str] = "full"
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
-        measure_values_lohi_train_pert_std=MeasuresLoHiPertStd,
-    ))
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
-    measure_keys: Sequence[str] = ALL_MEASURE_KEYS
-    
-    def dependency_kwargs(self) -> Dict[str, Dict[str, Any]]:
-        return dict(
-            measure_values_lohi_train_pert_std=dict(
-                measure_keys=self.measure_keys,
-                variant=self.variant,
-            )
-        )
-
-    def compute(
-        self,
-        data: AnalysisInputData,
-        *,
-        measure_values_lohi_train_pert_std,
-        **kwargs,
-    ):
-        return LDict.of("measure")({
-            key: subdict(measure, lohi(list(data.hps[self.variant].keys())))  # type: ignore
-            # MeasuresLoHiPertStd returns `measure_values_lohi_train_pert_std` for all eval variants,
-            # so we choose the right variant
-            for key, measure in measure_values_lohi_train_pert_std.items()
-        })
-
-    def make_figs(
-        self,
-        data: AnalysisInputData,
-        *,
-        result,
-        colors,
-        **kwargs,
-    ):
-        _, outer_label, inner_label = tree_level_labels(result)
-        figs = LDict.of("measure")({
-            key: get_violins(
-                measure,
-                yaxis_title=MEASURE_LABELS[key],
-                xaxis_title=get_label_str(inner_label),
-                legend_title=get_label_str(outer_label),
-                colors=colors[outer_label].dark,
-                layout_kws=dict(
-                    width=300, height=300,
-                )
-            )
-            for key, measure in result.items()
-        })
-        return figs
-
-    def _params_to_save(self, hps: PyTree[TreeNamespace], *, result, **kwargs):
-        return dict(
-            n=int(np.prod(jt.leaves(result)[0].shape))
-        )
+#     def _params_to_save(self, hps: PyTree[TreeNamespace], *, measure_values_lohi_train_pert_std, **kwargs):
+#         return dict(
+#             n=int(np.prod(jt.leaves(measure_values_lohi_train_pert_std)[0].shape))
+#         )
