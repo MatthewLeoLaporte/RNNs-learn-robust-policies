@@ -14,7 +14,7 @@ from copy import deepcopy
 from functools import partial
 import logging
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, List
 
 import equinox as eqx
 import jax
@@ -127,6 +127,7 @@ def main(
     db_session, 
     hps_common: TreeNamespace,
     fig_dump_path: Optional[str] = None,
+    fig_dump_formats: List[str] = ["html"],
     *,
     key,
 ):    
@@ -212,6 +213,7 @@ def main(
         model_info, 
         eval_info, 
         fig_dump_path=Path(PATHS.figures_dump),
+        fig_dump_formats=fig_dump_formats,
         **common_inputs,
     )
     
@@ -325,6 +327,7 @@ def perform_all_analyses(
     eval_info: EvaluationRecord, 
     *,
     fig_dump_path: Optional[Path] = None,
+    fig_dump_formats: List[str] = ["html"],
     **kwargs,
 ):
     # Each value in `analyses` is a function that is passed a bunch of information and returns some result.
@@ -351,6 +354,7 @@ def perform_all_analyses(
             data.hps, 
             model_info, 
             dump_path=fig_dump_path,
+            dump_formats=fig_dump_formats,
             **dependencies,
         )
         logger.info(f"Results saved: {analysis}")
@@ -372,6 +376,8 @@ if __name__ == '__main__':
     # This assumes there is no file whose relative path is identical to that `expt_id`.
     parser.add_argument("config_path", type=str, help="Path to the config file, or `expt_id` of a default config.")
     parser.add_argument("--fig-dump-path", type=str, default="/tmp/fig_dump", help="Path to dump figures.")
+    parser.add_argument("--fig-dump-formats", type=str, default="html", 
+                      help="Format(s) to dump figures in, comma-separated (e.g., 'html,png,pdf')")
     args = parser.parse_args()
     hps = load_hps(args.config_path, config_type='analysis')
 
@@ -382,7 +388,10 @@ if __name__ == '__main__':
     key = jr.PRNGKey(PRNG_CONFIG.seed)
     _, _, key_eval = jr.split(key, 3)
     
-    main(db_session, hps, fig_dump_path=args.fig_dump_path, key=key)
+    # Parse the figure dump formats
+    fig_dump_formats = args.fig_dump_formats.split(',')
+    
+    main(db_session, hps, fig_dump_path=args.fig_dump_path, fig_dump_formats=fig_dump_formats, key=key)
     
     
     

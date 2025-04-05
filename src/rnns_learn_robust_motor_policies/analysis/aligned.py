@@ -38,7 +38,6 @@ WHERE_VARS_TO_ALIGN = lambda states, pos_endpoints: Responses(
 )
 
 
-
 class AlignedVars(AbstractAnalysis):
     """Align spatial variable (e.g. position and velocity) coordinates with the reach direction."""
     conditions: tuple[str, ...] = ()
@@ -75,7 +74,7 @@ class AlignedTrajectories(AbstractAnalysis):
     ))
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
         var_labels=RESPONSE_VAR_LABELS,
-        axes_labels=('x', 'y'),
+        axes_labels=('Parallel', 'Orthogonal'),
         # mode='std',
         mean_trajectory_line_width=3,
         # n_curves_max=n_curves_max,
@@ -89,7 +88,7 @@ class AlignedTrajectories(AbstractAnalysis):
         ),
         scatter_kws=dict(
             line_width=1,
-            opacity=0.6,
+            opacity=0.5,
         ),
     )
     colorscale_key: Optional[str] = None 

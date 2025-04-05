@@ -4,6 +4,10 @@ globs:
 alwaysApply: true
 ---
 
+- Do not make any modifications whatsoever that are not strictly necessary to achieve
+  the goal(s) implied by the context of the current conversation. If you do notice something 
+  amiss or broken that is not directly related to the current context, please 
+  mention it briefly at the end of your response.
 - Prefer `jax.tree as jt` to `jax.tree_util as jtu` when possible. So for example,
   use `jt.map`, `jt.leaves`, `jt.flatten` rather than `jtu.tree_map` etc.
   Some functions are only available from `jax.tree_util` however, in particular 
@@ -12,4 +16,12 @@ alwaysApply: true
   `isinstance` checks.
 - Use `logger.error` instead of `raise`, so that the user/dev can control the 
   handling of exceptions.
-- 
+- Preserve my inline comments in your solutions, when providing total substitutes for 
+  code components, or where the comments would otherwise be removed by your edits.
+  If you are certain that the comment has become irrelevant, replace `#` with `#!` 
+  in front of it.
+- If I ask you for clarification and you need to correct a previous response, do not 
+  include the old, corrected code commented out in the new response. Just provide the 
+  current optimal solution. 
+- Do not use hyphens or angle brackets to emphasize comments. If a comment is uncertain
+  or represents a question, use `#?` instead of `#` to begin it. 

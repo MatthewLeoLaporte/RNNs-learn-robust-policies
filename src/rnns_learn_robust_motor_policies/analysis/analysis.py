@@ -146,8 +146,8 @@ class AbstractAnalysis(Module, strict=False):
     """
     _exclude_fields = ('dependencies', 'conditions', 'fig_params', '_prep_ops', '_fig_op')
 
-    conditions: AbstractVar[tuple[str, ...]]
     dependencies: AbstractClassVar[MappingProxyType[str, type[Self]]]
+    conditions: AbstractVar[tuple[str, ...]]
     variant: AbstractVar[Optional[str]] 
     fig_params: AbstractVar[FigParamNamespace]
 
@@ -322,6 +322,7 @@ class AbstractAnalysis(Module, strict=False):
         hps: PyTree[TreeNamespace], 
         model_info=None,
         dump_path: Optional[Path] = None,
+        dump_formats: list[str] = ["html"],
         **dependencies,
     ) -> None:
         """
@@ -382,7 +383,7 @@ class AbstractAnalysis(Module, strict=False):
                 analysis_name = camel_to_snake(self.name)
                 filename = f"{analysis_name}__{self.variant}__{non_default_field_params_str}__{i}"
                 
-                savefig(fig, filename, dump_path, ["html"])
+                savefig(fig, filename, dump_path, dump_formats)
                 
                 # Save parameters as YAML
                 params_path = dump_path / f"{filename}.yaml"

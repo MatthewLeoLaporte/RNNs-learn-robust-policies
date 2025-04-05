@@ -162,6 +162,8 @@ MEASURE_KEYS = (
     "sum_net_force",
 )
 
+measures_base = Measures(measure_keys=MEASURE_KEYS)
+
 
 """All the analyses to perform in this part."""
 ALL_ANALYSES = [
@@ -175,13 +177,11 @@ ALL_ANALYSES = [
     AlignedTrajectories().after_stacking(level='pert__amp'),
     AlignedTrajectories().after_stacking(level='train__pert__std'),
     VelocityProfiles(),
-    Measures(measure_keys=MEASURE_KEYS),
-    Measures(measure_keys=MEASURE_KEYS)
-        .after_transform_level(['train__pert__std', 'pert__amp'], lohi),
-    # Measures_CompareReplicatesLoHi(measure_keys=MEASURE_KEYS),
+    measures_base,
+    measures_base.after_transform_level(['train__pert__std'], lohi),
+    measures_base.after_transform_level(['train__pert__std', 'pert__amp'], lohi),
     #! TODO: Integrate `Measures_CompareReplicatesLoHi` into `Measures`...
     #! Measures(measure_keys=MEASURE_KEYS)
     #!     .after_unstacking(axis=1, label='replicate'),
-    # Measures_LoHiSummary(measure_keys=MEASURE_KEYS),
     # OutputWeightCorrelation(),
 ]
