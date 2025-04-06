@@ -1,6 +1,8 @@
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import fields
 from datetime import datetime
+import functools
+import inspect
 import json
 import logging
 from pathlib import Path
@@ -8,6 +10,7 @@ import platform
 import re
 import subprocess
 from types import ModuleType, GeneratorType
+import types
 from typing import Any, Optional
 
 import equinox as eqx
@@ -82,6 +85,77 @@ def lohi(x: Iterable):
     return first, last
 
 
+def with_caller_logger(func):
+    """
+    Decorator that provides the caller's logger to the wrapped function.
+
+    Wrapped functions should accept a `logger: logging.Logger` keyword argument.
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # If logger is not provided in kwargs, get the caller's logger
+        if 'logger' not in kwargs:
+            caller_frame = inspect.currentframe().f_back
+            caller_module = inspect.getmodule(caller_frame)
+            if caller_module:
+                kwargs['logger'] = logging.getLogger(caller_module.__name__)
+            else:
+                kwargs['logger'] = logging.getLogger(func.__module__)
+        
+        # Call the original function with the resolved logger
+        return func(*args, **kwargs)
+    
+    return wrapper
+
+
+@with_caller_logger
+def get_name_of_callable(func: Callable, logger: Optional[logging.Logger] = None) -> str:
+    """
+    Returns the name of a callable object, handling different types appropriately.
+    
+    Args:
+        func: The callable object whose name is to be retrieved.
+        
+    Returns:
+        A string representing the callable's name or identifier.
+    """
+    # Handle lambdas
+    if isinstance(func, types.LambdaType):
+        func_id = str(id(func))
+        logger.warning(
+            f"Generating name for lambda function. Returning its id '{func_id}'."
+        )
+        return func_id
+    
+    # Handle partial functions
+    elif isinstance(func, functools.partial):
+        return get_name_of_callable(func.func)
+    
+    # Handle callable class instances
+    elif callable(func) and not isinstance(func, (types.FunctionType, types.BuiltinFunctionType, type)):
+        class_name = func.__class__.__name__
+        logger.warning(
+            f"Generating name for instance of callable class '{class_name}'. "
+            f"Note that instance attributes/state are not captured by this name."
+        )
+        return class_name
+    
+    # Handle method objects (bound or unbound)
+    elif inspect.ismethod(func):
+        # For bound methods, include class name
+        if hasattr(func, '__self__'):
+            return f"{func.__self__.__class__.__name__}.{func.__name__}"
+        return func.__name__
+    
+    # Regular functions, built-in functions, and classes
+    else: 
+        try:
+            return func.__name__
+        except:
+            # Fallback for any other callable type
+            return repr(func)
+
+
 def camel_to_snake(s: str):
     """Convert camel case to snake case."""
     return re.sub(r'(?<!^)(?=[A-Z])', '_', s).lower()
@@ -148,10 +222,12 @@ def vector_with_gaussian_length(key):
     return length * jnp.array([jnp.cos(angle), jnp.sin(angle)]) 
 
 
+@with_caller_logger
 def log_version_info(
     *args: ModuleType, 
     git_modules: Optional[Sequence[ModuleType]] = None,
     python_version: bool = True,
+    logger: Optional[logging.Logger] = None,
 ) -> dict[str, str]:
     version_info: dict[str, str] = {}
     

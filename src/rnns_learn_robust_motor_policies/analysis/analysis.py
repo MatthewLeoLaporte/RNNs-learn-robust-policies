@@ -1,4 +1,4 @@
-from collections.abc import Callable, Hashable, Sequence
+from collections.abc import Callable, Hashable, Mapping, Sequence
 import dataclasses
 from functools import cached_property
 import inspect
@@ -21,7 +21,7 @@ import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.database import EvaluationRecord, add_evaluation_figure, savefig
 from rnns_learn_robust_motor_policies.tree_utils import subdict, tree_level_labels
-from rnns_learn_robust_motor_policies.misc import camel_to_snake, get_dataclass_fields, is_json_serializable
+from rnns_learn_robust_motor_policies.misc import camel_to_snake, get_dataclass_fields, get_name_of_callable, is_json_serializable
 from rnns_learn_robust_motor_policies.plot_utils import figs_flatten_with_paths, get_label_str
 from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
 
@@ -73,12 +73,14 @@ DefaultFigParamNamespace = lambda **kwargs: eqx.field(default_factory=lambda: Fi
 
 
 class _PrepOp(NamedTuple):
-    dep_name: Optional[Union[str, Sequence[str]]] # Allow str or Sequence[str]
+    label: str
+    dep_name: Optional[Union[str, Sequence[str]]]  # Dependencies to transform
     transform_func: Callable[[Any], Any]
+    params: dict[str, Any] = {}  
 
 
 class _FigOp(NamedTuple):
-    dep_name: Optional[Union[str, Sequence[str]]] # Allow str or Sequence[str]
+    dep_name: Optional[Union[str, Sequence[str]]] 
     is_leaf: Callable[[Any], bool]
     slice_fn: Callable[[Any, Any], Any]
     items_fn: Callable[[Any], Any]
@@ -340,6 +342,8 @@ class AbstractAnalysis(Module, strict=False):
         
         # Construct this for reference to hps that should only vary with the task variant.
         hps_0 = jt.leaves(hps[self.variant], is_leaf=is_type(TreeNamespace))[0]
+
+        pre_ops_dict, prep_ops_filename_str = self._extract_prep_op_info()
         
         for i, (path, fig) in enumerate(figs_with_paths_flat):
             path_params = dict(zip(param_keys, tuple(jtree.node_key_to_value(p) for p in path)))
@@ -349,8 +353,8 @@ class AbstractAnalysis(Module, strict=False):
             
             params = dict(
                 **path_params,  # Inferred from the structure of the figs PyTree
-                **field_params,  # From the fields of this subclass
-                **self._params_to_save(
+                **field_params,  # From the fields of the analysis subclass instance
+                **self._params_to_save(  # Implemented by the subclass
                     hps, 
                     result=result, 
                     **path_params, 
@@ -358,6 +362,9 @@ class AbstractAnalysis(Module, strict=False):
                 ),  
                 eval_n=hps_0.eval_n,  #? Some things should always be included
             )
+
+            if pre_ops_dict:
+                params['pre_ops'] = pre_ops_dict
             
             add_evaluation_figure(
                 db_session, 
@@ -381,15 +388,112 @@ class AbstractAnalysis(Module, strict=False):
             if dump_path is not None:                                
                 # Create a unique filename
                 analysis_name = camel_to_snake(self.name)
-                filename = f"{analysis_name}__{self.variant}__{non_default_field_params_str}__{i}"
+                # Build filename parts, filtering out empty strings
+                filename_parts = [
+                    analysis_name,
+                    self.variant,
+                    non_default_field_params_str,
+                ]
                 
+                # Add prep ops filename string if present
+                if prep_ops_filename_str:
+                    filename_parts.append(prep_ops_filename_str)
+                    
+                # Add index to distinguish multiple figures from the same analysis
+                filename_parts.append(str(i))
+                
+                # Join all non-empty parts
+                filename = '__'.join(filter(None, filename_parts))
+
                 savefig(fig, filename, dump_path, dump_formats)
                 
                 # Save parameters as YAML
                 params_path = dump_path / f"{filename}.yaml"
-                with open(params_path, 'w') as f:
-                    yaml.dump(params, f, default_flow_style=False, sort_keys=False)
+                try:    
+                    with open(params_path, 'w') as f:
+                        yaml.dump(params, f, default_flow_style=False, sort_keys=False)
+                except Exception as e:
+                    logger.error(f"Error saving fig dump parameters to {params_path}: {e}", exc_info=True)
 
+    #! TODO: At least re: the filename, we should probably just have each transform method
+    #! provide its own filename string. For example, `after_transform_level` could return 
+    #! e.g. `filename_str = f"lohi_level1-label_level2-label"`
+    def _extract_prep_op_info(self):
+        """
+        Extract prep op information for params dictionary and filename generation.
+        
+        Returns:
+            tuple: (prep_ops_dict, prep_ops_filename_str)
+                - prep_ops_dict: Dictionary with prep op labels as keys and their params as values
+                - prep_ops_filename_str: String representation of prep ops for filenames
+        """
+        prep_ops_dict = {}
+        prep_op_filename_parts = []
+        
+        for prep_op in self._prep_ops:
+            # Process parameters once for both dict and filename
+            processed_params = {}
+            param_strs = []
+            
+            for k, v in prep_op.params.items():
+                # Process value based on its type
+                if isinstance(v, Callable):
+                    processed_value = get_name_of_callable(v)
+                    v_str = processed_value
+                elif isinstance(v, Mapping):
+                    # For dict: preserve structure but ensure keys are strings
+                    processed_value = {str(mk): mv for mk, mv in v.items()}
+                    
+                    # For filename: create compact string representation
+                    mapping_items = []
+                    for mk, mv in v.items():
+                        mk_str = str(mk).replace(' ', '_')
+                        mv_str = str(mv).replace(' ', '_')
+                        mapping_items.append(f"{mk_str}-{mv_str}")
+                    v_str = ";".join(mapping_items)
+                elif isinstance(v, (list, tuple, set)):
+                    # For dict: convert to list
+                    processed_value = list(v)
+                    
+                    # For filename: join elements
+                    seq_items = [str(item).replace(' ', '_') for item in v]
+                    v_str = ";".join(seq_items)
+                else:
+                    # Simple types
+                    processed_value = v
+                    v_str = str(v)
+                
+                # Store processed value for dictionary
+                processed_params[k] = processed_value
+                
+                # Clean up string for filename
+                v_str = v_str.replace(' ', '_').replace(',', ';').replace('{', '').replace('}', '')
+                v_str = v_str.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
+                param_strs.append(f"{k}-{v_str}")
+            
+            # Create entry for prep_ops dictionary
+            op_entry = processed_params.copy()
+            
+            # Add dependency info to dictionary only
+            if prep_op.dep_name is not None:
+                op_entry['dep_name'] = prep_op.dep_name
+            else:
+                op_entry['dep_name'] = "all"
+            
+            # Add to prep_ops dictionary
+            prep_ops_dict[prep_op.label] = op_entry
+            
+            # Add to filename parts (exclude dependency info)
+            if param_strs:
+                prep_op_filename_parts.append(f"{prep_op.label}__{';'.join(param_strs)}")
+            else:
+                prep_op_filename_parts.append(prep_op.label)
+        
+        # Combine all prep op filename parts
+        prep_ops_filename_str = '__'.join(prep_op_filename_parts)
+        
+        return prep_ops_dict, prep_ops_filename_str
+    
     def __str__(self) -> str:
         params = dict(self._non_default_field_params)
         params = dict(variant=self.variant) | params
@@ -412,8 +516,10 @@ class AbstractAnalysis(Module, strict=False):
         """
 
         return self._add_prep_op(
+            label="after_indexing",
             dep_name=dependency_name,
             transform_func=lambda dep_data: jtree.take(dep_data, axis, idxs),
+            params=dict(axis=axis, idxs=idxs),
         )
     
     def after_transform_level(
@@ -421,11 +527,11 @@ class AbstractAnalysis(Module, strict=False):
         level: str | Sequence[str], 
         transform_func: Optional[Callable[[LDict], Any]],
         dependency_name: Optional[str] = None,
+        transform_label: Optional[str] = None,
     ) -> Self:
         """
         Returns a copy of this analysis that transforms its inputs at an `LDict` level before proceeding.
         """
-
         if isinstance(level, str):
             level = [level]
 
@@ -436,8 +542,10 @@ class AbstractAnalysis(Module, strict=False):
                 return jt.map(transform_func, dep_data, is_leaf=LDict.is_of(level))
             
             obj = obj._add_prep_op(
+                label="after_transform_level",
                 dep_name=dependency_name,
                 transform_func=_transform_level,
+                params=dict(level=current_level, transform_func=transform_func),
             )
 
         return obj
@@ -485,8 +593,10 @@ class AbstractAnalysis(Module, strict=False):
             )
         
         return self._add_prep_op(
+            label="after_unstacking",
             dep_name=dependency_name,
             transform_func=unpack_axis,
+            params=dict(axis=axis, label=label), #, keys=keys),
         )
     
     def after_subdict_at_level(
@@ -543,8 +653,10 @@ class AbstractAnalysis(Module, strict=False):
         )
         
         return modified_analysis._add_prep_op(
+            label="after_stacking",
             dep_name=dependency_name,
-            transform_func=stack_dependency
+            transform_func=stack_dependency,
+            params=dict(level=level),
         )
     
     def after_level_to_top(self, label: str, dependency_name: Optional[str] = None) -> Self:
@@ -563,8 +675,10 @@ class AbstractAnalysis(Module, strict=False):
             )
         
         return self._add_prep_op(
+            label="after_level_to_top",
             dep_name=dependency_name,
             transform_func=transpose_dependency,
+            params=dict(label=label),
         )
 
     def map_at_level(self, level: str, dependency_name: Optional[str] = None) -> Self: 
@@ -676,11 +790,22 @@ class AbstractAnalysis(Module, strict=False):
             agg_fn=_combine_figures,
         )
 
-    def _add_prep_op(self, dep_name: Optional[str], transform_func: Callable) -> Self:
+    def _add_prep_op(
+            self, 
+            label: str,
+            dep_name: Optional[str], 
+            transform_func: Callable,
+            params: Optional[Dict[str, Any]] = None,
+    ) -> Self:
         return eqx.tree_at(
             lambda a: a._prep_ops,
             self,
-            self._prep_ops + (_PrepOp(dep_name=dep_name, transform_func=transform_func),)
+            self._prep_ops + (_PrepOp(
+                label=label,
+                dep_name=dep_name, 
+                transform_func=transform_func,
+                params=params,
+            ),)
         )
 
     def _change_fig_op(self, **kwargs) -> Self:
