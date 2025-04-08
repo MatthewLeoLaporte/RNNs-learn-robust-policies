@@ -109,7 +109,11 @@ def with_caller_logger(func):
 
 
 @with_caller_logger
-def get_name_of_callable(func: Callable, logger: Optional[logging.Logger] = None) -> str:
+def get_name_of_callable(
+    func: Callable, 
+    return_lambda_id: bool = False,
+    logger: Optional[logging.Logger] = None,
+) -> str:
     """
     Returns the name of a callable object, handling different types appropriately.
     
@@ -119,17 +123,30 @@ def get_name_of_callable(func: Callable, logger: Optional[logging.Logger] = None
     Returns:
         A string representing the callable's name or identifier.
     """
+    func_name = getattr(func, '__name__', None)
+    
     # Handle lambdas
-    if isinstance(func, types.LambdaType):
-        func_id = str(id(func))
-        logger.warning(
-            f"Generating name for lambda function. Returning its id '{func_id}'."
-        )
-        return func_id
+    if func_name == '<lambda>':
+        if return_lambda_id:
+            func_id = f"lambda-{str(id(func))}"
+            logger.warning(
+                f"Generating name for lambda function: returning its id 'lambda-{func_id}'."
+            )
+            return func_id
+        else: 
+            logger.warning("Generating name for lambda function: returning 'lambda'.")
+            return "lambda"
     
     # Handle partial functions
     elif isinstance(func, functools.partial):
         return get_name_of_callable(func.func)
+    
+    # Handle method objects (bound or unbound)
+    elif inspect.ismethod(func):
+        # For bound methods, include class name
+        if hasattr(func, '__self__'):
+            return f"{func.__self__.__class__.__name__}.{func.__name__}"
+        return func.__name__
     
     # Handle callable class instances
     elif callable(func) and not isinstance(func, (types.FunctionType, types.BuiltinFunctionType, type)):
@@ -140,19 +157,11 @@ def get_name_of_callable(func: Callable, logger: Optional[logging.Logger] = None
         )
         return class_name
     
-    # Handle method objects (bound or unbound)
-    elif inspect.ismethod(func):
-        # For bound methods, include class name
-        if hasattr(func, '__self__'):
-            return f"{func.__self__.__class__.__name__}.{func.__name__}"
-        return func.__name__
-    
     # Regular functions, built-in functions, and classes
     else: 
-        try:
+        if func_name is not None:
             return func.__name__
-        except:
-            # Fallback for any other callable type
+        else:
             return repr(func)
 
 

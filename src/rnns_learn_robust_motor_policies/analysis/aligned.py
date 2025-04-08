@@ -82,13 +82,14 @@ class AlignedTrajectories(AbstractAnalysis):
         n_curves_max=20,
         layout_kws=dict(
             width=900,
-            height=400,
+            height=300,
             legend_tracegroupgap=1,
-            margin_t=75,
+            margin_t=50,
+            margin_b=20,
         ),
         scatter_kws=dict(
             line_width=1,
-            opacity=0.5,
+            opacity=0.6,
         ),
     )
     colorscale_key: Optional[str] = None 

@@ -12,11 +12,18 @@ from rnns_learn_robust_motor_policies.types import TreeNamespace, dict_to_namesp
 
 CONFIG_DIR_ENV_VAR_NAME = 'RLRMP_CONFIG_DIR'
 
+def setup_paths(paths_ns: TreeNamespace):
+    base_path = Path(paths_ns.base)
 
-def setup_path(path_str: str):
-    path = Path(path_str)
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+    def _setup_path(path_str: str):
+        if path_str == 'base':
+            return base_path
+        else:
+            path = base_path / path_str
+            path.mkdir(parents=True, exist_ok=True)
+            return path
+
+    return jt.map(_setup_path, paths_ns)
 
 
 T = TypeVar('T', bound=SimpleNamespace)
@@ -70,10 +77,7 @@ def load_yaml_config_as_ns(
 # Load project-wide configuration from YAML resources in the `config` subpackage
 CONSTANTS: TreeNamespace = load_yaml_config_as_ns("constants")
 LOGGING_CONFIG: TreeNamespace = load_yaml_config_as_ns("logging")
-PATHS: TreeNamespace = jt.map(
-    setup_path,
-    load_yaml_config_as_ns("paths"),
-)
+PATHS: TreeNamespace = setup_paths(load_yaml_config_as_ns("paths"))
 PLOTLY_CONFIG: TreeNamespace = load_yaml_config_as_ns("plotly")
 PRNG_CONFIG: TreeNamespace = load_yaml_config_as_ns("prng")
 STRINGS: TreeNamespace = load_yaml_config_as_ns("strings")

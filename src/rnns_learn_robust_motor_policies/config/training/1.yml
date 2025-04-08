@@ -3,7 +3,7 @@ expt_id: 1
 model:
   n_replicates: 5
   hidden_size: 100
-  feedback_delay_steps: 0  #!
+  feedback_delay_steps: 4  #!
   feedback_noise_std: 0.01
   motor_noise_std: 0.01
   n_steps: 100

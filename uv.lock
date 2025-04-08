@@ -218,6 +218,15 @@ wheels = [
 ]
 
 [[package]]
+name = "dill"
+version = "0.3.9"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/70/43/86fe3f9e130c4137b0f1b50784dd70a5087b911fe07fa81e53e0c4c47fea/dill-0.3.9.tar.gz", hash = "sha256:81aa267dddf68cbfe8029c42ca9ec6a4ab3b22371d1c450abc54422577b4512c", size = 187000 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/46/d1/e73b6ad76f0b1fb7f23c35c6d95dbc506a9c8804f43dda8cb5b0fa6331fd/dill-0.3.9-py3-none-any.whl", hash = "sha256:468dff3b89520b474c0397703366b7b95eebe6303f108adf9b19da1f702be87a", size = 119418 },
+]
+
+[[package]]
 name = "equinox"
 version = "0.11.12"
 source = { registry = "https://pypi.org/simple" }
@@ -1059,6 +1068,22 @@ wheels = [
 ]
 
 [[package]]
+name = "pyexiv2"
+version = "2.15.3"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ba/d7/e0c17e8045e08090ff83bf1a6720c746f37904a9466a8f4e32cb4b768f0d/pyexiv2-2.15.3-cp311-none-macosx_14_0_arm64.whl", hash = "sha256:bee8bc18c6686caa947ec1c1b28edd5ebaa25a0b284e9d38cab5f60b0478b156", size = 1425562 },
+    { url = "https://files.pythonhosted.org/packages/93/73/e253db86dc6b2244b5256afae7ff9789dafec05d887da4805de59f058704/pyexiv2-2.15.3-cp311-none-manylinux2014_x86_64.whl", hash = "sha256:b1b20ed4356eda3b487e97a521a6e922785d955e4e4f2399102f13a68b289f5e", size = 1566548 },
+    { url = "https://files.pythonhosted.org/packages/41/85/700b0157a0e7372397a20f25743839a7cbc5a8c7b44e4ffbd513d1e6721a/pyexiv2-2.15.3-cp311-none-win_amd64.whl", hash = "sha256:48c022f0c43062cf1f41464b9027c98038131df5c62da5e72a2e8616bbbbbffb", size = 1186011 },
+    { url = "https://files.pythonhosted.org/packages/00/b7/09b5cb7f1ac298a5b11828f6aa0239abf763d930bcdcd8a91e103400559e/pyexiv2-2.15.3-cp312-none-macosx_14_0_arm64.whl", hash = "sha256:0cf6a0033dd1ce19cb16e35ca7a1b6f30837713b6680c2b7368a69afedda6b5d", size = 1423387 },
+    { url = "https://files.pythonhosted.org/packages/ce/26/2242efc225bc4a2829addcc81eb6be4915f366aaa6caa4f1de49adabee65/pyexiv2-2.15.3-cp312-none-manylinux2014_x86_64.whl", hash = "sha256:9f6dcc5191d1eb0cdc349dfcdcc5b9c37d18b6247241ce9bb6e1e5d1af5735fd", size = 1566248 },
+    { url = "https://files.pythonhosted.org/packages/2c/12/4abd3cca420fd27e9b5986988abbe4c7a37e36827dbe083fdd50ed4ff4a4/pyexiv2-2.15.3-cp312-none-win_amd64.whl", hash = "sha256:39c1f772674a1255f766ecdf1102dce316918a95a099703a32906b7433be94e8", size = 1186082 },
+    { url = "https://files.pythonhosted.org/packages/ef/74/ddb423fb1c604942fe6eff511c28370dbb59ed4a57b45bf5685040081c72/pyexiv2-2.15.3-cp313-none-macosx_14_0_arm64.whl", hash = "sha256:33d5a9d1ab1885d2e22ac7e70aa8847ba5ae3fa491856e5ce26736e46d5188c7", size = 1424037 },
+    { url = "https://files.pythonhosted.org/packages/54/f0/8726bcbd38595e53f1be5104211a80c6856a73183d2ae37eb1e110006da8/pyexiv2-2.15.3-cp313-none-manylinux2014_x86_64.whl", hash = "sha256:69f16fd3afae3b4710e779ddf5a1c899dce82c2b421c5bf9e3ab51f93d4721ec", size = 1566240 },
+    { url = "https://files.pythonhosted.org/packages/70/7d/00238fb13efbc8279d59895d898c06955b224b7f00bdb7e37a368c3976ec/pyexiv2-2.15.3-cp313-none-win_amd64.whl", hash = "sha256:23294a873320c41472852ffd0495710a63243576b1cb6b99b5e60cdade0602cb", size = 1186087 },
+]
+
+[[package]]
 name = "pygments"
 version = "2.19.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1234,13 +1259,16 @@ source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "diffrax" },
+    { name = "dill" },
     { name = "feedbax" },
     { name = "ipyfilechooser" },
     { name = "ipywidgets" },
     { name = "jax" },
     { name = "kaleido" },
+    { name = "pillow" },
     { name = "plotly" },
     { name = "polars" },
+    { name = "pyexiv2" },
     { name = "pyperclip" },
     { name = "pyyaml" },
     { name = "rich" },
@@ -1258,13 +1286,16 @@ plotlyviewer = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.15.1" },
     { name = "diffrax", specifier = ">=0.7.0" },
+    { name = "dill", specifier = ">=0.3.9" },
     { name = "feedbax", editable = "../20 Feedbax/feedbax" },
     { name = "ipyfilechooser", specifier = ">=0.6.0" },
     { name = "ipywidgets", specifier = ">=8.1.5" },
     { name = "jax", specifier = ">=0.5.2" },
     { name = "kaleido", specifier = "==0.2.1" },
+    { name = "pillow", specifier = ">=11.1.0" },
     { name = "plotly", specifier = ">=6.0.0" },
     { name = "polars", specifier = ">=1.24.0" },
+    { name = "pyexiv2", specifier = ">=2.15.3" },
     { name = "pyperclip", specifier = ">=1.9.0" },
     { name = "pyqt5", marker = "extra == 'plotlyviewer'", specifier = ">=5.15.11" },
     { name = "pyqtwebengine", marker = "extra == 'plotlyviewer'", specifier = ">=5.15.7" },

@@ -14,8 +14,13 @@ from copy import deepcopy
 from functools import partial
 import logging
 from pathlib import Path
+import dill as pickle
 from typing import Any, Optional, List
 
+# NOTE: JAX arrays are not directly picklable if they contain device memory references.
+# Since we're using pickle to cache states which may contain JAX arrays, we rely on JAX's
+# implicit handling of arrays during pickling (it should work for CPU arrays and most
+# host-accessible device arrays).
 import equinox as eqx
 import jax
 import jax.random as jr
@@ -126,8 +131,10 @@ COMMON_COLOR_SPECS = {
 def main(
     db_session, 
     hps_common: TreeNamespace,
-    fig_dump_path: Optional[str] = None,
+    fig_dump_path: str = PATHS.figures_dump,
     fig_dump_formats: List[str] = ["html"],
+    no_pickle: bool = False,
+    states_pkl_dir: Optional[Path] = PATHS.states_tmp,
     *,
     key,
 ):    
@@ -179,15 +186,50 @@ def main(
             is_leaf=is_module,
         )
 
-    states_shapes = eqx.filter_eval_shape(
-        evaluate_all_states, tasks, models, hps
-    )
-    logger.info(f"{jtree.struct_bytes(states_shapes) / 1e9:.2f} GB of memory estimated to store all states.")
+    # Helper function to compute states from scratch
+    def _compute_states_and_log_memory_estimate():
+        states_shapes = eqx.filter_eval_shape(
+            evaluate_all_states, tasks, models, hps
+        )
+        logger.info(f"{jtree.struct_bytes(states_shapes) / 1e9:.2f} GB of memory estimated to store all states.")
+        
+        computed_states = evaluate_all_states(tasks, models, hps)
+        logger.info("All states evaluated.")
+        return computed_states
     
-    states = evaluate_all_states(tasks, models, hps)
+    # Create a filename based on the evaluation hash
+    states_pickle_path = states_pkl_dir / f"{eval_info.hash}.pkl"
     
-    logger.info("All states evaluated.")
+    loaded_from_pickle = False
+    # If --no-pickle is set, we won't try to load from or save to pickle
+    if not no_pickle and states_pickle_path.exists():
+        # Try to load from pickle
+        logger.info(f"Loading states from {states_pickle_path}...")
+        try: 
+            with open(states_pickle_path, 'rb') as f:
+                states = pickle.load(f)
+            logger.info("States loaded from pickle.")
+            loaded_from_pickle = True
+        except Exception as e:
+            logger.error(f"Failed to load pickled states: {e}")
+            logger.info("Computing states from scratch instead...")
+            states = _compute_states_and_log_memory_estimate()
+    else:
+        if no_pickle and states_pickle_path.exists():
+            logger.info(f"Ignoring pickle file at {states_pickle_path} due to --no-pickle flag.")
+        
+        # Compute from scratch
+        states = _compute_states_and_log_memory_estimate()
     
+    # Save states if we didn't use --no-pickle and we didn't successfully load from pickle
+    if not no_pickle and not loaded_from_pickle:
+        def _test(tree):
+            return jt.map(lambda x: x, tree)
+
+        with open(states_pickle_path, 'wb') as f:
+            pickle.dump(_test(states), f)
+        logger.info(f"Saved evaluated states to {states_pickle_path}")
+
     # ANY subclass of `AbstractAnalysis` can add any of the following to the argument lists of
     # their `make_figs` and `compute` methods
     common_inputs = dict(
@@ -212,7 +254,7 @@ def main(
         data,
         model_info, 
         eval_info, 
-        fig_dump_path=Path(PATHS.figures_dump),
+        fig_dump_path=Path(fig_dump_path),
         fig_dump_formats=fig_dump_formats,
         **common_inputs,
     )
@@ -378,6 +420,8 @@ if __name__ == '__main__':
     parser.add_argument("--fig-dump-path", type=str, default="/tmp/fig_dump", help="Path to dump figures.")
     parser.add_argument("--fig-dump-formats", type=str, default="html", 
                       help="Format(s) to dump figures in, comma-separated (e.g., 'html,png,pdf')")
+    parser.add_argument("--no-pickle", action="store_true", help="Do not use pickle for states (don't load existing or save new).")
+    parser.add_argument("--states-pkl-dir", type=str, default=None, help="Alternative directory for state pickle files (default: PATHS.states_tmp)")
     args = parser.parse_args()
     hps = load_hps(args.config_path, config_type='analysis')
 
@@ -391,7 +435,18 @@ if __name__ == '__main__':
     # Parse the figure dump formats
     fig_dump_formats = args.fig_dump_formats.split(',')
     
-    main(db_session, hps, fig_dump_path=args.fig_dump_path, fig_dump_formats=fig_dump_formats, key=key)
+    # Set states pickle directory
+    states_pkl_dir = Path(args.states_pkl_dir) if args.states_pkl_dir else PATHS.states_tmp
+    
+    main(
+        db_session, 
+        hps, 
+        fig_dump_path=args.fig_dump_path, 
+        fig_dump_formats=fig_dump_formats, 
+        no_pickle=args.no_pickle,
+        states_pkl_dir=states_pkl_dir,
+        key=key
+    )
     
     
     

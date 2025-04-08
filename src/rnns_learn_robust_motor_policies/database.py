@@ -58,9 +58,9 @@ from jax_cookbook import (
 )
 import jax_cookbook.tree as jtree
 
-
 from rnns_learn_robust_motor_policies.config import PATHS, STRINGS
 from rnns_learn_robust_motor_policies.hyperparams import flatten_hps, load_hps, take_train_histories_hps
+from rnns_learn_robust_motor_policies.misc import with_caller_logger
 from rnns_learn_robust_motor_policies.tree_utils import pp
 from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace, dict_to_namespace, is_dict_with_int_keys, namespace_to_dict
 
@@ -686,12 +686,23 @@ def generate_figure_hash(eval_hash: str, identifier: str, parameters: Dict[str, 
     return hashlib.md5(figure_str.encode()).hexdigest()
 
 
+EXTS_WITH_EXIF = ['jpg', 'jpeg', 'tif', 'tiff', 'webp']
+
+
+from PIL import Image as PILImage 
+import pyexiv2
+
+pyexiv2.registerNs('http://example.com/ns/custom/', 'custom')
+
+@with_caller_logger
 def savefig(
     fig, 
     label, 
     fig_dir: Path,
     image_formats: Sequence[str],
     transparent=True, 
+    metadata: Optional[dict[str, Any]] = None,
+    logger: Optional[logging.Logger] = None,
     **kwargs,
 ):        
     path = str(fig_dir / f"{label}") + ".{ext}"
@@ -705,6 +716,8 @@ def savefig(
             )
     
     elif isinstance(fig, go.Figure):
+        fig.update_layout(meta=metadata)
+
         for ext in image_formats:
             path_i = path.format(ext=ext)
             if ext == 'html':
@@ -713,6 +726,21 @@ def savefig(
                 fig.write_json(path_i, engine="auto", **kwargs)
             else:
                 fig.write_image(path_i, scale=2, **kwargs)
+
+                if metadata is not None and ext in EXTS_WITH_EXIF:
+                    try: 
+                        img = pyexiv2.Image(path_i)
+                        metadata_xmp = {
+                            f"Xmp.custom.{k}": v
+                            for k, v in metadata.items()
+                        }
+                        metadata_xmp["Xmp.dc.description"] = json.dumps(metadata, indent=2)
+                        img.modify_xmp(metadata_xmp)
+                        img.close()
+                    except Exception as e:
+                        raise(e)
+                        logger.error(f"Failed to save metadata for image at {path_i}: {e}")
+
     
 
 def add_evaluation_figure(
