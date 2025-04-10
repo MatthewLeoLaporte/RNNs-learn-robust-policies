@@ -625,7 +625,7 @@ def generate_eval_hash(
 
 def add_evaluation(
     session: Session,
-    models: Optional[PyTree[ModelRecord]],  # Changed from ModelRecord to Optional[int]
+    models: PyTree[ModelRecord],  # Changed from ModelRecord to Optional[int]
     eval_parameters: Dict[str, Any],
     expt_id: Optional[str] = None,
     version_info: Optional[dict[str, str]] = None,
@@ -748,7 +748,7 @@ def add_evaluation_figure(
     eval_record: EvaluationRecord,
     figure: go.Figure | mplf.Figure,
     identifier: str,
-    model_records: Optional[PyTree[ModelRecord]] = None,
+    model_records: PyTree[ModelRecord] = None,
     save_formats: Optional[str | Sequence[str]] = "png",
     **parameters: Any,
 ) -> FigureRecord:

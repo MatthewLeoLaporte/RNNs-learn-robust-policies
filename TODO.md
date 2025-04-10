@@ -15,10 +15,10 @@ Then: continue with [[TODO-analysis#Network analysis Population level]].
 - [ ] [[TODO-analysis#TMS/tDCS analogues]]
 ### Convert notebooks
 
-- [ ] 1-2
-- [ ] 2-2
-- [ ] 2-4
-- [ ] 2-5
+- [ ] 1-2: feedback perts
+- [ ] 2-2: feedback perts
+- [ ] 2-4: steady-state FPs
+- [ ] 2-5: reaching FPs
 
 ### `AbstractAnalysis`
 
@@ -28,7 +28,7 @@ Examples of what I want to achieve:
 
 Steps:
 
-- [ ] Map operations, in addition to combine operations
+- [x] Map operations, in addition to combine operations
 	- See cursor chat “Enhancing figure operations in AbstractAnalysis”
 - [x] **Syntax for pre-stacking certain PyTree levels**
 	- e.g. `AlignedTrajectories` should not do this specifically; instead it just takes `colorscale_axis` and we should assume that the right data is already stacked in that axis

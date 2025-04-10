@@ -12,21 +12,21 @@ train:
   where: 
     0: ['step.net.hidden', 'step.net.readout']
   pert:  # during training
-    type: curl
+    type: constant
     # list -> load multiple models
-    std: [0.0, 0.5, 1.0, 1.5]  # curl
-    # std: [0.0, 0.01, 0.1, 1.0]  # constant
+    # std: [0.0, 0.5, 1.0, 1.5]  # curl
+    std: [0.0, 0.01, 0.1, 1.0]  # constant
   # intervention_scaleup_batches=[0,0],
   # state_reset_iterations=[],
   # readout_norm_loss_weight: 0.0
   # readout_norm_value: 2.0
   
-eval_n: 2 #! 5
+eval_n: 10
   
 task:  # Passed to the base task constructor
   full:
     eval_grid_n: 2
-    eval_n_directions: 4 #! 24
+    eval_n_directions: 24
     eval_reach_length: 0.5
   small:
     eval_grid_n: 1
@@ -38,7 +38,7 @@ pert:
   #! Could replace `load` key with `train` key, to start fixing this.
   type: curl
   amp: [0.0, 0.5, 1.0, 2.0, 4.0]  # curl
-  # amp: [0.0, 0.05, 0.1, 0.2, 0.4],  # constant
+  # amp: [0.0, 0.05, 0.1, 0.2, 0.4]  # constant
 
 model:
   n_steps: null

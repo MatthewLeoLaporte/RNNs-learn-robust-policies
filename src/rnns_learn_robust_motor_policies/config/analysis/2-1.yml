@@ -4,7 +4,7 @@ expt_id: 2-1
 train:
   expt_id: 2
   model:  
-    n_steps: 100  # TODO: Move this out a level
+    n_steps: 100  
     hidden_size: 100
     feedback_noise_std: 0.01
     motor_noise_std: 0.01
@@ -15,16 +15,16 @@ train:
   pert:  # during training
     type: curl
     # list -> load multiple models
-    std: [0.0, 1.0] #! , 0.5, 1.5]  
+    std: [0.0, 0.5, 1.0, 1.5]  
 
-context_input: [-1, 0, 1] #! [-2., -1., 0., 1., 2.]
+context_input: [-2., -1., 0., 1., 2.]
 
-eval_n: 2  #! 5
+eval_n: 10
   
 task:  # Passed to the base task constructor
   full:
     eval_grid_n: 2
-    eval_n_directions: 7 #! 24
+    eval_n_directions: 24
     # eval_reach_length: 0.5
   small:
     eval_grid_n: 1
@@ -34,7 +34,7 @@ task:  # Passed to the base task constructor
 pert:
   # null -> same as during training, e.g. load.train.pert.type in this case
   type: null 
-  amp: [0.0, 2.0] 
+  amp: [0.0, 4.0] 
   # constant -> [0.0, 0.4],
 
 model:

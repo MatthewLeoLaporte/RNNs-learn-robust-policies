@@ -4,7 +4,7 @@ from functools import cached_property
 import inspect
 import logging
 from types import LambdaType, MappingProxyType
-from typing import TYPE_CHECKING, Any, Iterable, NamedTuple, Optional, Dict, Self, Union
+from typing import TYPE_CHECKING, Any, ClassVar, Iterable, NamedTuple, Optional, Dict, Self, Union
 from pathlib import Path
 import yaml
 
@@ -82,18 +82,40 @@ class _PrepOp(NamedTuple):
 
 
 class _FigOp(NamedTuple):
+    name: str
+    label: str
     dep_name: Optional[Union[str, Sequence[str]]] 
     is_leaf: Callable[[Any], bool]
     slice_fn: Callable[[Any, Any], Any]
     items_fn: Callable[[Any], Any]
     agg_fn: Callable[[list[PyTree], Iterable], PyTree]
     fig_params_fn: Optional[Callable[[FigParamNamespace, int, Any], dict[str, Any]]]
+    params: dict[str, Any] = {}
+
+
+def _process_param(params: Any) -> Any:
+    """
+    Process parameter values for serialization in the database.
+    """
+    # Process value based on its type
+    if isinstance(params, Callable):
+        return get_name_of_callable(params)
+    elif isinstance(params, Mapping):
+        # Preserve structure but ensure keys are strings
+        return {str(mk): _process_param(mv) for mk, mv in params.items()}
+    elif isinstance(params, (list, tuple, set)):
+        # Convert to list
+        return list(params)
+    else:
+        # Simple types
+        return params
 
 
 def _combine_figures(
     figs_list: list[PyTree[go.Figure]], 
     items_iterated: Iterable,
 ) -> PyTree[go.Figure]:
+    """Merge traces from multiple figures into a single one."""
     def combine_figs(*figs):
         if not figs:
             return None
@@ -123,6 +145,14 @@ def _format_dict_items(d: dict, join_str: str = ', '):
     return join_str.join([
         f"{k}={v}" for k, v in d.items()
     ])
+
+
+_SPECIAL_DEP_NAMES = {"result", "data.states"}
+_NAME_NORMALIZATION = {"states": "data.states"}
+
+
+def _normalize_name(name: str) -> str:
+    return _NAME_NORMALIZATION.get(name, name)
 
 
 class AbstractAnalysis(Module, strict=False):
@@ -202,14 +232,18 @@ class AbstractAnalysis(Module, strict=False):
         else:
             fig_op = self._fig_op
 
+            kwargs_with_specials = processed_kwargs.copy()
+            kwargs_with_specials["result"] = result
+            kwargs_with_specials["data.states"] = data.states
+
             # Determine which dependencies to process
             target_dep_names = self._get_target_dependency_names(
-                fig_op.dep_name, processed_kwargs, "Fig op"
+                fig_op.dep_name, kwargs_with_specials, "Fig op"
             )
 
             dependencies_to_process: Dict[str, Any] = {}
             if target_dep_names:
-                 dependencies_to_process = {name: processed_kwargs[name] for name in target_dep_names}
+                 dependencies_to_process = {name: kwargs_with_specials[name] for name in target_dep_names}
 
             if dependencies_to_process:
                 # Find the first leaf to determine items
@@ -223,7 +257,7 @@ class AbstractAnalysis(Module, strict=False):
                         figs_list = []
                         for i, item in enumerate(items_to_iterate):
                             # Create the sliced kwargs based on the potentially modified processed_kwargs
-                            sliced_kwargs = processed_kwargs.copy() # Start from processed state for each slice
+                            sliced_kwargs = kwargs_with_specials.copy() # Start from processed state for each slice
                             for k, v in dependencies_to_process.items():
                                 sliced_kwargs[k] = jt.map(
                                     lambda x: fig_op.slice_fn(x, item) if fig_op.is_leaf(x) else x,
@@ -240,8 +274,15 @@ class AbstractAnalysis(Module, strict=False):
                                     self.fig_params | modified_fig_params
                                 )
 
+                            data_for_item = data
+                            if "data.states" in sliced_kwargs:
+                                data_for_item = eqx.tree_at(
+                                    lambda d: d.states, data, sliced_kwargs["data.states"]
+                                )
+                                del sliced_kwargs["data.states"]
+
                             # Pass sliced_kwargs to make_figs
-                            slice_figs = analysis_for_item.make_figs(data, result=result, **sliced_kwargs)
+                            slice_figs = analysis_for_item.make_figs(data_for_item, **sliced_kwargs)
                             figs_list.append(slice_figs)
 
                         if figs_list:
@@ -269,27 +310,33 @@ class AbstractAnalysis(Module, strict=False):
         and available kwargs.
         """
         target_names: list[str] = []
+
         if dep_name_spec is None:
             # Use all dependencies relevant to this analysis instance found in kwargs
             target_names = [k for k in self.dependencies if k in available_kwargs]
+            for name in _SPECIAL_DEP_NAMES:
+                if name in available_kwargs:
+                    target_names.append(name)
             if not target_names and self.dependencies: # Log only if dependencies were expected
                  logger.warning(f"{op_context} needs dependencies (dep_name_spec=None), but none found in kwargs.")
-        elif isinstance(dep_name_spec, str):
-            # Single dependency name
-            if dep_name_spec in available_kwargs:
-                target_names = [dep_name_spec]
-            else:
-                logger.warning(f"{op_context} dependency '{dep_name_spec}' not found in available kwargs.")
-        elif isinstance(dep_name_spec, Sequence):
-            # Sequence of dependency names
-             target_names = [name for name in dep_name_spec if name in available_kwargs]
-             if len(target_names) < len(dep_name_spec):
-                 missing = set(dep_name_spec) - set(target_names)
-                 logger.warning(f"{op_context} dependencies missing from kwargs: {missing}. Proceeding with available: {target_names}")
-             if not target_names:
-                  logger.warning(f"{op_context} specified dependencies {dep_name_spec}, but none were found in kwargs.")
         else:
-            logger.error(f"Invalid type for {op_context} dep_name_spec: {type(dep_name_spec)}")
+            dep_name_spec = jt.map(_normalize_name, dep_name_spec)
+            if isinstance(dep_name_spec, str):
+                # Single dependency name
+                if dep_name_spec in available_kwargs:
+                    target_names = [dep_name_spec]
+                else:
+                    logger.warning(f"{op_context} dependency '{dep_name_spec}' not found in available kwargs.")
+            elif isinstance(dep_name_spec, Sequence):
+                # Sequence of dependency names
+                target_names = [name for name in dep_name_spec if name in available_kwargs]
+                if len(target_names) < len(dep_name_spec):
+                    missing = set(dep_name_spec) - set(target_names)
+                    logger.warning(f"{op_context} dependencies missing from kwargs: {missing}. Proceeding with available: {target_names}")
+                if not target_names:
+                    logger.warning(f"{op_context} specified dependencies {dep_name_spec}, but none were found in kwargs.")
+            else:
+                logger.error(f"Invalid type for {op_context} dep_name_spec: {type(dep_name_spec)}")
 
         return target_names
 
@@ -305,7 +352,7 @@ class AbstractAnalysis(Module, strict=False):
         self, 
         data: AnalysisInputData,
         **kwargs,
-    ) -> Optional[PyTree[Any]]:
+    ) -> PyTree[Any]:
         """Perform computations for the analysis. 
         
         The return value is passed as `result` to `make_figs`, and is also made available to other
@@ -319,7 +366,7 @@ class AbstractAnalysis(Module, strict=False):
         *,
         result: Optional[Any],
         **kwargs,
-    ) -> Optional[PyTree[go.Figure]]:
+    ) -> PyTree[go.Figure]:
         """Generate figures for this analysis.
         
         Figures are returned, but are not made available to other subclasses of `AbstractAnalysis`
@@ -355,7 +402,7 @@ class AbstractAnalysis(Module, strict=False):
         # Construct this for reference to hps that should only vary with the task variant.
         hps_0 = jt.leaves(hps[self.variant], is_leaf=is_type(TreeNamespace))[0]
 
-        pre_ops_dict, prep_ops_filename_str = self._extract_prep_op_info()
+        ops_params_dict, ops_filename_str = self._extract_ops_info()
         
         for i, (path, fig) in enumerate(figs_with_paths_flat):
             path_params = dict(zip(param_keys, tuple(jtree.node_key_to_value(p) for p in path)))
@@ -375,8 +422,8 @@ class AbstractAnalysis(Module, strict=False):
                 eval_n=hps_0.eval_n,  #? Some things should always be included
             )
 
-            if pre_ops_dict:
-                params['pre_ops'] = pre_ops_dict
+            if ops_params_dict:
+                params['ops'] = ops_params_dict
             
             add_evaluation_figure(
                 db_session, 
@@ -390,8 +437,9 @@ class AbstractAnalysis(Module, strict=False):
             # Include any fields that have non-default values in the filename; 
             # this serves to distinguish different instances of the same analysis,
             # according to the kwargs passed by the user upon instantiation.
-            # TODO: Exclude non-determining fields like `legend_title` 
-            # TODO: (could group all the figure layout kwargs under a single field and exclude it)
+            # TODO: Exclude based on `_FigOp` and `_PrepOp`; e.g. if a 
+            # `_PrepOp` is used to stack, then we don't need to include the 
+            #  altered stack axis in the filename
             non_default_field_params_str = '__'.join([
                 f"{k}-{v}" for k, v in self._non_default_field_params.items()
             ])
@@ -408,8 +456,8 @@ class AbstractAnalysis(Module, strict=False):
                 ]
                 
                 # Add prep ops filename string if present
-                if prep_ops_filename_str:
-                    filename_parts.append(prep_ops_filename_str)
+                if ops_filename_str:
+                    filename_parts.append(ops_filename_str)
                     
                 # Add index to distinguish multiple figures from the same analysis
                 filename_parts.append(str(i))
@@ -427,41 +475,24 @@ class AbstractAnalysis(Module, strict=False):
                 except Exception as e:
                     logger.error(f"Error saving fig dump parameters to {params_path}: {e}", exc_info=True)
 
-    def _extract_prep_op_info(self):
+    def _extract_ops_info(self):
         """
-        Extract prep op information for params dictionary and filename generation.
+        Extract information about all operations (prep ops and fig op).
         
         Returns:
-            tuple: (prep_ops_dict, prep_ops_filename_str)
-                - prep_ops_dict: Dictionary with prep op labels as keys and their params as values
-                - prep_ops_filename_str: String representation of prep ops for filenames
+            - ops_params_dict: Dictionary with all operations info
+            - ops_filename_str: String representation for filename
         """
-        prep_ops_dict = {}
-        prep_op_filename_parts = []
-        
-        for prep_op in self._prep_ops:
-            # Process parameters once for both dict and filename
-            processed_params = {}
-            
-            # Create entry for prep_ops dictionary
-            op_entry = processed_params.copy()
-            
-            # Add dependency info to dictionary only
-            if prep_op.dep_name is not None:
-                op_entry['dep_name'] = prep_op.dep_name
-            else:
-                op_entry['dep_name'] = "all"
-            
-            # Add to prep_ops dictionary
-            prep_ops_dict[prep_op.name] = op_entry
-            
-            # Add to filename parts (exclude dependency info)
-            prep_op_filename_parts.append(prep_op.label)
-        
-        # Combine all prep op filename parts
-        prep_ops_filename_str = '__'.join(prep_op_filename_parts)
-        
-        return prep_ops_dict, prep_ops_filename_str
+        all_ops = self._prep_ops + (self._fig_op,)
+                
+        ops_params_dict = {
+            op.name: {k: _process_param(v) for k, v in op.params.items()}
+            for op in all_ops
+        }
+
+        ops_filename_str = '__'.join(op.label for op in all_ops)
+
+        return ops_params_dict, ops_filename_str
     
     def __str__(self) -> str:
         params = dict(self._non_default_field_params)
@@ -688,10 +719,12 @@ class AbstractAnalysis(Module, strict=False):
         """
         # Define items_fn and slice_fn (same as combine_figs_by_level)
         _is_leaf_level = LDict.is_of(level)
+
         def _level_items_fn(leaf: LDict) -> Iterable:
             if not _is_leaf_level(leaf):
                  raise TypeError(f"Map target for level '{level}' is not an LDict with that label.")
             return leaf.keys()
+        
         def _level_slice_fn(node: LDict, item: Any) -> Any:
              return node[item]
 
@@ -702,6 +735,8 @@ class AbstractAnalysis(Module, strict=False):
             return LDict.of(level)(dict(zip(items_iterated, figs_list)))
 
         return self._change_fig_op(
+            name="map_at_level",
+            label=f"map_at-{_format_level_str(level)}",
             dep_name=dependency_name,
             is_leaf=_is_leaf_level,
             slice_fn=_level_slice_fn,
@@ -709,6 +744,7 @@ class AbstractAnalysis(Module, strict=False):
             # Use the new aggregator specific to mapping
             agg_fn=_reconstruct_ldict_aggregator,
             fig_params_fn=None, # Mapping usually doesn't need per-item param changes
+            params=dict(level=level),
         )
     
     def combine_figs_by_axis(
@@ -740,6 +776,8 @@ class AbstractAnalysis(Module, strict=False):
              return node[(slice(None),) * axis + (item,)]
 
         return self._change_fig_op(
+            name="combine_figs_by_axis",
+            label=f"combine_by-axis{axis}",
             dep_name=dependency_name,
             is_leaf=eqx.is_array,
             slice_fn=_axis_slice_fn,
@@ -747,6 +785,7 @@ class AbstractAnalysis(Module, strict=False):
             fig_params_fn=fig_params_fn,
             # Use the default aggregator that matches the new signature
             agg_fn=_combine_figures,
+            params=dict(axis=axis),
         )
         
     def combine_figs_by_level(
@@ -779,6 +818,8 @@ class AbstractAnalysis(Module, strict=False):
              return node[item]
 
         return self._change_fig_op(
+            name="combine_figs_by_level",
+            label=f"combine_by-{_format_level_str(level)}",
             dep_name=dependency_name,
             is_leaf=_is_leaf_level,
             slice_fn=_level_slice_fn,
@@ -786,6 +827,7 @@ class AbstractAnalysis(Module, strict=False):
             fig_params_fn=fig_params_fn,
              # Use the default aggregator that matches the new signature
             agg_fn=_combine_figures,
+            params=dict(level=level),
         )
 
     def _add_prep_op(
@@ -875,3 +917,18 @@ class AbstractAnalysis(Module, strict=False):
     @property
     def name(self) -> str:
         return self.__class__.__name__
+
+
+class _DummyAnalysis(AbstractAnalysis):
+    """An empty analysis, for debugging."""
+    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
+    conditions: tuple[str, ...] = ()
+    variant: Optional[str] = None
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
+
+    def compute(self, data: AnalysisInputData, **kwargs) -> PyTree[Any]:
+        print(tree_level_labels(next(iter(data.states.values()))))
+        return None
+    
+    def make_figs(self, data: AnalysisInputData, **kwargs) -> PyTree[go.Figure]:
+        return None

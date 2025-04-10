@@ -131,13 +131,16 @@ COMMON_COLOR_SPECS = {
 def main(
     db_session, 
     hps_common: TreeNamespace,
-    fig_dump_path: str = PATHS.figures_dump,
+    fig_dump_path: Optional[str] = None,
     fig_dump_formats: List[str] = ["html"],
     no_pickle: bool = False,
     states_pkl_dir: Optional[Path] = PATHS.states_tmp,
     *,
     key,
 ):    
+    if fig_dump_path is None:
+        fig_dump_path = PATHS.figures_dump
+
     # If some config values (other than those under the `load` key) are unspecified, replace them with 
     # respective values from the `load` key
     # e.g. if trained on curl fields and hps.pert.type is None, use hps.train.pert.type
@@ -417,7 +420,7 @@ if __name__ == '__main__':
     # filename relative to `../src/rnns_learn_robust_motor_policies/config`) of a default config to load. 
     # This assumes there is no file whose relative path is identical to that `expt_id`.
     parser.add_argument("config_path", type=str, help="Path to the config file, or `expt_id` of a default config.")
-    parser.add_argument("--fig-dump-path", type=str, default="/tmp/fig_dump", help="Path to dump figures.")
+    parser.add_argument("--fig-dump-path", type=str, help="Path to dump figures.")
     parser.add_argument("--fig-dump-formats", type=str, default="html", 
                       help="Format(s) to dump figures in, comma-separated (e.g., 'html,png,pdf')")
     parser.add_argument("--no-pickle", action="store_true", help="Do not use pickle for states (don't load existing or save new).")

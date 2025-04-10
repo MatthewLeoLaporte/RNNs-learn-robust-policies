@@ -102,7 +102,12 @@ def tree_level_labels(tree: LDict, is_leaf=falsef, sep=None) -> list[str]:
         if isinstance(current_node, LDict):
             labels.append(current_node.label)   
         else:
-            raise NotImplementedError("")
+            labels.append(current_node.__class__.__name__)
+            logger.warning(
+                f"Non-LDict node encountered when labeling tree levels: {type(current_node)}; " 
+                "assuming it is a leaf, and stopping."
+            )
+            break
         
         # Get the node at this level
         if isinstance(current_node, dict) or hasattr(current_node, '__getitem__'):

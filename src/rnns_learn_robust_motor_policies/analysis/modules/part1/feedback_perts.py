@@ -204,8 +204,6 @@ MEASURE_KEYS = [
 # measure_labels = MEASURE_LABELS | custom_measure_labels
 
 
-
-
 ALL_ANALYSES = [
     # 1. Example trial sets (single trial, single replicate)
     # 2. Aligned profiles: compare training conditions 
@@ -213,6 +211,7 @@ ALL_ANALYSES = [
     # 4. Measures: Comparison across train conditions
     # 5. Measures: Comparison across lo-hi train conditions
     # 6. Measures: Comparison across impulse amplitudes
+    
     Measures(measure_keys=MEASURE_KEYS),
 
     # Effector_SingleEval(
