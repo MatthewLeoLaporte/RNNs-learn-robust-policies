@@ -16,14 +16,12 @@ from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.aligned import AlignedTrajectories
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
-from rnns_learn_robust_motor_policies.analysis.effector import Effector_ByEval
-from rnns_learn_robust_motor_policies.analysis.effector import Effector_SingleEval
-from rnns_learn_robust_motor_policies.analysis.effector import Effector_ByReplicate
+from rnns_learn_robust_motor_policies.analysis.analysis import _DummyAnalysis, AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rnns_learn_robust_motor_policies.analysis.effector import Effector
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_PERT_FUNCS
 from rnns_learn_robust_motor_policies.analysis.measures import Measures, output_corr
 from rnns_learn_robust_motor_policies.analysis.profiles import VelocityProfiles
-from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
+from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate_states, vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVENOR_LABEL
 from rnns_learn_robust_motor_policies.misc import lohi
 from rnns_learn_robust_motor_policies.types import TreeNamespace
@@ -164,12 +162,41 @@ MEASURE_KEYS = (
 
 measures_base = Measures(measure_keys=MEASURE_KEYS)
 
+i_eval = 0  # For single-eval plots
+
 
 """All the analyses to perform in this part."""
 ALL_ANALYSES = [
-    # Effector_ByEval(),
-    # Effector_SingleEval(i_trial=0),
-    # Effector_ByReplicate(i_trial=0),
+    # state shape: (eval, replicate, condition, time, xy)
+
+    # By condition, all evals for the best replicate only
+    Effector(
+        colorscale_axis=1, 
+        colorscale_key="reach_condition",
+    )
+        .transform(get_best_replicate_states),  # By default has `axis=1` for replicates
+
+    # By replicate, single eval
+    Effector(
+        colorscale_axis=0, 
+        colorscale_key="replicate",
+    )
+        .after_indexing(0, i_eval, axis_label='eval'),
+
+    # Single eval for a single replicate
+    Effector(
+        colorscale_axis=0, 
+        colorscale_key="reach_condition",
+    )
+        .transform(get_best_replicate_states)
+        .after_indexing(0, i_eval, axis_label='eval')
+        .with_fig_params(
+            curves_mode='markers+lines',
+            ms=3,
+            mean_trajectory_line_width=0,
+            scatter_kws=dict(line_width=0.75),
+        ),
+
     # AlignedTrajectories(
     #     colorscale_axis=1,
     #     colorscale_key='trial',
@@ -180,8 +207,8 @@ ALL_ANALYSES = [
     measures_base,
     measures_base.after_transform_level(['train__pert__std'], lohi),
     measures_base.after_transform_level(['train__pert__std', 'pert__amp'], lohi),
-    #! TODO: Integrate `Measures_CompareReplicatesLoHi` into `Measures`...
-    #! Measures(measure_keys=MEASURE_KEYS)
-    #!     .after_unstacking(axis=1, label='replicate'),
-    # OutputWeightCorrelation(),
+    # #! TODO: Integrate `Measures_CompareReplicatesLoHi` into `Measures`...
+    # #! Measures(measure_keys=MEASURE_KEYS)
+    # #!     .after_unstacking(axis=1, label='replicate'),
+    # # OutputWeightCorrelation(),
 ]

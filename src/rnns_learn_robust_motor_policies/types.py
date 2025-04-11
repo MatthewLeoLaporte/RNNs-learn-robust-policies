@@ -212,6 +212,15 @@ def unflatten_dict_keys(flat_dict: dict, sep: str = '__') -> dict:
     return result
 
 
+class _Wrapped():
+    """Simple wrapper, e.g. for turning PyTree nodes into leaves when `is_leaf` fails."""
+    def __init__(self, value: Any):
+        self.value = value 
+
+    def unwrap(self):
+        return self.value
+
+
 @jax.tree_util.register_pytree_with_keys_class
 class LDict(Mapping[K, V], Generic[K, V]):
     """Immutable dictionary with a distinguishingstring label.

@@ -171,32 +171,15 @@ def get_step_task_input(x1, x2, step_step, n_steps, n_trials):
     return input_func
 
 
-class BestReplicateStates(AbstractAnalysis):
-    conditions: tuple[str, ...] = ()
-    variant: Optional[str] = None
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
-    i_replicate: Optional[int] = None
+def get_best_replicate_states(states, *, replicate_info, axis: int = 1, **kwargs):
+    return jt.map(
+        lambda states_by_std: LDict.of("train__pert__std")({
+            std: jtree.take(states, replicate_info[std]["best_replicates"][REPLICATE_CRITERION], axis=axis)
+            for std, states in states_by_std.items()
+        }),
+        states,
+        is_leaf=LDict.is_of("train__pert__std"),
+    )
 
-    def compute(
-        self,
-        data: AnalysisInputData,
-        *,
-        replicate_info,
-        **kwargs,
-    ):
-        result = jt.map(
-            lambda states_by_std: LDict.of("train__pert__std")({
-                std: jtree.take(
-                    states,
-                    replicate_info[std]["best_replicates"][REPLICATE_CRITERION],
-                    axis=1,
-                )
-                for std, states in states_by_std.items()
-            }),
-            data.states,
-            is_leaf=LDict.is_of("train__pert__std"),
-        )
-        return result
     
     

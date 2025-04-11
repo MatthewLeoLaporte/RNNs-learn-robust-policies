@@ -40,9 +40,9 @@ WHERE_VARS_TO_ALIGN = lambda states, pos_endpoints: Responses(
 
 class AlignedVars(AbstractAnalysis):
     """Align spatial variable (e.g. position and velocity) coordinates with the reach direction."""
+    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = None
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
 
     def compute(
@@ -67,11 +67,11 @@ class AlignedVars(AbstractAnalysis):
         
         
 class AlignedTrajectories(AbstractAnalysis):
-    conditions: tuple[str, ...] = ()
-    variant: Optional[str] = "small"
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         aligned_vars=AlignedVars,
     ))
+    conditions: tuple[str, ...] = ()
+    variant: Optional[str] = "small"
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
         var_labels=RESPONSE_VAR_LABELS,
         axes_labels=('Parallel', 'Orthogonal'),

@@ -24,7 +24,7 @@ from rnns_learn_robust_motor_policies.database import EvaluationRecord, add_eval
 from rnns_learn_robust_motor_policies.tree_utils import subdict, tree_level_labels
 from rnns_learn_robust_motor_policies.misc import camel_to_snake, get_dataclass_fields, get_name_of_callable, is_json_serializable
 from rnns_learn_robust_motor_policies.plot_utils import figs_flatten_with_paths, get_label_str
-from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
+from rnns_learn_robust_motor_policies.types import LDict, Responses, TreeNamespace, _Wrapped
 
 if TYPE_CHECKING:
     from typing import ClassVar as AbstractClassVar
@@ -77,7 +77,7 @@ class _PrepOp(NamedTuple):
     name: str
     label: str
     dep_name: Optional[Union[str, Sequence[str]]]  # Dependencies to transform
-    transform_func: Callable[[Any], Any]
+    transform_func: Callable[..., Any]
     params: dict[str, Any] = {}  
 
 
@@ -93,22 +93,22 @@ class _FigOp(NamedTuple):
     params: dict[str, Any] = {}
 
 
-def _process_param(params: Any) -> Any:
+def _process_param(param: Any) -> Any:
     """
     Process parameter values for serialization in the database.
     """
     # Process value based on its type
-    if isinstance(params, Callable):
-        return get_name_of_callable(params)
-    elif isinstance(params, Mapping):
+    if isinstance(param, Callable):
+        return get_name_of_callable(param)
+    elif isinstance(param, Mapping):
         # Preserve structure but ensure keys are strings
-        return {str(mk): _process_param(mv) for mk, mv in params.items()}
-    elif isinstance(params, (list, tuple, set)):
+        return {str(mk): _process_param(mv) for mk, mv in param.items()}
+    elif isinstance(param, (list, tuple, set)):
         # Convert to list
-        return list(params)
+        return list(param)
     else:
         # Simple types
-        return params
+        return param
 
 
 def _combine_figures(
@@ -142,12 +142,12 @@ def _format_level_str(label: str):
 
 
 def _format_dict_items(d: dict, join_str: str = ', '):
+    # For constructing parts of `AbstractAnalysis.__str__`
     return join_str.join([
-        f"{k}={v}" for k, v in d.items()
+        f"{k}={_process_param(v)}" for k, v in d.items()
     ])
 
 
-_SPECIAL_DEP_NAMES = {"result", "data.states"}
 _NAME_NORMALIZATION = {"states": "data.states"}
 
 
@@ -210,31 +210,36 @@ class AbstractAnalysis(Module, strict=False):
 
         # Transform dependencies prior to performing the analysis
         # e.g. see `after_stacking` for an example of defining a pre-op
-        processed_kwargs = kwargs.copy() # Start with original kwargs for modification
+        prepped_kwargs = kwargs.copy() # Start with original kwargs for modification
+        prepped_kwargs['data.states'] = data.states
         for prep_op in self._prep_ops:
             dep_names_to_process = self._get_target_dependency_names(
-                prep_op.dep_name, processed_kwargs, "Prep-op"
+                prep_op.dep_name, prepped_kwargs, "Prep-op"
             )
 
             # Apply transformation to identified dependencies
             for name in dep_names_to_process:
                  try:
-                     # Modify the dictionary being processed
-                     processed_kwargs[name] = prep_op.transform_func(processed_kwargs[name])
+                     prepped_kwargs[name] = prep_op.transform_func(prepped_kwargs[name], **kwargs)
                  except Exception as e:
                      logger.error(f"Error applying prep_op transform to '{name}': {e}", exc_info=True)
+        
+        prepped_data = eqx.tree_at(
+            lambda d: d.states, data, prepped_kwargs["data.states"]
+        )
+        del prepped_kwargs["data.states"]            
 
-        result = self.compute(data, **processed_kwargs)
+        result = self.compute(prepped_data, **prepped_kwargs)
 
         figs: PyTree[go.Figure] = None
         if self._fig_op is None:
-            figs = self.make_figs(data, result=result, **processed_kwargs)
+            figs = self.make_figs(prepped_data, result=result, **prepped_kwargs)
         else:
             fig_op = self._fig_op
 
-            kwargs_with_specials = processed_kwargs.copy()
+            kwargs_with_specials = prepped_kwargs.copy()
             kwargs_with_specials["result"] = result
-            kwargs_with_specials["data.states"] = data.states
+            kwargs_with_specials["data.states"] = prepped_data.states
 
             # Determine which dependencies to process
             target_dep_names = self._get_target_dependency_names(
@@ -314,9 +319,10 @@ class AbstractAnalysis(Module, strict=False):
         if dep_name_spec is None:
             # Use all dependencies relevant to this analysis instance found in kwargs
             target_names = [k for k in self.dependencies if k in available_kwargs]
-            for name in _SPECIAL_DEP_NAMES:
-                if name in available_kwargs:
-                    target_names.append(name)
+            # Process the states and `compute` results by default
+            target_names.append('data.states')
+            if 'result' in available_kwargs:
+                target_names.append('result')
             if not target_names and self.dependencies: # Log only if dependencies were expected
                  logger.warning(f"{op_context} needs dependencies (dep_name_spec=None), but none found in kwargs.")
         else:
@@ -352,11 +358,15 @@ class AbstractAnalysis(Module, strict=False):
         self, 
         data: AnalysisInputData,
         **kwargs,
-    ) -> PyTree[Any]:
+    ) -> dict[str, PyTree[Any]]:
         """Perform computations for the analysis. 
         
         The return value is passed as `result` to `make_figs`, and is also made available to other
         subclasses of `AbstractAnalysis` as defined in their respective`dependencies` attribute. 
+
+        Note that the outer (task variant) `dict` level should be retained in the returned PyTree, since generally 
+        a subclass that implements `compute` is implicitly available as a dependency for other subclasses
+        which may depend on data for any variant.  
         """
         return 
     
@@ -452,12 +462,13 @@ class AbstractAnalysis(Module, strict=False):
                 filename_parts = [
                     analysis_name,
                     self.variant,
-                    non_default_field_params_str,
                 ]
                 
                 # Add prep ops filename string if present
                 if ops_filename_str:
                     filename_parts.append(ops_filename_str)
+
+                filename_parts.append(non_default_field_params_str)
                     
                 # Add index to distinguish multiple figures from the same analysis
                 filename_parts.append(str(i))
@@ -483,7 +494,10 @@ class AbstractAnalysis(Module, strict=False):
             - ops_params_dict: Dictionary with all operations info
             - ops_filename_str: String representation for filename
         """
-        all_ops = self._prep_ops + (self._fig_op,)
+        all_ops = self._prep_ops 
+        
+        if self._fig_op is not None:
+            all_ops += (self._fig_op,)
                 
         ops_params_dict = {
             op.name: {k: _process_param(v) for k, v in op.params.items()}
@@ -506,6 +520,10 @@ class AbstractAnalysis(Module, strict=False):
         if prep_op_params_strs: 
             obj_str = '.'.join([obj_str, *prep_op_params_strs])
 
+        if self._fig_op:
+            fig_op_params_str = f"{self._fig_op.name}({_format_dict_items(self._fig_op.params)})"
+            obj_str = '.'.join([obj_str, fig_op_params_str])
+
         return obj_str
         
     def with_fig_params(self, **kwargs) -> Self:
@@ -517,11 +535,11 @@ class AbstractAnalysis(Module, strict=False):
         )
 
     def after_indexing(
-            self, 
-            axis: int, 
-            idxs: ArrayLike, 
-            axis_label: Optional[str] = None,
-            dependency_name: Optional[str] = None,
+        self, 
+        axis: int, 
+        idxs: ArrayLike, 
+        axis_label: Optional[str] = None,
+        dependency_name: Optional[str] = None,
     ) -> Self:
         """
         Returns a copy of this analysis that slices its inputs along an axis before proceeding.
@@ -536,7 +554,7 @@ class AbstractAnalysis(Module, strict=False):
             name="after_indexing",
             label=label,
             dep_name=dependency_name,
-            transform_func=lambda dep_data: jtree.take(dep_data, axis, idxs),
+            transform_func=lambda dep_data, **kwargs: jtree.take(dep_data, axis, idxs),
             params=dict(axis=axis, idxs=idxs),
         )
     
@@ -556,7 +574,7 @@ class AbstractAnalysis(Module, strict=False):
         obj = self
         for current_level in level:
             # Define transform_level inside the loop with the correct closure
-            def _transform_level(dep_data, level=current_level):  # Capture current_level by value
+            def _transform_level(dep_data, level=current_level, **kwargs):  # Capture current_level by value
                 return jt.map(transform_func, dep_data, is_leaf=LDict.is_of(level))
             
             level_str = _format_level_str(current_level)
@@ -593,7 +611,7 @@ class AbstractAnalysis(Module, strict=False):
                 By default, uses integer keys starting from zero. 
             dependency_name: Optional name of specific dependency to transform
         """
-        def unpack_axis(data):
+        def unpack_axis(data, **kwargs):
             def transform_array(arr):
                 nonlocal keys
                 if keys is None:
@@ -661,7 +679,7 @@ class AbstractAnalysis(Module, strict=False):
             A copy of this analysis with stacking operation and updated parameters
         """
         # Define the stacking function
-        def stack_dependency(dep_data):
+        def stack_dependency(dep_data, **kwargs):
             return jt.map(
                 lambda d: jtree.stack(list(d.values())),
                 dep_data,
@@ -687,7 +705,12 @@ class AbstractAnalysis(Module, strict=False):
             params=dict(level=level),
         )
     
-    def after_level_to_top(self, label: str, dependency_name: Optional[str] = None) -> Self:
+    def after_level_to_top(
+        self, 
+        label: str, 
+        is_leaf: Callable[[Any], bool] = is_type(Responses),
+        dependency_name: Optional[str] = None,
+    ) -> Self:
         """
         Returns a copy of this analysis that will transpose `LDict` levels of its inputs.
 
@@ -695,12 +718,22 @@ class AbstractAnalysis(Module, strict=False):
         the outer PyTree level, but for whatever reason this level is not already 
         the outer level of our results PyTree.
         """
-        def transpose_dependency(dep_data):
-            return jt.transpose(
-                jt.structure(dep_data, is_leaf=LDict.is_of(label)),
-                None,
-                dep_data,
-            )
+        def transpose_dependency(dep_data, **kwargs):
+            #? `is_leaf` doesn't seem to work with an inner `jt.structure` in transpose,
+            #? to keep e.g. `Responses` on the inside; however we can wrap the node to force
+            #? it to be treated as a leaf
+            wrapped_dep_data = jt.map(_Wrapped, dep_data, is_leaf=is_leaf)
+
+            result = {
+                variant_label: jt.transpose(
+                    jt.structure(wrapped_dep_data[variant_label], is_leaf=LDict.is_of(label)),
+                    None,
+                    wrapped_dep_data[variant_label],
+                )
+                for variant_label in wrapped_dep_data
+            }
+
+            return jt.map(lambda x: x.unwrap(), result, is_leaf=is_type(_Wrapped))
         
         return self._add_prep_op(
             name="after_level_to_top",
@@ -708,6 +741,36 @@ class AbstractAnalysis(Module, strict=False):
             dep_name=dependency_name,
             transform_func=transpose_dependency,
             params=dict(label=label),
+        )
+    
+    def map(
+        self,
+        func: Callable[[Any], Any], 
+        is_leaf: Optional[Callable[[Any], bool]] = None, 
+        dependency_name: Optional[str] = None,
+    ) -> Self:
+        """
+        Returns a copy of this analysis that maps a function over the input PyTrees.
+        """
+        return self._add_prep_op(
+            name="map",
+            label=f"map-{get_name_of_callable(func)}",
+            dep_name=dependency_name,
+            transform_func=lambda dep_data, **kwargs: jt.map(func, dep_data, is_leaf=is_leaf),
+            params=dict(func=func),
+        )
+    
+    def transform(
+        self, 
+        func: Callable[..., Any],  # Must take two arguments: a PyTree, and **kwargs
+        dependency_name: Optional[str] = None,
+    ) -> Self:
+        return self._add_prep_op(
+            name="transform",
+            label=f"transform-{get_name_of_callable(func)}",
+            dep_name=dependency_name,
+            transform_func=func,
+            params=dict(func=func),
         )
 
     def map_at_level(self, level: str, dependency_name: Optional[str] = None) -> Self: 
@@ -860,7 +923,7 @@ class AbstractAnalysis(Module, strict=False):
                       
     @cached_property
     def _field_params(self):
-        # TODO: Inherit from dependencies? e.g. if we depend on `BestReplicateStates`, maybe we should include `i_replicate` from there
+        # TODO: Inherit from dependencies? 
         return get_dataclass_fields(
             self, 
             exclude=AbstractAnalysis._exclude_fields,
@@ -909,8 +972,6 @@ class AbstractAnalysis(Module, strict=False):
         
         Note that `**kwargs` here may not only contain the dependencies, but that `save` 
         passes the key-value pairs of parameters inferred from the `figs` PyTree. 
-        Thus for example `train_pert_std` is explicitly referred to in the argument list of 
-        `plant_perts.Effector_ByEval._params_to_save`.
         """
         return dict()
 

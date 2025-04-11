@@ -39,6 +39,7 @@ COLORSCALES: dict[str, Union[str, Sequence[str], Sequence[tuple]]] = dict(
     context_input='thermal',
     pert_var=plc.qualitative.D3,  # list[str]
     reach_condition='phase',
+    replicate='twilight',
     trial='Tealgrn',
 )
 

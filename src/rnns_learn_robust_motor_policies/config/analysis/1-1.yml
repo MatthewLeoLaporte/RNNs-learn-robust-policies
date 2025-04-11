@@ -12,10 +12,10 @@ train:
   where: 
     0: ['step.net.hidden', 'step.net.readout']
   pert:  # during training
-    type: constant
+    type: curl
     # list -> load multiple models
-    # std: [0.0, 0.5, 1.0, 1.5]  # curl
-    std: [0.0, 0.01, 0.1, 1.0]  # constant
+    std: [0.0, 0.5, 1.0, 1.5]  # curl
+    # std: [0.0, 0.01, 0.1, 1.0]  # constant
   # intervention_scaleup_batches=[0,0],
   # state_reset_iterations=[],
   # readout_norm_loss_weight: 0.0

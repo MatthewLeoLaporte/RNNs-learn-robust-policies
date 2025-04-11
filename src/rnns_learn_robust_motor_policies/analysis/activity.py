@@ -15,7 +15,6 @@ from jax_cookbook import is_type
 from sklearn.decomposition import PCA
 
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
-from rnns_learn_robust_motor_policies.analysis.state_utils import BestReplicateStates
 from rnns_learn_robust_motor_policies.constants import REPLICATE_CRITERION
 from rnns_learn_robust_motor_policies.plot_utils import get_label_str
 from rnns_learn_robust_motor_policies.plot_utils import calculate_array_minmax
@@ -195,9 +194,7 @@ def activity_sample_units(
 class NetworkActivity_SampleUnits(AbstractAnalysis):
     conditions: tuple[str, ...] = ()  
     variant: Optional[str] = "small"
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
-        best_replicate_states=BestReplicateStates,
-    ))
+    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
         n_units_sample=4,
         key=jr.PRNGKey(0),
@@ -246,9 +243,7 @@ class NetworkActivity_SampleUnits(AbstractAnalysis):
 class NetworkActivity_PCA(AbstractAnalysis):
     conditions: tuple[str, ...] = ()  
     variant: Optional[str] = "small"
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
-        best_replicate_states=BestReplicateStates,
-    ))
+    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
     n_components: Optional[int] = None
     start_step: int = 0
@@ -269,6 +264,7 @@ class NetworkActivity_PCA(AbstractAnalysis):
         
         activities_for_pca = jt.map(
             lambda states: states.net.hidden[..., idxs, :].reshape(-1, hidden_size),
+            #! TODO: Do not index out variant in `compute`
             best_replicate_states[self.variant],
             is_leaf=is_type(SimpleFeedbackState),
         ) 
@@ -290,7 +286,6 @@ class NetworkActivity_ProjectPCA(AbstractAnalysis):
     variant: Optional[str] = "small"
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         pca=NetworkActivity_PCA,
-        best_replicate_states=BestReplicateStates,
     ))
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
     variant_pca: Optional[str] = None  
@@ -319,6 +314,7 @@ class NetworkActivity_ProjectPCA(AbstractAnalysis):
     ):
         return jt.map(
             lambda states: pca.batch_transform(states.net.hidden),
+            #! TODO: Do not index out variant in `compute`
             best_replicate_states[self.variant],
             is_leaf=is_type(SimpleFeedbackState),
         ) 
