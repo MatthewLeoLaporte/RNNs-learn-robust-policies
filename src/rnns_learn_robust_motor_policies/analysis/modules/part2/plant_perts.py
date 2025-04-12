@@ -16,10 +16,10 @@ from feedbax.task import TrialSpecDependency
 from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.analysis.aligned import AlignedTrajectories, AlignedVars
+from rnns_learn_robust_motor_policies.analysis.aligned import AlignedEffectorTrajectories, AlignedVars
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS
-from rnns_learn_robust_motor_policies.analysis.effector import Effector
+from rnns_learn_robust_motor_policies.analysis.effector import EffectorTrajectories
 from rnns_learn_robust_motor_policies.analysis.measures import ALL_MEASURE_KEYS, MEASURE_LABELS
 from rnns_learn_robust_motor_policies.analysis.measures import Measures
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate_states, get_constant_task_input, vmap_eval_ensemble
@@ -131,9 +131,14 @@ MEASURE_KEYS = (
 
         
 ALL_ANALYSES = [
-    Effector().map(get_best_replicate_states),  # TODO
-    AlignedTrajectories().after_stacking("context_input").map_at_level("train__pert__std"),
-    AlignedTrajectories().after_stacking("train__pert__std").map_at_level("context_input"),
+    # By condition, all evals for the best replicate only
+    EffectorTrajectories(
+        colorscale_axis=1, 
+        colorscale_key="reach_condition",
+    )
+        .transform(get_best_replicate_states),  # By default has `axis=1` for replicates
+    AlignedEffectorTrajectories().after_stacking("context_input").map_at_level("train__pert__std"),
+    AlignedEffectorTrajectories().after_stacking("train__pert__std").map_at_level("context_input"),
     Measures(measure_keys=MEASURE_KEYS).map_at_level("pert__amp"),
     Measures(measure_keys=MEASURE_KEYS).map_at_level("train__pert__std"),
     Measures(measure_keys=MEASURE_KEYS).after_level_to_top("train__pert__std").map_at_level("pert__amp"),

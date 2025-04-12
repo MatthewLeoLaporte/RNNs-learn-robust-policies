@@ -8,7 +8,7 @@ from feedbax.task import TrialSpecDependency
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.activity import NetworkActivity_SampleUnits
-from rnns_learn_robust_motor_policies.analysis.aligned import AlignedTrajectories
+from rnns_learn_robust_motor_policies.analysis.aligned import AlignedEffectorTrajectories
 from rnns_learn_robust_motor_policies.colors import ColorscaleSpec
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_PERT_FUNCS, get_pert_amp_vmap_eval_func
 from rnns_learn_robust_motor_policies.analysis.profiles import VelocityProfiles
@@ -110,7 +110,7 @@ ALL_ANALYSES = [
     
     # 3. Plot aligned vars for +/- plant pert, +/- context pert on same plot
     # (It only makes sense to do this for reaches (not ss), at least for curl fields.)
-    AlignedTrajectories(variant="reach")
+    AlignedEffectorTrajectories(variant="reach")
         .after_stacking(level="pert__context__amp")
         # Axis 3 and not 2, because of the prior stacking
         .combine_figs_by_axis(axis=3, fig_params_fn=fig_params_fn_context_pert)

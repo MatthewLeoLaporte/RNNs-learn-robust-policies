@@ -42,8 +42,8 @@ pert:
 
 model:
   n_steps: null
-  feedback_noise_std: null
-  motor_noise_std: null
+  feedback_noise_std: 0.025
+  motor_noise_std: 0.025
 
 analyses:
   center_out_sets: 

@@ -15,9 +15,9 @@ from feedbax.intervene import add_intervenors, schedule_intervenor
 from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.analysis.aligned import AlignedTrajectories
+from rnns_learn_robust_motor_policies.analysis.aligned import AlignedEffectorTrajectories
 from rnns_learn_robust_motor_policies.analysis.analysis import _DummyAnalysis, AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
-from rnns_learn_robust_motor_policies.analysis.effector import Effector
+from rnns_learn_robust_motor_policies.analysis.effector import EffectorTrajectories
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_PERT_FUNCS
 from rnns_learn_robust_motor_policies.analysis.measures import Measures, output_corr
 from rnns_learn_robust_motor_policies.analysis.profiles import VelocityProfiles
@@ -170,21 +170,24 @@ ALL_ANALYSES = [
     # state shape: (eval, replicate, condition, time, xy)
 
     # By condition, all evals for the best replicate only
-    Effector(
+    EffectorTrajectories(
         colorscale_axis=1, 
         colorscale_key="reach_condition",
     )
         .transform(get_best_replicate_states),  # By default has `axis=1` for replicates
 
     # By replicate, single eval
-    Effector(
+    EffectorTrajectories(
         colorscale_axis=0, 
         colorscale_key="replicate",
     )
-        .after_indexing(0, i_eval, axis_label='eval'),
+        .after_indexing(0, i_eval, axis_label='eval')
+        .with_fig_params(
+            scatter_kws=dict(line_width=1),
+        ),
 
     # Single eval for a single replicate
-    Effector(
+    EffectorTrajectories(
         colorscale_axis=0, 
         colorscale_key="reach_condition",
     )
@@ -201,8 +204,8 @@ ALL_ANALYSES = [
     #     colorscale_axis=1,
     #     colorscale_key='trial',
     # ),
-    AlignedTrajectories().after_stacking(level='pert__amp'),
-    AlignedTrajectories().after_stacking(level='train__pert__std'),
+    AlignedEffectorTrajectories().after_stacking(level='pert__amp'),
+    AlignedEffectorTrajectories().after_stacking(level='train__pert__std'),
     VelocityProfiles(),
     measures_base,
     measures_base.after_transform_level(['train__pert__std'], lohi),

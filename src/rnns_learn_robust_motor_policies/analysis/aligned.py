@@ -66,7 +66,7 @@ class AlignedVars(AbstractAnalysis):
         )
         
         
-class AlignedTrajectories(AbstractAnalysis):
+class AlignedEffectorTrajectories(AbstractAnalysis):
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
         aligned_vars=AlignedVars,
     ))

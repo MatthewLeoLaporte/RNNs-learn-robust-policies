@@ -4,7 +4,7 @@ from types import MappingProxyType
 from typing import ClassVar, Optional
 
 import jax.tree as jt
-from equinox import Module
+from equinox import Module, field
 from jaxtyping import PyTree
 import plotly.graph_objects as go
 
@@ -25,7 +25,7 @@ from rnns_learn_robust_motor_policies.types import TreeNamespace
 MEAN_LIGHTEN_FACTOR = PLOTLY_CONFIG.mean_lighten_factor
 
 
-class Effector(AbstractAnalysis):
+class EffectorTrajectories(AbstractAnalysis):
     conditions: tuple[str, ...] = () # ('any_system_noise',)  # TODO: Skip this analysis, if only one eval
     variant: Optional[str] = "small"
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
@@ -36,11 +36,12 @@ class Effector(AbstractAnalysis):
         mean_trajectory_line_width=2.5,
         legend_labels=None,
         darken_mean=MEAN_LIGHTEN_FACTOR,
-        scatter_kws=dict(line_width=0.5),
+        scatter_kws=dict(line_width=0.75, opacity=0.4),
     )
     colorscale_key: Optional[str] = None 
     colorscale_axis: Optional[int] = None
     pos_endpoints: bool = True
+    straight_guides: bool = True
 
     def make_figs(
         self,
@@ -70,13 +71,22 @@ class Effector(AbstractAnalysis):
             task_0 = jt.leaves(data.tasks[self.variant], is_leaf=is_type(AbstractTask))[0]
             pos_endpoints = get_pos_endpoints(task_0.validation_trials)
 
+            if self.colorscale_key == 'reach_condition':
+                colorscale = COLORSCALES['reach_condition']
+            else:
+                colorscale = None
+
+            init_marker_kws = dict(color="rgb(25, 25, 25)")
+
             figs = jt.map(
                 lambda fig: add_endpoint_traces(
                     fig, 
                     pos_endpoints, 
                     xaxis='x1', 
                     yaxis='y1', 
-                    colorscale=COLORSCALES[self.colorscale_key],
+                    colorscale=colorscale,
+                    init_marker_kws=init_marker_kws,
+                    straight_guides=self.straight_guides,
                 ),
                 figs,
                 is_leaf=is_type(go.Figure),

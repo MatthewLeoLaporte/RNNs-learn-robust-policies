@@ -20,14 +20,35 @@ def add_endpoint_traces(
     fig: go.Figure,
     pos_endpoints: Float[Array, "ends=2 *trials xy=2"],
     visible: tuple[bool, bool] = (True, True),
-    colorscale: Optional[str] = None,  # overrides `color` properties in `marker_kws` args
+    colorscale: Optional[str] = None,  
     colorscale_axis: int = 0,  # of `trials` axes
     init_marker_kws: Optional[dict] = None, 
     goal_marker_kws: Optional[dict] = None,
     straight_guides: bool = False,
     straight_guide_kws: Optional[dict] = None,
+    behind_traces: bool = True,
     **kwargs,
 ):
+    """
+    Add endpoint markers and optional straight guide lines to a Plotly figure.
+    
+    Args:
+        fig: Plotly figure to add traces to
+        pos_endpoints: Array with start and goal positions. Shape: [2, *trials, 2] where
+                      the first dimension is [start, goal], middle dimensions are trials,
+                      and last dimension is [x, y] coordinates
+        visible: Tuple of booleans indicating if start and goal markers should be visible
+        colorscale: Optional color scale to apply to the markers
+        colorscale_axis: Which trial axis to use for color mapping (if colorscale provided)
+        init_marker_kws: Additional keyword arguments for the start markers
+        goal_marker_kws: Additional keyword arguments for the goal markers
+        straight_guides: Whether to add straight lines connecting start and goal points
+        straight_guide_kws: Additional keyword arguments for the guide lines
+        **kwargs: Additional keyword arguments for all marker traces
+        
+    Returns:
+        Updated Plotly figure with added traces
+    """
     marker_kws = {
         "Start": dict(
             size=10,
@@ -42,17 +63,21 @@ def add_endpoint_traces(
             line=dict(width=2, color='rgb(25, 25, 25)'),
         ),
     }
-
-    if init_marker_kws is not None:
-        marker_kws["Start"].update(init_marker_kws)
-    if goal_marker_kws is not None:
-        marker_kws["Goal"].update(goal_marker_kws)
+    default_guide_kws = dict(
+        mode="lines",
+        line=dict(
+            color="rgba(100, 100, 100, 0.5)",
+            dash="dot",
+            width=0.5,
+        ),
+        hoverinfo="skip",
+    )
      
     if len(pos_endpoints.shape) == 2:
         pos_endpoints = jnp.expand_dims(pos_endpoints, axis=1)
     
     if colorscale is not None:
-        # --- Calculate colors based on trial dimensions only ---
+        # Calculate colors based on trial dimensions only
         trial_shape = pos_endpoints.shape[1:-1]
         if not trial_shape:  # Handle case with only one trial dimension
              trial_shape = (pos_endpoints.shape[1],)
@@ -72,7 +97,6 @@ def add_endpoint_traces(
         
         # Flatten colors to match the flattened trial dimension used later
         flat_colors = jnp.reshape(broadcasted_colors, (-1,))
-        # --- End color calculation ---
         
         for i, key in enumerate(marker_kws):
             marker_kws[key].update(
@@ -83,34 +107,74 @@ def add_endpoint_traces(
                 cmax=1,
                 # colorscale=colorscale, # This should be set on the trace, not marker
             )
+
+    if init_marker_kws is not None:
+        marker_kws["Start"].update(init_marker_kws)
+    if goal_marker_kws is not None:
+        marker_kws["Goal"].update(goal_marker_kws)
     
     if len(pos_endpoints.shape) > 3:
         pos_endpoints = jnp.reshape(pos_endpoints, (2, -1, 2))
     
+    traces = []
+
+    # Add straight guide lines between start and goal points if requested
+    if straight_guides:
+        if straight_guide_kws is not None:
+            default_guide_kws.update(straight_guide_kws)
+
+        for i in range(pos_endpoints.shape[1]):
+            if i == 0:
+                showlegend = True
+            else:
+                showlegend = False
+
+            # For each trial, create a line from start to goal
+            traces.append(go.Scatter(
+                x=[pos_endpoints[0, i, 0], pos_endpoints[1, i, 0]],
+                y=[pos_endpoints[0, i, 1], pos_endpoints[1, i, 1]],
+                #! TODO: Choose the legend name to avoid adding to any existing legend
+                legend="legend2",
+                showlegend=showlegend,
+                **default_guide_kws,
+            ))
+
     for j, (label, kws) in enumerate(marker_kws.items()):
-        fig.add_traces(
-            [
-                go.Scatter(
-                    name=f"{label}",
-                    meta=dict(label=label),
-                    legendgroup=label,
-                    hovertemplate=f"{label}<extra></extra>",
-                    x=pos_endpoints[j, ..., 0],
-                    y=pos_endpoints[j, ..., 1],
-                    visible=visible[j],
-                    mode="markers",
-                    marker=kws,
-                    marker_colorscale=colorscale,
-                    showlegend=True,
-                    **kwargs,
-                )
-            ]
-        )
-    
+        traces.append(go.Scatter(
+            name=f"{label}",
+            meta=dict(label=label),
+            legend="legend2",
+            hovertemplate=f"{label}<extra></extra>",
+            x=pos_endpoints[j, ..., 0],
+            y=pos_endpoints[j, ..., 1],
+            visible=visible[j],
+            mode="markers",
+            marker=kws,
+            marker_colorscale=colorscale,
+            showlegend=True,
+            **kwargs,
+        ))
+        
+    if behind_traces:
+        existing_traces = list(fig.data)
+        fig.data = ()
+        fig.add_traces(traces + existing_traces)
+    else:
+        fig.add_traces(traces)
+
+    fig.update_layout(
+        legend2=dict(
+            title_text="Guides",
+            xref="container",
+            yref="container",
+            y=0.33,
+        ),
+    )
+
     return fig
 
 
-def get_violins(
+def get_violins(\
     data: dict[float, dict[float, Float[Array, "..."]]],  # "evals replicates conditions"
     data_split: Optional[dict[float, dict[float, Float[Array, "..."]]]] = None,
     split_mode: Literal['whole', 'split'] = 'whole',
