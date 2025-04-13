@@ -940,7 +940,8 @@ class AbstractAnalysis(Module, strict=False):
         
         # Get all dataclass fields for this instance
         for field in dataclasses.fields(self):
-            if field.name in AbstractAnalysis._exclude_fields:
+            # Exclude `variant` since we explicitly include it first, in dump file names
+            if field.name in AbstractAnalysis._exclude_fields or field.name == "variant":
                 continue
             
             # Skip fields that are marked as subclass-internal

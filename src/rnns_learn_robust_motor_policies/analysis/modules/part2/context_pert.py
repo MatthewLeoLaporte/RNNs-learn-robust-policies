@@ -9,10 +9,11 @@ import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.activity import NetworkActivity_SampleUnits
 from rnns_learn_robust_motor_policies.analysis.aligned import AlignedEffectorTrajectories
+from rnns_learn_robust_motor_policies.analysis.effector import EffectorTrajectories
 from rnns_learn_robust_motor_policies.colors import ColorscaleSpec
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_PERT_FUNCS, get_pert_amp_vmap_eval_func
 from rnns_learn_robust_motor_policies.analysis.profiles import VelocityProfiles
-from rnns_learn_robust_motor_policies.analysis.state_utils import get_step_task_input
+from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate_states, get_step_task_input
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVENOR_LABEL
 from rnns_learn_robust_motor_policies.types import LDict
 
@@ -74,51 +75,94 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
 eval_func = get_pert_amp_vmap_eval_func(lambda hps: hps.pert.plant.amp, PLANT_INTERVENOR_LABEL)
 
 
-def fig_params_fn_context_pert(fig_params, i, item):
-    PLANT_PERT_LABELS = {0: "no curl", 1: "curl"}
-    PLANT_PERT_STYLES = dict(line_dash={0: "dot", 1: "solid"})
-
-    return dict(
-        # legend_labels=[
-        #     f"{label} ({PLANT_PERT_LABELS[i]})"
-        #     for label in fig_params.legend_labels
-        # ],
-        scatter_kws=dict(
-            line_dash=PLANT_PERT_STYLES['line_dash'][i],
-        ),
-    )
+PLANT_PERT_LABELS = {0: "no curl", 1: "curl"}
+PLANT_PERT_STYLES = dict(line_dash={0: "dot", 1: "solid"})
 
 
 ALL_ANALYSES = [
-    # # 0. Show that context perturbation does not cause a significant change in force output at steady-state.
-    # #! (might want to go to zero noise, to show how true this actually is)
-    # Effector_ByEval(
-    #     variant="steady", 
-    #     mean_exclude_axes=(-3,),  # Average over all extra batch axes *except* reach direction/condition
-    # ).with_fig_params(legend_title="Pert. field amp."),
-    
-    # # 1. Sample center-out plots for perturbation during reaches; 
-    # # these aren't very useful once we have the aligned plots.
-    # Effector_ByEval(
-    #     variant="reach", 
-    #     mean_exclude_axes=(-3,),
-    #     legend_labels=lambda hps, hps_common: hps_common.pert.plant.amp,   
-    # ).with_fig_params(legend_title="Pert. field amp."),
-    
-    # # 2. Activity of sample units, to show they change when context input does
-    NetworkActivity_SampleUnits(variant="steady"),
-    
-    # 3. Plot aligned vars for +/- plant pert, +/- context pert on same plot
+    # -- Steady-state --
+    # 0. Show that context perturbation does not cause a significant change in force output at steady-state.
+    EffectorTrajectories(
+        variant="steady",
+        pos_endpoints=False,
+        straight_guides=False,
+        colorscale_axis=1, 
+        colorscale_key="reach_condition",
+    )
+        .transform(get_best_replicate_states)  # By default has `axis=1` for replicates
+        .with_fig_params(
+            mean_exclude_axes=(-3,),  # Average over all extra batch axes *except* reach direction/condition
+            legend_title="Context<br>pert. amp.",
+        ),
+
+    #! TODO: Not displaying; debug pytree structure
+    #! Also only one of the two legendgroup titles is displayed, even though the respective values/labels appear to be properly passed
+    # VelocityProfiles(variant="steady")
+    #     .after_level_to_top('train__pert__std')
+    #     .combine_figs_by_axis(
+    #         axis=2,     
+    #         fig_params_fn=lambda fig_params, i, item: dict(
+    #             scatter_kws=dict(
+    #                 line_dash=PLANT_PERT_STYLES['line_dash'][i],
+    #                 legendgroup=PLANT_PERT_LABELS[i],
+    #                 legendgrouptitle_text=PLANT_PERT_LABELS[i].capitalize(),
+    #             ),
+    #         ),
+    #     ),
+
+    # 1. Activity of sample units, to show they change when context input does
+    NetworkActivity_SampleUnits(variant="steady")
+        .transform(get_best_replicate_states)
+        .after_level_to_top('train__pert__std')
+        .with_fig_params(
+            legend_title="Context pert. amp.",  #! No effect
+        ),
+
+    # -- Reaching --
+    # 2. Plot aligned vars for reaching +/- plant pert, +/- context pert on same plot
     # (It only makes sense to do this for reaches (not ss), at least for curl fields.)
+    # Hide individual trials for this plot, since they make it hard to distinguish the means;
+    # the variability should be clear from other plots. 
     AlignedEffectorTrajectories(variant="reach")
         .after_stacking(level="pert__context__amp")
-        # Axis 3 and not 2, because of the prior stacking
-        .combine_figs_by_axis(axis=3, fig_params_fn=fig_params_fn_context_pert)
-        .with_fig_params(legend_title="Final context<br>input"),
+        .combine_figs_by_axis(
+            axis=3,  # Not 2, because of the prior stacking
+            fig_params_fn=lambda fig_params, i, item: dict(
+                mean_scatter_kws=dict(
+                    line_dash=PLANT_PERT_STYLES['line_dash'][i],
+                    legendgroup=PLANT_PERT_LABELS[i],
+                    legendgrouptitle_text=PLANT_PERT_LABELS[i].capitalize(),
+                ),
+            ),
+        )
+        .with_fig_params(
+            legend_title="Final context<br>input",
+            scatter_kws=dict(line_width=0),  # Hide individual trials
+            layout_kws=dict(
+                legend_title_font_weight="bold",
+                #! TODO: Nested dict update so we don't need to pass these redundantly
+                width=900, 
+                height=300,
+                legend_tracegroupgap=1, 
+                margin_t=50,
+                margin_b=20,
+            ),
+        ),
 
+    #! Only one of the two legendgroup titles is displayed, even though the respective values/labels appear to be properly passed.
+    #! I'm not sure why this is different from `AlignedEffectorTrajectories`, where the legend is displayed correctly
     VelocityProfiles(variant="reach")
         .after_level_to_top('train__pert__std')
-        .combine_figs_by_axis(axis=2, fig_params_fn=fig_params_fn_context_pert),
+        .combine_figs_by_axis(
+            axis=2,     
+            fig_params_fn=lambda fig_params, i, item: dict(
+                scatter_kws=dict(
+                    line_dash=PLANT_PERT_STYLES['line_dash'][i],
+                    legendgroup=PLANT_PERT_LABELS[i],
+                    legendgrouptitle_text=PLANT_PERT_LABELS[i].capitalize(),
+                ),
+            ),
+        ),
 
     # 4. Perform PCA wrt baseline `reach` variant, and project `steady` variant into that space
     # (To show that context input causally varies the network activity in a null direction)

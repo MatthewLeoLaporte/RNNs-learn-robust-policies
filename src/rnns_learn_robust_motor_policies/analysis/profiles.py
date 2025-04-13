@@ -64,7 +64,7 @@ class VelocityProfiles(AbstractAnalysis):
         def _get_fig(fig_data, i, label, colors):                      
             return fbp.profiles(
                 jtree.take(fig_data, i, -1),
-                varname=f"{label} velocity",
+                varname=f"{label} velocity".capitalize(),
                 legend_title=get_label_str(fig_data.label),
                 hline=dict(y=0, line_color="grey"),
                 colors=list(colors[fig_data.label].dark.values()),

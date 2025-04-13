@@ -40,7 +40,7 @@ if __name__ == '__main__':
     # Because of the behaviour of `load_hps`, config_path can also be the `expt_id: str` (i.e. YAML 
     # filename relative to `../src/rnns_learn_robust_motor_policies/config`) of a default config to load. 
     # This assumes there is no file whose relative path is identical to that `expt_id`.
-    parser.add_argument("config_path", type=str, help="Path to the config file.")
+    parser.add_argument("config_path", type=str, help="Path to the config file.")  
     parser.add_argument("--untrained-only", action='store_false', help="Only train models which appear not to have been trained yet.")
     parser.add_argument("--postprocess", action='store_false', help="Postprocess each model after training.")
     parser.add_argument("--n-std-exclude", type=int, default=2, help="In postprocessing, exclude model replicates with n_std greater than this value.")

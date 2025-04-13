@@ -43,3 +43,19 @@
 - [x] Control coloraxis from analysis subclasses 🗎 Next
 - [x] Fix mean curve calculation in `trajectories_2d`: if there are multiple batch dimensions, it will average them all 🗎 Next
 	- e.g. if the reach direction is not the color axis, we’ll end up averaging over reach directions and getting
+
+# 2025-04-13
+
+- [x] Syntax for constructing subplots?  🗎 Next > Convert notebooks > `AbstractAnalysis`
+- [x] Aligned vars plotting function for `context_pert` which plots all four conditions (+/- plant pert, +/- context pert) on the same figure (one per training std) 🗎 Next > Convert notebooks > `AbstractAnalysis`
+- [x] **Syntax for combining traces from single plots** 🗎 Next > Convert notebooks > `AbstractAnalysis`
+	- This is also a common operation: we don’t just want to compare across a single axis/variable – we want to show multiple axes of variation on the same plot, as in a 2x2 condition
+	- This is a bit trickier, since it may depend on the specific plotting function being used, and how we would like to visually differentiate the plots; however we could assume that the user knows (or provide them info about) the plotting function so that they can pass the relevant kwargs
+	- The general idea is to run `make_figs` multiple times with slightly different kwargs, and then merge the traces from the resulting pytrees
+	- e.g. `AlignedTrajectories(...).merge_figs_by("some_other_level)` 
+- [x] **Syntax for pre-stacking certain PyTree levels** 🗎 Next > Convert notebooks > `AbstractAnalysis`
+	- e.g. `AlignedTrajectories` should not do this specifically; instead it just takes `colorscale_axis` and we should assume that the right data is already stacked in that axis
+	- this is a common enough operation that I don’t want `StackLevel` to be a usual analysis class, or something
+	- instead, we should be able to do something like `AlignedTrajectories(...).after_stacking("some_level")`
+- [x] Map operations, in addition to combine operations 🗎 Next > Convert notebooks > `AbstractAnalysis`
+	- See cursor chat “Enhancing figure operations in AbstractAnalysis”

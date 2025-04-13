@@ -196,8 +196,8 @@ ALL_ANALYSES = [
         .with_fig_params(
             curves_mode='markers+lines',
             ms=3,
-            mean_trajectory_line_width=0,
             scatter_kws=dict(line_width=0.75),
+            mean_scatter_kws=dict(line_width=0),
         ),
 
     # AlignedTrajectories(

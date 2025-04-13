@@ -13,34 +13,6 @@ Then: continue with [[TODO-analysis#Network analysis Population level]].
 - [ ] [[TODO-analysis#Stimulation of Jacobian eigenvectors]] 
 - [ ] [[TODO-analysis#Steady-state Hessian]]
 - [ ] [[TODO-analysis#TMS/tDCS analogues]]
-### Convert notebooks
-
-- [ ] 1-2: feedback perts
-- [ ] 2-2: feedback perts
-- [ ] 2-4: steady-state FPs
-- [ ] 2-5: reaching FPs
-
-### `AbstractAnalysis`
-
-Examples of what I want to achieve: 
-
-- [ ] Aligned vars plotting function for `context_pert` which plots all four conditions (+/- plant pert, +/- context pert) on the same figure (one per training std)
-
-Steps:
-
-- [x] Map operations, in addition to combine operations
-	- See cursor chat “Enhancing figure operations in AbstractAnalysis”
-- [x] **Syntax for pre-stacking certain PyTree levels**
-	- e.g. `AlignedTrajectories` should not do this specifically; instead it just takes `colorscale_axis` and we should assume that the right data is already stacked in that axis
-	- this is a common enough operation that I don’t want `StackLevel` to be a usual analysis class, or something
-	- instead, we should be able to do something like `AlignedTrajectories(...).after_stacking("some_level")`
-- [x] **Syntax for combining traces from single plots**
-	- This is also a common operation: we don’t just want to compare across a single axis/variable – we want to show multiple axes of variation on the same plot, as in a 2x2 condition
-	- This is a bit trickier, since it may depend on the specific plotting function being used, and how we would like to visually differentiate the plots; however we could assume that the user knows (or provide them info about) the plotting function so that they can pass the relevant kwargs
-	- The general idea is to run `make_figs` multiple times with slightly different kwargs, and then merge the traces from the resulting pytrees
-	- e.g. `AlignedTrajectories(...).merge_figs_by("some_other_level)` 
-- [ ] Syntax for constructing subplots? 
-
 
 ## Analysis
 
@@ -48,10 +20,6 @@ See [[TODO-analysis]].
 
 ## Technical
 
-- [ ] **Convert `model_info` column values to hyperparameters**, so we have access to all the model hps in `hps` without having to fill out the config YAML with whatever we need
-	- i.e. properly implement `record_to_namespace`
-	- the use of `promote_model_hps` in `flatten_hps` is problematic, since we can’t distinguish column names that refer to model hps, to those that refer to other hps (e.g. `eval_n` or `n_std_exclude`)
-	- instead, we should keep the `model__*` prefix for 
 - [ ] **Is it really necessary to construct `all_hps` in `run_analysis`?**
 	- Consider that we will always have access to the hyperparameter information in the `LDict` levels of `all_models`/`all_tasks`
 	- So the question is whether `hps` will ever need to contain information that is specific to a task-model eval pair, aside from the information that is encoded in the structure of the PyTree of pairs

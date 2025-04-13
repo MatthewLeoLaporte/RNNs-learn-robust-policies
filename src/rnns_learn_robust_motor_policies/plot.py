@@ -124,18 +124,13 @@ def add_endpoint_traces(
             default_guide_kws.update(straight_guide_kws)
 
         for i in range(pos_endpoints.shape[1]):
-            if i == 0:
-                showlegend = True
-            else:
-                showlegend = False
-
             # For each trial, create a line from start to goal
             traces.append(go.Scatter(
                 x=[pos_endpoints[0, i, 0], pos_endpoints[1, i, 0]],
                 y=[pos_endpoints[0, i, 1], pos_endpoints[1, i, 1]],
-                #! TODO: Choose the legend name to avoid adding to any existing legend
+                name="Straight path",
+                showlegend=False,
                 legend="legend2",
-                showlegend=showlegend,
                 **default_guide_kws,
             ))
 
@@ -165,9 +160,12 @@ def add_endpoint_traces(
     fig.update_layout(
         legend2=dict(
             title_text="Guides",
-            xref="container",
-            yref="container",
-            y=0.33,
+            xanchor="left",
+            yanchor="top",
+            xref="paper",
+            yref="paper",
+            y=0.99,
+            x=1.22,
         ),
     )
 

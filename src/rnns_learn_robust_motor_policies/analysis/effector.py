@@ -33,10 +33,10 @@ class EffectorTrajectories(AbstractAnalysis):
         # legend_title="Reach direction",
         mean_exclude_axes=(),
         curves_mode='lines',
-        mean_trajectory_line_width=2.5,
         legend_labels=None,
         darken_mean=MEAN_LIGHTEN_FACTOR,
         scatter_kws=dict(line_width=0.75, opacity=0.4),
+        mean_scatter_kws=dict(line_width=2.5),
     )
     colorscale_key: Optional[str] = None 
     colorscale_axis: Optional[int] = None

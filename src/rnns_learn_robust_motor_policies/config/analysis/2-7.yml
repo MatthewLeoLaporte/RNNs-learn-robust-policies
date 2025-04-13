@@ -34,10 +34,10 @@ task:  # Passed to the base task constructor
 pert:
   context:
     # Timestep of context input step 
-    step: 15 
+    step: 10
     # Values pre and post step
     init: 0  
-    final: [0, 1]
+    final: [0, 2]
   plant:
     type: curl
     amp: [0.0, 2.0] 

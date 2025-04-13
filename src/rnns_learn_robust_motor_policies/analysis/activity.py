@@ -126,9 +126,10 @@ def activity_sample_units(
                         y=unit_activity,
                         mode='lines',
                         name=trace_name,
-                        legendgroup=trace_name,  # Group in legend by condition
+                        # legendgroup=trace_name,  # Group in legend by condition
                         showlegend=unit_idx == 0 and trial_idx == 0,  # Show legend only once per condition
-                        line=dict(color=color, width=2),
+                        line_color=color,
+                        **kwargs,
                     ),
                     row=unit_idx + 1,  # 1-indexed subplot row
                     col=1
@@ -198,6 +199,13 @@ class NetworkActivity_SampleUnits(AbstractAnalysis):
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
         n_units_sample=4,
         key=jr.PRNGKey(0),
+        layout_kws=dict(
+            width=700,
+            height=500,
+        ),
+        scatter_kws=dict(
+            line_width=1,
+        ),
         # legend_title="Reach direction",
     )
     # colorscale_key: str = "reach_condition"
@@ -206,33 +214,34 @@ class NetworkActivity_SampleUnits(AbstractAnalysis):
         self,
         data: AnalysisInputData,
         *,
-        best_replicate_states,
         colors,
         **kwargs,
     ):
         
         activities = jt.map(
             lambda states: states.net.hidden,
-            best_replicate_states[self.variant],
+            data.states[self.variant],
             is_leaf=is_type(SimpleFeedbackState),
         )
         
-        #! Move to specific analysis modules, e.g. `context_pert`, so as not to assume this structure
-        activities = jt.transpose(
-            jt.structure(activities, is_leaf=LDict.is_of('train__pert__std')),
-            None,
-            activities,
-        )
-        
-        return LDict.of(activities.label)({
+        figs = LDict.of(activities.label)({
             outer_value: activity_sample_units(
                 activities=inner_dict,
-                n_samples=self.fig_params.n_units_sample,
+                n_units_sample=self.fig_params.n_units_sample,
                 colors=colors[inner_dict.label].dark,
                 key=self.fig_params.key,
+                **self.fig_params.scatter_kws,
             )
             for outer_value, inner_dict in activities.items()
         })
+
+        figs = jt.map(
+            lambda fig: fig.update_layout(**self.fig_params.layout_kws),
+            figs, 
+            is_leaf=is_type(go.Figure),
+        )
+
+        return figs
 
     def _params_to_save(self, hps: PyTree[TreeNamespace], *, replicate_info, train_pert_std, **kwargs):
         return dict(

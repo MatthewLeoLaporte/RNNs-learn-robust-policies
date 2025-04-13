@@ -76,7 +76,6 @@ class AlignedEffectorTrajectories(AbstractAnalysis):
         var_labels=RESPONSE_VAR_LABELS,
         axes_labels=('Parallel', 'Orthogonal'),
         # mode='std',
-        mean_trajectory_line_width=3,
         # n_curves_max=n_curves_max,
         darken_mean=PLOTLY_CONFIG.mean_lighten_factor,
         n_curves_max=20,
@@ -88,8 +87,12 @@ class AlignedEffectorTrajectories(AbstractAnalysis):
             margin_b=20,
         ),
         scatter_kws=dict(
-            line_width=1,
+            line_width=0.5,
             opacity=0.5,
+        ),
+        mean_scatter_kws=dict(
+            line_width=2.5,
+            opacity=1,
         ),
     )
     colorscale_key: Optional[str] = None 
