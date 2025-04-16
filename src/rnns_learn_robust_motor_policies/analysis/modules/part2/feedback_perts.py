@@ -20,7 +20,7 @@ from rnns_learn_robust_motor_policies.analysis.analysis import _DummyAnalysis, D
 from rnns_learn_robust_motor_policies.analysis.disturbance import FB_INTERVENOR_LABEL, get_pert_amp_vmap_eval_func, task_with_pert_amp
 from rnns_learn_robust_motor_policies.analysis.effector import EffectorTrajectories
 from rnns_learn_robust_motor_policies.analysis.measures import Measures
-from rnns_learn_robust_motor_policies.analysis.profiles import VelocityProfiles
+from rnns_learn_robust_motor_policies.analysis.profiles import Profiles
 from rnns_learn_robust_motor_policies.plot import PLANT_VAR_LABELS, WHERE_PLOT_PLANT_VARS
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate_states, vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.types import LDict, unflatten_dict_keys
@@ -122,21 +122,6 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     return all_tasks, all_models, all_hps, extras
 
 
-def get_impulse_origins_directions(task, hps):
-    # Steady-state positions
-    origins = task.validation_trials.inits["mechanics.effector"].pos
-
-    # Impulse directions
-    directions = (
-        task
-        .validation_trials
-        .intervene[FB_INTERVENOR_LABEL]
-        .arrays[:, hps.pert.start_step]
-    )
-
-    return origins, directions
-
-
 eval_func = get_pert_amp_vmap_eval_func(lambda hps: hps.pert.amp, FB_INTERVENOR_LABEL)
 
 
@@ -182,6 +167,40 @@ ORIGIN_GRID_IDX = 12
 # all_measures = subdict(MEASURES, measure_keys) | custom_measures
 # measure_labels = MEASURE_LABELS | custom_measure_labels
 
+
+def get_impulse_origins_directions(task, hps):
+    # Steady-state positions
+    origins = task.validation_trials.inits["mechanics.effector"].pos
+
+    # Impulse directions
+    directions = (
+        task
+        .validation_trials
+        .intervene[FB_INTERVENOR_LABEL]
+        .arrays[:, hps.pert.start_step]
+    )
+
+    return origins, directions
+
+
+aligned_vars_params = {
+    AlignedVars: dict(
+        origins_directions_func=get_impulse_origins_directions,
+    )
+}
+
+
+def get_impulse_vrect_kws(hps):
+    return dict(
+        x0=hps.pert.start_step,
+        x1=hps.pert.start_step + hps.pert.duration,
+        fillcolor="grey",
+        opacity=0.2,
+        line_width=0,
+        name='Perturbation',
+    )
+
+
 # State PyTree structure: ['pert__var', 'context_input', 'train__pert__std']
 # Array batch shape: (evals, replicates, impulse amplitudes, reach conditions)
 ALL_ANALYSES = [
@@ -210,19 +229,16 @@ ALL_ANALYSES = [
     #     )
     # ),
 
-    (
-        AlignedEffectorTrajectories(
-            variant="full",
-            colorscale_axis=1,
-            colorscale_key='pert__amp',
-            dependency_params={
-                AlignedVars: dict(
-                    origins_directions_func=get_impulse_origins_directions,
-                )
-            }
-        )
-        .transform(get_best_replicate_states)
-    ),
+    #! TODO: This is broken by the most recent commit. Fix it. 
+    # (
+    #     AlignedEffectorTrajectories(
+    #         variant="full",
+    #         colorscale_axis=1,
+    #         colorscale_key='pert__amp',
+    #         dependency_params=aligned_vars_params,
+    #     )
+    #     .transform(get_best_replicate_states)
+    # ),
 
     # (
     #     AlignedEffectorTrajectories(variant="full")
@@ -231,13 +247,29 @@ ALL_ANALYSES = [
     # ),
 
     (
-        VelocityProfiles(
+        Profiles(
             variant="full",
+            dependency_params=aligned_vars_params,
+            vrect_kws=get_impulse_vrect_kws,  
         )
-        # .transform(get_best_replicate_states) 
+        .transform(get_best_replicate_states) 
+        .after_indexing(1, -2, axis_label='pert__amp') 
+        .map_at_level('train__pert__std')
     ),
 
-    # Measures(measure_keys=MEASURE_KEYS),
+    (
+        Measures(
+            measure_keys=MEASURE_KEYS,
+            dependency_params=aligned_vars_params,
+        )
+        .transform(get_best_replicate_states)
+        .after_unstacking(1, "pert__amp")
+        .map_at_level('train__pert__std')
+        .with_fig_params(
+            legend_title="Impulse amplitude",
+            violinmode="group",
+        )
+    ),
 
     # Effector_SingleEval(
     #     variant="full",

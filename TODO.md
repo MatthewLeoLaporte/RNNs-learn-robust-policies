@@ -1,6 +1,8 @@
 
 **See [[results-2|Part 2 results]] for ongoing analysis TODOs.
 
+**Move the rest of these TODOs to Things3**
+
 ## Next
 
 - [ ] [[TODO-analysis#Influence of context input on network dynamics]]

@@ -40,7 +40,7 @@ from rnns_learn_robust_motor_policies.setup_utils import (
     setup_models_only,
     setup_tasks_only,
 )
-from rnns_learn_robust_motor_policies.analysis.aligned import get_aligned_vars
+from rnns_learn_robust_motor_policies.analysis.aligned import get_aligned_vars, get_reach_origins_directions
 from rnns_learn_robust_motor_policies.analysis.state_utils import (
     get_pos_endpoints,
     vmap_eval_ensemble,
@@ -154,22 +154,16 @@ def end_position_error(pos, eval_reach_length=1, last_n_steps=10):
     return error
 
 
-def get_measures_to_rate(models, tasks, hps):
-    all_states = jt.map(
-        lambda model, task: vmap_eval_ensemble(jr.PRNGKey(0), hps, model, task),
-        models, tasks,
-        is_leaf=is_module,
-    )
-    # Assume all the tasks have the same reach endpoints and reach length
-    example_task = jt.leaves(tasks, is_leaf=is_module)[0]
-    pos_endpoints = get_pos_endpoints(example_task.validation_trials)
+def get_measures_to_rate(model, task, hps):
+    states = vmap_eval_ensemble(jr.PRNGKey(0), hps, model, task),
+
+    origins, directions = get_reach_origins_directions(task, hps)
     aligned_pos = get_aligned_vars(
-        all_states,
-        lambda states, endpoints: states.mechanics.effector.pos - pos_endpoints[0][..., None, :],
-        pos_endpoints,
+        states.mechanics.effector.pos - origins[..., None, :],
+        directions,
     )
     end_pos_errors = jt.map(
-        partial(end_position_error, eval_reach_length=example_task.eval_reach_length), 
+        partial(end_position_error, eval_reach_length=task.eval_reach_length), 
         aligned_pos,
     )
     mean_end_pos_errors = jt.map(
@@ -532,7 +526,10 @@ def process_model_post_training(
     save_model_parameters = jnp.array(model_record.save_model_parameters)
     
     all_data = load_data(model_record)
-    
+
+    #! `tasks` is just a single task, and `models` just a single model;
+    #! since each `model_record` is now associated with a single model-task pair
+    #! TODO: Simply what follows, including the functions called. 
     if all_data is None:
         return
     else:

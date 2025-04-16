@@ -6,18 +6,18 @@ train:
   model:   
     n_steps: 100  
     hidden_size: 100
-    feedback_noise_std: 0.01
-    motor_noise_std: 0.01
+    feedback_noise_std: 0.025
+    motor_noise_std: 0.025
     feedback_delay_steps: 0
   where: 
     0: ['step.net.hidden', 'step.net.readout']
   pert:  # during training
     type: curl
-    std: [0.0, 0.5] #, 1.0, 1.5]  # list -> load multiple models
+    std: [0.0, 1.0] #! [0.5, 1.5]
 
 context_input: [-3., -2., -1., 0., 1., 2., 3.]
 
-eval_n: 2  #! 5
+eval_n: 4  #! 10
 
 task:  # Passed to the base task constructor
   full:
@@ -33,7 +33,7 @@ pert:
     fb_pos: 1.8
     fb_vel: 1.2
   n_amps: 3
-  start_step: 30
+  start_step: 20
   duration: 5
   direction: rand  # 'rand' or 'xy'
 

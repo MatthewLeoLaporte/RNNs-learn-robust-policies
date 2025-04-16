@@ -51,7 +51,7 @@ from rnns_learn_robust_motor_policies.database import (
     # record_to_namespace,
 )
 from rnns_learn_robust_motor_policies.hyperparams import flatten_hps, load_hps
-from rnns_learn_robust_motor_policies.misc import log_version_info
+from rnns_learn_robust_motor_policies.misc import delete_all_files_in_dir, log_version_info
 from rnns_learn_robust_motor_policies.training.post_training import TRAINPAIR_SETUP_FUNCS
 from rnns_learn_robust_motor_policies.setup_utils import query_and_load_model
 from rnns_learn_robust_motor_policies.types import TreeNamespace
@@ -134,12 +134,20 @@ def main(
     fig_dump_path: Optional[str] = None,
     fig_dump_formats: List[str] = ["html"],
     no_pickle: bool = False,
+    retain_past_fig_dumps: bool = False,
     states_pkl_dir: Optional[Path] = PATHS.states_tmp,
     *,
     key,
 ):    
     if fig_dump_path is None:
         fig_dump_path = PATHS.figures_dump
+
+    if not retain_past_fig_dumps:
+        try: 
+            delete_all_files_in_dir(fig_dump_path)
+            logger.info(f"Deleted existing dump figures in {fig_dump_path}")
+        except ValueError as e:
+            logger.warning(f"Failed to delete existing dump figures: {e}; directory probably doesn't exist yet")
 
     # If some config values (other than those under the `load` key) are unspecified, replace them with 
     # respective values from the `load` key
@@ -402,7 +410,7 @@ def perform_all_analyses(
         analyse_and_save(analysis, dependencies)
         for analysis, dependencies in zip(analyses, all_dependency_results)
     ])
-    
+
     return all_results, all_figs
 
 
@@ -413,9 +421,10 @@ if __name__ == '__main__':
     # This assumes there is no file whose relative path is identical to that `expt_id`.
     parser.add_argument("config_path", type=str, help="Path to the config file, or `expt_id` of a default config.")
     parser.add_argument("--fig-dump-path", type=str, help="Path to dump figures.")
-    parser.add_argument("--fig-dump-formats", type=str, default="html", 
+    parser.add_argument("--fig-dump-formats", type=str, default="html,webp", 
                       help="Format(s) to dump figures in, comma-separated (e.g., 'html,png,pdf')")
     parser.add_argument("--no-pickle", action="store_true", help="Do not use pickle for states (don't load existing or save new).")
+    parser.add_argument("--retain-past-fig-dumps", action="store_true", help="Do not save states to pickle.")
     parser.add_argument("--states-pkl-dir", type=str, default=None, help="Alternative directory for state pickle files (default: PATHS.states_tmp)")
     args = parser.parse_args()
     hps = load_hps(args.config_path, config_type='analysis')
@@ -438,10 +447,15 @@ if __name__ == '__main__':
         hps, 
         fig_dump_path=args.fig_dump_path, 
         fig_dump_formats=fig_dump_formats, 
+        retain_past_fig_dumps=args.retain_past_fig_dumps,
         no_pickle=args.no_pickle,
         states_pkl_dir=states_pkl_dir,
         key=key
     )
+
+    #! Keep the debugger alive.
+    #! TODO: Remove later.  
+    raise RuntimeError("Stop here.")
     
     
     

@@ -12,7 +12,7 @@ from rnns_learn_robust_motor_policies.analysis.aligned import AlignedEffectorTra
 from rnns_learn_robust_motor_policies.analysis.effector import EffectorTrajectories
 from rnns_learn_robust_motor_policies.colors import ColorscaleSpec
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_PERT_FUNCS, get_pert_amp_vmap_eval_func
-from rnns_learn_robust_motor_policies.analysis.profiles import VelocityProfiles
+from rnns_learn_robust_motor_policies.analysis.profiles import Profiles
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate_states, get_step_task_input
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVENOR_LABEL
 from rnns_learn_robust_motor_policies.types import LDict
@@ -97,7 +97,7 @@ ALL_ANALYSES = [
 
     #! TODO: Not displaying; debug pytree structure
     #! Also only one of the two legendgroup titles is displayed, even though the respective values/labels appear to be properly passed
-    # VelocityProfiles(variant="steady")
+    # Profiles(variant="steady")
     #     .after_level_to_top('train__pert__std')
     #     .combine_figs_by_axis(
     #         axis=2,     
@@ -151,7 +151,7 @@ ALL_ANALYSES = [
 
     #! Only one of the two legendgroup titles is displayed, even though the respective values/labels appear to be properly passed.
     #! I'm not sure why this is different from `AlignedEffectorTrajectories`, where the legend is displayed correctly
-    VelocityProfiles(variant="reach")
+    Profiles(variant="reach")
         .after_level_to_top('train__pert__std')
         .combine_figs_by_axis(
             axis=2,     

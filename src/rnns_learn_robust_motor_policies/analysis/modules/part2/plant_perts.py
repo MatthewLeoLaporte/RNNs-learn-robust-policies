@@ -22,6 +22,7 @@ from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVEN
 from rnns_learn_robust_motor_policies.analysis.effector import EffectorTrajectories
 from rnns_learn_robust_motor_policies.analysis.measures import ALL_MEASURE_KEYS, MEASURE_LABELS
 from rnns_learn_robust_motor_policies.analysis.measures import Measures
+from rnns_learn_robust_motor_policies.analysis.profiles import Profiles
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate_states, get_constant_task_input, vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.colors import ColorscaleSpec
 from rnns_learn_robust_motor_policies.config.config import PLOTLY_CONFIG
@@ -141,6 +142,7 @@ ALL_ANALYSES = [
     ),
     AlignedEffectorTrajectories().after_stacking("context_input").map_at_level("train__pert__std"),
     AlignedEffectorTrajectories().after_stacking("train__pert__std").map_at_level("context_input"),
+    Profiles(),  #! TODO
     Measures(measure_keys=MEASURE_KEYS).map_at_level("pert__amp"),
     Measures(measure_keys=MEASURE_KEYS).map_at_level("train__pert__std"),
     Measures(measure_keys=MEASURE_KEYS).after_level_to_top("train__pert__std").map_at_level("pert__amp"),

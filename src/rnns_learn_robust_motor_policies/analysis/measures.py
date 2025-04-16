@@ -20,7 +20,7 @@ from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis,
 from rnns_learn_robust_motor_policies.constants import EVAL_REACH_LENGTH, REPLICATE_CRITERION
 from rnns_learn_robust_motor_policies.misc import lohi
 from rnns_learn_robust_motor_policies.plot import get_measure_replicate_comparisons, get_violins
-from rnns_learn_robust_motor_policies.tree_utils import subdict, tree_level_labels, tree_subset_ldict_level
+from rnns_learn_robust_motor_policies.tree_utils import ldict_level_to_bottom, subdict, tree_level_labels, tree_subset_ldict_level
 from rnns_learn_robust_motor_policies.types import ResponseVar, Direction, DIRECTION_IDXS, LDict
 
 
@@ -374,18 +374,42 @@ class Measures(AbstractAnalysis):
         aligned_vars,
         **kwargs,
     ):
+        #! Necessary in case the user has used (say) `after_unstacking`, 
+        #! which displaces the "var" level from the bottom of the tree. 
+        #! TODO: Modify `after_unstacking` to move the resulting level above a level specified by the user.
+        aligned_data = ldict_level_to_bottom('var', aligned_vars.get(self.variant, aligned_vars))
+
+        #! Necessary because I have not yet changed `Measure` to use `LDict.of('var')`.
+        aligned_data = jt.map(
+            lambda x: Responses(x['pos'], x['vel'], x['force']),
+            aligned_data,
+            is_leaf=LDict.is_of('var'),
+        )
+
         all_measures: LDict[str, Measure] = subdict(ALL_MEASURES, self.measure_keys)  # type: ignore
-        all_measure_values = compute_all_measures(all_measures, aligned_vars.get(self.variant, aligned_vars))
+        all_measure_values = compute_all_measures(all_measures, aligned_data)
         return all_measure_values
     
     def make_figs(self, data: AnalysisInputData, *, result, colors, **kwargs):
-        _, outer_label, inner_label = tree_level_labels(result)
-        figs = self._get_violins_per_measure(
-            result,
-            colors=colors[outer_label].dark,  
+        # Move all but the innermost two LDict levels outside of the `measure` level,
+        # so we will create a batch of figures over them. 
+        level_labels = tree_level_labels(result)
+        outer_label, inner_label = level_labels[-2:]
+        result_ = ldict_level_to_bottom('measure', result, is_leaf=LDict.is_of(outer_label))
+
+        fig_params = dict(
             legend_title=get_label_str(outer_label),
             xaxis_title=get_label_str(inner_label),
-            **self.fig_params,
+        ) | self.fig_params
+
+        figs = jt.map(
+            lambda measure_values: self._get_violins_per_measure(
+                measure_values,
+                colors=colors[outer_label].dark,  
+                **fig_params,
+            ),
+            result_,
+            is_leaf=LDict.is_of("measure"),
         )
         return figs
     

@@ -40,6 +40,16 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def delete_all_files_in_dir(dir_path: Path):
+    """Delete all files in a directory."""
+    if not dir_path.exists() or not dir_path.is_dir():
+        raise ValueError(f"Directory {dir_path} does not exist or is not a directory.")
+
+    for item in dir_path.iterdir():
+        if item.is_file():
+            item.unlink()
+
+
 def dict_str(d, value_format='.2f'):
     """A string representation of a dict that is more filename-friendly than `str` or `repr`."""
     format_string = f"{{k}}-{{v:{value_format}}}"

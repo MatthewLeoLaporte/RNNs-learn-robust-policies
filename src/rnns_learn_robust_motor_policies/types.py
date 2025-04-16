@@ -166,6 +166,9 @@ class TreeNamespace(SimpleNamespace):
                 setattr(result, attr_name, other_value)
 
         return result
+    
+    def __ror__(self, other: dict) -> dict:
+        return other | namespace_to_dict(self)
 
     # Implement the mapping protocol so we can treat the namespace as a dict sometimes
     def __iter__(self):
@@ -389,14 +392,18 @@ class Responses(NamedTuple):
     force: Any
 
 
-RESPONSE_VAR_LABELS = Responses('Position', 'Velocity', 'Control force')
+RESPONSE_VAR_LABELS = LDict.of('var')(dict(
+    pos='Position',
+    vel='Velocity',
+    force='Control force',
+))
             
 
-RESPONSE_VAR_LABELS_SHORT = Responses(
+RESPONSE_VAR_LABELS_SHORT = LDict.of('var')(dict(
     pos='p',
     vel='v',
     force='F',
-)
+))
 
 
 class Direction(str, Enum):

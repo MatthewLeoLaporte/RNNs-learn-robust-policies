@@ -30,18 +30,16 @@ from rnns_learn_robust_motor_policies.plot import add_endpoint_traces
 from rnns_learn_robust_motor_policies.plot_utils import get_label_str
 from rnns_learn_robust_motor_policies.types import (
     RESPONSE_VAR_LABELS, 
-    Responses, 
     LDict,
     TreeNamespace,
 )
 
 #! See also `plot.WHERE_PLOT_PLANT_VARS`
-WHERE_VARS_TO_ALIGN = lambda states, origins: Responses(
-    # Positions with respect to the origin
-    states.mechanics.effector.pos - origins[..., None, :],
-    states.mechanics.effector.vel,
-    states.efferent.output,
-)
+WHERE_VARS_TO_ALIGN = lambda states, origins: LDict.of('var')(dict(
+    pos=states.mechanics.effector.pos - origins[..., None, :],
+    vel=states.mechanics.effector.vel,
+    force=states.efferent.output,
+))
 
 
 def get_forward_lateral_vel(
@@ -113,6 +111,8 @@ class AlignedVars(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = None
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
+    where_states_to_align: Callable = WHERE_VARS_TO_ALIGN
+    #! TODO: Infer this from the `task`
     origins_directions_func: Callable = get_reach_origins_directions
 
     def compute(
@@ -126,7 +126,7 @@ class AlignedVars(AbstractAnalysis):
             return jt.map(
                 lambda states: jt.map(
                     lambda var: project_onto_direction(var, directions),
-                    WHERE_VARS_TO_ALIGN(states, origins)
+                    self.where_states_to_align(states, origins),
                 ),
                 states_by_std,
                 is_leaf=is_module,
@@ -204,7 +204,7 @@ class AlignedEffectorTrajectories(AbstractAnalysis):
                 **fig_params,
             ),
             aligned_vars[self.variant],
-            is_leaf=is_type(Responses),
+            is_leaf=LDict.is_of('var'),
         )
 
         if self.pos_endpoints:

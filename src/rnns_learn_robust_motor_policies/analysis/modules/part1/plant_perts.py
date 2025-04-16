@@ -20,7 +20,7 @@ from rnns_learn_robust_motor_policies.analysis.analysis import _DummyAnalysis, A
 from rnns_learn_robust_motor_policies.analysis.effector import EffectorTrajectories
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_PERT_FUNCS
 from rnns_learn_robust_motor_policies.analysis.measures import Measures, output_corr
-from rnns_learn_robust_motor_policies.analysis.profiles import VelocityProfiles
+from rnns_learn_robust_motor_policies.analysis.profiles import Profiles
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate_states, vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVENOR_LABEL
 from rnns_learn_robust_motor_policies.misc import lohi
@@ -177,50 +177,50 @@ a = (
 ALL_ANALYSES = [
     # state shape: (eval, replicate, condition, time, xy)
 
-    # By condition, all evals for the best replicate only
-    (
-        EffectorTrajectories(
-            colorscale_axis=1, 
-            colorscale_key="reach_condition",
-        )
-        .transform(get_best_replicate_states)
-    ),  # By default has `axis=1` for replicates
+    # # By condition, all evals for the best replicate only
+    # (
+    #     EffectorTrajectories(
+    #         colorscale_axis=1, 
+    #         colorscale_key="reach_condition",
+    #     )
+    #     .transform(get_best_replicate_states)
+    # ),  # By default has `axis=1` for replicates
 
-    # By replicate, single eval
-    (
-        EffectorTrajectories(
-            colorscale_axis=0, 
-            colorscale_key="replicate",
-        )
-        .after_indexing(0, i_eval, axis_label='eval')
-        .with_fig_params(
-            scatter_kws=dict(line_width=1),
-        )
-    ),
-
-    # Single eval for a single replicate
-    (
-        EffectorTrajectories(
-            colorscale_axis=0, 
-            colorscale_key="reach_condition",
-        )
-        .transform(get_best_replicate_states) 
-        .after_indexing(0, i_eval, axis_label='eval')
-        .with_fig_params(
-            curves_mode='markers+lines',
-            ms=3,
-            scatter_kws=dict(line_width=0.75),
-            mean_scatter_kws=dict(line_width=0),
-        )
-    ),
-
-    # AlignedTrajectories(
-    #     colorscale_axis=1,
-    #     colorscale_key='trial',
+    # # By replicate, single eval
+    # (
+    #     EffectorTrajectories(
+    #         colorscale_axis=0, 
+    #         colorscale_key="replicate",
+    #     )
+    #     .after_indexing(0, i_eval, axis_label='eval')
+    #     .with_fig_params(
+    #         scatter_kws=dict(line_width=1),
+    #     )
     # ),
-    AlignedEffectorTrajectories().after_stacking(level='pert__amp'),
-    AlignedEffectorTrajectories().after_stacking(level='train__pert__std'),
-    VelocityProfiles(),
+
+    # # Single eval for a single replicate
+    # (
+    #     EffectorTrajectories(
+    #         colorscale_axis=0, 
+    #         colorscale_key="reach_condition",
+    #     )
+    #     .transform(get_best_replicate_states) 
+    #     .after_indexing(0, i_eval, axis_label='eval')
+    #     .with_fig_params(
+    #         curves_mode='markers+lines',
+    #         ms=3,
+    #         scatter_kws=dict(line_width=0.75),
+    #         mean_scatter_kws=dict(line_width=0),
+    #     )
+    # ),
+
+    # # AlignedTrajectories(
+    # #     colorscale_axis=1,
+    # #     colorscale_key='trial',
+    # # ),
+    # AlignedEffectorTrajectories().after_stacking(level='pert__amp'),
+    # AlignedEffectorTrajectories().after_stacking(level='train__pert__std'),
+    Profiles().transform(get_best_replicate_states),
     measures_base,
     measures_base.after_transform_level(['train__pert__std'], lohi),
     measures_base.after_transform_level(['train__pert__std', 'pert__amp'], lohi),

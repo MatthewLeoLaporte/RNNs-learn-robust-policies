@@ -22,10 +22,10 @@ import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.config.config import STRINGS
 from rnns_learn_robust_motor_policies.database import EvaluationRecord, add_evaluation_figure, savefig
-from rnns_learn_robust_motor_policies.tree_utils import subdict, tree_level_labels
+from rnns_learn_robust_motor_policies.tree_utils import subdict, tree_level_labels, ldict_level_to_top
 from rnns_learn_robust_motor_policies.misc import camel_to_snake, get_dataclass_fields, get_name_of_callable, is_json_serializable
 from rnns_learn_robust_motor_policies.plot_utils import figs_flatten_with_paths, get_label_str
-from rnns_learn_robust_motor_policies.types import LDict, Responses, TreeNamespace, _Wrapped
+from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
 
 if TYPE_CHECKING:
     from typing import ClassVar as AbstractClassVar
@@ -311,7 +311,8 @@ class AbstractAnalysis(Module, strict=False):
                     except StopIteration:
                          logger.error(f"Could not find leaf matching predicate for fig op in dependency '{list(dependencies_to_process.keys())[0]}'. Skipping fig op.")
                     except Exception as e:
-                         logger.error(f"Error during fig op execution: {e}", exc_info=True)
+                         logger.error(f"Error during fig op execution", exc_info=True)
+                         raise e
 
             if figs is None and self._fig_op:
                  logger.warning(f"Fig operation for {self.name} could not proceed or produced no figures.")
@@ -725,7 +726,7 @@ class AbstractAnalysis(Module, strict=False):
     def after_level_to_top(
         self, 
         label: str, 
-        is_leaf: Callable[[Any], bool] = is_type(Responses),
+        is_leaf: Callable[[Any], bool] = LDict.is_of('var'),
         dependency_name: Optional[str] = None,
     ) -> Self:
         """
@@ -736,21 +737,10 @@ class AbstractAnalysis(Module, strict=False):
         the outer level of our results PyTree.
         """
         def transpose_dependency(dep_data, **kwargs):
-            #? `is_leaf` doesn't seem to work with an inner `jt.structure` in transpose,
-            #? to keep e.g. `Responses` on the inside; however we can wrap the node to force
-            #? it to be treated as a leaf
-            wrapped_dep_data = jt.map(_Wrapped, dep_data, is_leaf=is_leaf)
-
-            result = {
-                variant_label: jt.transpose(
-                    jt.structure(wrapped_dep_data[variant_label], is_leaf=LDict.is_of(label)),
-                    None,
-                    wrapped_dep_data[variant_label],
-                )
-                for variant_label in wrapped_dep_data
+            return {
+                variant_label: ldict_level_to_top(label, dep_data[variant_label], is_leaf=is_leaf)
+                for variant_label in dep_data
             }
-
-            return jt.map(lambda x: x.unwrap(), result, is_leaf=is_type(_Wrapped))
         
         return self._add_prep_op(
             name="after_level_to_top",
