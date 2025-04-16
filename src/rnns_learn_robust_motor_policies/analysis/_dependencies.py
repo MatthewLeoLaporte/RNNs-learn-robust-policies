@@ -22,7 +22,9 @@ from typing import Optional, Set, Dict, Any
 
 import jax.tree as jt
 
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
+from rnns_learn_robust_motor_policies.analysis.analysis import (
+    AbstractAnalysis, AnalysisInputData, _format_dict_of_params
+)
 
 
 logger = logging.getLogger(__name__)
@@ -31,8 +33,24 @@ logger = logging.getLogger(__name__)
 def param_hash(params: Dict[str, Any]) -> str:
     """Create a hash of parameter values to uniquely identify dependency configurations."""
     # Convert params to a stable string representation and hash it
-    param_str = json.dumps(params, sort_keys=True)
+    params_formatted = _format_dict_of_params(params)
+    param_str = json.dumps(params_formatted, sort_keys=True)
     return hashlib.md5(param_str.encode()).hexdigest()
+
+
+def get_params_for_dep_class(analysis, dep_class):
+    """Get parameters for a dependency based on its class."""
+    # Check if the class exists in dep_params
+    dep_params = getattr(analysis, 'dependency_params', {})
+    return dep_params.get(dep_class, {})
+
+
+def get_dependency_id_and_params(analysis, dep_name, dep_class):
+    class_params = analysis.dependency_kwargs().get(dep_name, {})
+    field_params = get_params_for_dep_class(analysis, dep_class)
+    params = {**field_params, **class_params}
+    node_id = f"{dep_name}_{param_hash(params)}"
+    return node_id, params
 
 
 def build_dependency_graph(analyses: Sequence[AbstractAnalysis]) -> tuple[dict[str, Set[str]], dict]:
@@ -46,38 +64,26 @@ def build_dependency_graph(analyses: Sequence[AbstractAnalysis]) -> tuple[dict[s
     
     # TODO: Filter analyses by their conditions
     # analyses_to_process = [a for a in analyses if conditions_are_met(a)]
-    
+
     def add_deps(analysis):        
         for dep_name, dep_class in analysis.dependencies.items():
-            # Get parameters for this dependency
-            params = analysis.dependency_kwargs().get(dep_name, {})
+            node_id, params = get_dependency_id_and_params(
+                analysis, dep_name, dep_class
+            )
             
-            # Create a unique ID for this dependency with these parameters
-            node_id = f"{dep_name}_{param_hash(params)}"
+            if node_id not in dep_instances:
+                # Record the mapping
+                dep_instances[node_id] = (dep_class, params)
+                add_subdeps(dep_class, params, node_id)
             
-            # Record the mapping
-            dep_instances[node_id] = (dep_class, params)
-            
-            # Create a temporary instance to get its dependencies
-            temp_instance = dep_class(**params)
-            
-            # Add edges for this dependency's dependencies
-            for subdep_name, subdep_class in temp_instance.dependencies.items():
-                # Get parameters for subdependency
-                subdep_params = temp_instance.dependency_kwargs().get(subdep_name, {})
-                subdep_id = f"{subdep_name}_{param_hash(subdep_params)}"
-                graph[node_id].add(subdep_id)
-                
-                # Recursively add subdependencies
-                if subdep_id not in dep_instances:
-                    dep_instances[subdep_id] = (subdep_class, subdep_params)
-                    add_subdeps(subdep_class, subdep_params, subdep_id)
     
     def add_subdeps(dep_class, params, node_id):
         temp_instance = dep_class(**params)
         for subdep_name, subdep_class in temp_instance.dependencies.items():
-            subdep_params = temp_instance.dependency_kwargs().get(subdep_name, {})
-            subdep_id = f"{subdep_name}_{param_hash(subdep_params)}"
+            subdep_id, subdep_params = get_dependency_id_and_params(
+                temp_instance, subdep_name, subdep_class
+            )
+            
             graph[node_id].add(subdep_id)
             
             if subdep_id not in dep_instances:
@@ -152,7 +158,7 @@ def compute_dependencies(
         # Extract the base name (without parameter hash)
         base_name = node_id.rsplit('_', 1)[0]
         
-        # Compute and store the result
+        # Compute and store the result, passing all the dependencies computed so far
         logger.debug(f"Computing dependency: {dep_instance}")
         result = dep_instance.compute(data, **results, **params)
         
@@ -160,15 +166,20 @@ def compute_dependencies(
         computed_results[node_id] = result
         results[base_name] = result
         
-    # Final pass to ensure the right dependencies are available for each analysis
+    # Construct a dict of dependency results to supply to each of the requested analyses
+    all_dependency_results = []
     for analysis in analyses:
+        dependency_results = kwargs.copy()
+
         for dep_name, dep_class in analysis.dependencies.items():
             if dep_name not in results:
                 raise ValueError(f"Dependency '{dep_name}' for {analysis.name} was not computed")
 
-            params = analysis.dependency_kwargs().get(dep_name, {})
-            node_id = f"{dep_name}_{param_hash(params)}"
+            node_id, _ = get_dependency_id_and_params(analysis, dep_name, dep_class)
+            
             if node_id in computed_results:
-                results[dep_name] = computed_results[node_id]
+                dependency_results[dep_name] = computed_results[node_id]
+        
+        all_dependency_results.append(dependency_results)
     
-    return results
+    return all_dependency_results

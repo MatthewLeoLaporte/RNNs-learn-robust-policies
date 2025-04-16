@@ -26,12 +26,13 @@ from rnns_learn_robust_motor_policies.perturbations import feedback_impulse
 ID = "1-2"
 
 
-#! TODO: Move
-PERT_VAR_NAMES = ('fb_pos', 'fb_vel')
-COORD_NAMES = ('x', 'y')
-
 COLOR_FUNCS = dict()
 
+
+#! TODO: Move; these are redundant with 2-2
+PERT_VAR_NAMES = ('fb_pos', 'fb_vel')
+COORD_NAMES = ('x', 'y')
+I_IMPULSE_AMP_PLOT = -1  # The largest amplitude perturbation
 
 components_plot: Literal['xy', 'aligned'] = 'aligned'
 components_labels = dict(
@@ -123,8 +124,6 @@ SETUP_FUNCS_BY_DIRECTION = dict(
     rand=_setup_rand,
     xy=_setup_xy,
 )
-
-I_IMPULSE_AMP_PLOT = -1  # The largest amplitude perturbation
 
 
 def setup_eval_tasks_and_models(task_base, models_base, hps):

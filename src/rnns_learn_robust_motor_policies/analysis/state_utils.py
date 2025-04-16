@@ -25,54 +25,6 @@ def angle_between_vectors(v2, v1):
     )   
 
 
-def get_forward_lateral_vel(
-    velocity: Float[Array, "*batch conditions time xy=2"], 
-    pos_endpoints: Float[Array, "point=2 conditions xy=2"],
-) -> Float[Array, "*batch conditions time 2"]:
-    """Given x-y velocity components, rebase onto components forward and lateral to the line between endpoints.
-    
-    Arguments:
-        velocity: Trajectories of velocity vectors.
-        pos_endpoints: Initial and goal reference positions for each condition, defining reference lines.
-    
-    Returns:
-        forward: Forward velocity components (parallel to the reference lines).
-        lateral: Lateral velocity components (perpendicular to the reference lines).
-    """
-    init_pos, goal_pos = pos_endpoints
-    direction_vec = goal_pos - init_pos
-    
-    return project_onto_direction(velocity, direction_vec)
-    
-
-def project_onto_direction(
-    var: Float[Array, "*batch conditions time xy=2"],
-    direction_vec: Float[Array, "conditions xy=2"],
-):
-    """Projects components of arbitrary variables into components parallel and orthogonal to a given direction.
-    
-    Arguments:
-        var: Data with x-y components to be projected. 
-        direction_vector: Direction vectors. 
-    
-    Returns:
-        projected: Projected components (parallel and orthogonal).
-    """
-    # Normalize the line vector
-    direction_vec_norm = direction_vec / jnp.linalg.norm(direction_vec, axis=-1, keepdims=True)
-    
-    # Broadcast line_vec_norm to match velocity's shape
-    direction_vec_norm = direction_vec_norm[:, None]  # Shape: (conditions, 1, xy)
-    
-    # Calculate forward velocity (dot product)
-    parallel = jnp.sum(var * direction_vec_norm, axis=-1)
-    
-    # Calculate lateral velocity (cross product)
-    orthogonal = jnp.cross(direction_vec_norm, var)
-    
-    return jnp.stack([parallel, orthogonal], axis=-1)
-
-
 def get_lateral_distance(
     pos: Float[Array, "*batch conditions time xy=2"], 
     pos_endpoints: Float[Array, "point=2 conditions xy=2"],
@@ -137,20 +89,6 @@ def vmap_eval_ensemble(
     """Evaluate an ensemble of models on `n` random repeats of a task's validation set."""
     return eqx.filter_vmap(_get_eval_ensemble(models, task))(
         jr.split(key, hps.eval_n)
-    )
-    
-    
-def get_aligned_vars(all_states, where_vars, endpoints): 
-    """Get variables from state PyTree, and project them onto respective reach directions for their trials."""
-    directions = endpoints[1] -  endpoints[0]
-    
-    return jt.map(
-        lambda states: jt.map(
-            lambda var: project_onto_direction(var, directions),
-            where_vars(states, endpoints),
-        ),
-        all_states,
-        is_leaf=is_module,
     )
 
 

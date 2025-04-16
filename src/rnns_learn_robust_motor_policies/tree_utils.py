@@ -180,9 +180,22 @@ def index_multi(obj, *idxs):
     return index_multi(obj[idxs[0]], *idxs[1:])
 
 
-def pp(tree):
+_is_leaf = anyf(is_module, is_type(go.Figure, TreeNamespace))
+
+
+def pp(tree, truncate_leaf=_is_leaf):
     """Pretty-prints PyTrees, truncating objects commonly treated as leaves during data analysis."""
-    eqx.tree_pprint(tree, truncate_leaf=anyf(is_module, is_type(go.Figure)))
+    eqx.tree_pprint(tree, truncate_leaf=truncate_leaf)
+
+
+def pp2(tree, truncate_leaf=_is_leaf):
+    """Substitute for `pp` given that `truncate_leaf` of `eqx.tree_pprint` appears to be broken atm."""
+    tree = jax.tree_map(
+        lambda x: type(x).__name__ if truncate_leaf(x) else x,
+        tree,
+        is_leaf=truncate_leaf,
+    )
+    eqx.tree_pprint(tree)
 
 
 def take_replicate(i, tree: PyTree[Array, 'T']) -> PyTree[Array, 'T']:

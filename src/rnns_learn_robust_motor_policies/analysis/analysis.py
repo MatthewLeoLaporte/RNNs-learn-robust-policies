@@ -16,6 +16,7 @@ from jaxtyping import ArrayLike, PyTree, Array
 import plotly.graph_objects as go
 from sqlalchemy.orm import Session
 
+from feedbax.task import AbstractTask
 from jax_cookbook import is_type, is_none
 import jax_cookbook.tree as jtree
 
@@ -141,7 +142,7 @@ def _format_level_str(label: str):
     return label.replace(STRINGS.hps_level_label_sep, '-').replace('_', '')
 
 
-def _format_dict_items(d: dict, join_str: str = ', '):
+def _format_dict_of_params(d: dict, join_str: str = ', '):
     # For constructing parts of `AbstractAnalysis.__str__`
     return join_str.join([
         f"{k}={_process_param(v)}" for k, v in d.items()
@@ -153,6 +154,15 @@ _NAME_NORMALIZATION = {"states": "data.states"}
 
 def _normalize_name(name: str) -> str:
     return _NAME_NORMALIZATION.get(name, name)
+
+
+def get_validation_trial_specs(task: AbstractTask):
+    # TODO: Support any number of extra axes (i.e. for analyses that vmap over multiple axes in their task/model objects)
+    if len(task.workspace.shape) == 3:
+        #! I don't understand why/if this is necessary
+        return eqx.filter_vmap(lambda task: task.validation_trials)(task)
+    else:
+        return task.validation_trials
 
 
 class AbstractAnalysis(Module, strict=False):
@@ -188,17 +198,20 @@ class AbstractAnalysis(Module, strict=False):
             when there is system noise (i.e. multiple evals per condition), and in 
             that case we could give the condition `"any_system_noise"` to those analyses.
     """
-    _exclude_fields = ('dependencies', 'conditions', 'fig_params', '_prep_ops', '_fig_op')
+    _exclude_fields = (
+        'dependencies', 'conditions', 'fig_params', 'dependency_params', '_prep_ops', '_fig_op'
+    )
 
     dependencies: AbstractClassVar[MappingProxyType[str, type[Self]]]
     conditions: AbstractVar[tuple[str, ...]]
     variant: AbstractVar[Optional[str]] 
     fig_params: AbstractVar[FigParamNamespace]
 
-    # By using `strict=False`, we can define some private fields without needing to 
+    # By using `strict=False`, we can define some fields without needing to 
     # implement them trivially in subclasses. This violates the abstract-final design
     # pattern. This is intentional. If it leads to problems, I will learn from that.
     #! This means no non-default arguments in subclasses
+    dependency_params: dict = eqx.field(default_factory=dict)
     _prep_ops: tuple[_PrepOp, ...] = ()
     _fig_op: Optional[_FigOp] = None
 
@@ -222,7 +235,8 @@ class AbstractAnalysis(Module, strict=False):
                  try:
                      prepped_kwargs[name] = prep_op.transform_func(prepped_kwargs[name], **kwargs)
                  except Exception as e:
-                     logger.error(f"Error applying prep_op transform to '{name}': {e}", exc_info=True)
+                     logger.error(f"Error applying prep_op transform to '{name}'", exc_info=True)
+                     raise e
         
         prepped_data = eqx.tree_at(
             lambda d: d.states, data, prepped_kwargs["data.states"]
@@ -511,17 +525,17 @@ class AbstractAnalysis(Module, strict=False):
     def __str__(self) -> str:
         params = dict(self._non_default_field_params)
         params = dict(variant=self.variant) | params
-        non_default_field_params_str = _format_dict_items(params)
+        non_default_field_params_str = _format_dict_of_params(params)
         obj_str = f"{self.name}({non_default_field_params_str})"
         prep_op_params_strs = [
-            f"{prep_op.name}({_format_dict_items(prep_op.params)})"
+            f"{prep_op.name}({_format_dict_of_params(prep_op.params)})"
             for prep_op in self._prep_ops
         ]
         if prep_op_params_strs: 
             obj_str = '.'.join([obj_str, *prep_op_params_strs])
 
         if self._fig_op:
-            fig_op_params_str = f"{self._fig_op.name}({_format_dict_items(self._fig_op.params)})"
+            fig_op_params_str = f"{self._fig_op.name}({_format_dict_of_params(self._fig_op.params)})"
             obj_str = '.'.join([obj_str, fig_op_params_str])
 
         return obj_str
@@ -550,11 +564,14 @@ class AbstractAnalysis(Module, strict=False):
         else: 
             label = f"{axis_label}-idx{idxs}"
 
+        def index_func(dep_data, **kwargs):
+            return jtree.take(dep_data, idxs, axis)
+
         return self._add_prep_op(
             name="after_indexing",
             label=label,
             dep_name=dependency_name,
-            transform_func=lambda dep_data, **kwargs: jtree.take(dep_data, axis, idxs),
+            transform_func=index_func,
             params=dict(axis=axis, idxs=idxs),
         )
     

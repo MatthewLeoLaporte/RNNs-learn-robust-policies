@@ -37,7 +37,7 @@ import jax_cookbook.tree as jtree
 import rnns_learn_robust_motor_policies
 from rnns_learn_robust_motor_policies.config import PATHS, PRNG_CONFIG
 from rnns_learn_robust_motor_policies.analysis import ANALYSIS_REGISTRY
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, get_validation_trial_specs
 from rnns_learn_robust_motor_policies.analysis._dependencies import compute_dependencies
 from rnns_learn_robust_motor_policies.colors import ColorscaleSpec, setup_colors
 from rnns_learn_robust_motor_policies.constants import REPLICATE_CRITERION
@@ -156,13 +156,6 @@ def main(
             analysis_module.setup_eval_tasks_and_models, 
             db_session,
         )
-    
-    def get_validation_trial_specs(task):
-        # TODO: Support any number of extra axes (i.e. for analyses that vmap over multiple axes in their task/model objects)
-        if len(task.workspace.shape) == 3:
-            return eqx.filter_vmap(lambda task: task.validation_trials)(task)
-        else:
-            return task.validation_trials
             
     trial_specs = jt.map(get_validation_trial_specs, tasks, is_leaf=is_module)
     
@@ -381,12 +374,12 @@ def perform_all_analyses(
     # However, note that dependencies should have unique keys since they will be aggregated into a 
     # single dict before performing the analyses.
     # TODO: Only pass the dependencies to each analysis that it actually needs
-    dependencies = compute_dependencies(analyses, data, **kwargs)
+    all_dependency_results = compute_dependencies(analyses, data, **kwargs)
 
     if not any(analyses):
         raise ValueError("No analyses given to perform")
     
-    def analyse_and_save(analysis: AbstractAnalysis):
+    def analyse_and_save(analysis: AbstractAnalysis, dependencies: dict):
         # Get all figures and results for this analysis.
         # Pass *all* dependencies to every analysis
         logger.info(f"Start analysis: {analysis}")
@@ -405,11 +398,10 @@ def perform_all_analyses(
         logger.info(f"Results saved: {analysis}")
         return result, figs
     
-    all_results, all_figs = jtree.unzip(jt.map(
-        analyse_and_save, 
-        analyses, 
-        is_leaf=is_type(AbstractAnalysis),
-    ))
+    all_results, all_figs = jtree.unzip([
+        analyse_and_save(analysis, dependencies)
+        for analysis, dependencies in zip(analyses, all_dependency_results)
+    ])
     
     return all_results, all_figs
 

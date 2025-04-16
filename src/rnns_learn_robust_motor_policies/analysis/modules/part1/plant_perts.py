@@ -165,40 +165,54 @@ measures_base = Measures(measure_keys=MEASURE_KEYS)
 i_eval = 0  # For single-eval plots
 
 
+a = (
+    EffectorTrajectories(
+        colorscale_axis=1, 
+        colorscale_key="reach_condition",
+    )
+    .transform(get_best_replicate_states),  # By default has `axis=1` for replicates
+)
+
 """All the analyses to perform in this part."""
 ALL_ANALYSES = [
     # state shape: (eval, replicate, condition, time, xy)
 
     # By condition, all evals for the best replicate only
-    EffectorTrajectories(
-        colorscale_axis=1, 
-        colorscale_key="reach_condition",
-    )
-        .transform(get_best_replicate_states),  # By default has `axis=1` for replicates
+    (
+        EffectorTrajectories(
+            colorscale_axis=1, 
+            colorscale_key="reach_condition",
+        )
+        .transform(get_best_replicate_states)
+    ),  # By default has `axis=1` for replicates
 
     # By replicate, single eval
-    EffectorTrajectories(
-        colorscale_axis=0, 
-        colorscale_key="replicate",
-    )
+    (
+        EffectorTrajectories(
+            colorscale_axis=0, 
+            colorscale_key="replicate",
+        )
         .after_indexing(0, i_eval, axis_label='eval')
         .with_fig_params(
             scatter_kws=dict(line_width=1),
-        ),
+        )
+    ),
 
     # Single eval for a single replicate
-    EffectorTrajectories(
-        colorscale_axis=0, 
-        colorscale_key="reach_condition",
-    )
-        .transform(get_best_replicate_states)
+    (
+        EffectorTrajectories(
+            colorscale_axis=0, 
+            colorscale_key="reach_condition",
+        )
+        .transform(get_best_replicate_states) 
         .after_indexing(0, i_eval, axis_label='eval')
         .with_fig_params(
             curves_mode='markers+lines',
             ms=3,
             scatter_kws=dict(line_width=0.75),
             mean_scatter_kws=dict(line_width=0),
-        ),
+        )
+    ),
 
     # AlignedTrajectories(
     #     colorscale_axis=1,

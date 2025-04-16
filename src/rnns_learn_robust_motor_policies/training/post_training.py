@@ -40,8 +40,8 @@ from rnns_learn_robust_motor_policies.setup_utils import (
     setup_models_only,
     setup_tasks_only,
 )
+from rnns_learn_robust_motor_policies.analysis.aligned import get_aligned_vars
 from rnns_learn_robust_motor_policies.analysis.state_utils import (
-    get_aligned_vars,
     get_pos_endpoints,
     vmap_eval_ensemble,
 )
