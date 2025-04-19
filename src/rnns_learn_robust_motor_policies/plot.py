@@ -1,10 +1,11 @@
 from collections.abc import Sequence
+import math
 from typing import Literal, Optional
 
 import equinox as eqx
 import jax.numpy as jnp
 import jax.tree as jt 
-from jaxtyping import Array, Bool, Float 
+from jaxtyping import Array, Bool, Float, PyTree 
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
@@ -614,3 +615,120 @@ def plot_2d_effector_trajectories(
         *args,
         **kwargs,
     )
+
+
+def set_axis_bounds_equal(
+    axis: Literal['x', 'y'],
+    figs: PyTree[go.Figure],
+    padding_factor: float = 0.05,
+) -> PyTree[go.Figure]:
+    """
+    Finds the global min/max bounds for a specific axis ('x' or 'y') across
+    all figures in a PyTree and updates all figures to use these bounds
+    for that axis only.
+
+    Args:
+        figs: A PyTree containing go.Figure objects at its leaves.
+        axis: The axis ('x' or 'y') to synchronize.
+
+    Returns:
+        A PyTree with the same structure as figs, but with all go.Figure
+        objects having the specified axis updated to the global bounds.
+
+    Written in concert with Gemini 2.5 Pro (experimental).
+    """
+    leaves = jt.leaves(figs)
+    if not leaves: # Handle empty input PyTree
+        return figs
+
+    # Filter for actual figure objects
+    fig_leaves = [leaf for leaf in leaves if isinstance(leaf, go.Figure)]
+    if not fig_leaves: # Handle PyTree with no figures
+        return figs
+
+    # --- Calculate global bounds for the specified axis ---
+    g_min = math.inf
+    g_max = -math.inf
+    found_data = False
+
+    for fig in fig_leaves:
+        for trace in fig.data:
+            # Check if trace has coordinate data for the specified axis (e.g., trace.x)
+            #! Note that this only works for traces where `trace.x` and `trace.y` represent the 
+            #! spatial coordinates of the trace on the axes! A more general solution would 
+            #! investigate `trace.type` and use knowledge of the data->axis mapping for each trace type.
+            coords = getattr(trace, axis, None)
+            if coords is not None:
+                found_data = True
+                # Update global min/max based on this trace's numeric data
+                g_min = min(g_min, min(coords))
+                g_max = max(g_max, max(coords))
+
+    # --- Determine the final valid range tuple for the specified axis ---
+    final_range = None
+    if found_data: # Only calculate range if data was found
+        # Check if valid min/max were actually updated (g_min <= g_max)
+        if g_min <= g_max:
+            if g_min == g_max:
+                # Handle single data point case (or all points identical)
+                # Use 5% of absolute value as padding, or 0.5 if value is 0
+                # Ensure non-negative padding_factor is respected
+                padding_abs = abs(g_min) * max(0.0, padding_factor) if g_min != 0 else 0.5 * max(0.0, padding_factor)
+                # Fallback to a small absolute pad if value is 0 and factor > 0 but result is 0
+                if padding_abs == 0 and g_min == 0 and padding_factor > 0:
+                     padding_abs = 0.5 * padding_factor # e.g., 0.025 if factor is 0.05
+                # Ensure some minimal padding if factor > 0, but value is tiny
+                if padding_abs == 0 and g_min != 0 and padding_factor > 0:
+                     padding_abs = 0.5 * padding_factor # Use a small default based on factor
+
+                # Handle case where user explicitly wants zero padding
+                if padding_factor == 0: 
+                    padding_abs = 0
+
+                padded_min = g_min - padding_abs
+                padded_max = g_max + padding_abs
+                # Ensure min <= max after padding, could happen if padding_abs is 0
+                if padded_min > padded_max: padded_min = padded_max = g_min
+
+            else:
+                # Calculate padding based on the data range (delta)
+                delta = g_max - g_min
+                padding = delta * max(0.0, padding_factor) # Ensure non-negative padding
+                padded_min = g_min - padding
+                padded_max = g_max + padding
+
+            final_range = (padded_min, padded_max)
+
+    # --- Nested function to update a single leaf's specified axis ---
+    axis_attr_name = f"{axis}axis" 
+    def _update_leaf_axis(leaf):
+        """Updates the specified axis of a leaf if it's a figure."""
+        if isinstance(leaf, go.Figure):
+            # Check if a valid global range was found and the figure has the axis
+            if final_range is not None and hasattr(leaf.layout, axis_attr_name):
+                # Set the range attribute on the specific axis layout object
+                # e.g., Access leaf.layout.xaxis and set its 'range' attribute
+                setattr(getattr(leaf.layout, axis_attr_name), 'range', final_range)
+        return leaf # Return leaf modified or not
+
+    # --- Apply the axis update to all leaves using tree_map ---
+    updated_figs = jt.map(_update_leaf_axis, figs)
+    return updated_figs
+
+
+def set_axes_bounds_equal(figs: PyTree[go.Figure]) -> PyTree[go.Figure]:
+    """
+    Synchronizes both 'x' and 'y' axes across all figures in a PyTree
+    by setting them to their respective global bounds.
+
+    Args:
+        figs: A PyTree containing go.Figure objects at its leaves.
+
+    Returns:
+        A PyTree with the same structure as figs, but with both x and y axes
+        synchronized across all go.Figure objects.
+    """
+    figs_x_synced = set_axis_bounds_equal(figs, 'x')
+    figs_xy_synced = set_axis_bounds_equal(figs_x_synced, 'y')
+
+    return figs_xy_synced

@@ -421,7 +421,7 @@ if __name__ == '__main__':
     # This assumes there is no file whose relative path is identical to that `expt_id`.
     parser.add_argument("config_path", type=str, help="Path to the config file, or `expt_id` of a default config.")
     parser.add_argument("--fig-dump-path", type=str, help="Path to dump figures.")
-    parser.add_argument("--fig-dump-formats", type=str, default="html,webp", 
+    parser.add_argument("--fig-dump-formats", type=str, default="html,webp,svg", 
                       help="Format(s) to dump figures in, comma-separated (e.g., 'html,png,pdf')")
     parser.add_argument("--no-pickle", action="store_true", help="Do not use pickle for states (don't load existing or save new).")
     parser.add_argument("--retain-past-fig-dumps", action="store_true", help="Do not save states to pickle.")
@@ -453,8 +453,7 @@ if __name__ == '__main__':
         key=key
     )
 
-    #! Keep the debugger alive.
-    #! TODO: Remove later.  
+    #! TMP: Keep the debugger alive.
     raise RuntimeError("Stop here.")
     
     

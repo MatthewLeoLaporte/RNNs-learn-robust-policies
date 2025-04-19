@@ -23,7 +23,7 @@ from rnns_learn_robust_motor_policies.types import LDict
 
 
 class Profiles(AbstractAnalysis):
-    """Generates forward and lateral velocity profile figures.
+    """Generates aligned profile figures.
     """
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
@@ -52,23 +52,7 @@ class Profiles(AbstractAnalysis):
     ):
         level_labels = tree_level_labels(aligned_vars[self.variant])
 
-        if level_labels[-1] != 'Responses':
-            raise ValueError("Apparently we're not using `Responses` anymore!")
-
-        #! TODO: Replace `Responses` completely, then remove this.
-        #! It may be necessary to keep the `move_ldict_level_above` transposition;
-        #! though it would be transposing `level_labels[-1]` above `level_labels[-2]`
-        result = jt.map(
-            lambda responses: LDict.of('var')(dict(
-                position=responses.pos,
-                velocity=responses.vel,
-                force=responses.force,
-            )),
-            aligned_vars[self.variant],
-            is_leaf=is_type(Responses),
-        )
-
-        result = move_ldict_level_above('var', level_labels[-2], result)
+        result = move_ldict_level_above('var', level_labels[-2], aligned_vars[self.variant])
 
         def _get_fig(fig_data, i, label, colors):                      
             return fbp.profiles(

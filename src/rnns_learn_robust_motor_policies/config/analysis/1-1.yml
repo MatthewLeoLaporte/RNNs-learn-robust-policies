@@ -9,8 +9,9 @@ train:
     feedback_noise_std: 0.01
     motor_noise_std: 0.01
     feedback_delay_steps: 0
-  where: 
-    0: ['step.net.hidden', 'step.net.readout']
+    # dt: 0.01
+  # where: 
+  #   0: ['step.net.hidden', 'step.net.readout']
   pert:  # during training
     type: curl
     # list -> load multiple models
@@ -42,8 +43,8 @@ pert:
 
 model:
   n_steps: null
-  feedback_noise_std: 0.025
-  motor_noise_std: 0.025
+  feedback_noise_std: null
+  motor_noise_std: null
 
 analyses:
   center_out_sets: 

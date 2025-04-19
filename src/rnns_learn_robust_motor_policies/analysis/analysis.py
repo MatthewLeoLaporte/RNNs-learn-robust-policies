@@ -1,6 +1,6 @@
 from collections.abc import Callable, Hashable, Mapping, Sequence
 import dataclasses
-from functools import cached_property
+from functools import cached_property, partial, wraps
 import inspect
 import logging
 from types import LambdaType, MappingProxyType
@@ -94,6 +94,13 @@ class _FigOp(NamedTuple):
     params: dict[str, Any] = {}
 
 
+class _FinalOp(NamedTuple):
+    name: str
+    label: str
+    transform_func: Callable[[PyTree[go.Figure]], PyTree[go.Figure]]
+    params: dict[str, Any] = {}
+
+
 def _process_param(param: Any) -> Any:
     """
     Process parameter values for serialization in the database.
@@ -156,6 +163,32 @@ def _normalize_name(name: str) -> str:
     return _NAME_NORMALIZATION.get(name, name)
 
 
+def _axis_items_fn(axis: int, leaf: Array) -> Iterable:
+        if not isinstance(leaf, Array) or axis >= leaf.ndim:
+            raise ValueError(f"Combine target for axis {axis} is not Array or axis out of bounds.")
+        return range(leaf.shape[axis])
+
+
+def _axis_slice_fn(axis: int, node: Array, idx: int) -> Array:
+        return node[(slice(None),) * axis + (idx,)]
+
+
+def _level_slice_fn(node: LDict, item: Any) -> Any:
+        return node[item]
+
+
+def _level_items_fn(level: str, leaf: LDict) -> Iterable:
+    if not LDict.is_of(level)(leaf):
+            raise TypeError(f"Map target for level '{level}' is not an LDict with that label.")
+    return leaf.keys()
+
+
+def _reconstruct_ldict_aggregator(level: str, figs_list: list[PyTree], items_iterated: Iterable) -> LDict:
+    # items_iterated here will be the keys from the LDict level
+    # Rebuild the LDict using the original level label
+    return LDict.of(level)(dict(zip(items_iterated, figs_list)))
+
+
 def get_validation_trial_specs(task: AbstractTask):
     # TODO: Support any number of extra axes (i.e. for analyses that vmap over multiple axes in their task/model objects)
     if len(task.workspace.shape) == 3:
@@ -199,7 +232,13 @@ class AbstractAnalysis(Module, strict=False):
             that case we could give the condition `"any_system_noise"` to those analyses.
     """
     _exclude_fields = (
-        'dependencies', 'conditions', 'fig_params', 'dependency_params', '_prep_ops', '_fig_op'
+        'dependencies', 
+        'conditions', 
+        'fig_params', 
+        'dependency_params', 
+        '_prep_ops', 
+        '_fig_op',
+        '_final_ops',
     )
 
     dependencies: AbstractClassVar[MappingProxyType[str, type[Self]]]
@@ -214,6 +253,7 @@ class AbstractAnalysis(Module, strict=False):
     dependency_params: dict = eqx.field(default_factory=dict)
     _prep_ops: tuple[_PrepOp, ...] = ()
     _fig_op: Optional[_FigOp] = None
+    _final_ops: tuple[_FinalOp, ...] = ()
 
     def __call__(
         self, 
@@ -316,6 +356,13 @@ class AbstractAnalysis(Module, strict=False):
 
             if figs is None and self._fig_op:
                  logger.warning(f"Fig operation for {self.name} could not proceed or produced no figures.")
+
+        for final_op in self._final_ops:
+            try: 
+                figs = final_op.transform_func(figs)
+            except Exception as e:
+                logger.error(f"Error during execution of final op '{final_op.name}'", exc_info=True)
+                raise e
 
         return result, figs
 
@@ -462,12 +509,13 @@ class AbstractAnalysis(Module, strict=False):
             # Include any fields that have non-default values in the filename; 
             # this serves to distinguish different instances of the same analysis,
             # according to the kwargs passed by the user upon instantiation.
-            # TODO: Exclude based on `_FigOp` and `_PrepOp`; e.g. if a 
-            # `_PrepOp` is used to stack, then we don't need to include the 
-            #  altered stack axis in the filename
-            non_default_field_params_str = '__'.join([
-                f"{k}-{v}" for k, v in self._non_default_field_params.items()
-            ])
+            #! TODO: Exclude based on `_FigOp` and `_PrepOp`; e.g. if a 
+            #! `_PrepOp` is used to stack, then we don't need to include the 
+            #!  altered stack axis in the filename
+            non_default_field_params_str = _format_dict_of_params(
+                self._non_default_field_params, 
+                join_str='__',
+            )
             
             # Additionally dump to specified path if provided
             if dump_path is not None:                                
@@ -501,6 +549,15 @@ class AbstractAnalysis(Module, strict=False):
                 except Exception as e:
                     logger.error(f"Error saving fig dump parameters to {params_path}: {e}", exc_info=True)
 
+    @property
+    def _all_ops(self) -> tuple: 
+        if self._fig_op is not None:
+            fig_ops = (self._fig_op,)
+        else:
+            fig_ops = ()
+
+        return self._prep_ops + fig_ops + self._final_ops
+
     def _extract_ops_info(self):
         """
         Extract information about all operations (prep ops and fig op).
@@ -509,37 +566,25 @@ class AbstractAnalysis(Module, strict=False):
             - ops_params_dict: Dictionary with all operations info
             - ops_filename_str: String representation for filename
         """
-        all_ops = self._prep_ops 
-        
-        if self._fig_op is not None:
-            all_ops += (self._fig_op,)
-                
         ops_params_dict = {
             op.name: {k: _process_param(v) for k, v in op.params.items()}
-            for op in all_ops
+            for op in self._all_ops
         }
 
-        ops_filename_str = '__'.join(op.label for op in all_ops)
+        ops_filename_str = '__'.join(op.label for op in self._all_ops)
 
         return ops_params_dict, ops_filename_str
     
     def __str__(self) -> str:
-        params = dict(self._non_default_field_params)
-        params = dict(variant=self.variant) | params
-        non_default_field_params_str = _format_dict_of_params(params)
-        obj_str = f"{self.name}({non_default_field_params_str})"
-        prep_op_params_strs = [
-            f"{prep_op.name}({_format_dict_of_params(prep_op.params)})"
-            for prep_op in self._prep_ops
+        field_params = dict(variant=self.variant) | dict(self._non_default_field_params)
+        op_params_strs = [
+            f"{op.name}({_format_dict_of_params(op.params)})"
+            for op in self._all_ops
         ]
-        if prep_op_params_strs: 
-            obj_str = '.'.join([obj_str, *prep_op_params_strs])
-
-        if self._fig_op:
-            fig_op_params_str = f"{self._fig_op.name}({_format_dict_of_params(self._fig_op.params)})"
-            obj_str = '.'.join([obj_str, fig_op_params_str])
-
-        return obj_str
+        return '.'.join([
+            f"{self.name}({_format_dict_of_params(field_params)})", 
+            *op_params_strs
+        ])
         
     def with_fig_params(self, **kwargs) -> Self:
         """Returns a copy of this analysis with updated figure parameters."""
@@ -576,42 +621,110 @@ class AbstractAnalysis(Module, strict=False):
             params=dict(axis=axis, idxs=idxs),
         )
     
-    def after_transform_level(
+    def after_transform(
         self, 
-        level: str | Sequence[str], 
-        transform_func: Optional[Callable[[LDict], Any]],
+        func: Callable[..., Any],  # Must take two arguments: a PyTree, and **kwargs
+        level: Optional[str | Sequence[str]] = None,
         dependency_name: Optional[str] = None,
-        transform_label: Optional[str] = None,
+        label: Optional[str] = None,
     ) -> Self:
         """
-        Returns a copy of this analysis that transforms its inputs at an `LDict` level before proceeding.
+        Returns a copy of this analysis that transforms its inputs with a function before proceeding.
+
+        Args:
+            func: The function to transform the inputs with.
+            level: The `LDict` level to apply the transformation to. If None, the transformation is applied to the entire input PyTree.
+            dependency_name: The name of the dependency to transform.
+            label: The label for the transformation. If None, the label is generated from the function name and level.
         """
-        if isinstance(level, str):
-            level = [level]
+        obj = self 
 
-        obj = self
-        for current_level in level:
-            # Define transform_level inside the loop with the correct closure
-            def _transform_level(dep_data, level=current_level, **kwargs):  # Capture current_level by value
-                return jt.map(transform_func, dep_data, is_leaf=LDict.is_of(level))
-            
-            level_str = _format_level_str(current_level)
-
-            if transform_label is None:
-                label = f"{get_name_of_callable(transform_func)}-transform_{level_str}"
-            else:
-                label = f"{transform_label}-transform_{level_str}"
-
+        if level is None:
             obj = obj._add_prep_op(
-                name="after_transform_level",
-                label=label,
+                name="after_transform",
+                label=f"pre-transform_{get_name_of_callable(func)}",
                 dep_name=dependency_name,
-                transform_func=_transform_level,
-                params=dict(level=current_level, transform_func=transform_func),
+                transform_func=func,
+                params=dict(func=func),
             )
 
+        else:
+            if isinstance(level, str):
+                levels = [level]
+            else:
+                levels = level
+
+            for level in levels:
+                def _transform_level(dep_data, level=level, **kwargs):  
+                    return jt.map(func, dep_data, is_leaf=LDict.is_of(level))
+                
+                level_str = _format_level_str(level)
+
+                if label is None:
+                    label = f"pre-transform-{level_str}_{get_name_of_callable(func)}"
+
+                obj = obj._add_prep_op(
+                    name="after_transform",
+                    label=label,
+                    dep_name=dependency_name,
+                    transform_func=_transform_level,
+                    params=dict(level=level, transform_func=func),
+                )
+
         return obj
-        
+    
+    def then_transform_figs(
+        self, 
+        func: Callable[..., Any], 
+        level: Optional[str] = None,
+        label: Optional[str] = None,
+    ) -> Self:
+        """
+        Returns a copy of this analysis that transforms its output PyTree of figures
+        """
+
+        if label is None:
+            label = f"post-transform-{get_name_of_callable(func)}"
+
+        if level is not None:
+            # Apply the transformation leafwise across the `level` LDict level;
+            # e.g. suppose there are two keys in the `level` LDict, then the transformation
+            # will be applied to 2-tuples of figures; following the transformation, reconsistute
+            # the `level` LDict with the transformed figures.
+            @wraps(func)
+            def _transform_func(tree):
+                _Tuple = jtree.make_named_tuple_subclass("ColumnTuple")
+                
+                def _transform_level(ldict):
+                    zipped = jtree.zip_(
+                        *ldict.values(), 
+                        is_leaf=is_type(go.Figure), 
+                        zip_cls=_Tuple,
+                    )
+                    transformed = jt.map(func, zipped, is_leaf=is_type(_Tuple))
+                    unzipped = jtree.unzip(transformed, tuple_cls=_Tuple)
+                    return LDict.of(level)(dict(zip(ldict.keys(), unzipped)))
+
+                return jt.map(
+                    _transform_level,
+                    tree, 
+                    is_leaf=LDict.is_of(level)
+                )
+
+            return self._add_final_op(
+                name="then_transform_figs",
+                label=label,
+                transform_func=_transform_func,
+                params=dict(level=level,transform_func=func),
+            )
+        else:
+            return self._add_final_op(
+                name="then_transform_figs",
+                label=label,
+                transform_func=func,
+                params=dict(transform_func=func),
+            )
+    
     def after_unstacking(
         self, 
         axis: int, 
@@ -665,17 +778,36 @@ class AbstractAnalysis(Module, strict=False):
     def after_subdict_at_level(
         self, 
         level: str, 
-        keys: Sequence[Hashable], 
+        keys: Optional[Sequence[Hashable]] = None, 
+        idxs: Optional[Sequence[int]] = None,
         dependency_name: Optional[str] = None,
     ) -> Self:
         """
-        Returns a copy of this analysis that keeps certain  an `LDict` level before proceeding.
+        Returns a copy of this analysis that keeps certain keys of an `LDict` level before proceeding.
+
+        Either `keys` or `idxs` must be provided, but not both: `keys` specifies the exact keys to keep,
+        whereas `idxs` specifies the indices of the keys to keep in terms of their ordering in the `LDict`.
         """
 
-        return self.after_transform_level(
-            level, 
-            select_func=lambda d: subdict(d, keys), 
+        if keys is not None and idxs is not None:
+            raise ValueError("Cannot provide both `keys` and `idxs`.")
+        
+        if keys is None and idxs is None:
+            raise ValueError("Must provide either `keys` or `idxs`.")
+
+        label = f"subdict-at-{_format_level_str(level)}_"
+        if keys is not None:
+            select_func = lambda d: subdict(d, keys)
+            label += ','.join(keys)
+        elif idxs is not None:
+            select_func = lambda d: subdict(d, [list(d.keys())[i] for i in idxs])
+            label += f"idxs-{','.join(str(i) for i in idxs)}"
+
+        return self.after_transform(
+            func=select_func, 
+            level=level, 
             dependency_name=dependency_name,
+            label=label,
         )
 
     def after_stacking(self, level: str, dependency_name: Optional[str] = None) -> Self:
@@ -767,54 +899,58 @@ class AbstractAnalysis(Module, strict=False):
             params=dict(func=func),
         )
     
-    def transform(
+    def map_at_level(
         self, 
-        func: Callable[..., Any],  # Must take two arguments: a PyTree, and **kwargs
+        level: str, 
         dependency_name: Optional[str] = None,
-    ) -> Self:
-        return self._add_prep_op(
-            name="transform",
-            label=f"transform-{get_name_of_callable(func)}",
-            dep_name=dependency_name,
-            transform_func=func,
-            params=dict(func=func),
-        )
-
-    def map_at_level(self, level: str, dependency_name: Optional[str] = None) -> Self: 
+        fig_params_fn: Optional[Callable[[FigParamNamespace, int, Any], FigParamNamespace]] = None,
+    ) -> Self: 
         """
         Returns a copy of this analysis that maps over the input PyTrees, down to a certain `LDict` level.
 
         This is useful when e.g. the analysis calls a plotting function that expects a two-level PyTree, 
         but we've evaluated a deeper PyTree of states, where the two levels are inner. 
         """
-        # Define items_fn and slice_fn (same as combine_figs_by_level)
-        _is_leaf_level = LDict.is_of(level)
-
-        def _level_items_fn(leaf: LDict) -> Iterable:
-            if not _is_leaf_level(leaf):
-                 raise TypeError(f"Map target for level '{level}' is not an LDict with that label.")
-            return leaf.keys()
-        
-        def _level_slice_fn(node: LDict, item: Any) -> Any:
-             return node[item]
-
-        # Define the specific aggregator for reconstructing the LDict
-        def _reconstruct_ldict_aggregator(figs_list: list[PyTree], items_iterated: Iterable) -> LDict:
-            # items_iterated here will be the keys from the LDict level
-            # Rebuild the LDict using the original level label
-            return LDict.of(level)(dict(zip(items_iterated, figs_list)))
-
         return self._change_fig_op(
             name="map_at_level",
             label=f"map_at-{_format_level_str(level)}",
             dep_name=dependency_name,
-            is_leaf=_is_leaf_level,
+            is_leaf=LDict.is_of(level),
             slice_fn=_level_slice_fn,
-            items_fn=_level_items_fn,
+            items_fn=partial(_level_items_fn, level),
             # Use the new aggregator specific to mapping
-            agg_fn=_reconstruct_ldict_aggregator,
-            fig_params_fn=None, # Mapping usually doesn't need per-item param changes
+            agg_fn=partial(_reconstruct_ldict_aggregator, level),
+            fig_params_fn=fig_params_fn, 
             params=dict(level=level),
+        )
+
+    def map_by_axis(
+        self, 
+        axis: int, 
+        output_level_label: str, 
+        dependency_name: Optional[str] = None,
+        fig_params_fn: Optional[Callable[[FigParamNamespace, int, Any], FigParamNamespace]] = None,
+    ) -> Self:
+        """Returns a copy of this analysis that maps over a given axis of the input PyTree(s).
+        
+        This is useful when we want to produce a separate figure for each element along an array axis. 
+
+        Args:
+            axis: The axis to map over
+            output_level_label: The label of the `LDict` level to create for the output figures
+        """
+        # TODO: combined `map_at_level` with `after_unstacking` so the user can control the 
+        # keys of the resulting output LDict level
+        return self._change_fig_op(
+            name="map_by_axis",
+            label=f"map_by-axis{axis}",
+            dep_name=dependency_name,
+            is_leaf=eqx.is_array,
+            slice_fn=partial(_axis_slice_fn, axis),
+            items_fn=partial(_axis_items_fn, axis),
+            fig_params_fn=fig_params_fn,
+            agg_fn=partial(_reconstruct_ldict_aggregator, output_level_label),
+            params=dict(axis=axis),
         )
     
     def combine_figs_by_axis(
@@ -837,21 +973,13 @@ class AbstractAnalysis(Module, strict=False):
             dependency_name: Optional name of specific dependency to slice.
                 If None, will slice all dependencies listed in self.dependencies.
         """
-        # Define items_fn and slice_fn locally
-        def _axis_items_fn(leaf: Array) -> Iterable:
-             if not isinstance(leaf, Array) or axis >= leaf.ndim:
-                 raise ValueError(f"Combine target for axis {axis} is not Array or axis out of bounds.")
-             return range(leaf.shape[axis])
-        def _axis_slice_fn(node: Array, item: int) -> Array:
-             return node[(slice(None),) * axis + (item,)]
-
         return self._change_fig_op(
             name="combine_figs_by_axis",
             label=f"combine_by-axis{axis}",
             dep_name=dependency_name,
             is_leaf=eqx.is_array,
-            slice_fn=_axis_slice_fn,
-            items_fn=_axis_items_fn,
+            slice_fn=partial(_axis_slice_fn, axis),
+            items_fn=partial(_axis_items_fn, axis),
             fig_params_fn=fig_params_fn,
             # Use the default aggregator that matches the new signature
             agg_fn=_combine_figures,
@@ -878,22 +1006,13 @@ class AbstractAnalysis(Module, strict=False):
             dependency_name: Optional name of specific dependency to iterate over.
                 If None, will iterate over all dependencies listed in self.dependencies.
         """
-        # Define items_fn and slice_fn locally
-        _is_leaf_level = LDict.is_of(level)
-        def _level_items_fn(leaf: LDict) -> Iterable:
-            if not _is_leaf_level(leaf):
-                 raise TypeError(f"Combine target for level '{level}' is not an LDict with that label.")
-            return leaf.keys()
-        def _level_slice_fn(node: LDict, item: Any) -> Any:
-             return node[item]
-
         return self._change_fig_op(
             name="combine_figs_by_level",
             label=f"combine_by-{_format_level_str(level)}",
             dep_name=dependency_name,
-            is_leaf=_is_leaf_level,
+            is_leaf=LDict.is_of(level),
             slice_fn=_level_slice_fn,
-            items_fn=_level_items_fn,
+            items_fn=partial(_level_items_fn, level),
             fig_params_fn=fig_params_fn,
              # Use the default aggregator that matches the new signature
             agg_fn=_combine_figures,
@@ -919,6 +1038,25 @@ class AbstractAnalysis(Module, strict=False):
                 params=params,
             ),)
         )
+    
+    def _add_final_op(
+        self, 
+        name: str,
+        label: str,
+        transform_func: Callable,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Self:
+        return eqx.tree_at(
+            lambda a: a._final_ops,
+            self,
+            self._final_ops + (_FinalOp(
+                name=name,
+                label=label,
+                transform_func=transform_func,
+                params=params,
+            ),)
+        )
+        
 
     def _change_fig_op(self, **kwargs) -> Self:
         return eqx.tree_at(

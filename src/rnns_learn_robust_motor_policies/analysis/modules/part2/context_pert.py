@@ -89,7 +89,7 @@ ALL_ANALYSES = [
         colorscale_axis=1, 
         colorscale_key="reach_condition",
     )
-        .transform(get_best_replicate_states)  # By default has `axis=1` for replicates
+        .after_transform(get_best_replicate_states)  # By default has `axis=1` for replicates
         .with_fig_params(
             mean_exclude_axes=(-3,),  # Average over all extra batch axes *except* reach direction/condition
             legend_title="Context<br>pert. amp.",
@@ -112,7 +112,7 @@ ALL_ANALYSES = [
 
     # 1. Activity of sample units, to show they change when context input does
     NetworkActivity_SampleUnits(variant="steady")
-        .transform(get_best_replicate_states)
+        .after_transform(get_best_replicate_states)
         .after_level_to_top('train__pert__std')
         .with_fig_params(
             legend_title="Context pert. amp.",  #! No effect

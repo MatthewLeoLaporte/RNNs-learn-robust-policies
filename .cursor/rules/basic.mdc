@@ -14,8 +14,8 @@ alwaysApply: true
   PyTree node registry decorators like `register_pytree_node`.
 - Use try-except blocks as rarely as possible. Prefer typing-based flow and 
   `isinstance` checks.
-- Use `logger.error` instead of `raise`, so that the user/dev can control the 
-  handling of exceptions.
+- Use `logger.error` prior to raising exceptions when this would make it clearer 
+  where the error originates.
 - Preserve my inline comments in your solutions, when providing total substitutes for 
   code components, or where the comments would otherwise be removed by your edits.
   If you are certain that the comment has become irrelevant, replace `#` with `#!` 

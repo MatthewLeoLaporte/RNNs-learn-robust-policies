@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from functools import partial
 from types import MappingProxyType, SimpleNamespace
 from typing import ClassVar, Literal, Optional
 import jax.numpy as jnp
@@ -21,7 +22,8 @@ from rnns_learn_robust_motor_policies.analysis.disturbance import FB_INTERVENOR_
 from rnns_learn_robust_motor_policies.analysis.effector import EffectorTrajectories
 from rnns_learn_robust_motor_policies.analysis.measures import Measures
 from rnns_learn_robust_motor_policies.analysis.profiles import Profiles
-from rnns_learn_robust_motor_policies.plot import PLANT_VAR_LABELS, WHERE_PLOT_PLANT_VARS
+from rnns_learn_robust_motor_policies.misc import lohi
+from rnns_learn_robust_motor_policies.plot import PLANT_VAR_LABELS, WHERE_PLOT_PLANT_VARS, set_axis_bounds_equal
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate_states, vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.types import LDict, unflatten_dict_keys
 from rnns_learn_robust_motor_policies.perturbations import feedback_impulse
@@ -201,6 +203,21 @@ def get_impulse_vrect_kws(hps):
     )
 
 
+def measures_fig_params_fn(fig_params, i, item):
+    if i == 0: 
+        return fig_params | dict(
+            trace_kws=dict(
+                    opacity=0.3, line_color='grey',
+                ),
+            layout_kws=dict(
+                showlegend=False,
+                xaxis_visible=False, 
+                # yaxis_visible=False,
+            ),
+        )
+    return fig_params
+
+
 # State PyTree structure: ['pert__var', 'context_input', 'train__pert__std']
 # Array batch shape: (evals, replicates, impulse amplitudes, reach conditions)
 ALL_ANALYSES = [
@@ -229,22 +246,22 @@ ALL_ANALYSES = [
     #     )
     # ),
 
-    #! TODO: This is broken by the most recent commit. Fix it. 
-    # (
-    #     AlignedEffectorTrajectories(
-    #         variant="full",
-    #         colorscale_axis=1,
-    #         colorscale_key='pert__amp',
-    #         dependency_params=aligned_vars_params,
-    #     )
-    #     .transform(get_best_replicate_states)
-    # ),
+    (
+        AlignedEffectorTrajectories(
+            variant="full",
+            colorscale_axis=1,
+            colorscale_key='pert__amp',
+            dependency_params=aligned_vars_params,
+        )
+        .transform(get_best_replicate_states)
+    ),
 
-    # (
-    #     AlignedEffectorTrajectories(variant="full")
-    #     .transform(get_best_replicate_states)
-    #     .after_stacking(level='train__pert__std')
-    # ),
+    (
+        #! This is broken; nothing appears. 
+        AlignedEffectorTrajectories(variant="full")
+        .transform(get_best_replicate_states)
+        .after_stacking(level='train__pert__std')
+    ),
 
     (
         Profiles(
@@ -255,6 +272,13 @@ ALL_ANALYSES = [
         .transform(get_best_replicate_states) 
         .after_indexing(1, -2, axis_label='pert__amp') 
         .map_at_level('train__pert__std')
+        .with_fig_params(
+            # legend_title="Context",
+            layout_kws=dict(
+                width=500,
+                height=300,
+            ),
+        )
     ),
 
     (
@@ -262,19 +286,22 @@ ALL_ANALYSES = [
             measure_keys=MEASURE_KEYS,
             dependency_params=aligned_vars_params,
         )
-        .transform(get_best_replicate_states)
+        .after_transform(get_best_replicate_states)
         .after_unstacking(1, "pert__amp")
-        .map_at_level('train__pert__std')
+        .after_transform(lohi, level="train__pert__std")
+        # Save seperate figures for zero-std, as pared-down all-grey
+        .map_at_level(
+            'train__pert__std',
+            fig_params_fn=measures_fig_params_fn,
+        )
         .with_fig_params(
-            legend_title="Impulse amplitude",
+            legend_title="Context",
+            xaxis_title="Feedback impulse amplitude",
             violinmode="group",
         )
+        .then_transform_figs(
+            partial(set_axis_bounds_equal, 'y'),
+            level='train__pert__std'
+        )
     ),
-
-    # Effector_SingleEval(
-    #     variant="full",
-    #     #! TODO: This doesn't result in the impulse amplitude *values* showing up in the legend!
-    #     #! (could try to access `colorscale_key` from `hps`, in `Effector_SingleEval`)
-    #     colorscale_key='pert__amp',
-    # ).with_fig_params(legend_title="Impulse amplitude"),
 ]

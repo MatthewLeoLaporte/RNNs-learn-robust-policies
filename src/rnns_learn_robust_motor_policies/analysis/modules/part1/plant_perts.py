@@ -80,69 +80,6 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
 eval_func = vmap_eval_ensemble
 
 
-class OutputWeightCorrelation(AbstractAnalysis):
-    conditions: tuple[str, ...] = ()
-    variant: Optional[str] = "full"
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
-    
-    def compute(
-        self, 
-        data: AnalysisInputData,
-        **kwargs,
-    ):
-        activities = jt.map(
-            lambda states: states.net.hidden,
-            data.states[self.variant],
-            is_leaf=is_module,
-        )
-
-        output_weights = jt.map(
-            lambda models: models.step.net.readout.weight,
-            data.models,
-            is_leaf=is_module,
-        )
-        
-        #! TODO: Generalize
-        output_corrs = jt.map(
-            lambda activities: LDict.of("train__pert__std")({
-                train_std: output_corr(
-                    activities[train_std], 
-                    output_weights[train_std],
-                )
-                for train_std in activities
-            }),
-            activities,
-            is_leaf=LDict.is_of("train__pert__std"),
-        )
-        
-        return output_corrs
-        
-    def make_figs(
-        self, 
-        data: AnalysisInputData,
-        *, 
-        result, 
-        colors, 
-        **kwargs,
-    ):
-        #! TODO: Generalize
-        assert result is not None
-        fig = get_violins(
-            result, 
-            yaxis_title="Output correlation", 
-            xaxis_title="Train field std.",
-            colors=colors['pert__amp'].dark,
-        )
-        return fig
-
-    def _params_to_save(self, hps: PyTree[TreeNamespace], *, result, **kwargs):
-        return dict(
-            n=int(np.prod(jt.leaves(result)[0].shape)),
-            measure="output_correlation",
-        )    
-
-
 """Labels of measures to include in the analysis."""
 MEASURE_KEYS = (
     "max_parallel_vel_forward",
@@ -151,7 +88,7 @@ MEASURE_KEYS = (
     "max_orthogonal_distance_left",
     "sum_orthogonal_distance",
     "end_position_error",
-    "end_velocity_error",
+    # "end_velocity_error",
     "max_parallel_force_forward",
     "sum_parallel_force",
     "max_orthogonal_force_right",  
@@ -165,67 +102,51 @@ measures_base = Measures(measure_keys=MEASURE_KEYS)
 i_eval = 0  # For single-eval plots
 
 
-a = (
-    EffectorTrajectories(
-        colorscale_axis=1, 
-        colorscale_key="reach_condition",
-    )
-    .transform(get_best_replicate_states),  # By default has `axis=1` for replicates
-)
-
 """All the analyses to perform in this part."""
 ALL_ANALYSES = [
     # state shape: (eval, replicate, condition, time, xy)
 
-    # # By condition, all evals for the best replicate only
-    # (
-    #     EffectorTrajectories(
-    #         colorscale_axis=1, 
-    #         colorscale_key="reach_condition",
-    #     )
-    #     .transform(get_best_replicate_states)
-    # ),  # By default has `axis=1` for replicates
+    # By condition, all evals for the best replicate only
+    (
+        EffectorTrajectories(
+            colorscale_axis=1, 
+            colorscale_key="reach_condition",
+        )
+        .after_transform(get_best_replicate_states)
+    ),  # By default has `axis=1` for replicates
 
-    # # By replicate, single eval
-    # (
-    #     EffectorTrajectories(
-    #         colorscale_axis=0, 
-    #         colorscale_key="replicate",
-    #     )
-    #     .after_indexing(0, i_eval, axis_label='eval')
-    #     .with_fig_params(
-    #         scatter_kws=dict(line_width=1),
-    #     )
-    # ),
+    # By replicate, single eval
+    (
+        EffectorTrajectories(
+            colorscale_axis=0, 
+            colorscale_key="replicate",
+        )
+        .after_indexing(0, i_eval, axis_label='eval')
+        .with_fig_params(
+            scatter_kws=dict(line_width=1),
+        )
+    ),
 
-    # # Single eval for a single replicate
-    # (
-    #     EffectorTrajectories(
-    #         colorscale_axis=0, 
-    #         colorscale_key="reach_condition",
-    #     )
-    #     .transform(get_best_replicate_states) 
-    #     .after_indexing(0, i_eval, axis_label='eval')
-    #     .with_fig_params(
-    #         curves_mode='markers+lines',
-    #         ms=3,
-    #         scatter_kws=dict(line_width=0.75),
-    #         mean_scatter_kws=dict(line_width=0),
-    #     )
-    # ),
+    # Single eval for a single replicate
+    (
+        EffectorTrajectories(
+            colorscale_axis=0, 
+            colorscale_key="reach_condition",
+        )
+        .after_transform(get_best_replicate_states) 
+        .after_indexing(0, i_eval, axis_label='eval')
+        .with_fig_params(
+            curves_mode='markers+lines',
+            ms=3,
+            scatter_kws=dict(line_width=0.75),
+            mean_scatter_kws=dict(line_width=0),
+        )
+    ),
 
-    # # AlignedTrajectories(
-    # #     colorscale_axis=1,
-    # #     colorscale_key='trial',
-    # # ),
-    # AlignedEffectorTrajectories().after_stacking(level='pert__amp'),
-    # AlignedEffectorTrajectories().after_stacking(level='train__pert__std'),
-    Profiles().transform(get_best_replicate_states),
+    AlignedEffectorTrajectories().after_stacking(level='pert__amp'),
+    AlignedEffectorTrajectories().after_stacking(level='train__pert__std'),
+    Profiles().after_transform(get_best_replicate_states),
     measures_base,
-    measures_base.after_transform_level(['train__pert__std'], lohi),
-    measures_base.after_transform_level(['train__pert__std', 'pert__amp'], lohi),
-    # #! TODO: Integrate `Measures_CompareReplicatesLoHi` into `Measures`...
-    # #! Measures(measure_keys=MEASURE_KEYS)
-    # #!     .after_unstacking(axis=1, label='replicate'),
-    # # OutputWeightCorrelation(),
+    measures_base.after_transform(lohi, level='train__pert__std'),
+    measures_base.after_transform(lohi, level=['train__pert__std', 'pert__amp']),
 ]

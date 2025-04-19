@@ -138,7 +138,7 @@ ALL_ANALYSES = [
             colorscale_axis=1, 
             colorscale_key="reach_condition",
         )
-        .transform(get_best_replicate_states)  # By default has `axis=1` for replicates
+        .after_transform(get_best_replicate_states)  # By default has `axis=1` for replicates
     ),
     AlignedEffectorTrajectories().after_stacking("context_input").map_at_level("train__pert__std"),
     AlignedEffectorTrajectories().after_stacking("train__pert__std").map_at_level("context_input"),

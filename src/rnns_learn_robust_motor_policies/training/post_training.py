@@ -155,7 +155,7 @@ def end_position_error(pos, eval_reach_length=1, last_n_steps=10):
 
 
 def get_measures_to_rate(model, task, hps):
-    states = vmap_eval_ensemble(jr.PRNGKey(0), hps, model, task),
+    states = vmap_eval_ensemble(jr.PRNGKey(0), hps, model, task)
 
     origins, directions = get_reach_origins_directions(task, hps)
     aligned_pos = get_aligned_vars(
