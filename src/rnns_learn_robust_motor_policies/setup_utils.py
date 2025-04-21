@@ -20,13 +20,8 @@ from jaxtyping import PRNGKeyArray, PyTree
 from sqlalchemy.orm import Session
 
 from feedbax.loss import AbstractLoss
-from feedbax.misc import attr_str_tree_to_where_func
 from feedbax.noise import Multiplicative, Normal
 from feedbax.task import SimpleReaches
-from feedbax.train import (
-    TaskTrainerHistory, 
-    init_task_trainer_history,
-)
 from feedbax.xabdeef.losses import simple_reach_loss
 from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
@@ -41,7 +36,6 @@ from rnns_learn_robust_motor_policies.database import (
     get_model_record,
     load_tree_with_hps,
 )
-from rnns_learn_robust_motor_policies.training.loss import get_readout_norm_loss
 from rnns_learn_robust_motor_policies.misc import (
     take_model,
 )
@@ -86,60 +80,6 @@ def get_train_pairs_by_pert_std(
     return task_model_pairs, all_hps_train
 
 
-def setup_train_histories(
-    models_tree,
-    hps_train: TreeNamespace,
-    *,
-    key,
-) -> dict[float, TaskTrainerHistory]:
-    """Returns a skeleton PyTree for the training histories (losses, parameter history, etc.)
-    
-    Note that `init_task_trainer_history` depends on `task` to infer:
-    
-    1) The number and name of loss function terms;
-    2) The structure of trial specs, in case `save_trial_specs is not None`.
-    
-    Here, neither of these are a concern since 1) we are always using the same 
-    loss function for each set of saved/loaded models in this project, 2) `save_trial_specs is None`.
-    """   
-    # Assume that where funcs may be lists (normally defined as tuples, but retrieved through sqlite JSON)
-    where_train = jt.map(
-        attr_str_tree_to_where_func, 
-        hps_train.where,
-        is_leaf=is_type(list),
-    )
-    
-    loss_func = simple_reach_loss()
-    if getattr(hps_train, 'readout_norm_loss_weight', None) is not None:
-        assert getattr(hps_train, 'readout_norm_value', None) is not None, (
-            "readout_norm_value must be provided if readout_norm_loss_weight is not None"
-        )
-        loss_func_validation = loss_func + (
-            hps_train.readout_norm_loss_weight 
-            * get_readout_norm_loss(hps_train.readout_norm_value)
-        )
-    else:
-        loss_func_validation = loss_func
-    
-    return jt.map(
-        lambda models: init_task_trainer_history(
-            loss_func,
-            hps_train.n_batches,
-            hps_train.model.n_replicates,
-            ensembled=True,
-            ensemble_random_trials=False,
-            save_model_parameters=jnp.array(hps_train.save_model_parameters),
-            save_trial_specs=None,
-            batch_size=hps_train.batch_size,
-            loss_func_validation=loss_func_validation,
-            model=models,
-            where_train=dict(where_train),  
-        ),
-        models_tree,
-        is_leaf=is_module,
-    )
-    
-    
 def get_latest_matching_file(directory: str, pattern: str) -> Optional[str]:
     """
     Returns the filename of the latest file in the given directory that matches the given pattern.
@@ -531,6 +471,8 @@ def query_and_load_model(
         tree = model
     
     return tree, model_info, replicate_info, n_replicates_included
+
+
 
 
         

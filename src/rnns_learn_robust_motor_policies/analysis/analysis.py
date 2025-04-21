@@ -27,6 +27,7 @@ from rnns_learn_robust_motor_policies.misc import camel_to_snake, get_dataclass_
 from rnns_learn_robust_motor_policies.plot_utils import figs_flatten_with_paths, get_label_str
 from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
 
+
 if TYPE_CHECKING:
     from typing import ClassVar as AbstractClassVar
 else:
@@ -101,6 +102,9 @@ class _FinalOp(NamedTuple):
     params: dict[str, Any] = {}
 
 
+PARAM_SEQ_LEN_TRUNCATE = 9
+
+
 def _process_param(param: Any) -> Any:
     """
     Process parameter values for serialization in the database.
@@ -111,9 +115,13 @@ def _process_param(param: Any) -> Any:
     elif isinstance(param, Mapping):
         # Preserve structure but ensure keys are strings
         return {str(mk): _process_param(mv) for mk, mv in param.items()}
-    elif isinstance(param, (list, tuple, set)):
+    elif isinstance(param, (list, tuple)) or eqx.is_array(param):
         # Convert to list
-        return list(param)
+        param_list = list(str(p) for p in param)
+        if len(param_list) > PARAM_SEQ_LEN_TRUNCATE:
+            return f"[{', '.join(param_list[:PARAM_SEQ_LEN_TRUNCATE])}, ..., {param_list[-1]}]"
+        else:
+            return f"[{', '.join(param_list)}]"
     else:
         # Simple types
         return param
@@ -452,7 +460,7 @@ class AbstractAnalysis(Module, strict=False):
         eval_info: EvaluationRecord, 
         result, 
         figs: PyTree[go.Figure],   
-        hps: PyTree[TreeNamespace], 
+        hps: dict[str, PyTree[TreeNamespace]],   # dict level: variant
         model_info=None,
         dump_path: Optional[Path] = None,
         dump_formats: list[str] = ["html"],
@@ -472,7 +480,7 @@ class AbstractAnalysis(Module, strict=False):
         figs_with_paths_flat = figs_flatten_with_paths(figs)
         
         # Construct this for reference to hps that should only vary with the task variant.
-        hps_0 = jt.leaves(hps[self.variant], is_leaf=is_type(TreeNamespace))[0]
+        hps_0 = jt.leaves(hps.get(self.variant, hps), is_leaf=is_type(TreeNamespace))[0]
 
         ops_params_dict, ops_filename_str = self._extract_ops_info()
         
@@ -1139,3 +1147,5 @@ class _DummyAnalysis(AbstractAnalysis):
     
     def make_figs(self, data: AnalysisInputData, **kwargs) -> PyTree[go.Figure]:
         return None
+
+

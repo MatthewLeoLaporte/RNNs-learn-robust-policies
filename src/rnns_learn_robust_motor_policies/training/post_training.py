@@ -3,6 +3,7 @@ from collections.abc import Callable
 from functools import partial
 import logging
 from typing import Any, Sequence, TypeVar, Literal as L
+from feedbax.xabdeef.losses import simple_reach_loss
 import jax
 import numpy as np
 from sqlalchemy.orm import Session
@@ -18,7 +19,7 @@ from rich.logging import RichHandler
 
 from feedbax.misc import attr_str_tree_to_where_func
 import feedbax.plotly as fbp 
-from feedbax.train import TaskTrainerHistory, WhereFunc
+from feedbax.train import TaskTrainerHistory, WhereFunc, init_task_trainer_history
 import jax_cookbook.tree as jtree
 from jax_cookbook import is_module, is_type, anyf
 
@@ -36,7 +37,6 @@ from rnns_learn_robust_motor_policies.database import (
 )
 from rnns_learn_robust_motor_policies.misc import log_version_info
 from rnns_learn_robust_motor_policies.setup_utils import (
-    setup_train_histories,
     setup_models_only,
     setup_tasks_only,
 )
@@ -45,7 +45,8 @@ from rnns_learn_robust_motor_policies.analysis.state_utils import (
     get_pos_endpoints,
     vmap_eval_ensemble,
 )
-from rnns_learn_robust_motor_policies.types import LDict
+from rnns_learn_robust_motor_policies.training.loss import get_readout_norm_loss
+from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
 
 from rnns_learn_robust_motor_policies.training.part1_fixed import (
     setup_task_model_pair as setup_task_model_pair_p1,
@@ -76,6 +77,60 @@ N_TRIALS_VAL = 5
 
 
 T = TypeVar('T')
+
+
+def setup_train_histories(
+    models_tree,
+    hps_train: TreeNamespace,
+    *,
+    key,
+) -> dict[float, TaskTrainerHistory]:
+    """Returns a skeleton PyTree for the training histories (losses, parameter history, etc.)
+
+    Note that `init_task_trainer_history` depends on `task` to infer:
+
+    1) The number and name of loss function terms;
+    2) The structure of trial specs, in case `save_trial_specs is not None`.
+
+    Here, neither of these are a concern since 1) we are always using the same 
+    loss function for each set of saved/loaded models in this project, 2) `save_trial_specs is None`.
+    """
+    # Assume that where funcs may be lists (normally defined as tuples, but retrieved through sqlite JSON)
+    where_train = jt.map(
+        attr_str_tree_to_where_func,
+        hps_train.where,
+        is_leaf=is_type(list),
+    )
+
+    loss_func = simple_reach_loss()
+    if getattr(hps_train, 'readout_norm_loss_weight', None) is not None:
+        assert getattr(hps_train, 'readout_norm_value', None) is not None, (
+            "readout_norm_value must be provided if readout_norm_loss_weight is not None"
+        )
+        loss_func_validation = loss_func + (
+            hps_train.readout_norm_loss_weight
+            * get_readout_norm_loss(hps_train.readout_norm_value)
+        )
+    else:
+        loss_func_validation = loss_func
+
+    return jt.map(
+        lambda models: init_task_trainer_history(
+            loss_func,
+            hps_train.n_batches,
+            hps_train.model.n_replicates,
+            ensembled=True,
+            ensemble_random_trials=False,
+            save_model_parameters=jnp.array(hps_train.save_model_parameters),
+            save_trial_specs=None,
+            batch_size=hps_train.batch_size,
+            loss_func_validation=loss_func_validation,
+            model=models,
+            where_train=dict(where_train),
+        ),
+        models_tree,
+        is_leaf=is_module,
+    )
 
 
 def load_data(model_record: ModelRecord):

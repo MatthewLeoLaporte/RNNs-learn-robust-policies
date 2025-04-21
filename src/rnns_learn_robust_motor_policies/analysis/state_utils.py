@@ -12,7 +12,6 @@ from feedbax.task import AbstractTask
 import jax_cookbook.tree as jtree
 from jax_cookbook import is_type, is_module
 
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.constants import REPLICATE_CRITERION
 from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
 

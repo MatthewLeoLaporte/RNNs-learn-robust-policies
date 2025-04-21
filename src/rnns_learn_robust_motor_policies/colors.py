@@ -44,6 +44,23 @@ COLORSCALES: dict[str, Union[str, Sequence[str], Sequence[tuple]]] = dict(
 )
 
 
+"""
+Default colorscales to try to set up, based on hyperparameters.
+Values are hyperparameter where-functions so we can try to load them one-by-one.
+"""
+COMMON_COLOR_SPECS = {
+    k: ColorscaleSpec(func) for k, func in dict(
+        # context_input= 
+        pert__amp=lambda hps: hps.pert.amp,
+        train__pert__std=lambda hps: hps.train.pert.std,
+        # pert_var=  #? 
+        #  reach_condition=  #? 
+        context_input=lambda hps: hps.context_input,
+        trial=lambda hps: range(hps.eval_n),
+    ).items()
+}
+
+
 def is_discrete_colorscale(colorscale):
     """Determine if a colorscale is discrete (a sequence of colors) or continuous (a string name)."""
     return isinstance(colorscale, Sequence) and not isinstance(colorscale, str)
@@ -160,6 +177,9 @@ def setup_colors(hps: PyTree[TreeNamespace], var_funcs: dict[str, ColorscaleSpec
     )
     
     return colors, colorscales
+
+
+
 
 
 

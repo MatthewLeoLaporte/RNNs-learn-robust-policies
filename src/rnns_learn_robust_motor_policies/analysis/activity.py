@@ -10,10 +10,9 @@ import numpy as np
 import plotly.graph_objects as go
 
 from feedbax.bodies import SimpleFeedbackState
-from feedbax.misc import batch_reshape
 from jax_cookbook import is_type
-from sklearn.decomposition import PCA
 
+from rnns_learn_robust_motor_policies.analysis.pca import PCA
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.constants import REPLICATE_CRITERION
 from rnns_learn_robust_motor_policies.plot_utils import get_label_str
@@ -249,92 +248,3 @@ class NetworkActivity_SampleUnits(AbstractAnalysis):
         )
 
 
-class NetworkActivity_PCA(AbstractAnalysis):
-    conditions: tuple[str, ...] = ()  
-    variant: Optional[str] = "small"
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
-    n_components: Optional[int] = None
-    start_step: int = 0
-    end_step: Optional[int] = None
-    
-    def compute(
-        self,
-        data: AnalysisInputData,
-        *,
-        hps_common,
-        best_replicate_states,
-        **kwargs,
-    ):
-        # TODO: Replace with `hps_0.model.hidden_size` once `model_info` loading into `hps` is implemented
-        hidden_size = hps_common.train.model.hidden_size
-        
-        idxs = slice(self.start_step, self.end_step)
-        
-        activities_for_pca = jt.map(
-            lambda states: states.net.hidden[..., idxs, :].reshape(-1, hidden_size),
-            #! TODO: Do not index out variant in `compute`
-            best_replicate_states[self.variant],
-            is_leaf=is_type(SimpleFeedbackState),
-        ) 
-        
-        n_components = self.n_components
-        
-        pca = PCA(n_components=n_components).fit(activities_for_pca)
-        
-        batch_transform = lambda x: jt.map(batch_reshape(pca.transform), x)  # type: ignore
-        
-        return TreeNamespace(
-            pca=pca,
-            batch_transform=batch_transform,
-        )
-        
-
-class NetworkActivity_ProjectPCA(AbstractAnalysis):
-    conditions: tuple[str, ...] = ()
-    variant: Optional[str] = "small"
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
-        pca=NetworkActivity_PCA,
-    ))
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
-    variant_pca: Optional[str] = None  
-    n_components: Optional[int] = None
-    start_step: int = 0
-    end_step: Optional[int] = None
-    
-    def dependency_kwargs(self):
-        return dict(
-            pca=dict(
-                variant=self.variant_pca if self.variant_pca is not None else self.variant,
-                n_components=self.n_components,
-                start_step=self.start_step,
-                end_step=self.end_step,
-            )
-        )
-    
-    def compute(
-        self,
-        data: AnalysisInputData,
-        *,
-        pca,
-        best_replicate_states,
-        hps_0,
-        **kwargs,
-    ):
-        return jt.map(
-            lambda states: pca.batch_transform(states.net.hidden),
-            #! TODO: Do not index out variant in `compute`
-            best_replicate_states[self.variant],
-            is_leaf=is_type(SimpleFeedbackState),
-        ) 
-
-            
-    def make_figs(
-        self,
-        data: AnalysisInputData,
-        *,
-        pca,
-        hps_0,
-        **kwargs,
-    ):
-        pass

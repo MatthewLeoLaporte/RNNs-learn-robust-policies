@@ -6,6 +6,7 @@ from types import NoneType
 from typing import Optional
 
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
@@ -14,6 +15,7 @@ import numpy as np
 import optax
 from sqlalchemy.orm import Session
 
+import feedbax
 from feedbax._io import arrays_to_lists
 from feedbax.loss import AbstractLoss
 from feedbax.misc import attr_str_tree_to_where_func
@@ -23,8 +25,10 @@ from feedbax.xabdeef.losses import simple_reach_loss
 import jax_cookbook.tree as jtree
 from jax_cookbook import is_type
 
-from rnns_learn_robust_motor_policies.database import ModelRecord, get_record, save_model_and_add_record
-from rnns_learn_robust_motor_policies.hyperparams import flatten_hps
+import rnns_learn_robust_motor_policies
+from rnns_learn_robust_motor_policies.database import ModelRecord, get_db_session, get_record, save_model_and_add_record
+from rnns_learn_robust_motor_policies.hyperparams import flatten_hps, load_hps
+from rnns_learn_robust_motor_policies.misc import log_version_info
 from rnns_learn_robust_motor_policies.types import namespace_to_dict
 from rnns_learn_robust_motor_policies.tree_utils import pp
 from rnns_learn_robust_motor_policies.types import TaskModelPair, TreeNamespace
@@ -152,20 +156,27 @@ def where_strs_to_funcs(where_strs: Sequence[str] | dict[int, Sequence[str]]):
 
 
 def train_and_save_models(
-    db_session: Session,
-    hps_train: TreeNamespace, 
-    key: PRNGKeyArray,
+    config_path: str, 
     untrained_only: bool = True,
     postprocess: bool = True,
     n_std_exclude: int = 2,  # re: postprocessing
     save_figures: bool = True,  # re: postprocessing
-    version_info: Optional[dict[str, str]] = None,
+    *,
+    key: PRNGKeyArray,
 ):
     """Given a path to a YAML config, execute the respective training run.
     
     The config must have a top-level key `id` whose positive integer value 
     indicates which training experiment to run. 
     """
+    db_session = get_db_session()
+    
+    version_info = log_version_info(
+        jax, eqx, optax, git_modules=(feedbax, rnns_learn_robust_motor_policies),
+    )
+    
+    hps_train: TreeNamespace = load_hps(config_path, config_type='training')
+    
     key_init, key_train, key_eval = jr.split(key, 3)
 
     # User specifies which variant to run using the `id` key

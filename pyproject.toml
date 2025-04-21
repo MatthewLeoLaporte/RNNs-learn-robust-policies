@@ -68,3 +68,9 @@ config-settings = { editable-mode = "compat" }
 [tool.uv.sources.feedbax]
 path = "../20 Feedbax/feedbax"
 editable = true
+
+[dependency-groups]
+dev = [
+    "ipykernel>=6.29.5",
+    "jupytext>=1.17.0",
+]

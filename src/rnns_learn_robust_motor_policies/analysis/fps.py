@@ -1,20 +1,41 @@
+from collections.abc import Callable
 from functools import partial
+from types import MappingProxyType
+from typing import ClassVar, Optional
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
-from jaxtyping import PRNGKeyArray
+from jaxtyping import Array, PRNGKeyArray, PyTree
 
 from feedbax.bodies import SimpleFeedback
 from feedbax.nn import NetworkState
 from feedbax.task import SimpleReaches
 
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.analysis.fp_finder import (
     FixedPointFinder,
     fp_adam_optimizer,
     take_top_fps,
 )
-from rnns_learn_robust_motor_policies.types import LDict
+from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
+
+
+class SteadyStateFPs(AbstractAnalysis):
+    """ 
+    """
+
+    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
+    conditions: tuple[str, ...] = ()
+    variant: Optional[str] = None
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
+
+    def compute(
+        self,
+        data: AnalysisInputData,
+        **kwargs,
+    ):
+        pass
 
 
 def get_endpoint_positions(task):

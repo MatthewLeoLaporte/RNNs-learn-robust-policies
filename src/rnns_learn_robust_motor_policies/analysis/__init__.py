@@ -1,6 +1,7 @@
 
 import pkgutil
 import importlib
+from types import ModuleType
 
 from rnns_learn_robust_motor_policies.analysis import modules as analysis_modules_pkg
 
@@ -18,7 +19,7 @@ def discover_subpackages(package):
     return modules
 
 
-ANALYSIS_REGISTRY = {}
+ANALYSIS_REGISTRY: dict[str, ModuleType] = {}
 for subpkg in discover_subpackages(analysis_modules_pkg):
     for _, name, _ in pkgutil.iter_modules(subpkg.__path__, subpkg.__name__ + '.'):
         module = importlib.import_module(name)

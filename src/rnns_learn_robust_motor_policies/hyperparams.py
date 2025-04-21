@@ -16,6 +16,7 @@ import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.config import STRINGS, load_config, load_yaml_config
 from rnns_learn_robust_motor_policies.constants import get_iterations_to_save_model_parameters
+from rnns_learn_robust_motor_policies.misc import copy_delattr
 from rnns_learn_robust_motor_policies.tree_utils import (
     tree_level_labels,
     deep_update,
@@ -232,3 +233,12 @@ def flat_key_to_where_func(key: str, sep: str = STRINGS.hps_level_label_sep) -> 
     """Convert a flattened hyperparameter key to a where-function."""
     where_str = key.replace(sep, '.')
     return where_attr_strs_to_func(where_str)
+
+
+def use_train_hps_when_none(hps: TreeNamespace) -> TreeNamespace:
+    """Replace any unspecified evaluation params with matching loading (training) params"""
+    hps_train = hps.train
+    hps_other = copy_delattr(hps, 'train')
+    hps = hps_other.update_none_leaves(hps_train)
+    hps.train = hps_train
+    return hps

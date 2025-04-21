@@ -1,4 +1,5 @@
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from copy import deepcopy
 from dataclasses import fields
 from datetime import datetime
 import functools
@@ -373,3 +374,17 @@ def is_json_serializable(value):
     elif isinstance(value, (list, tuple)) and not isinstance(value, GeneratorType):
         return all(is_json_serializable(item) for item in value)
     return False
+
+
+def get_constant_input(x, n_steps: int, n_trials: int):
+    return lambda trial_spec, key: (
+        jnp.full((n_trials, n_steps - 1), x, dtype=float)
+    )
+
+
+def copy_delattr(obj: Any, *attr_names: str):
+    """Return a deep copy of an object, with some attributes removed."""
+    obj = deepcopy(obj)
+    for attr_name in attr_names:
+        delattr(obj, attr_name)
+    return obj

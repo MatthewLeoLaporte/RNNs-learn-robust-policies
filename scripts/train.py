@@ -45,25 +45,20 @@ if __name__ == '__main__':
     parser.add_argument("--postprocess", action='store_false', help="Postprocess each model after training.")
     parser.add_argument("--n-std-exclude", type=int, default=2, help="In postprocessing, exclude model replicates with n_std greater than this value.")
     parser.add_argument("--save-figures", action='store_true', help="Save figures in postprocessing.")
+    parser.add_argument("--seed", type=int, default=None, help="Random seed for the training.")
+    
     args = parser.parse_args()
     
-    version_info = log_version_info(
-        jax, eqx, optax, git_modules=(feedbax, rnns_learn_robust_motor_policies),
-    )
-    
-    db_session = get_db_session()
-    
-    key = jr.PRNGKey(PRNG_CONFIG.seed)
-    
-    hps_common: TreeNamespace = load_hps(args.config_path, config_type='training')
+    if args.seed is None:
+        key = jr.PRNGKey(PRNG_CONFIG.seed)
+    else:
+        key = jr.PRNGKey(args.seed)
     
     trained_models, train_histories, model_records = train_and_save_models(
-        db_session, 
-        hps_common, 
-        key,
+        config_path=args.config_path,
         untrained_only=args.untrained_only,
         postprocess=args.postprocess,
         n_std_exclude=args.n_std_exclude,
         save_figures=args.save_figures,
-        version_info=version_info,
+        key=key,
     )
