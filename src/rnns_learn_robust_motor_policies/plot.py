@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 import math
-from typing import Literal, Optional
+from typing import Callable, Literal, Optional
 
 import equinox as eqx
 import jax.numpy as jnp
@@ -383,7 +383,7 @@ def get_measure_replicate_comparisons(
     
 
 
-def plot_eigvals_df(df, marginals='box', trace_kws=None, layout_kws=None, **kwargs):
+def plot_eigvals_df(df, marginals='box', trace_kws=None, scatter_kws=None, layout_kws=None, **kwargs):
     stable_boundary_kws = dict(
         line=dict(
             color='black',
@@ -399,6 +399,13 @@ def plot_eigvals_df(df, marginals='box', trace_kws=None, layout_kws=None, **kwar
         marginal_y=marginals,
         **kwargs,
     )
+
+    if scatter_kws is not None:
+        def _update_scatter(trace):
+            if isinstance(trace, (go.Scatter, go.Scattergl)):
+                trace.update(**scatter_kws)
+                
+        fig.for_each_trace(_update_scatter)
 
     fig.update_layout(
         yaxis=dict(scaleanchor="x", scaleratio=1),
@@ -431,6 +438,7 @@ def plot_eigvals_df(df, marginals='box', trace_kws=None, layout_kws=None, **kwar
         line_dash='dot',
         line_color='grey',
         showlegend=False,
+        name="grid",
     ))
     fig.add_trace(go.Scatter(
         x=[0, 0], y=[-1, 1],
@@ -438,6 +446,7 @@ def plot_eigvals_df(df, marginals='box', trace_kws=None, layout_kws=None, **kwar
         line_dash='dot',
         line_color='grey',
         showlegend=False,
+        name="grid",
     ))
     
     if trace_kws is not None:
@@ -621,6 +630,7 @@ def set_axis_bounds_equal(
     axis: Literal['x', 'y'],
     figs: PyTree[go.Figure],
     padding_factor: float = 0.05,
+    trace_selector: Callable = lambda trace: True,
 ) -> PyTree[go.Figure]:
     """
     Finds the global min/max bounds for a specific axis ('x' or 'y') across
@@ -630,6 +640,7 @@ def set_axis_bounds_equal(
     Args:
         figs: A PyTree containing go.Figure objects at its leaves.
         axis: The axis ('x' or 'y') to synchronize.
+        trace_selector: Indicates which trace(s) to determine bounds from.
 
     Returns:
         A PyTree with the same structure as figs, but with all go.Figure
@@ -653,6 +664,10 @@ def set_axis_bounds_equal(
 
     for fig in fig_leaves:
         for trace in fig.data:
+            if not trace_selector(trace):
+                continue
+            
+
             # Check if trace has coordinate data for the specified axis (e.g., trace.x)
             #! Note that this only works for traces where `trace.x` and `trace.y` represent the 
             #! spatial coordinates of the trace on the axes! A more general solution would 
@@ -661,8 +676,8 @@ def set_axis_bounds_equal(
             if coords is not None:
                 found_data = True
                 # Update global min/max based on this trace's numeric data
-                g_min = min(g_min, min(coords))
-                g_max = max(g_max, max(coords))
+                g_min = min(g_min, np.nanmin(coords))
+                g_max = max(g_max, np.nanmax(coords))
 
     # --- Determine the final valid range tuple for the specified axis ---
     final_range = None
@@ -716,19 +731,28 @@ def set_axis_bounds_equal(
     return updated_figs
 
 
-def set_axes_bounds_equal(figs: PyTree[go.Figure]) -> PyTree[go.Figure]:
+def set_axes_bounds_equal(
+    figs: PyTree[go.Figure], 
+    padding_factor: float = 0.05,
+    trace_selector: Callable = lambda trace: True,
+) -> PyTree[go.Figure]:
     """
     Synchronizes both 'x' and 'y' axes across all figures in a PyTree
     by setting them to their respective global bounds.
 
     Args:
         figs: A PyTree containing go.Figure objects at its leaves.
+        trace_selector: Indicates which trace(s) to determine bounds from.
 
     Returns:
         A PyTree with the same structure as figs, but with both x and y axes
         synchronized across all go.Figure objects.
     """
-    figs_x_synced = set_axis_bounds_equal(figs, 'x')
-    figs_xy_synced = set_axis_bounds_equal(figs_x_synced, 'y')
+    figs_x_synced = set_axis_bounds_equal(
+        'x', figs, trace_selector=trace_selector, padding_factor=padding_factor
+    )
+    figs_xy_synced = set_axis_bounds_equal(
+        'y', figs_x_synced, trace_selector=trace_selector, padding_factor=padding_factor
+    )
 
     return figs_xy_synced

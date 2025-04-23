@@ -58,7 +58,7 @@ if __name__ == '__main__':
     # Set states pickle directory
     states_pkl_dir = Path(args.states_pkl_dir) if args.states_pkl_dir else PATHS.states_tmp
     
-    run_analysis_module(
+    _ = run_analysis_module(
         config_path=args.config_path, 
         fig_dump_path=args.fig_dump_path, 
         fig_dump_formats=fig_dump_formats, 

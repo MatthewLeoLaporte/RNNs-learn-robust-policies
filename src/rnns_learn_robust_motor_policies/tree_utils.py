@@ -5,6 +5,7 @@ from typing import Any, Optional, TypeVar, Sequence
 
 import equinox as eqx
 import jax as jax 
+import jax.numpy as jnp
 import jax.tree as jt
 import jax.tree_util as jtu
 from jaxtyping import Array, ArrayLike, PyTree
@@ -138,11 +139,15 @@ def ldict_level_to_top(label: str, tree: PyTree, is_leaf: Optional[Callable[[Any
         logger.debug(f"Level {label} is already at the top of the tree; doing nothing.")
         return tree
     
-    if label == level_labels[-1]:
-        wrapped_tree = tree  # No need to wrap
+    if is_leaf is not None:
+        wrapped_tree = jt.map(_Wrapped, tree, is_leaf=is_leaf)
     else:
-        subtree_outer_label = level_labels[level_labels.index(label) + 1]
-        wrapped_tree = jt.map(_Wrapped, tree, is_leaf=LDict.is_of(subtree_outer_label))
+        wrapped_tree = tree
+    # if label == level_labels[-1]:
+    #     wrapped_tree = tree  # No need to wrap
+    # else:
+    #     subtree_outer_label = level_labels[level_labels.index(label) + 1]
+    #     wrapped_tree = jt.map(_Wrapped, tree, is_leaf=LDict.is_of(subtree_outer_label))
 
     result = jt.transpose(
         jt.structure(wrapped_tree, is_leaf=LDict.is_of(label)),
@@ -218,6 +223,47 @@ def tree_level_types(tree: PyTree, is_leaf=falsef) -> list[type]:
         subtreedef = subtreedef.children()[0]
     
     return types
+
+
+def check_nan_in_pytree(tree: PyTree) -> tuple[PyTree, PyTree]:
+    """
+    Checks for NaN values in the array leaves of a PyTree.
+
+    Args:
+        tree: A PyTree (e.g., nested dict, list, tuple) potentially
+              containing JAX arrays as leaves.
+
+    Returns:
+        A tuple containing two PyTrees with the same structure as the input:
+        1. has_nans_tree: A PyTree with boolean leaves. Each leaf is True if
+           the corresponding leaf array in the input tree contains any NaN
+           values, and False otherwise.
+        2. where_nans_tree: A PyTree where each leaf contains the output of
+           jnp.where(jnp.isnan(input_leaf)). This is typically a tuple of
+           index arrays indicating the locations of NaNs in the corresponding
+           input leaf array.
+    """
+
+    # Define a function that processes a single leaf (assumed to be an array)
+    def process_leaf(leaf):
+        # Check if the leaf is likely an array type JAX can handle
+        if not hasattr(leaf, 'dtype') or not hasattr(leaf, 'shape'):
+             # Handle non-array leaves if necessary. 
+             pass 
+
+        is_nan_mask = jnp.isnan(leaf)
+        has_nans = jnp.any(is_nan_mask)
+        # jnp.where called with only the condition returns a tuple of
+        # arrays representing the indices where the condition is True.
+        nan_indices = _Wrapped(jnp.where(is_nan_mask))
+        return has_nans, nan_indices # Return both results as a tuple
+
+    processed_tree = jt.map(process_leaf, tree)
+
+    return jt.map(
+        lambda x: x.unwrap() if isinstance(x, _Wrapped) else x, 
+        jtree.unzip(processed_tree),
+    )
 
 
 def tree_map_with_keys(func, tree: PyTree, *rest, is_leaf=None, **kwargs):
@@ -331,3 +377,12 @@ def at_path(path):
     return at_func
 
 
+def first(tree, is_leaf: Callable = _is_leaf):
+    """Return the first leaf of a tree."""
+    return jt.leaves(tree, is_leaf=is_leaf)[0]
+
+
+def first_shape(tree):
+    """Return the shape of the first leaf of a tree of arrays."""
+    arrays = eqx.filter(tree, eqx.is_array)
+    return first(arrays, is_leaf=None).shape

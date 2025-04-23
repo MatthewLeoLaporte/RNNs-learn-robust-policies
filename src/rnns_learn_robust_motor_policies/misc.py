@@ -388,3 +388,13 @@ def copy_delattr(obj: Any, *attr_names: str):
     for attr_name in attr_names:
         delattr(obj, attr_name)
     return obj
+
+
+def take_non_nan(arr, axis=1):
+    # Create tuple of axes to reduce over (all axes except the specified one)
+    reduce_axes = tuple(i for i in range(arr.ndim) if i != axis)
+    has_nan = jnp.any(jnp.isnan(arr), axis=reduce_axes)
+    valid_cols = jnp.where(~has_nan)[0]
+    return jnp.take(arr, valid_cols, axis=axis)
+
+

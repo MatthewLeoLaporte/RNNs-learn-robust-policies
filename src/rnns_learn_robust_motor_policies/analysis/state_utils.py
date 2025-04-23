@@ -107,16 +107,50 @@ def get_step_task_input(x1, x2, step_step, n_steps, n_trials):
 
     return input_func
 
+def _get_replicate_idxs_func(replicate_info, key):
+    def _replicate_idxs_func(std):
+        return replicate_info[std][key][REPLICATE_CRITERION]
+    return _replicate_idxs_func
 
-def get_best_replicate_states(states, *, replicate_info, axis: int = 1, **kwargs):
+
+def get_best_replicate(tree, *, replicate_info, axis: int = 1, keep_axis: bool = False, **kwargs):
+    _original_replicate_idxs_func = _get_replicate_idxs_func(replicate_info, 'best_replicates')
+    
+    if keep_axis:    
+        _replicate_idxs_func = lambda std: jnp.array([_original_replicate_idxs_func(std)])
+    else:
+        _replicate_idxs_func = _original_replicate_idxs_func
+    
     return jt.map(
-        lambda states_by_std: LDict.of("train__pert__std")({
-            std: jtree.take(states, replicate_info[std]["best_replicates"][REPLICATE_CRITERION], axis=axis)
-            for std, states in states_by_std.items()
+        lambda subtrees_by_std: LDict.of("train__pert__std")({
+            std: jt.map(
+                lambda arr: jnp.take(arr, _replicate_idxs_func(std), axis=axis),
+                subtree,
+            )
+            for std, subtree in subtrees_by_std.items()
         }),
-        states,
+        tree,
         is_leaf=LDict.is_of("train__pert__std"),
     )
 
+
+def exclude_bad_replicates(tree, *, replicate_info, axis=0):
+    _replicate_idxs_func = _get_replicate_idxs_func(replicate_info, 'included_replicates')
     
+    def _process_std_subtree(tree_by_std):
+        return LDict.of('train__pert__std')({
+            std: jt.map(
+                #! TODO: Store included replicates as ints (not bools) in the first place!
+                lambda arr:  jnp.take(arr, _replicate_idxs_func(std).nonzero()[0], axis=axis),
+                subtree,
+            )
+            for std, subtree in tree_by_std.items()
+        }) 
+
+    # 
+    return jt.map(
+        _process_std_subtree,
+        tree,
+        is_leaf=LDict.is_of('train__pert__std'),
+    )
     

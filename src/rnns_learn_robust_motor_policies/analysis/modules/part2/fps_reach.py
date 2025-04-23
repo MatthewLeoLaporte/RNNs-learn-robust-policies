@@ -51,28 +51,28 @@ def setup_eval_tasks_and_models(task_base: Module, models_base: LDict[float, Mod
 
     This is similar to `feedback_perts`, but without an impulse.
     """
-    all_tasks, all_models, all_hps = jtree.unzip(
-        LDict.of("context_input")({
-            context_input: (
-                eqx.tree_at(
-                    lambda task: task.input_dependencies,
-                    task_base,
-                    {
-                        'context': TrialSpecDependency(get_constant_input(
-                            context_input, hps.model.n_steps, task_base.n_validation_trials,
-                        ))
-                    },
-                ),
-                models_base,  
-                hps | dict(context_input=context_input),
-            )
-            for context_input in hps.context_input
-        })
-    )
-    # Provides any additional data needed for the analysis
-    extras = SimpleNamespace()  
+    # all_tasks, all_models, all_hps = jtree.unzip(
+    #     LDict.of("context_input")({
+    #         context_input: (
+    #             eqx.tree_at(
+    #                 lambda task: task.input_dependencies,
+    #                 task_base,
+    #                 {
+    #                     'context': TrialSpecDependency(get_constant_input(
+    #                         context_input, hps.model.n_steps, task_base.n_validation_trials,
+    #                     ))
+    #                 },
+    #             ),
+    #             models_base,  
+    #             hps | dict(context_input=context_input),
+    #         )
+    #         for context_input in hps.context_input
+    #     })
+    # )
+    # # Provides any additional data needed for the analysis
+    # extras = SimpleNamespace()  
     
-    return all_tasks, all_models, all_hps, extras
+    # return all_tasks, all_models, all_hps, extras
 
 
 # Unlike `feedback_perts`, we don't need to vmap over impulse amplitude 
@@ -97,26 +97,4 @@ ALL_ANALYSES = [
 
 ]
 
-
-#! Get readout weights in PC space, for plotting
-# all_readout_weights = exclude_nan_replicates(jt.map(
-#     lambda model: model.step.net.readout.weight,
-#     all_models,
-#     is_leaf=is_module,
-# ))
-
-# all_readout_weights_pc = batch_transform(all_readout_weights)
-
-
-"""
-If we decide to aggregate over multiple replicates rather than taking only the best one,
-it will be necessary to exclude the NaN replicates prior to performing sklearn PCA.
-The following are the original functions I used for that purpose.
-"""
-def exclude_nan_replicates(tree, replicate_info, exclude_underperformers_by='best_total_loss'):
-    return jt.map(
-        take_replicate,
-        replicate_info['included_replicates'][exclude_underperformers_by],
-        tree,
-    )
 

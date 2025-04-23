@@ -1,4 +1,5 @@
-expt_id: 2-4
+expt_id: 2-5
+
 
 #  Hyperparameters that uniquely identify the model(s)/training run(s) to analyze
 train:
@@ -20,13 +21,17 @@ train:
 
 context_input: [-3., -2., -1., 0., 1., 2., 3.]
 
-eval_n: 10
+eval_n: 4
+
+pert:
+  type: curl
+  std: [0.0, 2.0]
 
 task:  # Passed to the base task constructor
   full:
-    eval_grid_n: 5
-    eval_n_directions: 1
-    eval_reach_length: 0
+    eval_grid_n: 1
+    eval_n_directions: 24
+    eval_reach_length: 0.5
 
 model:
   n_steps: null

@@ -239,7 +239,7 @@ class LDict(Mapping[K, V], Generic[K, V]):
     def __init__(self, label: str, data: Mapping[K, V]):
         self._label = label
         self._data = dict(data)  
-    
+
     @property
     def label(self) -> str:
         return self._label
@@ -300,6 +300,31 @@ class LDict(Mapping[K, V], Generic[K, V]):
     def fromkeys(label: str, keys: Iterable[Any], value: Any = None) -> 'LDict[Any, Any]':
         """Create a new LDict with the given label and keys, each with value set to value."""
         return LDict(label, dict.fromkeys(keys, value))
+    
+    def __or__(self, other: 'LDict | Mapping[K, V]') -> 'LDict[K, V]':
+        """Merge with another LDict or Mapping, keeping self's label. Values from `other` take precedence."""
+        new_data = self._data.copy()
+        # if isinstance(other, LDict):
+        #     new_data.update(other._data)
+        if isinstance(other, Mapping):
+            new_data.update(other)
+        else:
+            return NotImplemented  # Indicate that the operation is not supported for this type
+        return LDict(self._label, new_data)
+
+    def __ror__(self, other: Mapping[K, V]) -> 'LDict[K, V] | Mapping[K, V]':
+        """Merge with a Mapping from the left. The result type depends on `other`."""
+        if isinstance(other, Mapping):
+            new_data = dict(other)  # Start with a copy of the left operand
+            new_data.update(self._data) # Update with self's data
+            # If the left operand was also an LDict, preserve its label
+            if isinstance(other, LDict):
+                 return LDict(other.label, new_data)
+            else:
+                # Otherwise return a standard dict
+                return new_data
+        else:
+            return NotImplemented
 
 
 class _LDictConstructor(Generic[K, V]):
@@ -307,7 +332,9 @@ class _LDictConstructor(Generic[K, V]):
     def __init__(self, label: str):
         self.label = label
     
-    def __call__(self, data: Mapping[K, V]):
+    def __call__(self, data: Optional[Mapping[K, V]] = None):
+        if data is None:
+            data = dict()
         return LDict(self.label, data)
         
     def fromkeys(self, keys: Iterable[K], value: Optional[V] = None):

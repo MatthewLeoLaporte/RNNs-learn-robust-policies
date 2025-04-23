@@ -24,7 +24,7 @@ from rnns_learn_robust_motor_policies.analysis.measures import Measures
 from rnns_learn_robust_motor_policies.analysis.profiles import Profiles
 from rnns_learn_robust_motor_policies.misc import lohi
 from rnns_learn_robust_motor_policies.plot import PLANT_VAR_LABELS, WHERE_PLOT_PLANT_VARS, set_axis_bounds_equal
-from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate_states, vmap_eval_ensemble
+from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate, vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.misc import get_constant_input
 from rnns_learn_robust_motor_policies.types import LDict, unflatten_dict_keys
 from rnns_learn_robust_motor_policies.perturbations import feedback_impulse
@@ -229,7 +229,7 @@ ALL_ANALYSES = [
     #         colorscale_axis=1,  # impulse amplitude  # TODO: change to 0 if indexing eval
     #         colorscale_key='pert__amp',
     #     )
-    #     .after_transform(get_best_replicate_states) 
+    #     .after_transform(get_best_replicate) 
     #     # .after_indexing(2, ORIGIN_GRID_IDX, axis_label='grid')
     #     # .after_indexing(0, i_eval, axis_label='eval')
     #     .with_fig_params(
@@ -248,13 +248,13 @@ ALL_ANALYSES = [
             colorscale_key='pert__amp',
             dependency_params=aligned_vars_params,
         )
-        .after_transform(get_best_replicate_states)
+        .after_transform(get_best_replicate)
     ),
 
     (
         #! This is broken; nothing appears. 
         AlignedEffectorTrajectories(variant="full")
-        .after_transform(get_best_replicate_states)
+        .after_transform(get_best_replicate)
         .after_stacking(level='train__pert__std')
     ),
 
@@ -264,7 +264,7 @@ ALL_ANALYSES = [
             dependency_params=aligned_vars_params,
             vrect_kws=get_impulse_vrect_kws,  
         )
-        .after_transform(get_best_replicate_states) 
+        .after_transform(get_best_replicate) 
         .after_indexing(1, -2, axis_label='pert__amp') 
         .map_at_level('train__pert__std')
         .with_fig_params(
@@ -281,7 +281,7 @@ ALL_ANALYSES = [
             measure_keys=MEASURE_KEYS,
             dependency_params=aligned_vars_params,
         )
-        .after_transform(get_best_replicate_states)
+        .after_transform(get_best_replicate)
         .after_unstacking(1, "pert__amp")
         .after_transform(lohi, level="train__pert__std")
         # Save seperate figures for zero-std, as pared-down all-grey

@@ -374,4 +374,4 @@ def run_analysis_module(
         **common_inputs,
     )
 
-    return data, all_results, all_figs
+    return data, common_inputs, all_results, all_figs

@@ -74,40 +74,24 @@ from feedbax import (
 from feedbax.bodies import SimpleFeedbackState
 from feedbax.misc import batch_reshape
 import feedbax.plotly as fbp
-from feedbax.task import (
-    SimpleReaches, 
-    TrialSpecDependency,
-    centreout_endpoints,
-)
-from feedbax.xabdeef.losses import simple_reach_loss
+from feedbax.task import centreout_endpoints
+import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.colors import (
-    COLORSCALES, 
-    MEAN_LIGHTEN_FACTOR,
-)
-from rnns_learn_robust_motor_policies.constants import (
-    REPLICATE_CRITERION,
-    WORKSPACE,
-)
-from rnns_learn_robust_motor_policies.database import (
-    ModelRecord,
-    get_db_session,
-    get_model_record,
-    add_evaluation,
-    add_evaluation_figure,
-    use_record_params_where_none,
-)
+from rnns_learn_robust_motor_policies.analysis.execution import run_analysis_module
 from rnns_learn_robust_motor_policies.analysis.fp_finder import (
     FixedPointFinder,
     FPFilteredResults,
     fp_adam_optimizer,
     take_top_fps,
 )
-from rnns_learn_robust_motor_policies.misc import (
-    create_arr_df, 
-    log_version_info,
+from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate, exclude_bad_replicates
+from rnns_learn_robust_motor_policies.colors import (
+    COLORSCALES, 
+    MEAN_LIGHTEN_FACTOR,
 )
-from rnns_learn_robust_motor_policies.training.part2_context import setup_task_model_pair
+from rnns_learn_robust_motor_policies.config import PRNG_CONFIG
+from rnns_learn_robust_motor_policies.database import add_evaluation_figure
+from rnns_learn_robust_motor_policies.misc import create_arr_df, take_non_nan, lohi
 from rnns_learn_robust_motor_policies.plot import (
     plot_eigvals_df,
     plot_fp_pcs,
@@ -116,54 +100,88 @@ from rnns_learn_robust_motor_policies.plot_utils import (
     figs_flatten_with_paths,
     figleaves,
 )
-from rnns_learn_robust_motor_policies.setup_utils import (
-    query_and_load_model,
-    set_model_noise,
-    setup_models_only,
-)
-from rnns_learn_robust_motor_policies.analysis.state_utils import (
-    vmap_eval_ensemble,
-)
 from rnns_learn_robust_motor_policies.tree_utils import (
+    first,
+    first_shape as fs,
     pp,
     subdict, 
     take_replicate,
+    tree_level_labels,
 )
-from rnns_learn_robust_motor_policies.types import LDict
+from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
 ```
 
-## Use `run_analysis` to setup models and evaluate states
+## Setup task-model pairs, evaluate states, and perform PCA on activities
 
 ```python
-from rnns_learn_robust_motor_policies.analysis.execution import run_analysis_module
-from rnns_learn_robust_motor_policies.config import PATHS, PRNG_CONFIG
-from rnns_learn_robust_motor_policies.database import check_model_files
-from rnns_learn_robust_motor_policies.hyperparams import load_hps 
-from rnns_learn_robust_motor_policies.types import TreeNamespace
-```
-
-```python
-config = load_hps("2-4", config_type='analysis')
-db_session = get_db_session()
-check_model_files(db_session)
-
 key = jr.PRNGKey(PRNG_CONFIG.seed)
+_, _, key_eval = jr.split(key, 3)
 
-data, all_results, _ = run_analysis_module(
-    db_session, 
-    config,   
-    key=key,
-)
+data, common_data, all_results, _ = run_analysis_module(ANALYSIS_ID, key=key)
 ```
 
 ```python
-models = data.models 
-tasks = data.tasks 
-states = data.states 
-hps = data.hps 
-extras = data.extras 
+# Expand out the data/results for easier reference
+models_ = data.models["full"] 
+tasks = data.tasks["full"]
+states_ = data.states["full"] 
+hps = data.hps["full"]
+# extras = data.extras 
 
-hps_common = jt.leaves(hps, is_leaf=is_type(TreeNamespace))[0]
+hps_common = common_data["hps_common"]
+replicate_info = common_data["replicate_info"]
+trial_specs = common_data["trial_specs"]
+colors = common_data["colors"]
+colorscales = common_data["colorscales"]
+
+pca = all_results[0].pca
+pca_batch_transform = all_results[0].batch_transform
+```
+
+### Other useful stuff
+
+```python
+example_task = jt.leaves(tasks, is_leaf=is_module)[0]
+goals_pos = example_task.validation_trials.targets["mechanics.effector.pos"].value[:, -1]
+
+origin_idx = hps_common.task.full.eval_grid_n ** 2 // 2
+```
+
+#### Readout weight vectors in PC space
+
+```python
+all_readout_weights = exclude_bad_replicates(
+    jt.map(
+        lambda model: model.step.net.readout.weight,
+        models_[0],  # Weights do not depend on context input
+        is_leaf=is_module,
+    ), 
+    replicate_info=replicate_info, 
+    axis=0,
+)
+
+all_readout_weights_pc = pca_batch_transform(all_readout_weights)
+```
+
+### Rearrange the LDict levels
+
+This is because the existing code expects the context input level to be on the inside
+
+```python
+from rnns_learn_robust_motor_policies.tree_utils import ldict_level_to_bottom, ldict_level_to_top, move_ldict_level_above
+
+#! TODO: Could avoid this if we use stack-and-vmap instead of needing to `jt.map` over LDict levels
+#! in the fixed point finding functions
+models, states = [
+    ldict_level_to_bottom("context_input", tree, is_leaf=is_module)
+    for tree in (models_, states_)
+]
+
+rnn_funcs = jt.map(
+    lambda model: model.step.net.hidden,
+    models,
+    is_leaf=is_module,
+)
 ```
 
 ## Get steady-state fixed points
@@ -172,122 +190,15 @@ These are the "goal-goal" FPs; i.e. the point mass is at the goal, so the networ
 
 This contrasts with non-steady-state fixed points, which correspond to network outputs which should cause the point mass to move, and thus the network's feedback input (and thus fixed point) to change.
 
-### Define a task where the point mass is already at the goal
-
-This is the same set of tasks (varying by context input) we used for the feedback perturbation analysis, except a bit shorter in duration.
-
-```python
-EVAL_N_DIRECTIONS = 1
-EVAL_REACH_LENGTH = 0.0  
-```
-
-```python
-# Define the base task
-task = SimpleReaches(
-    loss_func=simple_reach_loss(),
-    workspace=WORKSPACE, 
-    n_steps=model_info_0.n_steps,
-    eval_grid_n=eval_grid_n,
-    eval_n_directions=EVAL_N_DIRECTIONS,
-    eval_reach_length=EVAL_REACH_LENGTH,  
-)
-```
-
-```python
-goals_pos = task.validation_trials.targets["mechanics.effector.pos"].value[:, -1]
-```
-
-```python
-def get_context_input_func(x, n_steps, n_trials):
-    return lambda trial_spec, key: (
-        jnp.full((n_trials, n_steps - 1), x, dtype=float)
-    )
-
-all_tasks = ContextInputDict({
-    context_input: eqx.tree_at(
-        lambda task: task.input_dependencies,
-        task, 
-        {
-            'context': TrialSpecDependency(get_context_input_func(
-                context_input, model_info_0.n_steps, task.n_validation_trials
-            ))
-        },
-    )
-    for context_input in context_inputs
-})
-```
-
-### Evaluate the model on the task, to get candidate hidden states
-
-```python
-def evaluate_all_states():
-    # Normally this should return a TrainStdDict of ContextInputDict of SimpleFeedbackState
-    return jt.map(
-        lambda models: jt.map(
-            lambda task: task.eval_ensemble(models, model_info_0.n_replicates, key=key_eval),
-            # lambda task: task.eval(model, key=key_eval),
-            all_tasks,
-            is_leaf=is_module,
-        ),
-        all_models,
-        # If we have excluded replicates by this point, then `n_replicates` will vary across the PyTree
-        # n_replicates_included,
-        is_leaf=is_module,
-    )
-```
-
-```python
-all_states_bytes = tree_struct_bytes(eqx.filter_eval_shape(evaluate_all_states))
-
-print(f"\nEstimate {all_states_bytes / 1e9:.2f} GB of memory needed for all states.")
-```
-
-```python
-all_states = evaluate_all_states()
-```
-
-### Define PCs based on the aggregate states
-
-Since scitkit-learn's PCA implementation does not support NaN, we will need to exclude NaNs whenever we want to project some network states into PC space.
-
-```python
-n_pca = 50
-
-all_states_hidden = exclude_nan_replicates(jt.map(
-    lambda states: states.net.hidden,
-    all_states,
-    is_leaf=is_module
-))
-
-all_states_hidden_flat = jnp.concatenate(jt.leaves(
-    jt.map(lambda states: jnp.reshape(states, (-1, model_info_0.hidden_size)), all_states_hidden)  
-))
-```
-
-```python
-pca = PCA(n_components=n_pca).fit(all_states_hidden_flat)
-```
 
 #### Get the readout weight vectors in PC space
 
-```python
-all_readout_weights = exclude_nan_replicates(jt.map(
-    lambda model: model.step.net.readout.weight,
-    all_models,
-    is_leaf=is_module,
-))
-
-all_readout_weights_pc = jt.map(
-    batch_reshape(pca.transform),
-    all_readout_weights,
-)
-```
 
 ### Instantiate the fixed point (FP) finder
 
 ```python
 # Fixed point optimization hyperparameters
-fp_tol = 1e-7  # Used for both fp_tol and opt_stop_tol
+fp_tol = 1e-6  # Used for both fp_tol and opt_stop_tol
 fp_num_batches = 10000         # Total number of batches to train on.
 # fp_batch_size = 128          # How many examples in each batch
 fp_step_size = 0.2          # initial learning rate
@@ -371,8 +282,8 @@ def multi_vmap(
 @eqx.filter_jit
 def get_ss_fps_at_positions(
     positions: float | Array, 
-    all_models: PyTree[eqx.Module, 'T'], 
-    all_states: PyTree[ContextInputDict[float, SimpleFeedbackState], 'T'],
+    all_funcs: PyTree[Callable, 'T'], 
+    all_states: PyTree[LDict[float, SimpleFeedbackState], 'T'],
     context_inputs: Sequence[float],
     stride_candidates: int = 16,
 ):
@@ -408,24 +319,25 @@ def get_ss_fps_at_positions(
     candidates = jt.map(
         lambda states: jnp.reshape(
             states.net.hidden, 
-            (model_info_0.n_replicates, -1, model_info_0.hidden_size),
+            (hps_common.train.model.n_replicates, -1, hps_common.train.model.hidden_size),
         )[:, ::stride_candidates],
         all_states,
         is_leaf=is_module,
     )
-        
-    return tree_map_tqdm(
-        lambda models, candidates_by_context: ContextInputDict({
+    
+    # tree_map_tqdm isn't helpful here since the calls are async 
+    return jt.map(
+        lambda func, candidates_by_context: LDict.of('context_input')({
             context_input: get_fps_func(
                 positions,
-                models.step.net.hidden,
+                first(func, is_leaf=is_module),
                 candidates_by_context[context_input],
                 context_input,
             )
             for context_input in context_inputs
         }),
-        all_models, candidates,
-        is_leaf=is_module,
+        all_funcs, candidates,
+        is_leaf=LDict.is_of('context_input'),
     )
     
     
@@ -443,7 +355,7 @@ def process_fps(all_fps):
             axis=0,
         ),
         n_fps_meeting_criteria,
-        is_leaf=is_type(ContextInputDict),
+        is_leaf=LDict.is_of('context_input'),
     )
 
     # NOTE: We aren't actually indexing out `fps[mask]` here, since we want to be able to vmap 
@@ -461,97 +373,23 @@ def process_fps(all_fps):
             is_leaf=is_type(FPFilteredResults),
         ),
         all_top_fps, satisfactory_replicates,
-        is_leaf=is_type(ContextInputDict),
+        is_leaf=LDict.is_of('context_input'),
     )
     
     return fps_final, all_top_fps, n_fps_meeting_criteria, satisfactory_replicates
-```
-
-### Get steady-state fixed points at the workspace origin
-
-```python
-ORIGIN = 0.0  # Broadcasts because we use at-set assignment
-# ORIGIN = jnp.array([[0.0, 0.0]])
-
-# Since `eval_grid_n` is odd (see earlier assert) the origin is in the grid
-origin_idx = eval_grid_n ** 2 // 2
-```
-
-```python
-# fp_results = get_ss_fps_at_positions(
-#     ORIGIN, all_models, all_states, context_inputs,
-# )
-```
-
-```python
-# fps_origin, all_top_fps, n_fps_meeting_criteria, satisfactory_replicates = process_fps(fp_results)
-```
-
-How many fixed points met all criteria? 
-
-```python
-# print("\nNumber of fixed points meeting all criteria:")
-# eqx.tree_pprint(
-#     n_fps_meeting_criteria,
-#     short_arrays=False,
-# )
-```
-
-Note that *no* points may be found for some replicates/context inputs, but that's OK. 
-
-:::{note}
-Sometimes more than one "fixed point" meets all criteria, but typically these are actually the same fixed point, except that due to differences in optimization, some context inputs converged better than others. 
-
-To ensure that all 'redundant' FPs actually converge to a single FP, we could try to vary `fp_tol`, or use some kind of adaptive convergence criteria. Instead, it is simple enough for now to test if the "different" points are very far from each other, and if not, just average them and keep going. 
-
-To see whether they are far away from each other, we can look at the standard deviation over the (up to) top 5 returned FPs, averaged over units.
-
-```python
-# top_fps_std_mean = jt.map(
-#     lambda fps: jnp.nanmean(jnp.nanstd(fps, axis=1), axis=-1),
-#     all_top_fps,
-# )
-
-# print("\nStandard deviation of top 5 fixed points, mean over dimensions (network units):")
-# eqx.tree_pprint(top_fps_std_mean, short_arrays=False)
-```
-
-At this point we could exclude replicates based on a threshold for these standard deviation means. However, I've found that for our networks in general, there is a single actual fixed point for each fixed network input. I will assume that's the case, and in the following analyses we'll simply use whatever fixed points were returned as `fps_final`.
-
-If the above printout of standard deviations has any large values -- say, much larger than 0.01 -- then this policy may need to be revisited. Thus, raise an error if that's the case, but otherwise do not worry about it.
-
-```python
-# threshold = 0.015
-
-# all_top_fps_std_mean = jnp.stack(jt.leaves(top_fps_std_mean))
-# below_threshold = all_top_fps_std_mean < threshold
-
-# assert jnp.all(below_threshold | jnp.isnan(all_top_fps_std_mean)), (
-#     "\nStandard deviation between multiple candidate fixed points is high. " 
-#     "Consider excluding replicates for which this is true. "
-# )
-```
-
-:::
-
-For which replicates was a FP found for every context input?
-
-```python
-# print("\nReplicates for which a fixed point was found for every context input:")
-# eqx.tree_pprint(satisfactory_replicates, short_arrays=False)
 ```
 
 ### Get fixed points at a grid of steady-state positions
 
 ```python
 fp_results = get_ss_fps_at_positions(
-    goals_pos, all_models, all_states, context_inputs,
+    goals_pos, rnn_funcs, states, hps_common.context_input,
 )
 ```
 
 ```python
 fps_grid, all_top_fps_grid, n_fps_meeting_criteria_grid, satisfactory_replicates_grid = process_fps(fp_results)
-del fp_results
+# del fp_results
 ```
 
 ```python
@@ -568,23 +406,46 @@ How much do the fixed points vary across workspace positions?
 Is there translation invariance, or at the other extreme, does every steady-state point correspond to a different zero-force fixed point?
 
 ```python
+fps_grid 
+```
+
+```python
 # Note that `take_non_nan` excludes grid points where no fixed point was found;
 # if we do this without first doing `exclude_nan_replicates`, then we'll definitely
 # find a NaN for every index in axis 1, and this PyTree will be empty. 
+
 fps_grid_pre_pc = jt.map(
     lambda fps: take_non_nan(fps, axis=1),
-    exclude_nan_replicates(fps_grid),
-)
-
-fps_grid_pc = jt.map(
-    lambda fps: batch_reshape(pca.transform)(fps),
-    fps_grid_pre_pc,
+    exclude_bad_replicates(fps_grid, replicate_info=replicate_info),
 )
 ```
 
 ```python
+#!
+#! Why does it appear here that there are no fps for e.g. std=1.0 & context=-3,
+#! whereas in the Jacobian eigendecomposition we see that there are valid eigenvalues in these cases?
+jt.map(lambda x: x.shape, fps_grid_pre_pc)
+```
+
+```python
+#! Why
+fps_grid_pc = pca_batch_transform(jt.map(
+    lambda fps: subdict(fps, lohi(hps_common.train.pert.std)),
+    fps_grid_pre_pc,
+    is_leaf=LDict.is_of('train__pert__std'),
+))
+
+all_readout_weights_pc = jt.map(
+    lambda weights: subdict(weights, lohi(hps_common.train.pert.std)),
+    all_readout_weights_pc,
+    is_leaf=LDict.is_of('train__pert__std'),
+)
+
+```
+
+```python
 def plot_fp_pcs_by_context(
-    fp_pcs_by_context: ContextInputDict, 
+    fp_pcs_by_context: LDict, 
     readout_weights_pc: Optional[Array] = None,
 ):
     fig = go.Figure(
@@ -609,7 +470,7 @@ def plot_fp_pcs_by_context(
             fps_pc, 
             fig=fig, 
             label=context,
-            colors=context_input_colors_dark[context],
+            colors=colors["context_input"].dark[context],
         )
     
     if readout_weights_pc is not None:
@@ -623,11 +484,11 @@ def plot_fp_pcs_by_context(
         
         # Take the spatial average of the FPs for the lowest context input, at which 
         # to place the readout vectors in the visualization.
-        mean_base_fp_pc = jnp.mean(fp_pcs_by_context[min(context_inputs)], axis=1)
+        mean_base_fp_pc = jnp.mean(fp_pcs_by_context[min(hps_common.context_input)], axis=1)
         
         traces = []
-        k = 1
-        for j in range(readout_weights_pc.shape[1]):
+        k = 0.25
+        for j in range(readout_weights_pc.shape[-2]):
             start = mean_base_fp_pc
             end = mean_base_fp_pc + k * readout_weights_pc[..., j, :]
             
@@ -661,13 +522,15 @@ figs_fps_grid = jt.map(
     ),
     fps_grid_pc,
     all_readout_weights_pc,
-    is_leaf=is_type(ContextInputDict)
+    is_leaf=LDict.is_of("context_input")
 )
 
-figs_fps_grid['std'][0.4]
+# figs_fps_grid['std'][0.4]
 ```
 
-**TODO**: Save these plots
+```python
+figs_fps_grid[0]
+```
 
 ## Eigendecomposition of the steady-state Jacobians
 
@@ -678,6 +541,7 @@ Ideally, for each model we want a function that takes a context input and return
 
 In the future, we may be able to get those functions-of-context by wrapping the fixed point calculation up with the Jacobian calculation, however that might be kind of messy given that the fixed point calculation involves some filtering of candidates. 
 :::
+
 
 ### Define functions
 
@@ -691,7 +555,7 @@ def get_jacobian(position, context, fp, func):
 
 ```python
 @eqx.filter_jit
-def get_all_jacobians(positions, all_fps, all_models):
+def get_all_jacobians(positions, all_fps, all_funcs):
     get_jac = eqx.filter_vmap(  # Over replicates
         get_jacobian, 
         in_axes=(None, None, 0, 0),
@@ -703,18 +567,25 @@ def get_all_jacobians(positions, all_fps, all_models):
             in_axes=(0, None, 1, None),  
         )
     
-    jacobians = jt.map(
-        lambda models, fps_by_context: ContextInputDict({
+    def _get_jac_by_context(func, fps_by_context):
+        return LDict.of('context_input')({
             context_input: get_jac(  
-                positions, context_input, fps, models.step.net.hidden,
+                positions, context_input, fps, first(func, is_leaf=is_module),
             )
             for context_input, fps in fps_by_context.items()
-        }),
-        all_models, all_fps,
-        is_leaf=is_module,
+        })
+    
+    jacobians = jt.map(
+        _get_jac_by_context,
+        all_funcs, all_fps,
+        is_leaf=LDict.is_of('context_input'),
     )
-
-    jacobians_stacked = stack_by_subtree_type(jacobians, ContextInputDict)
+    
+    jacobians_stacked = jt.map(
+        lambda d: jtree.stack(list(d.values())),
+        jacobians,
+        is_leaf=LDict.is_of("context_input"),
+    )
     
     return jacobians_stacked
 ```
@@ -722,12 +593,30 @@ def get_all_jacobians(positions, all_fps, all_models):
 ### Compute all Jacobians
 
 ```python
-# jacobians_origin = get_all_jacobians(
-#     ORIGIN, fps_origin, all_models,
-# )
+goals_pos.shape
+```
 
+```python
+best_replicate_only = True
+origin_only = False
+
+goals_pos_for_jac = goals_pos
+
+if best_replicate_only:
+    fps_grid_for_jac = get_best_replicate(fps_grid, replicate_info=replicate_info, axis=0, keep_axis=True)
+    rnn_funcs_for_jac = get_best_replicate(rnn_funcs, replicate_info=replicate_info, axis=0, keep_axis=True)
+else: 
+    fps_grid_for_jac = fps_grid
+    rnn_funcs_for_jac = rnn_funcs
+    
+if origin_only:
+    idx = jnp.array([origin_idx])
+    fps_grid_for_jac = jt.map(lambda x: x[:, idx], fps_grid_for_jac)
+    goals_pos_for_jac = goals_pos[idx]
+
+#! TODO: Best replicate only! (Or, do it before plotting)
 jacobians_grid = get_all_jacobians(
-    goals_pos, fps_grid, all_models,
+    goals_pos_for_jac, fps_grid_for_jac, rnn_funcs_for_jac,  
 )
 ```
 
@@ -785,20 +674,56 @@ In the origin-steady-state case, we could exclude entire replicates based on whe
 # )
 ```
 
+```python
+colors["context_input"].dark
+```
+
 :::
+
+```python
+from jaxtyping import ArrayLike
+
+
+def find_indices(arr, values: Array | Sequence[ArrayLike]):
+    """Find the indices of `values` in `arr`."""
+    def find_single_value(value):
+        return jnp.where(arr == value, size=1)
+    
+    # Vectorize this function across all values
+    return jax.vmap(find_single_value)(jnp.array(values))
+
+
+```
 
 ```python
 # Optionally, only visualize a single replicate rather than lumping
 i_replicate = None
+
+# Optionally, only plot a subset of context inputs
+contexts_plot = [-3, 0, 3]
+context_idxs_plot = find_indices(jnp.array(hps_common.context_input), contexts_plot)[0].ravel()
+context_colors = subdict(colors["context_input"].dark, contexts_plot)
+```
+
+```python
+context_idxs_plot
 ```
 
 ```python
 if i_replicate is not None:
-    take_func = lambda arr: jnp.take(arr, i_replicate, axis=-2)
+    take_func_ = lambda arr: jnp.take(arr, i_replicate, axis=-2)
     col_names =['context', 'pos', 'eigenvalue']
 else:
-    take_func = lambda arr: arr 
-    col_names = ['context', 'pos', 'replicate', 'eigenvalue']
+    take_func_ = lambda arr: arr 
+    col_names = ['context', 'pos', 'replicate', 'eigenvalue'] 
+    
+if context_idxs_plot is not None:
+    def take_func(arr):
+        arr = take_func_(arr)
+        return jnp.take(arr, context_idxs_plot, axis=0)
+else:
+    take_func = take_func_
+
 
 eigval_dfs = jt.map(
     lambda arr: create_arr_df(
@@ -815,8 +740,9 @@ eigval_figs = jt.map(
         eigvals,
         marginals='box',
         color='context',
-        color_discrete_sequence=list(context_input_colors_dark.values()),
-        # trace_kws=dict(marker_size=3),
+        color_discrete_sequence=list(context_colors.values()),
+        trace_kws=dict(marker_size=2),
+        scatter_kws=dict(opacity=1),
         layout_kws=dict(
             legend_title='Context input', 
             legend_itemsizing='constant',
@@ -828,47 +754,52 @@ eigval_figs = jt.map(
 )
 
 # Reverse all the traces, since this improves the visualization in this particular case
-jt.map(
-    lambda fig: setattr(fig, 'data', fig.data[::-1]),
-    eigval_figs,
-    is_leaf=is_type(go.Figure),
-)
+# jt.map(
+#     lambda fig: setattr(fig, 'data', fig.data[::-1]),
+#     eigval_figs,
+#     is_leaf=is_type(go.Figure),
+# )
+
+def _update_trace_name(trace):
+    if trace.name is not None and trace.name != 'grid':
+        return trace.update(name=contexts_plot[int(trace.name)])
+    else:
+        return trace
+        
 
 # Label the traces/legend with actual context inputs, rather than indices 
 jt.map(
-    lambda fig: fig.for_each_trace(
-        lambda t: t.update(name=context_inputs[int(t.name)]) 
-        if t.name is not None else t
-    ),
+    lambda fig: fig.for_each_trace(_update_trace_name),
     eigval_figs,
     is_leaf=is_type(go.Figure),
 );
 ```
 
 ```python
+from rnns_learn_robust_motor_policies.plot import set_axes_bounds_equal
+
+trace_selector = lambda trace: trace.type.startswith('scatter') and trace.name != 'grid'
+
+figs = set_axes_bounds_equal(eigval_figs, trace_selector=trace_selector, padding_factor=0.02)
+```
+
+```python
+from rnns_learn_robust_motor_policies.config.config import PATHS
+from rnns_learn_robust_motor_policies.database import savefig
+
+
 plot_id = 'steady_state_jacobian_eigvals/by_context/grid'
 print(plot_id)
 
-for path, fig in tqdm(figs_flatten_with_paths(eigval_figs)):
-    fig_params = dict(
-        training_method=path[0].key,
-        disturbance_type_train=disturbance_type_load,
-        disturbance_train_std=path[1].key,
-        # Save the number of points per color, as usual
-        n=model_info_0.hidden_size * model_info_0.n_replicates * eval_grid_n ** 2,
-    )
-    
-    add_evaluation_figure(
-        db_session, 
-        eval_info, 
-        fig, 
-        plot_id, 
-        model_records=model_info[path[0].key][path[1].key],
-        **fig_params,
-    )
-    
-    print(path[0].key, path[1].key)
+for path, fig in tqdm(figs_flatten_with_paths(figs)):    
+    label = '_'.join([str(p.key) for p in path])
+    print(label)
     fig.show()
+    savefig(fig, label, PATHS.figures_dump, ['svg', 'webp'])
+```
+
+```python
+
 ```
 
 ### Plot eigenvalues by replicate

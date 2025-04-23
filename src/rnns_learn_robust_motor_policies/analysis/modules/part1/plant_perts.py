@@ -21,7 +21,7 @@ from rnns_learn_robust_motor_policies.analysis.effector import EffectorTrajector
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_PERT_FUNCS
 from rnns_learn_robust_motor_policies.analysis.measures import Measures, output_corr
 from rnns_learn_robust_motor_policies.analysis.profiles import Profiles
-from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate_states, vmap_eval_ensemble
+from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate, vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVENOR_LABEL
 from rnns_learn_robust_motor_policies.misc import lohi
 from rnns_learn_robust_motor_policies.types import TreeNamespace
@@ -112,7 +112,7 @@ ALL_ANALYSES = [
             colorscale_axis=1, 
             colorscale_key="reach_condition",
         )
-        .after_transform(get_best_replicate_states)
+        .after_transform(get_best_replicate)
     ),  # By default has `axis=1` for replicates
 
     # By replicate, single eval
@@ -133,7 +133,7 @@ ALL_ANALYSES = [
             colorscale_axis=0, 
             colorscale_key="reach_condition",
         )
-        .after_transform(get_best_replicate_states) 
+        .after_transform(get_best_replicate) 
         .after_indexing(0, i_eval, axis_label='eval')
         .with_fig_params(
             curves_mode='markers+lines',
@@ -145,7 +145,7 @@ ALL_ANALYSES = [
 
     AlignedEffectorTrajectories().after_stacking(level='pert__amp'),
     AlignedEffectorTrajectories().after_stacking(level='train__pert__std'),
-    Profiles().after_transform(get_best_replicate_states),
+    Profiles().after_transform(get_best_replicate),
     measures_base,
     measures_base.after_transform(lohi, level='train__pert__std'),
     measures_base.after_transform(lohi, level=['train__pert__std', 'pert__amp']),
