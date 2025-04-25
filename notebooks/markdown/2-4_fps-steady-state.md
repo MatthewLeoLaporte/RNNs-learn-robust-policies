@@ -89,12 +89,13 @@ from rnns_learn_robust_motor_policies.colors import (
     COLORSCALES, 
     MEAN_LIGHTEN_FACTOR,
 )
-from rnns_learn_robust_motor_policies.config import PRNG_CONFIG
-from rnns_learn_robust_motor_policies.database import add_evaluation_figure
+from rnns_learn_robust_motor_policies.config import PRNG_CONFIG, PATHS
+from rnns_learn_robust_motor_policies.database import add_evaluation_figure, savefig
 from rnns_learn_robust_motor_policies.misc import create_arr_df, take_non_nan, lohi
 from rnns_learn_robust_motor_policies.plot import (
     plot_eigvals_df,
     plot_fp_pcs,
+    set_axes_bounds_equal,
 )
 from rnns_learn_robust_motor_policies.plot_utils import (
     figs_flatten_with_paths,
@@ -109,6 +110,12 @@ from rnns_learn_robust_motor_policies.tree_utils import (
     tree_level_labels,
 )
 from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
+```
+
+```python
+import plotly.io as pio
+
+pio.templates.default = "simple_white"
 ```
 
 ## Setup task-model pairs, evaluate states, and perform PCA on activities
@@ -580,7 +587,7 @@ def get_all_jacobians(positions, all_fps, all_funcs):
         all_funcs, all_fps,
         is_leaf=LDict.is_of('context_input'),
     )
-    
+
     jacobians_stacked = jt.map(
         lambda d: jtree.stack(list(d.values())),
         jacobians,
@@ -591,10 +598,6 @@ def get_all_jacobians(positions, all_fps, all_funcs):
 ```
 
 ### Compute all Jacobians
-
-```python
-goals_pos.shape
-```
 
 ```python
 best_replicate_only = True
@@ -700,13 +703,9 @@ def find_indices(arr, values: Array | Sequence[ArrayLike]):
 i_replicate = None
 
 # Optionally, only plot a subset of context inputs
-contexts_plot = [-3, 0, 3]
+contexts_plot = [-3,-2,-1,0,1,2, 3]
 context_idxs_plot = find_indices(jnp.array(hps_common.context_input), contexts_plot)[0].ravel()
 context_colors = subdict(colors["context_input"].dark, contexts_plot)
-```
-
-```python
-context_idxs_plot
 ```
 
 ```python
@@ -735,71 +734,200 @@ eigval_dfs = jt.map(
 ```
 
 ```python
-eigval_figs = jt.map(
-    lambda eigvals: plot_eigvals_df(
-        eigvals,
-        marginals='box',
-        color='context',
-        color_discrete_sequence=list(context_colors.values()),
-        trace_kws=dict(marker_size=2),
-        scatter_kws=dict(opacity=1),
-        layout_kws=dict(
-            legend_title='Context input', 
-            legend_itemsizing='constant',
-            xaxis_title='Re',
-            yaxis_title='Im',
-        ),
+plot_separately = False
+hide_histograms = False
+reverse_traces = True
+padding_factor = 0.02
+
+
+plot_func_partial = partial(
+    plot_eigvals_df,
+    marginals='box',
+    color='context',
+    # color_discrete_sequence=list(context_colors.values()),
+    marginal_boundary_lines=not hide_histograms,
+    trace_kws=dict(marker_size=2.5),
+    scatter_kws=dict(opacity=1),
+    layout_kws=dict(
+        legend_title='Context input', 
+        legend_itemsizing='constant',
+        xaxis_title='Re',
+        yaxis_title='Im',
+        showlegend=not plot_separately,
     ),
+)
+
+if plot_separately:
+    def plot_func(df):
+        return LDict.of('context_input')({
+            context: plot_func_partial(
+                df[df['context'] == str(i)],
+                color_discrete_sequence=[context_colors[context]],
+            )
+            for i, context in enumerate(contexts_plot)
+        })
+
+else: 
+    plot_func = lambda df: plot_func_partial(
+        df,
+        color_discrete_sequence=list(context_colors.values()),
+    )
+
+
+figs = jt.map(
+    plot_func,
     eigval_dfs,
 )
 
 # Reverse all the traces, since this improves the visualization in this particular case
-# jt.map(
-#     lambda fig: setattr(fig, 'data', fig.data[::-1]),
-#     eigval_figs,
-#     is_leaf=is_type(go.Figure),
-# )
+if reverse_traces:
+    jt.map(
+        lambda fig: setattr(fig, 'data', fig.data[::-1]),
+        figs,
+        is_leaf=is_type(go.Figure),
+    )
 
+
+non_data_trace_names = ['zerolines', 'boundary_circle', 'boundary_line']
+        
+# Label the traces/legend with actual context inputs, rather than indices 
 def _update_trace_name(trace):
-    if trace.name is not None and trace.name != 'grid':
+    if trace.name is not None and trace.name not in non_data_trace_names:
         return trace.update(name=contexts_plot[int(trace.name)])
     else:
         return trace
-        
-
-# Label the traces/legend with actual context inputs, rather than indices 
+    
 jt.map(
     lambda fig: fig.for_each_trace(_update_trace_name),
-    eigval_figs,
+    figs,
     is_leaf=is_type(go.Figure),
-);
-```
+)
 
-```python
-from rnns_learn_robust_motor_policies.plot import set_axes_bounds_equal
+# Set the axis limits of all figures to be equal,
+# and determined only by the scatter data
+def trace_selector(trace):
+    return (
+        trace.type.startswith('scatter') 
+        and trace.name not in non_data_trace_names
+    )
 
-trace_selector = lambda trace: trace.type.startswith('scatter') and trace.name != 'grid'
+# figs = set_axes_bounds_equal(
+#     figs,
+#     trace_selector=trace_selector,
+#     padding_factor=padding_factor,
+# )
 
-figs = set_axes_bounds_equal(eigval_figs, trace_selector=trace_selector, padding_factor=0.02)
-```
+# Hide the histograms, if requested
+if hide_histograms:
+    def _hide_trace(trace):
+        if trace.type == 'box' or trace.name == 'boundary_line':
+            trace.update(visible=False)
+        return trace
+    
+    jt.map(
+        lambda fig: fig.for_each_trace(_hide_trace),
+        figs,
+        is_leaf=is_type(go.Figure),
+    )
 
-```python
-from rnns_learn_robust_motor_policies.config.config import PATHS
-from rnns_learn_robust_motor_policies.database import savefig
-
-
-plot_id = 'steady_state_jacobian_eigvals/by_context/grid'
-print(plot_id)
-
+# Plot the figures and save to the dump dir
 for path, fig in tqdm(figs_flatten_with_paths(figs)):    
+    # These will get better names when we incorporate this analysis as an `AbstractAnalysis`
     label = '_'.join([str(p.key) for p in path])
     print(label)
     fig.show()
-    savefig(fig, label, PATHS.figures_dump, ['svg', 'webp'])
+    savefig(fig, label, PATHS.figures_dump, ['svg', 'webp', 'html'])
+```
+
+#### Distributions of eigenvalues by angle and radius
+
+```python
+import plotly.express as px
+
+def complex_to_polar_symmetric_angle(arr: Array) -> tuple[Array, Array]:
+  """
+  Converts complex numbers to polar coordinates with symmetric angles.
+
+  Args:
+    arr: A JAX array of complex numbers with shape (..., n).
+
+  Returns:
+    A tuple containing two JAX arrays:
+    - angles: The angles in radians, mapped to the interval [0, pi],
+              symmetric about the real axis. Shape (..., n).
+    - magnitudes: The magnitudes (radii) of the complex numbers.
+                  Shape (..., n).
+  """
+  # Calculate magnitudes (absolute values)
+  magnitudes = jnp.abs(arr)
+  # Calculate standard angles in (-pi, pi] and take absolute value for [0, pi]
+  angles = jnp.abs(jnp.angle(arr))
+  return jnp.stack([angles, magnitudes], axis=0)
+
+results = complex_to_polar_symmetric_angle(jnp.stack(list(eigvals_grid.values()), axis=0))
+
+df = create_arr_df(
+    results,
+    col_names=['train__pert__std', 'component'] + col_names,
+).astype({'replicate': 'str'})
 ```
 
 ```python
+n_bins = 25
 
+mapping = dict(zip(range(len(eigvals_grid)), eigvals_grid.keys()))
+# df['train__pert__std'] = df['train__pert__std'].map(mapping)
+x_ranges = dict(
+    angle=[0, jnp.pi],
+    magnitude=[0, 1.1],
+)
+
+for i, label in enumerate(['angle', 'magnitude']):
+    fig = go.Figure(
+        layout=dict(
+            title=f"Distribution of eigenvalue {label} by train pert. std.",
+            width=600,
+            height=500,
+        ),
+    )
+    fig.add_traces([
+        go.Histogram(
+            x=df[df['component'] == i][df['train__pert__std'] == j]['value'],
+            # name=
+            xbins=dict(start=x_ranges[label][0], end=x_ranges[label][-1], size=(x_ranges[label][-1] - x_ranges[label][0])/n_bins),
+            name=std,
+            histnorm='probability',
+        )
+        for j, std in enumerate(eigvals_grid.keys())
+    ])
+    fig.update_layout(barmode='overlay', legend_title="Train pert. std.", xaxis_range=x_ranges[label])
+    fig.update_traces(opacity=0.66)
+    fig.show()
+
+
+for i, label in enumerate(['angle', 'magnitude']):
+    for k, std in enumerate(eigvals_grid.keys()):
+        fig = go.Figure(
+            layout=dict(
+                title=f"Distribution of eigenvalue {label} by context for train pert. std. {std}",
+                width=500,
+                height=300,
+            ),
+        )
+        fig.add_traces([
+            go.Histogram(
+                x=df[df['component'] == i][df['train__pert__std'] == k][df['context'] == j]['value'],
+                # name=
+                xbins=dict(start=x_ranges[label][0], end=x_ranges[label][-1],
+                           size=(x_ranges[label][-1] - x_ranges[label][0]) / n_bins),
+                name=context,
+            )
+            for j, (idx, context) in enumerate({0: -3, 6: 3}.items())
+        ])
+        fig.update_layout(barmode='overlay', legend_title="Context", xaxis_range=x_ranges[label])
+        fig.update_traces(opacity=0.66)
+
+        fig.show()
 ```
 
 ### Plot eigenvalues by replicate
