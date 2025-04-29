@@ -46,6 +46,7 @@ from collections.abc import Sequence
 import functools
 from functools import partial
 from typing import Literal, Optional
+import warnings
 
 import equinox as eqx
 import jax
@@ -86,8 +87,8 @@ from rnns_learn_robust_motor_policies.analysis.fp_finder import (
 )
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate, exclude_bad_replicates
 from rnns_learn_robust_motor_policies.colors import (
-    COLORSCALES, 
-    MEAN_LIGHTEN_FACTOR,
+    COLORSCALES,
+    MEAN_LIGHTEN_FACTOR, COMMON_COLOR_SPECS,
 )
 from rnns_learn_robust_motor_policies.config import PRNG_CONFIG, PATHS
 from rnns_learn_robust_motor_policies.database import add_evaluation_figure, savefig
@@ -116,6 +117,10 @@ from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
 import plotly.io as pio
 
 pio.templates.default = "simple_white"
+```
+
+```python
+warnings.filterwarnings('ignore')
 ```
 
 ## Setup task-model pairs, evaluate states, and perform PCA on activities
@@ -655,7 +660,7 @@ eigvals_valid = jt.map(
 Sanity check: this should look the same (nearly?) as `satisfactory_replicates`:
 
 ```python
-eqx.tree_pprint(tree_stack([eigvals_valid, satisfactory_replicates_grid]), short_arrays=False)
+# eqx.tree_pprint(tree_stack([eigvals_valid, satisfactory_replicates_grid]), short_arrays=False)
 ```
 
 ```python
@@ -886,8 +891,8 @@ for i, label in enumerate(['angle', 'magnitude']):
     fig = go.Figure(
         layout=dict(
             title=f"Distribution of eigenvalue {label} by train pert. std.",
-            width=600,
-            height=500,
+            width=500,
+            height=300,
         ),
     )
     fig.add_traces([
@@ -897,6 +902,7 @@ for i, label in enumerate(['angle', 'magnitude']):
             xbins=dict(start=x_ranges[label][0], end=x_ranges[label][-1], size=(x_ranges[label][-1] - x_ranges[label][0])/n_bins),
             name=std,
             histnorm='probability',
+            marker_color=colors["train__pert__std"].dark[std],
         )
         for j, std in enumerate(eigvals_grid.keys())
     ])
@@ -904,12 +910,16 @@ for i, label in enumerate(['angle', 'magnitude']):
     fig.update_traces(opacity=0.66)
     fig.show()
 
+symbols = {
+    "angle": (r"\angle", ""),
+    "magnitude": (r"\left|", r"\right|"),
+}
 
 for i, label in enumerate(['angle', 'magnitude']):
     for k, std in enumerate(eigvals_grid.keys()):
         fig = go.Figure(
             layout=dict(
-                title=f"Distribution of eigenvalue {label} by context for train pert. std. {std}",
+                title=f"Train pert. std.: {std}",
                 width=500,
                 height=300,
             ),
@@ -921,13 +931,23 @@ for i, label in enumerate(['angle', 'magnitude']):
                 xbins=dict(start=x_ranges[label][0], end=x_ranges[label][-1],
                            size=(x_ranges[label][-1] - x_ranges[label][0]) / n_bins),
                 name=context,
+                histnorm='probability',
+                marker_color=colors["context_input"].dark[context],
             )
             for j, (idx, context) in enumerate({0: -3, 6: 3}.items())
         ])
-        fig.update_layout(barmode='overlay', legend_title="Context", xaxis_range=x_ranges[label])
-        fig.update_traces(opacity=0.66)
+        var_label = f"{symbols[label][0]}\lambda{symbols[label][1]}"
+        fig.update_layout(
+            barmode='overlay',
+            legend_title="Context",
+            xaxis_range=x_ranges[label],
+            xaxis_title=rf"${var_label}$",
+            yaxis_title=rf"$p({var_label})$",
+        )
+        fig.update_traces(opacity=0.60)
 
         fig.show()
+        savefig(fig, f"eig-dist_{label}_std-{std}", PATHS.figures_dump, ['svg', 'webp', 'html'])
 ```
 
 ### Plot eigenvalues by replicate

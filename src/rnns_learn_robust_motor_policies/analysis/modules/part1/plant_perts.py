@@ -25,7 +25,7 @@ from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_repli
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVENOR_LABEL
 from rnns_learn_robust_motor_policies.misc import lohi
 from rnns_learn_robust_motor_policies.types import TreeNamespace
-from rnns_learn_robust_motor_policies.plot import get_violins
+from rnns_learn_robust_motor_policies.plot import get_violins, set_axes_bounds_equal, set_axis_bounds_equal
 from rnns_learn_robust_motor_policies.types import LDict
 
 
@@ -102,10 +102,9 @@ measures_base = Measures(measure_keys=MEASURE_KEYS)
 i_eval = 0  # For single-eval plots
 
 
-"""All the analyses to perform in this part."""
+# PyTree levels: 
+# State batch shape: (eval, replicate, condition)
 ALL_ANALYSES = [
-    # state shape: (eval, replicate, condition, time, xy)
-
     # By condition, all evals for the best replicate only
     (
         EffectorTrajectories(
@@ -113,7 +112,11 @@ ALL_ANALYSES = [
             colorscale_key="reach_condition",
         )
         .after_transform(get_best_replicate)
-    ),  # By default has `axis=1` for replicates
+        .then_transform_figs(
+            partial(set_axis_bounds_equal, 'y', padding_factor=0.1),
+        )
+        # .with_fig_params()
+    ),  
 
     # By replicate, single eval
     (

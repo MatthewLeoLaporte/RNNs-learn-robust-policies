@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 import math
+import re
 from typing import Callable, Literal, Optional
 
 import equinox as eqx
@@ -38,7 +39,7 @@ def add_endpoint_traces(
         pos_endpoints: Array with start and goal positions. Shape: [2, *trials, 2] where
                       the first dimension is [start, goal], middle dimensions are trials,
                       and last dimension is [x, y] coordinates
-        visible: Tuple of booleans indicating if start and goal markers should be visible
+        visible: tuple of booleans indicating if start and goal markers should be visible
         colorscale: Optional color scale to apply to the markers
         colorscale_axis: Which trial axis to use for color mapping (if colorscale provided)
         init_marker_kws: Additional keyword arguments for the start markers
@@ -383,7 +384,15 @@ def get_measure_replicate_comparisons(
     
 
 
-def plot_eigvals_df(df, marginals='box', trace_kws=None, scatter_kws=None, layout_kws=None, **kwargs):
+def plot_eigvals_df(
+    df, 
+    marginals='box', 
+    trace_kws=None, 
+    scatter_kws=None, 
+    layout_kws=None, 
+    marginal_boundary_lines=True,
+    **kwargs,
+):
     stable_boundary_kws = dict(
         line=dict(
             color='black',
@@ -397,6 +406,7 @@ def plot_eigvals_df(df, marginals='box', trace_kws=None, scatter_kws=None, layou
         y='imag',
         marginal_x=marginals,
         marginal_y=marginals,
+        render_mode='svg',
         **kwargs,
     )
 
@@ -410,7 +420,7 @@ def plot_eigvals_df(df, marginals='box', trace_kws=None, scatter_kws=None, layou
     fig.update_layout(
         yaxis=dict(scaleanchor="x", scaleratio=1),
         width=600,
-        height=500,
+        height=450,
     )
     fig.add_shape(
         type='circle',
@@ -418,35 +428,41 @@ def plot_eigvals_df(df, marginals='box', trace_kws=None, scatter_kws=None, layou
         x0=-1, y0=-1, x1=1, y1=1,
         fillcolor='white',
         layer='below',
+        name="boundary_circle",
         **stable_boundary_kws,
     )
-    for coord in [-1, 1]:
-        fig.add_vline(
-            x=coord, 
-            row=0, 
-            **stable_boundary_kws,
-        )
-        fig.add_hline(
-            y=coord, 
-            col=2, 
-            **stable_boundary_kws,
-        )
+    if marginal_boundary_lines:
+        for coord in [-1, 1]:
+            fig.add_vline(
+                x=coord, 
+                row=0, 
+                name="boundary_line",
+                **stable_boundary_kws,
+            )
+            fig.add_hline(
+                y=coord, 
+                col=2, 
+                name="boundary_line",
+                **stable_boundary_kws,
+            )
     
     fig.add_trace(go.Scatter(
         x=[-1, 1], y=[0, 0],
         mode='lines',
         line_dash='dot',
         line_color='grey',
+        line_width=1,
         showlegend=False,
-        name="grid",
+        name="zerolines",
     ))
     fig.add_trace(go.Scatter(
         x=[0, 0], y=[-1, 1],
         mode='lines',
         line_dash='dot',
         line_color='grey',
+        line_width=1,
         showlegend=False,
-        name="grid",
+        name="zerolines",
     ))
     
     if trace_kws is not None:
@@ -626,133 +642,277 @@ def plot_2d_effector_trajectories(
     )
 
 
-def set_axis_bounds_equal(
-    axis: Literal['x', 'y'],
-    figs: PyTree[go.Figure],
-    padding_factor: float = 0.05,
-    trace_selector: Callable = lambda trace: True,
-) -> PyTree[go.Figure]:
-    """
-    Finds the global min/max bounds for a specific axis ('x' or 'y') across
-    all figures in a PyTree and updates all figures to use these bounds
-    for that axis only.
 
-    Args:
-        figs: A PyTree containing go.Figure objects at its leaves.
-        axis: The axis ('x' or 'y') to synchronize.
-        trace_selector: Indicates which trace(s) to determine bounds from.
+def _calculate_axis_bounds(
+    axis: Literal['x', 'y'],
+    fig_leaves: list[go.Figure],
+    padding_factor: float,
+    trace_selector: Callable,
+) -> tuple[list[str], dict[str, Optional[tuple[float, float]]]]:
+    """
+    Calculates the required min/max bounds for a specific axis across figures,
+    subplot by subplot, without applying them.
 
     Returns:
-        A PyTree with the same structure as figs, but with all go.Figure
-        objects having the specified axis updated to the global bounds.
-
-    Written in concert with Gemini 2.5 Pro (experimental).
+        A tuple containing:
+        - list of subplot indices found (e.g., ["", "2", "3"]).
+        - dictionary mapping subplot index to the calculated (padded) range
+          (min, max) or None if no valid data found.
     """
-    leaves = jt.leaves(figs)
-    if not leaves: # Handle empty input PyTree
-        return figs
+    if not fig_leaves:
+        return [], {}
 
-    # Filter for actual figure objects
-    fig_leaves = [leaf for leaf in leaves if isinstance(leaf, go.Figure)]
-    if not fig_leaves: # Handle PyTree with no figures
-        return figs
+    # --- Determine subplot indices ---
+    layout_keys = fig_leaves[0].to_dict()['layout'].keys()
+    axis_prefix = f"{axis}axis"
+    subplot_indices: list[str] = []
+    if axis_prefix in layout_keys:
+        subplot_indices.append("")
+    for key in layout_keys:
+         match = re.fullmatch(f"{axis_prefix}(\d+)", key)
+         if match:
+             subplot_indices.append(match.group(1))
+    subplot_indices.sort(key=lambda s: int(s) if s else 0)
 
-    # --- Calculate global bounds for the specified axis ---
-    g_min = math.inf
-    g_max = -math.inf
-    found_data = False
+    if not subplot_indices:
+        return [], {}
 
-    for fig in fig_leaves:
-        for trace in fig.data:
-            if not trace_selector(trace):
-                continue
-            
+    # --- Calculate global bounds per subplot ---
+    global_bounds: dict[str, dict] = {
+        idx: {'min': math.inf, 'max': -math.inf, 'found': False}
+        for idx in subplot_indices
+    }
 
-            # Check if trace has coordinate data for the specified axis (e.g., trace.x)
-            #! Note that this only works for traces where `trace.x` and `trace.y` represent the 
-            #! spatial coordinates of the trace on the axes! A more general solution would 
-            #! investigate `trace.type` and use knowledge of the data->axis mapping for each trace type.
-            coords = getattr(trace, axis, None)
-            if coords is not None:
-                found_data = True
-                # Update global min/max based on this trace's numeric data
-                g_min = min(g_min, np.nanmin(coords))
-                g_max = max(g_max, np.nanmax(coords))
+    for subplot_index in subplot_indices:
+        current_axis_layout_key = f"{axis}axis{subplot_index}"
+        for fig in fig_leaves:
+            for trace in fig.data:
+                if not trace_selector(trace): continue
 
-    # --- Determine the final valid range tuple for the specified axis ---
-    final_range = None
-    if found_data: # Only calculate range if data was found
-        # Check if valid min/max were actually updated (g_min <= g_max)
-        if g_min <= g_max:
-            if g_min == g_max:
-                # Handle single data point case (or all points identical)
-                # Use 5% of absolute value as padding, or 0.5 if value is 0
-                # Ensure non-negative padding_factor is respected
-                padding_abs = abs(g_min) * max(0.0, padding_factor) if g_min != 0 else 0.5 * max(0.0, padding_factor)
-                # Fallback to a small absolute pad if value is 0 and factor > 0 but result is 0
-                if padding_abs == 0 and g_min == 0 and padding_factor > 0:
-                     padding_abs = 0.5 * padding_factor # e.g., 0.025 if factor is 0.05
-                # Ensure some minimal padding if factor > 0, but value is tiny
-                if padding_abs == 0 and g_min != 0 and padding_factor > 0:
-                     padding_abs = 0.5 * padding_factor # Use a small default based on factor
+                trace_axis_assignment_attr = f"{axis}axis"
+                trace_target_axis_id = getattr(trace, trace_axis_assignment_attr, None)
+                effective_trace_layout_key = f"{axis}axis" # Default
+                if trace_target_axis_id is not None:
+                    match_id = re.fullmatch(f"{axis}(\d*)", trace_target_axis_id)
+                    if match_id:
+                         effective_trace_layout_key = f"{axis}axis{match_id.group(1)}"
+                    else: continue # Skip trace if axis id format is unexpected
 
-                # Handle case where user explicitly wants zero padding
-                if padding_factor == 0: 
-                    padding_abs = 0
+                if effective_trace_layout_key == current_axis_layout_key:
+                    coords = getattr(trace, axis, None)
+                    numeric_coords_list = []
+                    valid_coords_found_in_trace = False
+                    if coords is not None and hasattr(coords, '__iter__') and not isinstance(coords, (str, bytes)):
+                        for val in coords:
+                            if isinstance(val, (int, float, np.number)):
+                                numeric_coords_list.append(float(val))
+                                valid_coords_found_in_trace = True
+                            elif val is None:
+                                numeric_coords_list.append(np.nan)
+                                valid_coords_found_in_trace = True
 
+                    if valid_coords_found_in_trace:
+                        numeric_coords = np.array(numeric_coords_list, dtype=float)
+                        if numeric_coords.size > 0:
+                            current_min = np.nanmin(numeric_coords)
+                            current_max = np.nanmax(numeric_coords)
+                            if np.isfinite(current_min) and np.isfinite(current_max):
+                                subplot_data = global_bounds[subplot_index]
+                                subplot_data['min'] = min(subplot_data['min'], current_min)
+                                subplot_data['max'] = max(subplot_data['max'], current_max)
+                                subplot_data['found'] = True
+
+    # --- Determine final range tuple per subplot ---
+    final_ranges: dict[str, Optional[tuple[float, float]]] = {}
+    for subplot_index in subplot_indices:
+        subplot_data = global_bounds[subplot_index]
+        g_min, g_max, found_data = subplot_data['min'], subplot_data['max'], subplot_data['found']
+        subplot_final_range = None
+        if found_data and g_min <= g_max:
+            non_negative_padding_factor = max(0.0, padding_factor)
+            if np.isclose(g_min, g_max):
+                padding_abs = abs(g_min) * non_negative_padding_factor if not np.isclose(g_min, 0.0) else 0.5 * non_negative_padding_factor
+                if non_negative_padding_factor > 0 and np.isclose(padding_abs, 0.0) and not np.isclose(g_min, 0.0):
+                    padding_abs = 0.5 * non_negative_padding_factor
                 padded_min = g_min - padding_abs
                 padded_max = g_max + padding_abs
-                # Ensure min <= max after padding, could happen if padding_abs is 0
                 if padded_min > padded_max: padded_min = padded_max = g_min
-
             else:
-                # Calculate padding based on the data range (delta)
                 delta = g_max - g_min
-                padding = delta * max(0.0, padding_factor) # Ensure non-negative padding
+                padding = delta * non_negative_padding_factor
                 padded_min = g_min - padding
                 padded_max = g_max + padding
+            subplot_final_range = (padded_min, padded_max)
+        final_ranges[subplot_index] = subplot_final_range
 
-            final_range = (padded_min, padded_max)
-
-    # --- Nested function to update a single leaf's specified axis ---
-    axis_attr_name = f"{axis}axis" 
-    def _update_leaf_axis(leaf):
-        """Updates the specified axis of a leaf if it's a figure."""
-        if isinstance(leaf, go.Figure):
-            # Check if a valid global range was found and the figure has the axis
-            if final_range is not None and hasattr(leaf.layout, axis_attr_name):
-                # Set the range attribute on the specific axis layout object
-                # e.g., Access leaf.layout.xaxis and set its 'range' attribute
-                setattr(getattr(leaf.layout, axis_attr_name), 'range', final_range)
-        return leaf # Return leaf modified or not
-
-    # --- Apply the axis update to all leaves using tree_map ---
-    updated_figs = jt.map(_update_leaf_axis, figs)
-    return updated_figs
+    return subplot_indices, final_ranges
 
 
-def set_axes_bounds_equal(
-    figs: PyTree[go.Figure], 
+# --- Standalone function to set single axis ---
+def set_axis_bounds_equal(
+    axis: Literal['x', 'y'],
+    figs: PyTree,
     padding_factor: float = 0.05,
     trace_selector: Callable = lambda trace: True,
-) -> PyTree[go.Figure]:
+) -> PyTree:
     """
-    Synchronizes both 'x' and 'y' axes across all figures in a PyTree
-    by setting them to their respective global bounds.
+    Finds and applies global bounds for a *single specified axis* ('x' or 'y')
+    across all figures in a PyTree, subplot by subplot.
+    NOTE: This function applies bounds directly and does *not* account for
+    `scaleanchor` interactions if you later modify the other axis. For
+    synchronized scaling, use `set_axes_bounds_equal`.
 
     Args:
-        figs: A PyTree containing go.Figure objects at its leaves.
-        trace_selector: Indicates which trace(s) to determine bounds from.
+        figs: A PyTree containing go.Figure objects.
+        axis: The axis ('x' or 'y') to synchronize.
+        padding_factor: Padding factor for the range calculation.
+        trace_selector: Function to select traces for bounds calculation.
 
     Returns:
-        A PyTree with the same structure as figs, but with both x and y axes
-        synchronized across all go.Figure objects.
+        PyTree with the specified axis updated subplot-wise.
     """
-    figs_x_synced = set_axis_bounds_equal(
-        'x', figs, trace_selector=trace_selector, padding_factor=padding_factor
-    )
-    figs_xy_synced = set_axis_bounds_equal(
-        'y', figs_x_synced, trace_selector=trace_selector, padding_factor=padding_factor
+    # Corrected: Use jt.leaves and jt.map
+    leaves = jt.leaves(figs)
+    if not leaves: return figs
+    fig_leaves = [leaf for leaf in leaves if isinstance(leaf, go.Figure)]
+    if not fig_leaves: return figs
+
+    subplot_indices, final_ranges = _calculate_axis_bounds(
+        axis, fig_leaves, padding_factor, trace_selector
     )
 
-    return figs_xy_synced
+    if not final_ranges: return figs
+
+    def _update_leaf_single_axis(leaf):
+        if isinstance(leaf, go.Figure):
+            for subplot_index, final_range in final_ranges.items():
+                if final_range is not None:
+                    axis_attr_name = f"{axis}axis{subplot_index}"
+                    axis_obj = getattr(leaf.layout, axis_attr_name, None)
+                    if axis_obj:
+                        axis_obj.range = final_range
+        return leaf
+    # Corrected: Use jt.map
+    return jt.map(_update_leaf_single_axis, figs)
+
+
+#! On preliminary tests this isn't actually very useful for anchored axes;
+#! in principle what we need to do for anchored axes is convert x and y 
+#! extrema into a common frame (based on the scale ratio) and then scale 
+#! that frame (i.e. only x xor y axis range). Does this achieve that?
+def set_axes_bounds_equal(
+    figs: PyTree,
+    padding_factor: float = 0.05,
+    trace_selector: Callable = lambda trace: True,
+) -> PyTree:
+    """
+    Synchronizes both 'x' and 'y' axes across all figures in a PyTree,
+    subplot by subplot, accounting for `scaleanchor` constraints.
+
+    Calculates required bounds for x and y, then determines the final ranges
+    to set on one or both axes per subplot to ensure all data is visible
+    while respecting any `scaleanchor` and `scaleratio` properties.
+
+    Args:
+        figs: A PyTree containing go.Figure objects.
+        padding_factor: Padding factor for the range calculation.
+        trace_selector: Function to select traces for bounds calculation.
+
+    Returns:
+        PyTree with both x and y axes synchronized subplot-wise, respecting scaling.
+    """
+    # Corrected: Use jt.leaves and jt.map
+    leaves = jt.leaves(figs)
+    if not leaves: return figs
+    fig_leaves = [leaf for leaf in leaves if isinstance(leaf, go.Figure)]
+    if not fig_leaves: return figs
+
+    # Calculate desired ranges for both axes independently
+    x_indices, final_x_ranges = _calculate_axis_bounds('x', fig_leaves, padding_factor, trace_selector)
+    y_indices, final_y_ranges = _calculate_axis_bounds('y', fig_leaves, padding_factor, trace_selector)
+
+    all_indices = sorted(list(set(x_indices) | set(y_indices)), key=lambda s: int(s) if s else 0)
+    if not all_indices: return figs # No axes found
+
+    # Get scale anchor info from the first figure (assuming consistency)
+    scale_info = {}
+    first_fig_layout = fig_leaves[0].layout
+    for idx in all_indices:
+        xn, yn = f"xaxis{idx}", f"yaxis{idx}"
+        x_axis_obj = getattr(first_fig_layout, xn, None)
+        y_axis_obj = getattr(first_fig_layout, yn, None)
+
+        # Check if y axis anchors to x axis for this subplot
+        if y_axis_obj and getattr(y_axis_obj, 'scaleanchor', None) == f"x{idx}":
+            scale_info[idx] = {'axis': 'y', 'anchor_to': 'x', 'ratio': getattr(y_axis_obj, 'scaleratio', 1.0)}
+        # Check if x axis anchors to y axis for this subplot
+        elif x_axis_obj and getattr(x_axis_obj, 'scaleanchor', None) == f"y{idx}":
+            scale_info[idx] = {'axis': 'x', 'anchor_to': 'y', 'ratio': getattr(x_axis_obj, 'scaleratio', 1.0)}
+
+    # Determine final ranges to actually set for each subplot
+    ranges_to_set = {} # {subplot_idx: {'x': range | None, 'y': range | None}}
+    for idx in all_indices:
+        x_range = final_x_ranges.get(idx)
+        y_range = final_y_ranges.get(idx)
+        scaling = scale_info.get(idx)
+
+        current_x_final = x_range # Default: set independently
+        current_y_final = y_range # Default: set independently
+
+        # If scaling constraint exists and both ranges were calculated
+        if scaling and x_range and y_range:
+            s = scaling['ratio']
+            if s is None:
+                s = 1.0
+            # Calculate required spans (ensure non-negative)
+            Sx = max(0.0, x_range[1] - x_range[0])
+            Sy = max(0.0, y_range[1] - y_range[0])
+
+            # Check for valid scaleratio before proceeding
+            if s > 1e-9: # Avoid division by zero or near-zero ratio issues
+                if scaling['axis'] == 'y': # yaxis anchors to xaxis (y = s*x)
+                    # Calculate the span the x-axis MUST have to accommodate the y-span via scaling
+                    required_Sx_for_y = Sy / s
+                    # The final x-span is the max needed for its own data or for y's data via scaling
+                    final_Sx = max(Sx, required_Sx_for_y)
+                    # Center the final x-range around the original x-data midpoint
+                    x_center = (x_range[0] + x_range[1]) / 2
+                    current_x_final = (x_center - final_Sx / 2, x_center + final_Sx / 2)
+                    current_y_final = None # Let Plotly determine y-range based on x and ratio
+
+                elif scaling['axis'] == 'x': # xaxis anchors to yaxis (x = s*y)
+                    # Calculate the span the y-axis MUST have to accommodate the x-span via scaling
+                    required_Sy_for_x = Sx / s
+                    # The final y-span is the max needed for its own data or for x's data via scaling
+                    final_Sy = max(Sy, required_Sy_for_x)
+                     # Center the final y-range around the original y-data midpoint
+                    y_center = (y_range[0] + y_range[1]) / 2
+                    current_y_final = (y_center - final_Sy / 2, y_center + final_Sy / 2)
+                    current_x_final = None # Let Plotly determine x-range based on y and ratio
+
+            # else: If scaleratio is invalid (<=0), keep default independent ranges
+
+        ranges_to_set[idx] = {'x': current_x_final, 'y': current_y_final}
+
+    # Apply the determined ranges using jt.map
+    def _update_leaf_final_axes(leaf):
+        if isinstance(leaf, go.Figure):
+            for idx, axis_ranges in ranges_to_set.items():
+                x_range_to_set = axis_ranges['x']
+                y_range_to_set = axis_ranges['y']
+                xn, yn = f"xaxis{idx}", f"yaxis{idx}"
+
+                # Apply x range if it needs to be set and axis exists
+                if x_range_to_set is not None:
+                    x_axis_obj_leaf = getattr(leaf.layout, xn, None)
+                    if x_axis_obj_leaf:
+                        x_axis_obj_leaf.range = x_range_to_set
+
+                # Apply y range if it needs to be set and axis exists
+                if y_range_to_set is not None:
+                    y_axis_obj_leaf = getattr(leaf.layout, yn, None)
+                    if y_axis_obj_leaf:
+                        y_axis_obj_leaf.range = y_range_to_set
+        return leaf
+    # Corrected: Use jt.map
+    return jt.map(_update_leaf_final_axes, figs)

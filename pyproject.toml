@@ -17,6 +17,7 @@ dependencies = [
     "ipywidgets>=8.1.5",
     "jax>=0.5.2",
     "kaleido==0.2.1",
+    "notebook>=7.4.1",
     "pillow>=11.1.0",
     "plotly>=6.0.0",
     "polars>=1.24.0",

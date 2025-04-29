@@ -27,7 +27,7 @@ from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_repli
 from rnns_learn_robust_motor_policies.colors import ColorscaleSpec
 from rnns_learn_robust_motor_policies.config.config import PLOTLY_CONFIG
 from rnns_learn_robust_motor_policies.constants import POS_ENDPOINTS_ALIGNED
-from rnns_learn_robust_motor_policies.plot import add_endpoint_traces, get_violins
+from rnns_learn_robust_motor_policies.plot import add_endpoint_traces, get_violins, set_axes_bounds_equal
 from rnns_learn_robust_motor_policies.types import (
     RESPONSE_VAR_LABELS,
     LDict,
@@ -133,14 +133,25 @@ MEASURE_KEYS = (
         
 ALL_ANALYSES = [
     # By condition, all evals for the best replicate only
-   (
-       EffectorTrajectories(
-            colorscale_axis=1, 
-            colorscale_key="reach_condition",
+#     (
+#        EffectorTrajectories(
+#             colorscale_axis=1, 
+#             colorscale_key="reach_condition",
+#         )
+#         .after_transform(get_best_replicate)  # By default has `axis=1` for replicates
+#     ),
+    (
+        AlignedEffectorTrajectories()
+        .after_stacking("context_input")
+        .map_at_level("train__pert__std")
+        .then_transform_figs(
+            partial(
+                set_axes_bounds_equal, 
+                padding_factor=0.1,
+                trace_selector=lambda trace: trace.showlegend is True,
+            ),
         )
-        .after_transform(get_best_replicate)  # By default has `axis=1` for replicates
     ),
-    AlignedEffectorTrajectories().after_stacking("context_input").map_at_level("train__pert__std"),
     AlignedEffectorTrajectories().after_stacking("train__pert__std").map_at_level("context_input"),
     Profiles(),  #! TODO
     Measures(measure_keys=MEASURE_KEYS).map_at_level("pert__amp"),
