@@ -1,22 +1,12 @@
-from collections.abc import Callable
-from functools import partial 
-from types import MappingProxyType
-from typing import ClassVar, Literal as L, Optional, Dict, Any
+from functools import partial
 
-import equinox as eqx
-from equinox import Module
 import jax.tree as jt
-from jaxtyping import PyTree
-import numpy as np
-import plotly.graph_objects as go
-from tqdm.auto import tqdm
 
 from feedbax.intervene import add_intervenors, schedule_intervenor
 from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.aligned import AlignedEffectorTrajectories
-from rnns_learn_robust_motor_policies.analysis.analysis import _DummyAnalysis, AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.analysis.effector import EffectorTrajectories
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_PERT_FUNCS
 from rnns_learn_robust_motor_policies.analysis.measures import Measures, output_corr
@@ -24,7 +14,6 @@ from rnns_learn_robust_motor_policies.analysis.profiles import Profiles
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate, vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVENOR_LABEL
 from rnns_learn_robust_motor_policies.misc import lohi
-from rnns_learn_robust_motor_policies.types import TreeNamespace
 from rnns_learn_robust_motor_policies.plot import get_violins, set_axes_bounds_equal, set_axis_bounds_equal
 from rnns_learn_robust_motor_policies.types import LDict
 

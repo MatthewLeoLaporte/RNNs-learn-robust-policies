@@ -398,3 +398,28 @@ def take_non_nan(arr, axis=1):
     return jnp.take(arr, valid_cols, axis=axis)
 
 
+def vectors_to_2d_angles(vectors):
+    return jnp.arctan2(vectors[..., 1], vectors[..., 0])
+
+
+def map_fn_over_tree(func, is_leaf: Optional[Callable] = None):
+    """Partially applies `jt.map`, for use in functional expressions."""
+    def map_fn(tree, *rest):
+        return jt.map(func, tree, *rest, is_leaf=is_leaf)
+    return map_fn
+
+
+def normalize(arr, axis=-1):
+    return arr / jnp.linalg.norm(arr, axis=axis, keepdims=True)
+
+
+def ravel_except_last(arr):
+    return jnp.reshape(arr, (-1, arr.shape[-1]))
+
+
+def center_and_rescale(arr, axis=0):
+    arr_centered = arr - jnp.mean(arr, axis=axis)
+    arr_rescaled = arr_centered / jnp.max(arr_centered, axis=axis)
+    return arr_rescaled
+
+

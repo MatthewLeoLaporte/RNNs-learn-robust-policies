@@ -1,0 +1,40 @@
+expt_id: 1-4
+
+train:
+  expt_id: 1
+  model:
+    n_steps: 100  # TODO: This should be under `task`
+    hidden_size: 100
+    feedback_noise_std: 0.01
+    motor_noise_std: 0.01
+    feedback_delay_steps: 0
+    # dt: 0.01
+  pert:  # during training
+    type: curl
+    # list -> load multiple models
+    std: [0.0, 1.5]  # curl
+    # std: [0.0, 1.0]  # constant
+
+eval_n: 10
+
+task:  # Passed to the base task constructor
+  full:
+    eval_grid_n: 2
+    eval_n_directions: 24
+    eval_reach_length: 0.5
+
+pert:
+  #! Can't use null here, since pert.type doesn't match with train.pert.type, under `load`.
+  #! Could replace `load` key with `train` key, to start fixing this.
+  type: curl
+  amp: [0.0, 4.0]  # curl
+  # amp: [0.0, 0.05, 0.1, 0.2, 0.4]  # constant
+
+model:
+  n_steps: null
+  feedback_noise_std: null
+  motor_noise_std: null
+
+
+
+

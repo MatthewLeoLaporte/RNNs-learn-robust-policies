@@ -4,7 +4,7 @@ from functools import cached_property, partial, wraps
 import inspect
 import logging
 from types import LambdaType, MappingProxyType
-from typing import TYPE_CHECKING, Any, ClassVar, Iterable, NamedTuple, Optional, Dict, Self, Union
+from typing import TYPE_CHECKING, Any, ClassVar, Iterable, Literal, NamedTuple, Optional, Dict, Self, Union
 from pathlib import Path
 import yaml
 
@@ -100,6 +100,7 @@ class _FinalOp(NamedTuple):
     label: str
     transform_func: Callable[[PyTree[go.Figure]], PyTree[go.Figure]]
     params: dict[str, Any] = {}
+    is_leaf: Callable[[Any], bool] = None
 
 
 PARAM_SEQ_LEN_TRUNCATE = 9
@@ -206,6 +207,9 @@ def get_validation_trial_specs(task: AbstractTask):
         return task.validation_trials
 
 
+_FinalOpKeyType = Literal['results', 'figs']
+
+
 class AbstractAnalysis(Module, strict=False):
     """Component in an analysis pipeline.
     
@@ -246,7 +250,7 @@ class AbstractAnalysis(Module, strict=False):
         'dependency_params', 
         '_prep_ops', 
         '_fig_op',
-        '_final_ops',
+        '_final_ops_by_type',
     )
 
     dependencies: AbstractClassVar[MappingProxyType[str, type[Self]]]
@@ -261,7 +265,9 @@ class AbstractAnalysis(Module, strict=False):
     dependency_params: dict = eqx.field(default_factory=dict)
     _prep_ops: tuple[_PrepOp, ...] = ()
     _fig_op: Optional[_FigOp] = None
-    _final_ops: tuple[_FinalOp, ...] = ()
+    _final_ops_by_type: Mapping[_FinalOpKeyType, tuple[_FinalOp, ...]] = eqx.field(
+        default_factory=lambda: MappingProxyType({'results': (), 'figs': ()})
+    )
 
     def __call__(
         self, 
@@ -292,6 +298,13 @@ class AbstractAnalysis(Module, strict=False):
         del prepped_kwargs["data.states"]            
 
         result = self.compute(prepped_data, **prepped_kwargs)
+
+        for final_op in self._final_ops_by_type.get('results', ()):
+            try:
+                result = final_op.transform_func(result)
+            except Exception as e:
+                logger.error(f"Error during execution of final op '{final_op.name}'", exc_info=True)
+                raise e
 
         figs: PyTree[go.Figure] = None
         if self._fig_op is None:
@@ -365,11 +378,11 @@ class AbstractAnalysis(Module, strict=False):
             if figs is None and self._fig_op:
                  logger.warning(f"Fig operation for {self.name} could not proceed or produced no figures.")
 
-        for final_op in self._final_ops:
+        for final_fig_op in self._final_ops_by_type.get('figs', ()):
             try: 
-                figs = final_op.transform_func(figs)
+                figs = final_fig_op.transform_func(figs)
             except Exception as e:
-                logger.error(f"Error during execution of final op '{final_op.name}'", exc_info=True)
+                logger.error(f"Error during execution of final op '{final_fig_op.name}'", exc_info=True)
                 raise e
 
         return result, figs
@@ -463,7 +476,7 @@ class AbstractAnalysis(Module, strict=False):
         hps: dict[str, PyTree[TreeNamespace]],   # dict level: variant
         model_info=None,
         dump_path: Optional[Path] = None,
-        dump_formats: list[str] = ["html"],
+        dump_formats: Sequence[str] = ("html",),
         **dependencies,
     ) -> None:
         """
@@ -564,7 +577,9 @@ class AbstractAnalysis(Module, strict=False):
         else:
             fig_ops = ()
 
-        return self._prep_ops + fig_ops + self._final_ops
+        all_final_ops = sum(self._final_ops_by_type.values(), ())
+
+        return self._prep_ops + fig_ops + all_final_ops
 
     def _extract_ops_info(self):
         """
@@ -680,19 +695,54 @@ class AbstractAnalysis(Module, strict=False):
                 )
 
         return obj
-    
+
+    def and_transform_results(
+        self,
+        func: Callable[..., Any],
+        level: Optional[str] = None,
+        label: Optional[str] = None,
+        is_leaf: Optional[Callable[[Any], bool]] = None,
+    ) -> Self:
+        """Returns a copy of this analysis that transforms its PyTree of results.
+
+        The transformation occurs prior to the generation of figures, thus affects them.
+        """
+        return self._then_transform(
+            op_type='results',
+            func=func,
+            level=level,
+            label=label,
+            is_leaf=is_leaf,
+        )
+        
     def then_transform_figs(
-        self, 
-        func: Callable[..., Any], 
+        self,
+        func: Callable[..., Any],
         level: Optional[str] = None,
         label: Optional[str] = None,
     ) -> Self:
         """
         Returns a copy of this analysis that transforms its output PyTree of figures
         """
+        return self._then_transform(
+            op_type='figs',
+            func=func,
+            level=level,
+            label=label,
+            is_leaf=is_type(go.Figure),
+        )
+
+    def _then_transform(
+        self, 
+        op_type: _FinalOpKeyType,
+        func: Callable[..., Any], 
+        level: Optional[str] = None,
+        label: Optional[str] = None,
+        is_leaf: Optional[Callable[[Any], bool]] = None,
+    ) -> Self:
 
         if label is None:
-            label = f"post-transform-{get_name_of_callable(func)}"
+            label = f"post-transform-{op_type}_{get_name_of_callable(func)}"
 
         if level is not None:
             # Apply the transformation leafwise across the `level` LDict level;
@@ -703,15 +753,18 @@ class AbstractAnalysis(Module, strict=False):
             def _transform_func(tree):
                 _Tuple = jtree.make_named_tuple_subclass("ColumnTuple")
                 
-                def _transform_level(ldict):
+                def _transform_level(ldict_node):
+                    if not LDict.is_of(level)(ldict_node):
+                        return ldict_node
+                    
                     zipped = jtree.zip_(
-                        *ldict.values(), 
-                        is_leaf=is_type(go.Figure), 
+                        *ldict_node.values(), 
+                        is_leaf=is_leaf, 
                         zip_cls=_Tuple,
                     )
                     transformed = jt.map(func, zipped, is_leaf=is_type(_Tuple))
                     unzipped = jtree.unzip(transformed, tuple_cls=_Tuple)
-                    return LDict.of(level)(dict(zip(ldict.keys(), unzipped)))
+                    return LDict.of(level)(dict(zip(ldict_node.keys(), unzipped)))
 
                 return jt.map(
                     _transform_level,
@@ -720,17 +773,21 @@ class AbstractAnalysis(Module, strict=False):
                 )
 
             return self._add_final_op(
-                name="then_transform_figs",
+                op_type=op_type,
+                name=f"then_transform_{op_type}",
                 label=label,
                 transform_func=_transform_func,
-                params=dict(level=level,transform_func=func),
+                params=dict(level=level, transform_func=func),
+                is_leaf=is_leaf,
             )
         else:
             return self._add_final_op(
-                name="then_transform_figs",
+                op_type=op_type,
+                name=f"then_transform_{op_type}",
                 label=label,
                 transform_func=func,
                 params=dict(transform_func=func),
+                is_leaf=is_leaf,
             )
     
     def after_unstacking(
@@ -1048,23 +1105,33 @@ class AbstractAnalysis(Module, strict=False):
         )
     
     def _add_final_op(
-        self, 
+        self,
+        op_type: _FinalOpKeyType,
         name: str,
         label: str,
         transform_func: Callable,
         params: Optional[Dict[str, Any]] = None,
+        is_leaf: Optional[Callable[[Any], bool]] = None,
     ) -> Self:
-        return eqx.tree_at(
-            lambda a: a._final_ops,
-            self,
-            self._final_ops + (_FinalOp(
-                name=name,
-                label=label,
-                transform_func=transform_func,
-                params=params,
-            ),)
+        current_ops = self._final_ops_by_type.get(op_type, ())
+        new_op = _FinalOp(
+            name=name,
+            label=label,
+            transform_func=transform_func,
+            params=params,
+            is_leaf=is_leaf,
         )
+        updated_ops_for_type = current_ops + (new_op,)
         
+        # Create a new dictionary for _final_ops_by_type to ensure immutability if needed by equinox
+        new_final_ops_by_type = self._final_ops_by_type.copy()
+        new_final_ops_by_type[op_type] = updated_ops_for_type
+        
+        return eqx.tree_at(
+            lambda a: a._final_ops_by_type,
+            self,
+            new_final_ops_by_type,
+        )
 
     def _change_fig_op(self, **kwargs) -> Self:
         return eqx.tree_at(
