@@ -1,5 +1,6 @@
 from functools import partial
 
+import jax.numpy as jnp
 import jax.tree as jt
 
 from feedbax.intervene import add_intervenors, schedule_intervenor
@@ -88,8 +89,8 @@ MEASURE_KEYS = (
 
 measures_base = Measures(measure_keys=MEASURE_KEYS)
 
-i_eval = 0  # For single-eval plots
-
+i_eval = 0  # For single-eval plots   
+        
 
 # PyTree levels: 
 # State batch shape: (eval, replicate, condition)
@@ -137,7 +138,7 @@ ALL_ANALYSES = [
 
     AlignedEffectorTrajectories().after_stacking(level='pert__amp'),
     AlignedEffectorTrajectories().after_stacking(level='train__pert__std'),
-    Profiles().after_transform(get_best_replicate),
+    Profiles().after_transform(get_best_replicate)
     measures_base,
     measures_base.after_transform(lohi, level='train__pert__std'),
     measures_base.after_transform(lohi, level=['train__pert__std', 'pert__amp']),

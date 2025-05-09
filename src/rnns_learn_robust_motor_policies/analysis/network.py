@@ -12,6 +12,8 @@ from feedbax.train import SimpleTrainer
 from jaxtyping import PyTree, PRNGKeyArray
 import numpy as np
 
+from feedbax.train import _grad_wrap_simple_loss_func
+from feedbax.loss import nan_safe_mse
 from jax_cookbook import is_module
 
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
@@ -84,48 +86,17 @@ class OutputWeightCorrelation(AbstractAnalysis):
         )
 
 
-def get_unit_pref_angles(model, task, *, key, n_iter=50, ts=slice(None), normalize_dirs=True):
-    key_eval, key_fit = jr.split(key)
-
-    _, states = task.eval(model, key=key_eval)
-    hidden = states.net.hidden[:, ts]
-
-    trial_specs, _ = task.trials_validation
-    target = trial_specs.target.pos[:, ts]
-
-    X, ys = prep_data(hidden, target)
-
-    def fit_linear(X, y, n_iter=50):
-        lin_model = jax.tree_map(
-            jnp.zeros_like,
-            eqx.nn.Linear(target.shape[-1], 1, key=key_fit),
-        )
-        trainer = SimpleTrainer()
-        return trainer(lin_model, X.T, y, n_iter=n_iter)
-
-    batch_fit_linear = jax.vmap(
-        partial(fit_linear, n_iter=n_iter),
-        in_axes=(None, 1)
-    )
-    linear_fits = batch_fit_linear(X, ys)
-
-    pref_dirs = jnp.squeeze(linear_fits.weight)  # preferred directions
-    # Vector length is irrelevant to angles
-    pref_angles = jnp.arctan2(pref_dirs[:, 1], pref_dirs[:, 0])
-
-    if normalize_dirs:
-        pref_dirs = pref_dirs / jnp.linalg.norm(pref_dirs, axis=1, keepdims=True)
-
-    return pref_angles, pref_dirs, states, trial_specs
-
-
 def fit_linear(X, y, n_iter=50, *, key):
     lin_model = jax.tree_map(
         jnp.zeros_like,
         eqx.nn.Linear(X.shape[-1], 1, key=key),
     )
-    trainer = SimpleTrainer()
-    return trainer(lin_model, X.T, y, n_iter=n_iter)
+    
+    trainer = SimpleTrainer(
+        #! Use nanmean loss to avoid training on excluded data.
+        loss_func=_grad_wrap_simple_loss_func(nan_safe_mse),
+    )
+    return trainer(lin_model, X.T, y, n_iter=n_iter, progress_bar=False)
 
 
 class UnitPreferences(AbstractAnalysis):
@@ -180,3 +151,14 @@ class UnitPreferences(AbstractAnalysis):
             partial(fit_linear, n_iter=self.n_iter_fit, key=key),
             in_axes=(None, 1),
         )
+        
+    def make_figs(
+        self,
+        data: AnalysisInputData,
+        *,
+        result,
+        colors,
+        **kwargs,
+    ):
+        ...
+            

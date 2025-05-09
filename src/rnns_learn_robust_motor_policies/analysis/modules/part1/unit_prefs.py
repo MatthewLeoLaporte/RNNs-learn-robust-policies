@@ -1,7 +1,10 @@
 from functools import partial
+from typing import Optional
 
 import jax.numpy as jnp
 import jax.tree as jt
+from jaxtyping import Array, Float
+import numpy as np
 
 from feedbax.intervene import add_intervenors, schedule_intervenor
 from jax_cookbook import is_module, is_type
@@ -12,6 +15,7 @@ from rnns_learn_robust_motor_policies.analysis.network import UnitPreferences
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate, vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVENOR_LABEL
 from rnns_learn_robust_motor_policies.misc import map_fn_over_tree, vectors_to_2d_angles
+from rnns_learn_robust_motor_policies.misc import dynamic_slice_with_padding
 from rnns_learn_robust_motor_policies.types import LDict
 
 
@@ -70,12 +74,134 @@ def get_goal_positions(task, states):
     return targets[..., -1:, :]
 
 
-ts = jnp.arange(0, 20)
+#! TODO: Convert to a function that takes a function states -> LDict of slice bounds
+
+def get_symmetric_accel_decel_epochs(states):
+    speed = jnp.linalg.norm(states.mechanics.effector.vel, axis=-1)
+    idxs_max_speed = jnp.argmax(speed, axis=-1)
+    return LDict.of("epoch")({
+        "accel": (None, idxs_max_speed),
+        #! Assume decel is the same length as accel, after the peak speed. 
+        "decel": (idxs_max_speed, 2 * idxs_max_speed),
+    })
+
+def get_segment_trials_func(slice_bounds_func, axis=-2):
+    def segment_trials(all_states, **kwargs):
+        def _segment_states(states):
+            return jt.map(
+                lambda slice_bounds: jt.map(
+                    lambda arr: dynamic_slice_with_padding(
+                        arr,
+                        slice_end_idxs=slice_bounds[1],
+                        axis=axis,
+                        slice_start_idxs=slice_bounds[0],
+                    ),
+                    states,
+                ),
+                slice_bounds_func(states),
+                is_leaf=is_type(tuple),
+            )
+            
+        return jt.map(_segment_states, all_states, is_leaf=is_module)
+    
+    return segment_trials
+
+
+ts = np.arange(0, 20)
+
 
 ALL_ANALYSES = [
     (
         UnitPreferences(feature_fn=get_goal_positions)
-        .after_indexing(-2, ts, axis_label="timestep")
-        .and_transform_results(map_fn_over_tree(vectors_to_2d_angles))
+        .after_transform(get_best_replicate)
+        .after_transform(
+            get_segment_trials_func(get_symmetric_accel_decel_epochs),
+            dependency_name="states",
+        )
+        # .after_indexing(-2, ts, axis_label="timestep")
+        # .and_transform_results(map_fn_over_tree(vectors_to_2d_angles))
     ),
 ]
+
+
+#! Can visualize the unit preference regression using `planar_regression`, below.
+#! Here is an example of how to do this, given `data, common_inputs, all_results`.
+#! I have not included this in `UnitPreferences.make_figs` at this time. 
+# unit_plot = 0
+# ts = np.arange(15)
+# states_b = get_best_replicate(data.states['full'][0], replicate_info=common_inputs['replicate_info'])
+# hidden = states_b[0].net.hidden
+# hidden_early = hidden[..., ts, :]
+# targets = data.tasks['full'][0].validation_trials.targets["mechanics.effector.pos"].value
+# targets_early = targets[:, ts]
+# pref_dirs = list(all_results.values())[0]['full'][0][0]
+# pref_dirs = jt.map(lambda pd: pd / jnp.linalg.norm(pd, axis=-1, keepdims=True), pref_dirs)
+
+# fig = planar_regression(targets_early, hidden_early[0, ..., unit_plot], pref_dirs['accel'][unit_plot])
+
+import plotly.graph_objects as go
+import numpy as np
+from jaxtyping import Array, Float
+import feedbax.plotly as fbp
+
+def planar_regression(
+    X: Float[Array, "... ndim=2"], 
+    y, 
+    weights, 
+    labels=dict(x='x', y='y', z='Unit activity'),
+    colorscale='phase',
+):
+    """Create a 3D plot of data points with a vector representing weights."""
+    # Create a Plotly figure
+    fig = go.Figure()
+    
+    colors = fbp.sample_colorscale_unique(colorscale, X.shape[0])
+    
+    # Add scatter3d traces for each dataset
+    for X_, y_, color in zip(X, y, colors):
+        fig.add_trace(go.Scatter3d(
+            x=X_[:, 0],
+            y=X_[:, 1],
+            z=y_,
+            mode='markers',
+            marker=dict(
+                size=5,
+                color=color,
+            ),
+            showlegend=False
+        ))
+    
+    # Add the weights vector as a line
+    # Scale the vector to length 0.5 to match the original
+    vector_length = 0.5
+    magnitude = np.sqrt(weights[0]**2 + weights[1]**2)
+    if magnitude > 0:
+        scale = vector_length / magnitude
+        scaled_x = weights[0] * scale
+        scaled_y = weights[1] * scale
+        
+        fig.add_trace(go.Scatter3d(
+            x=[0, scaled_x],
+            y=[0, scaled_y],
+            z=[0, 0],  # No z-component in the original
+            mode='lines',
+            line=dict(
+                color='black',
+                width=5
+            ),
+            showlegend=False
+        ))
+    
+    # Configure the layout
+    fig.update_layout(
+        scene=dict(
+            xaxis_title=labels['x'],
+            yaxis_title=labels['y'],
+            zaxis_title=labels['z'],
+            aspectmode='auto'
+        ),
+        margin=dict(l=0, r=0, b=0, t=0)
+    )
+
+    return fig
+

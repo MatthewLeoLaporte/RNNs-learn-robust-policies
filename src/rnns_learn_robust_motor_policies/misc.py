@@ -19,7 +19,7 @@ import jax
 import jax.numpy as jnp 
 import jax.random as jr 
 import jax.tree as jt
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, Int
 import numpy as np
 import pandas as pd
 from rich.logging import RichHandler
@@ -404,6 +404,7 @@ def vectors_to_2d_angles(vectors):
 
 def map_fn_over_tree(func, is_leaf: Optional[Callable] = None):
     """Partially applies `jt.map`, for use in functional expressions."""
+    @functools.wraps(func)
     def map_fn(tree, *rest):
         return jt.map(func, tree, *rest, is_leaf=is_leaf)
     return map_fn
@@ -421,5 +422,56 @@ def center_and_rescale(arr, axis=0):
     arr_centered = arr - jnp.mean(arr, axis=axis)
     arr_rescaled = arr_centered / jnp.max(arr_centered, axis=axis)
     return arr_rescaled
+
+
+def _expand_boundary_for_comparison(
+    boundary_vals: jnp.ndarray,
+    target_ndim: int,
+    axis: int,
+) -> jnp.ndarray:
+    """Expands boundary_vals for broadcasting with target_array's axis_indices."""
+    # Assumes boundary_vals.shape matches target_array.shape[:axis_of_comparison]
+    expanded = jnp.expand_dims(boundary_vals, axis=axis)
+    for i in range(axis + 1, target_ndim):
+        expanded = jnp.expand_dims(expanded, axis=i)
+    return expanded
+
+
+def dynamic_slice_with_padding(
+    array: Array,
+    slice_end_idxs: Int[Array, "..."],
+    axis: int,
+    slice_start_idxs: Optional[Int[Array, "..."]] = None,
+    pad_value: float = jnp.nan,
+) -> Array:
+    """
+    Slices target_array along 'axis' using [start, end) ranges, padding outside.
+    slice_params.shape[:-1] should match target_array.shape[:axis].
+    """
+    if axis < 0:
+        axis = array.ndim + axis
+
+    if slice_start_idxs is None:
+        slice_start_idxs = jnp.zeros_like(slice_end_idxs)
+
+    axis_indices = jnp.arange(array.shape[axis])
+    idx_broadcast_shape = [1] * array.ndim
+    idx_broadcast_shape[axis] = array.shape[axis]
+    axis_indices_expanded = axis_indices.reshape(idx_broadcast_shape)
+
+    masks = [
+        op(
+            axis_indices_expanded,
+            _expand_boundary_for_comparison(slice_bound, array.ndim, axis),
+        )
+        for slice_bound, op in zip(
+            [slice_start_idxs, slice_end_idxs],
+            [jnp.greater_equal, jnp.less],
+        )
+    ]
+
+    final_mask = jnp.logical_and(*masks)
+
+    return jnp.where(final_mask, array, pad_value)
 
 

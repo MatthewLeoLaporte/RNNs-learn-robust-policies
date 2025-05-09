@@ -207,6 +207,30 @@ def move_ldict_level_above(inner_label: str, outer_label: str, tree: PyTree, is_
     )
 
 
+# def align_levels_and_map(
+#     func, tree, *rest, is_leaf=None, 
+# ):
+#     """
+#     Map over the nodes within the lowest `LDict` level of `tree`.
+    
+#     Before mapping, rearrange the levels of the tree(s) in `*rest` 
+#     so that they are a prefix for `tree`, for the purpose of this mapping.
+    
+#     The argument `is_leaf` can be used to terminate the mapping at a higher 
+#     `LDict` level of `tree`.
+    
+#     NOTE: This assumes there are no non-LDict nodes in `tree` above the level 
+#     of the nodes to be mapped; otherwise `tree_level_labels` will return a 
+#     truncated list.  
+#     """
+#     level_labels = tree_level_labels(tree, is_leaf=is_leaf)
+#     other_trees = []
+#     for tree in rest:
+#         reordered = tree 
+#         # TODO: Move the levels of `tree` to the front of `reordered` 
+#     # TODO: Map over `tree`
+
+
 def tree_level_types(tree: PyTree, is_leaf=falsef) -> list[type]:
     """Given a PyTree, return a PyTree of the types of each node along the path to the first leaf."""
     treedef = jt.structure(tree)

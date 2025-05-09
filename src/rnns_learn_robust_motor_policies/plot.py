@@ -754,6 +754,7 @@ def set_axis_bounds_equal(
     figs: PyTree,
     padding_factor: float = 0.05,
     trace_selector: Callable = lambda trace: True,
+    **kwargs,
 ) -> PyTree:
     """
     Finds and applies global bounds for a *single specified axis* ('x' or 'y')

@@ -1,18 +1,20 @@
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from types import ModuleType
 from typing import List, Optional
+
 import dill as pickle
 import equinox as eqx
 import jax
 import jax.tree as jt
-from jax_cookbook import is_module, is_type
-from collections.abc import Callable, Sequence
-
+from jaxtyping import PyTree
 import optax
 import plotly
+import plotly.graph_objects as go
 from sqlalchemy.orm import Session
 
 import feedbax
+from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
 import rnns_learn_robust_motor_policies
@@ -184,7 +186,7 @@ def perform_all_analyses(
     fig_dump_path: Optional[Path] = None,
     fig_dump_formats: List[str] = ["html"],
     **kwargs,
-):
+) -> tuple[PyTree, PyTree[go.Figure]]:
     """Given a list of instances of `AbstractAnalysis`, perform all analyses and save any figures."""
     # Each value in `analyses` is a function that is passed a bunch of information and returns some result.
     # e.g. the result of `"aligned_vars": get_aligned_vars` will be passed to *all* analyses
@@ -216,14 +218,14 @@ def perform_all_analyses(
             )
             logger.info(f"Figures saved: {analysis}")
         logger.info(f"Analysis complete: {analysis}")
-        return result, figs
+        return analysis, result, figs
 
-    all_results, all_figs = jtree.unzip([
-        analyse_and_save(analysis, dependencies)
+    all_analyses, all_results, all_figs = jtree.unzip({
+        f"{analysis.name}-{id(analysis)}": analyse_and_save(analysis, dependencies)
         for analysis, dependencies in zip(analyses, all_dependency_results)
-    ])
+    })
 
-    return all_results, all_figs
+    return all_analyses, all_results, all_figs
 
 
 def run_analysis_module(
@@ -363,7 +365,7 @@ def run_analysis_module(
         extras=extras,
     )
 
-    all_results, all_figs = perform_all_analyses(
+    all_analyses, all_results, all_figs = perform_all_analyses(
         db_session,
         analysis_module.ALL_ANALYSES,
         data,
@@ -374,4 +376,4 @@ def run_analysis_module(
         **common_inputs,
     )
 
-    return data, common_inputs, all_results, all_figs
+    return data, common_inputs, all_analyses, all_results, all_figs
