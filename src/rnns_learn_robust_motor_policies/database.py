@@ -31,11 +31,13 @@ from sqlalchemy import (
     Float, 
     ForeignKey,
     JSON, 
-    String, 
+    String,
+    Table, 
     create_engine, 
     inspect,
     or_,
 )
+from sqlalchemy import update
 from sqlalchemy.dialects.postgresql import array as dbarray
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import (
@@ -46,6 +48,7 @@ from sqlalchemy.orm import (
     relationship, 
     sessionmaker,
 )
+from sqlalchemy.sql import func
 from sqlalchemy.sql.type_api import TypeEngine
 
 from feedbax.misc import attr_str_tree_to_where_func
@@ -91,7 +94,7 @@ class ModelRecord(RecordBase):
     id: Mapped[int] = mapped_column(primary_key=True)
     hash: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    expt_id: Mapped[str]
+    expt_name: Mapped[str]
     is_path_defunct: Mapped[bool] = mapped_column(default=False)
     postprocessed: Mapped[bool] = mapped_column(default=False)
     has_replicate_info: Mapped[bool]
@@ -130,7 +133,7 @@ class ModelRecord(RecordBase):
     
 
 MODEL_RECORD_BASE_ATTRS = [
-    'id', 'hash', 'created_at', 'expt_id', 'is_path_defunct', 'has_replicate_info'
+    'id', 'hash', 'created_at', 'expt_name', 'is_path_defunct', 'has_replicate_info'
 ]
     
     
@@ -144,7 +147,7 @@ class EvaluationRecord(RecordBase):
     id: Mapped[int] = mapped_column(primary_key=True)
     hash: Mapped[str] = mapped_column(unique=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
-    expt_id: Mapped[Optional[str]]
+    expt_name: Mapped[Optional[str]]
     # model_hash: Mapped[Optional[str]] = mapped_column(ForeignKey(f'{MODELS_TABLE_NAME}.hash'))
     model_hashes: Mapped[Optional[Sequence[str]]] = mapped_column(nullable=True)
     archived: Mapped[bool] = mapped_column(default=False)
@@ -233,7 +236,7 @@ def init_db_session(db_path: str = "sqlite:///models.db"):
     
     !!! dev
         If any of the tables in the database contain columns which are not found in the
-        definition of their respective SQLAlchemy models (e.g. `ModelRecord` for the
+        definition of their respective SQLAlchemy models (e.g. `Model` for the
         models table), dynamically add those column(s) to the model class(es) upon
         starting.
         
@@ -466,6 +469,51 @@ def check_model_files(
         raise e 
 
 
+def replace_in_column(
+    session: Session,
+    table_or_model: type, # Can be a Table object or a Declarative ORM model class
+    column_name: str,
+    find_value: str,
+    replace_value: str
+) -> None:
+    """
+    Replaces all occurrences of `find_value` with `replace_value` in the specified 
+    `column_name` of `table_or_model`.
+
+    Arguments:
+        session: The SQLAlchemy session to use for the database operation.
+        table_or_model: The SQLAlchemy Table object or ORM model class.
+        column_name: The name of the string column to update.
+        find_value: The string value to find and replace.
+        replace_value: The string value to replace with.
+    """
+    if isinstance(table_or_model, Table):
+        table_to_update = table_or_model
+        column_key = getattr(table_or_model.c, column_name)
+    elif (isinstance(table_or_model, type) and # Check if it's a class
+          hasattr(table_or_model, '__table__') and
+          isinstance(getattr(table_or_model, '__table__'), Table)):
+        table_to_update = getattr(table_or_model, '__table__')
+        column_key = getattr(table_or_model, column_name)
+    else:
+        raise TypeError(
+            "table_or_model must be a SQLAlchemy Table object or a mapped ORM model class. "
+            f"Received type: {type(table_or_model)}"
+        )
+
+    stmt = (
+        update(table_to_update)
+        .values(
+            {
+                column_key: func.replace(
+                    column_key, find_value, replace_value
+                )
+            }
+        )
+    )
+    session.execute(stmt)
+    
+
 def yaml_dump(data: Any) -> str:
     """Custom YAML dump that ends in a group separator character.
     
@@ -602,7 +650,7 @@ def save_model_and_add_record(
 def generate_eval_hash(
     model_hashes: Optional[Sequence[str]], 
     eval_params: Dict[str, Any],
-    expt_id: Optional[str] = None,
+    expt_name: Optional[str] = None,
 ) -> str:
     """Generate a hash for a notebook evaluation based on model hash and parameters.
     
@@ -617,7 +665,7 @@ def generate_eval_hash(
     
     eval_str = "_".join([
         model_str,
-        f"{expt_id or 'None'}",
+        f"{expt_name or 'None'}",
         f"{json.dumps(eval_params, sort_keys=True)}",
     ])
     return hashlib.md5(eval_str.encode()).hexdigest()
@@ -625,9 +673,9 @@ def generate_eval_hash(
 
 def add_evaluation(
     session: Session,
-    models: PyTree[ModelRecord],  # Changed from ModelRecord to Optional[int]
+    models: PyTree[ModelRecord],  
     eval_parameters: Dict[str, Any],
-    expt_id: Optional[str] = None,
+    expt_name: Optional[str] = None,
     version_info: Optional[dict[str, str]] = None,
 ) -> EvaluationRecord:
     """Create new notebook evaluation record.
@@ -635,7 +683,7 @@ def add_evaluation(
     Args:
         session: Database session
         model_id: ID of the model used (None for training notebooks)
-        expt_id: ID of the notebook being evaluated
+        expt_name: Name identifying the analysis/experiment
         eval_parameters: Parameters used for evaluation
     """
     eval_parameters = arrays_to_lists(eval_parameters)
@@ -649,7 +697,7 @@ def add_evaluation(
     eval_hash = generate_eval_hash(
         model_hashes=model_hashes,
         eval_params=eval_parameters,
-        expt_id=expt_id,
+        expt_name=expt_name,
     )
     
     # Migrate the evaluations table so it has all the necessary columns

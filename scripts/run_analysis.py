@@ -21,11 +21,6 @@ import jax.random as jr
 
 from rnns_learn_robust_motor_policies.analysis.execution import run_analysis_module
 from rnns_learn_robust_motor_policies.config import PATHS, PRNG_CONFIG
-from rnns_learn_robust_motor_policies.database import (
-    check_model_files,
-    get_db_session, 
-)
-from rnns_learn_robust_motor_policies.hyperparams import load_hps
 
 
 logger = logging.getLogger(os.path.basename(__file__))
@@ -33,10 +28,7 @@ logger = logging.getLogger(os.path.basename(__file__))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Train some models on some tasks based on a config file.")
-    # Because of the behaviour of `load_hps`, config_path can also be the `expt_id: str` (i.e. YAML 
-    # filename relative to `../src/rnns_learn_robust_motor_policies/config`) of a default config to load. 
-    # This assumes there is no file whose relative path is identical to that `expt_id`.
-    parser.add_argument("config_path", type=str, help="Path to the config file, or `expt_id` of a default config.")
+    parser.add_argument("analysis_name", type=str, help="Name of the analysis module to run; e.g. part1.plant_perts")
     parser.add_argument("--fig-dump-path", type=str, help="Path to dump figures.")
     parser.add_argument("--fig-dump-formats", type=str, default="html,webp,svg", 
                       help="Format(s) to dump figures in, comma-separated (e.g., 'html,png,pdf')")
@@ -59,7 +51,7 @@ if __name__ == '__main__':
     states_pkl_dir = Path(args.states_pkl_dir) if args.states_pkl_dir else PATHS.states_tmp
     
     _ = run_analysis_module(
-        config_path=args.config_path, 
+        analysis_name=args.analysis_name, 
         fig_dump_path=args.fig_dump_path, 
         fig_dump_formats=fig_dump_formats, 
         retain_past_fig_dumps=args.retain_past_fig_dumps,

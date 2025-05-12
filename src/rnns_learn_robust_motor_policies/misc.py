@@ -3,10 +3,12 @@ from copy import deepcopy
 from dataclasses import fields
 from datetime import datetime
 import functools
+import importlib
 import inspect
 import json
 import logging
 from pathlib import Path
+import pkgutil
 import platform
 import re
 import subprocess
@@ -376,7 +378,7 @@ def is_json_serializable(value):
     return False
 
 
-def get_constant_input(x, n_steps: int, n_trials: int):
+def get_constant_input_fn(x, n_steps: int, n_trials: int):
     return lambda trial_spec, key: (
         jnp.full((n_trials, n_steps - 1), x, dtype=float)
     )
@@ -419,8 +421,8 @@ def ravel_except_last(arr):
 
 
 def center_and_rescale(arr, axis=0):
-    arr_centered = arr - jnp.mean(arr, axis=axis)
-    arr_rescaled = arr_centered / jnp.max(arr_centered, axis=axis)
+    arr_centered = arr - jnp.nanmean(arr, axis=axis)
+    arr_rescaled = arr_centered / jnp.nanmax(arr_centered, axis=axis)
     return arr_rescaled
 
 
@@ -475,3 +477,32 @@ def dynamic_slice_with_padding(
     return jnp.where(final_mask, array, pad_value)
 
 
+def get_all_module_names(package_obj, exclude_private: bool = True):
+    """Get the names of all modules in a package.
+    
+    Names include the full package path, e.g. `"some_library.subpackage.module_name"`, 
+    even if `package_obj` is `some_library.subpackage`.
+    """
+    names = []
+    if not hasattr(package_obj, '__path__') or not hasattr(package_obj, '__name__'):
+        return tuple() # Not a valid package object to inspect
+        
+    # The prefix ensures names are fully qualified relative to the initial package
+    prefix = package_obj.__name__ + '.'
+    
+    for module_info in pkgutil.walk_packages(package_obj.__path__, prefix):
+        is_private = module_info.name.startswith('_') or '._' in module_info.name
+        if not module_info.ispkg and not (exclude_private and is_private):
+            names.append(module_info.name)
+            
+    return tuple(names)
+
+
+def load_module_from_package(name: str, package: ModuleType) -> ModuleType:
+    module_name = f"{package.__name__}.{name}"
+    try: 
+        module = importlib.import_module(module_name)
+    except ModuleNotFoundError:
+        logger.error(f"Module '{name}' not found.")
+        raise ValueError(f"Module '{name}' not found.")
+    return module

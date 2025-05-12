@@ -126,9 +126,6 @@ def parse_batch_config(config: Dict) -> Dict[int, List[Dict]]:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Train all project models, based on the batch config.")
-    # Because of the behaviour of `load_hps`, config_path can also be the `expt_id: str` (i.e. YAML 
-    # filename relative to `../src/rnns_learn_robust_motor_policies/config`) of a default config to load. 
-    # This assumes there is no file whose relative path is identical to that `expt_id`.
     parser.add_argument("--config-path", type=str, default="", help="Path to the config file.")
     parser.add_argument("--expt-id", type=str, default="", help="Process only this experiment, instead of all of them.")
     parser.add_argument("--untrained-only", action='store_false', help="Only train models which appear not to have been trained yet.")

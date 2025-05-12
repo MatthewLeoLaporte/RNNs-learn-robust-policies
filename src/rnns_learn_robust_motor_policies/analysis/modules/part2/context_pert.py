@@ -4,7 +4,6 @@
 import equinox as eqx
 
 from feedbax.intervene import schedule_intervenor
-from feedbax.task import TrialSpecDependency
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.activity import NetworkActivity_SampleUnits
@@ -13,12 +12,9 @@ from rnns_learn_robust_motor_policies.analysis.effector import EffectorTrajector
 from rnns_learn_robust_motor_policies.colors import ColorscaleSpec
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_PERT_FUNCS, get_pert_amp_vmap_eval_func
 from rnns_learn_robust_motor_policies.analysis.profiles import Profiles
-from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate, get_step_task_input
+from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate, get_step_task_input_fn
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVENOR_LABEL
 from rnns_learn_robust_motor_policies.types import LDict
-
-
-ID = "2-7"
 
 
 COLOR_FUNCS = dict(
@@ -51,17 +47,15 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     #! Neither `pert__amp` nor `context__input` are entirely valid as labels here, I think
     tasks, models, hps = jtree.unzip(LDict.of("pert__context__amp")({
         context_final: (
-            eqx.tree_at(
-                lambda task: task.input_dependencies,
-                task_base,
-                # TODO: Use not just a fixed perturbation of the context, but randomly-sampled context endpoints
-                dict(context=TrialSpecDependency(get_step_task_input(
+            task_base.add_input(
+                name="context",
+                input_fn=get_step_task_input_fn(
                     hps.pert.context.init, 
                     context_final,
                     hps.pert.context.step,  
                     hps.model.n_steps - 1, 
                     task_base.n_validation_trials,
-                ))),
+                ),
             ),
             models_base, 
             hps | dict(pert=dict(amp=context_final - hps.pert.context.init)),

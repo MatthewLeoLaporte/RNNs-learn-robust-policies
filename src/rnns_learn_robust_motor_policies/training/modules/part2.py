@@ -9,7 +9,6 @@ import jax.random as jr
 from jaxtyping import PRNGKeyArray
 
 from feedbax.intervene import schedule_intervenor
-from feedbax.task import TrialSpecDependency
 from feedbax.xabdeef.models import point_mass_nn
 import jax_cookbook.tree as jtree
 
@@ -154,10 +153,9 @@ def setup_task_model_pair(
     )
     
     try:
-        task = eqx.tree_at(
-            lambda task: task.input_dependencies,
-            task_base,
-            dict(context=TrialSpecDependency(CONTEXT_INPUT_FUNCS[hps_train.method]))
+        task = task_base.add_input(
+            name="context", 
+            input_fn=CONTEXT_INPUT_FUNCS[hps_train.method],
         )
     except AttributeError:
         raise ValueError("No training method label assigned to hps_train.method")

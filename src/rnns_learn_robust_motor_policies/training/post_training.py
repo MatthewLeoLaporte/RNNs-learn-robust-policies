@@ -23,6 +23,14 @@ from feedbax.train import TaskTrainerHistory, WhereFunc, init_task_trainer_histo
 import jax_cookbook.tree as jtree
 from jax_cookbook import is_module, is_type, anyf
 
+from rnns_learn_robust_motor_policies.analysis.aligned import (
+    get_aligned_vars, 
+    get_reach_origins_directions,
+)
+from rnns_learn_robust_motor_policies.analysis.state_utils import (
+    get_pos_endpoints,
+    vmap_eval_ensemble,
+)
 from rnns_learn_robust_motor_policies.database import (
     EvaluationRecord,
     ModelRecord, 
@@ -35,25 +43,15 @@ from rnns_learn_robust_motor_policies.database import (
     save_model_and_add_record,
     load_tree_with_hps,
 )
-from rnns_learn_robust_motor_policies.misc import log_version_info
+from rnns_learn_robust_motor_policies.misc import log_version_info, load_module_from_package
 from rnns_learn_robust_motor_policies.setup_utils import (
     setup_models_only,
     setup_tasks_only,
 )
-from rnns_learn_robust_motor_policies.analysis.aligned import get_aligned_vars, get_reach_origins_directions
-from rnns_learn_robust_motor_policies.analysis.state_utils import (
-    get_pos_endpoints,
-    vmap_eval_ensemble,
-)
+import rnns_learn_robust_motor_policies.training.modules as training_modules_pkg
 from rnns_learn_robust_motor_policies.training.loss import get_readout_norm_loss
 from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
 
-from rnns_learn_robust_motor_policies.training.part1_fixed import (
-    setup_task_model_pair as setup_task_model_pair_p1,
-)
-from rnns_learn_robust_motor_policies.training.part2_context import (
-    setup_task_model_pair as setup_task_model_pair_p2
-)
 
 logging.basicConfig(
     format='(%(name)-20s) %(message)s', 
@@ -61,15 +59,6 @@ logging.basicConfig(
     handlers=[RichHandler(level="NOTSET")],
 )
 logger = logging.getLogger(__name__)
-
-
-# Deserialisation depends on where/how the model was trained.
-# Define these here because they are only really used here, even though
-# philosophically they better might be in `training/__init__.py`
-TRAINPAIR_SETUP_FUNCS = {
-    1: setup_task_model_pair_p1,
-    2: setup_task_model_pair_p2,
-}
 
 
 # Number of trials to evaluate when deciding which replicates to exclude
@@ -136,15 +125,20 @@ def setup_train_histories(
 def load_data(model_record: ModelRecord):
     """Loads models, hyperparameters and training histories from files."""
     # Load model and associated data
-    expt_id = str(model_record.expt_id)
+    expt_name = str(model_record.expt_name)
     
     if not model_record.path.exists() or not model_record.train_history_path.exists():
         logger.error(f"Model or training history file not found for {model_record.hash}")
         return
     
+    training_module = load_module_from_package(expt_name, training_modules_pkg)
+    
     models, hps = load_tree_with_hps(
         model_record.path, 
-        partial(setup_models_only, TRAINPAIR_SETUP_FUNCS[int(expt_id)]),
+        partial(
+            setup_models_only, 
+            training_module.setup_task_model_pair,
+        ),
     )
     logger.debug(f"Loaded models")
     
@@ -569,7 +563,7 @@ def process_model_post_training(
         logger.info(f"Model {model_record.hash[:7]} has been processed previously and process_all is false; skipping")
         return
     
-    expt_id = str(model_record.expt_id)
+    expt_name = str(model_record.expt_name)
     
     where_train = jt.map(
         attr_str_tree_to_where_func,
@@ -598,10 +592,12 @@ def process_model_post_training(
     # `vmap_eval_ensemble` will look for this when we try to evaluate the states, however it is not 
     # part of the model hyperparameters
     hps.eval_n = N_TRIALS_VAL
+    
+    training_module = load_module_from_package(expt_name, training_modules_pkg)
 
     # Get respective validation tasks for each model
     tasks = setup_tasks_only(
-        TRAINPAIR_SETUP_FUNCS[int(expt_id)], 
+        training_module.setup_task_model_pair, 
         hps,
         key=jr.PRNGKey(0), 
     )
@@ -651,7 +647,7 @@ def process_model_post_training(
             n_evals=N_TRIALS_VAL,
             # n_std_exclude=n_std_exclude,  # Not relevant to the figures that are generated?
         ),
-        expt_id="post_training",
+        expt_name=f"{model_record.expt_name}__post_training",
     )
     
     if save_figures:

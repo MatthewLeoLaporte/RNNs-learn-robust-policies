@@ -1,9 +1,5 @@
-expt_id: 2-5
-
-
 #  Hyperparameters that uniquely identify the model(s)/training run(s) to analyze
 train:
-  expt_id: 2
   model:   
     n_steps: 100  
     hidden_size: 100
@@ -11,27 +7,34 @@ train:
     motor_noise_std: 0.01
     feedback_delay_steps: 0
     dt: 0.05
-    n_replicates: 5  #! Included so we have access
   # where: 
   #   0: ['step.net.hidden', 'step.net.readout']
   pert:  # during training
     type: curl
-    std: [0.0, 1.5]
+    std: [0.0, 1.0]
     # std: [0.0, 0.04]
 
 context_input: [-3., -2., -1., 0., 1., 2., 3.]
 
-eval_n: 4
-
-pert:
-  type: curl
-  std: [0.0, 2.0]
+eval_n: 25
 
 task:  # Passed to the base task constructor
   full:
-    eval_grid_n: 1
-    eval_n_directions: 24
-    eval_reach_length: 0.5
+    eval_grid_n: 5
+    eval_n_directions: 1
+    eval_reach_length: 0
+
+pert:
+  # null -> same as during training, e.g. load.train.pert.type in this case
+  type: impulse  # not used for anything but reference
+  # TODO: Add the calculation of `amplitude` when loading hyperparams
+  amp_max: 
+    fb_pos: 1.8
+    fb_vel: 1.2
+  n_amps: 3
+  start_step: 20
+  duration: 5
+  # direction: rand  # 'rand' or 'xy'
 
 model:
   n_steps: null

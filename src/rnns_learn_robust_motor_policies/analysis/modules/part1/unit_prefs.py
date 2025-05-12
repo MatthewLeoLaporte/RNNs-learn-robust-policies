@@ -19,9 +19,6 @@ from rnns_learn_robust_motor_policies.misc import dynamic_slice_with_padding
 from rnns_learn_robust_motor_policies.types import LDict
 
 
-ID = "1-4"
-
-
 COLOR_FUNCS = {}
 
 
@@ -74,6 +71,10 @@ def get_goal_positions(task, states):
     return targets[..., -1:, :]
 
 
+def get_control_forces(task, states):
+    return states.efferent.output
+
+
 #! TODO: Convert to a function that takes a function states -> LDict of slice bounds
 
 def get_symmetric_accel_decel_epochs(states):
@@ -111,8 +112,18 @@ ts = np.arange(0, 20)
 
 
 ALL_ANALYSES = [
+    # (
+    #     UnitPreferences(feature_fn=get_goal_positions)
+    #     .after_transform(get_best_replicate)
+    #     .after_transform(
+    #         get_segment_trials_func(get_symmetric_accel_decel_epochs),
+    #         dependency_name="states",
+    #     )
+    #     # .after_indexing(-2, ts, axis_label="timestep")
+    #     # .and_transform_results(map_fn_over_tree(vectors_to_2d_angles))
+    # ),
     (
-        UnitPreferences(feature_fn=get_goal_positions)
+        UnitPreferences(feature_fn=get_control_forces)
         .after_transform(get_best_replicate)
         .after_transform(
             get_segment_trials_func(get_symmetric_accel_decel_epochs),
@@ -125,15 +136,23 @@ ALL_ANALYSES = [
 
 
 #! Can visualize the unit preference regression using `planar_regression`, below.
-#! Here is an example of how to do this, given `data, common_inputs, all_results`.
+#! Here is an example of how to do this, given `data, common_inputs, all_results`,
+#! in the case of goal position preference.
 #! I have not included this in `UnitPreferences.make_figs` at this time. 
+# import jax.numpy as jnp
+# import numpy as np
+# from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate
+
 # unit_plot = 0
 # ts = np.arange(15)
+# ts_late = np.arange(15, 30)
 # states_b = get_best_replicate(data.states['full'][0], replicate_info=common_inputs['replicate_info'])
 # hidden = states_b[0].net.hidden
 # hidden_early = hidden[..., ts, :]
+# hidden_late = hidden[..., ts_late, :]
 # targets = data.tasks['full'][0].validation_trials.targets["mechanics.effector.pos"].value
 # targets_early = targets[:, ts]
+# targets_late = targets[:, ts_late]
 # pref_dirs = list(all_results.values())[0]['full'][0][0]
 # pref_dirs = jt.map(lambda pd: pd / jnp.linalg.norm(pd, axis=-1, keepdims=True), pref_dirs)
 
@@ -144,7 +163,8 @@ import numpy as np
 from jaxtyping import Array, Float
 import feedbax.plotly as fbp
 
-def planar_regression(
+
+def plot_planar_regression(
     X: Float[Array, "... ndim=2"], 
     y, 
     weights, 

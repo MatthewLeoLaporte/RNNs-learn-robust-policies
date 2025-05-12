@@ -12,7 +12,6 @@ import jax_cookbook.tree as jtree
 
 from feedbax.intervene import schedule_intervenor
 import feedbax.plotly as fbp
-from feedbax.task import TrialSpecDependency
 
 # from rnns_learn_robust_motor_policies.analysis import measures
 from rnns_learn_robust_motor_policies.analysis import AbstractAnalysis, AnalysisInputData
@@ -25,12 +24,9 @@ from rnns_learn_robust_motor_policies.analysis.profiles import Profiles
 from rnns_learn_robust_motor_policies.misc import lohi
 from rnns_learn_robust_motor_policies.plot import PLANT_VAR_LABELS, WHERE_PLOT_PLANT_VARS, set_axis_bounds_equal
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate, vmap_eval_ensemble
-from rnns_learn_robust_motor_policies.misc import get_constant_input
+from rnns_learn_robust_motor_policies.misc import get_constant_input_fn
 from rnns_learn_robust_motor_policies.types import LDict, unflatten_dict_keys
 from rnns_learn_robust_motor_policies.perturbations import feedback_impulse
-
-
-ID = "2-2"
 
 
 COLOR_FUNCS = dict()
@@ -91,14 +87,11 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     all_tasks, all_models, all_hps = jtree.unzip(jt.map(
         lambda task, models, hps: LDict.of("context_input")({
             context_input: (
-                eqx.tree_at(
-                    lambda task: task.input_dependencies,
-                    task,
-                    {
-                        'context': TrialSpecDependency(get_constant_input(
-                            context_input, hps.model.n_steps, task.n_validation_trials,
-                        ))
-                    },
+                task.add_input(
+                    name="context",
+                    input_fn=get_constant_input_fn(
+                        context_input, hps.model.n_steps, task.n_validation_trials,
+                    ),
                 ),
                 models,  
                 hps | dict(context_input=context_input),

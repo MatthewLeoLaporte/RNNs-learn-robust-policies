@@ -26,29 +26,18 @@ import jax_cookbook.tree as jtree
 from jax_cookbook import is_type
 
 import rnns_learn_robust_motor_policies
+import rnns_learn_robust_motor_policies.training.modules as training_modules_pkg
 from rnns_learn_robust_motor_policies.database import ModelRecord, get_db_session, get_record, save_model_and_add_record
 from rnns_learn_robust_motor_policies.hyperparams import flatten_hps, load_hps
-from rnns_learn_robust_motor_policies.misc import log_version_info
+from rnns_learn_robust_motor_policies.misc import log_version_info, load_module_from_package
 from rnns_learn_robust_motor_policies.types import namespace_to_dict
 from rnns_learn_robust_motor_policies.tree_utils import pp
 from rnns_learn_robust_motor_policies.types import TaskModelPair, TreeNamespace
 
-from rnns_learn_robust_motor_policies.training.part1_fixed import (
-    get_train_pairs as get_train_pairs_1,
-)
-from rnns_learn_robust_motor_policies.training.part2_context import (
-    get_train_pairs as get_train_pairs_2,
-)
 
 from .loss import get_readout_norm_loss
 from .post_training import process_model_post_training
 
-
-# These are the different types of training run, i.e. respective to parts/phases of the study.
-EXPERIMENTS = {
-    1: get_train_pairs_1, 
-    2: get_train_pairs_2,   
-}
 
 # TODO: Move to config
 LOG_STEP = 500
@@ -156,7 +145,7 @@ def where_strs_to_funcs(where_strs: Sequence[str] | dict[int, Sequence[str]]):
 
 
 def train_and_save_models(
-    config_path: str, 
+    expt_name: str, 
     untrained_only: bool = True,
     postprocess: bool = True,
     n_std_exclude: int = 2,  # re: postprocessing
@@ -175,15 +164,17 @@ def train_and_save_models(
         jax, eqx, optax, git_modules=(feedbax, rnns_learn_robust_motor_policies),
     )
     
-    hps_train: TreeNamespace = load_hps(config_path, config_type='training')
+    hps_train: TreeNamespace = load_hps(expt_name, config_type='training')
     
     key_init, key_train, key_eval = jr.split(key, 3)
 
     # User specifies which variant to run using the `id` key
-    get_train_pairs = EXPERIMENTS[hps_train.expt_id]
+    training_module = load_module_from_package(expt_name, training_modules_pkg)
     
     # `all_hps` is a tree of pair-specific hps
-    task_model_pairs, all_hps_train = jtree.unzip(get_train_pairs(hps_train, key_init))
+    task_model_pairs, all_hps_train = jtree.unzip(
+        training_module.get_train_pairs(hps_train, key_init)
+    )
 
     if untrained_only:
         task_model_pairs = skip_already_trained(db_session, task_model_pairs, all_hps_train, n_std_exclude, save_figures)

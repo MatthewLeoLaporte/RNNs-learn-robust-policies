@@ -21,7 +21,6 @@ from equinox import Module
 import jax.numpy as jnp
 import jax.tree as jt
 
-from feedbax.task import TrialSpecDependency
 from jax_cookbook import is_module
 import jax_cookbook.tree as jtree
 import numpy as np
@@ -29,14 +28,11 @@ import numpy as np
 from rnns_learn_robust_motor_policies.analysis import AbstractAnalysis
 from rnns_learn_robust_motor_policies.analysis.analysis import _DummyAnalysis, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.analysis.pca import StatesPCA
-from rnns_learn_robust_motor_policies.misc import get_constant_input
+from rnns_learn_robust_motor_policies.misc import get_constant_input_fn
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate, vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.tree_utils import take_replicate
 from rnns_learn_robust_motor_policies.types import TreeNamespace
 from rnns_learn_robust_motor_policies.types import LDict
-
-
-ID = "2-4"
 
 
 """Specify any additional colorscales needed for this analysis. 
@@ -54,14 +50,11 @@ def setup_eval_tasks_and_models(task_base: Module, models_base: LDict[float, Mod
     all_tasks, all_models, all_hps = jtree.unzip(
         LDict.of("context_input")({
             context_input: (
-                eqx.tree_at(
-                    lambda task: task.input_dependencies,
-                    task_base,
-                    {
-                        'context': TrialSpecDependency(get_constant_input(
-                            context_input, hps.model.n_steps, task_base.n_validation_trials,
-                        ))
-                    },
+                task_base.add_input(
+                    name="context",
+                    input_fn=get_constant_input_fn(
+                        context_input, hps.model.n_steps, task_base.n_validation_trials,
+                    ),
                 ),
                 models_base,  
                 hps | dict(context_input=context_input),

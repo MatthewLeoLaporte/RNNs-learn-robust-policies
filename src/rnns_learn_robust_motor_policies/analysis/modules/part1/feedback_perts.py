@@ -23,9 +23,6 @@ from rnns_learn_robust_motor_policies.types import LDict, unflatten_dict_keys
 from rnns_learn_robust_motor_policies.perturbations import feedback_impulse
 
 
-ID = "1-2"
-
-
 COLOR_FUNCS = dict()
 
 

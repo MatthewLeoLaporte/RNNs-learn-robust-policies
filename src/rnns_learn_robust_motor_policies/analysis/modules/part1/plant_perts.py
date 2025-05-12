@@ -19,9 +19,6 @@ from rnns_learn_robust_motor_policies.plot import get_violins, set_axes_bounds_e
 from rnns_learn_robust_motor_policies.types import LDict
 
 
-ID = "1-1"
-
-
 COLOR_FUNCS = dict()
 
 
@@ -138,7 +135,7 @@ ALL_ANALYSES = [
 
     AlignedEffectorTrajectories().after_stacking(level='pert__amp'),
     AlignedEffectorTrajectories().after_stacking(level='train__pert__std'),
-    Profiles().after_transform(get_best_replicate)
+    Profiles().after_transform(get_best_replicate),
     measures_base,
     measures_base.after_transform(lohi, level='train__pert__std'),
     measures_base.after_transform(lohi, level=['train__pert__std', 'pert__amp']),

@@ -12,7 +12,6 @@ import plotly.graph_objects as go
 
 from feedbax.intervene import add_intervenors, schedule_intervenor
 import feedbax.plotly as fbp
-from feedbax.task import TrialSpecDependency
 from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
@@ -23,7 +22,7 @@ from rnns_learn_robust_motor_policies.analysis.effector import EffectorTrajector
 from rnns_learn_robust_motor_policies.analysis.measures import ALL_MEASURE_KEYS, MEASURE_LABELS
 from rnns_learn_robust_motor_policies.analysis.measures import Measures
 from rnns_learn_robust_motor_policies.analysis.profiles import Profiles
-from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate, get_constant_task_input, vmap_eval_ensemble
+from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate, get_constant_task_input_fn, vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.colors import ColorscaleSpec
 from rnns_learn_robust_motor_policies.config.config import PLOTLY_CONFIG
 from rnns_learn_robust_motor_policies.constants import POS_ENDPOINTS_ALIGNED
@@ -34,9 +33,6 @@ from rnns_learn_robust_motor_policies.types import (
     Responses,
     TreeNamespace,
 )
-
-
-ID = "2-1"
 
 
 COLOR_FUNCS = dict(
@@ -58,6 +54,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     
     pert_amps = hps.pert.amp
     
+    # Tasks with varying plant perturbation amplitude 
     tasks_by_amp, _ = jtree.unzip(jt.map( # over disturbance amplitudes
         lambda pert_amp: schedule_intervenor(  # (implicitly) over train stds
             task_base, jt.leaves(models_base, is_leaf=is_module)[0],
@@ -71,25 +68,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
         )
     ))
     
-    tasks = LDict.of("context_input")({
-        context_input: jt.map(
-            lambda task: eqx.tree_at( 
-                lambda task: task.input_dependencies,
-                task, 
-                {
-                    'context': TrialSpecDependency(get_constant_task_input(
-                            context_input, 
-                            hps.model.n_steps - 1, 
-                            task.n_validation_trials,
-                    ))
-                },
-            ),
-            tasks_by_amp,
-            is_leaf=is_module,
-        )
-        for context_input in hps.context_input
-    })
-    
+    # Add plant perturbation module (placeholder with amp 0.0) to all loaded models
     models_by_std = jt.map(
         lambda models: add_intervenors(
             models,
@@ -103,7 +82,24 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
         is_leaf=is_module,
     )
     
-    # The outer levels of `all_models` have to match those of `all_tasks`
+    # Also vary tasks by context input
+    tasks = LDict.of("context_input")({
+        context_input: jt.map(
+            lambda task: task.add_input(
+                name="context",
+                input_fn=get_constant_task_input_fn(
+                    context_input, 
+                    hps.model.n_steps - 1, 
+                    task.n_validation_trials,
+                ),
+            ),
+            tasks_by_amp,
+            is_leaf=is_module,
+        )
+        for context_input in hps.context_input
+    })
+    
+    # The outer levels of `models` have to match those of `tasks`
     models, hps = jtree.unzip(jt.map(
         lambda _: (models_by_std, hps), tasks, is_leaf=is_module
     ))

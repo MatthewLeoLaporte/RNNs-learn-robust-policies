@@ -12,7 +12,7 @@ from feedbax.train import SimpleTrainer
 from jaxtyping import PyTree, PRNGKeyArray
 import numpy as np
 
-from feedbax.train import _grad_wrap_simple_loss_func
+from feedbax.train import grad_wrap_simple_loss_func
 from feedbax.loss import nan_safe_mse
 from jax_cookbook import is_module
 
@@ -94,7 +94,7 @@ def fit_linear(X, y, n_iter=50, *, key):
     
     trainer = SimpleTrainer(
         #! Use nanmean loss to avoid training on excluded data.
-        loss_func=_grad_wrap_simple_loss_func(nan_safe_mse),
+        loss_func=grad_wrap_simple_loss_func(nan_safe_mse, nan_safe=True),
     )
     return trainer(lin_model, X.T, y, n_iter=n_iter, progress_bar=False)
 

@@ -13,8 +13,9 @@ from jaxtyping import ArrayLike, PyTree
 
 from jax_cookbook import is_type, anyf, where_attr_strs_to_func
 import jax_cookbook.tree as jtree
+import yaml
 
-from rnns_learn_robust_motor_policies.config import STRINGS, load_config, load_yaml_config
+from rnns_learn_robust_motor_policies.config import STRINGS, load_config
 from rnns_learn_robust_motor_policies.constants import get_iterations_to_save_model_parameters
 from rnns_learn_robust_motor_policies.misc import copy_delattr
 from rnns_learn_robust_motor_policies.tree_utils import (
@@ -96,7 +97,7 @@ def cast_hps(hps: TreeNamespace, config_type: Optional[Literal['training', 'anal
     return hps
 
 
-def load_hps(config_path: str | Path, config_type: Optional[Literal['training', 'analysis']] = None) -> TreeNamespace:
+def load_hps(name: str, config_type: Optional[Literal['training', 'analysis']] = None) -> TreeNamespace:
     """Given a path to a YAML config file, load it and convert to a PyTree of hyperparameters.
     
     If the path is not found, pass it as the experiment id to try to get a default config. 
@@ -104,15 +105,8 @@ def load_hps(config_path: str | Path, config_type: Optional[Literal['training', 
     Note that this is like treating `config_path` as a local path to a YAML file in 
     `rnns_learn_robust_motor_policies.config`.
     """
-    try:
-        config = load_config(str(config_path))
-        expt_id = config['expt_id']
-    except FileNotFoundError:
-        config = dict()
-        expt_id = str(config_path)
     # Load the defaults and update with the user-specified config
-    default_config = load_yaml_config(expt_id, config_type)
-    config = deep_update(default_config, config)
+    config = load_config(name, config_type)
     # Convert to a (nested) namespace instead of a dict, for attribute access
     #? Move this after `cast_hps` and exclude all `LDict` 
     hps = dict_to_namespace(config, to_type=TreeNamespace, exclude=is_dict_with_int_keys)

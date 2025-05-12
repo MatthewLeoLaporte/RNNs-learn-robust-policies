@@ -18,7 +18,7 @@ from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
 import rnns_learn_robust_motor_policies
-from rnns_learn_robust_motor_policies.analysis import ANALYSIS_REGISTRY
+from rnns_learn_robust_motor_policies.analysis import modules as analysis_modules_pkg
 from rnns_learn_robust_motor_policies.analysis._dependencies import compute_dependencies
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, get_validation_trial_specs, logger
 from rnns_learn_robust_motor_policies.colors import COMMON_COLOR_SPECS, setup_colors
@@ -26,16 +26,17 @@ from rnns_learn_robust_motor_policies.config import PATHS
 from rnns_learn_robust_motor_policies.constants import REPLICATE_CRITERION
 from rnns_learn_robust_motor_policies.database import EvaluationRecord, ModelRecord, add_evaluation, check_model_files, get_db_session
 from rnns_learn_robust_motor_policies.hyperparams import flatten_hps, load_hps, use_train_hps_when_none
-from rnns_learn_robust_motor_policies.misc import delete_all_files_in_dir, log_version_info
+from rnns_learn_robust_motor_policies.misc import delete_all_files_in_dir, log_version_info, load_module_from_package
 from rnns_learn_robust_motor_policies.setup_utils import query_and_load_model
-from rnns_learn_robust_motor_policies.training.post_training import TRAINPAIR_SETUP_FUNCS
+import rnns_learn_robust_motor_policies.training.modules as training_modules_pkg
 from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace, namespace_to_dict
 
 
-def load_trained_models_and_aux_objects(hps: TreeNamespace, db_session: Session):
+def load_trained_models_and_aux_objects(training_module_name: str, hps: TreeNamespace, db_session: Session):
     """Given the analysis config, load the trained models and related objects (e.g. train tasks)."""
-    setup_task_model_pair = TRAINPAIR_SETUP_FUNCS[int(hps.train.expt_id)]
-
+    
+    training_module = load_module_from_package(training_module_name, training_modules_pkg)
+    
     pairs, model_info, replicate_info, n_replicates_included = jtree.unzip(
         #? Should this structure be hardcoded here?
         #? At least for this project, we typically load spreads of trained models, 
@@ -43,8 +44,9 @@ def load_trained_models_and_aux_objects(hps: TreeNamespace, db_session: Session)
         LDict.of("train__pert__std")({
             train_pert_std: query_and_load_model(
                 db_session,
-                setup_task_model_pair,
+                training_module.setup_task_model_pair,
                 params_query=namespace_to_dict(flatten_hps(hps.train)) | dict(
+                    expt_name=training_module_name,
                     pert__std=train_pert_std
                 ),
                 noise_stds=dict(
@@ -68,7 +70,7 @@ def load_trained_models_and_aux_objects(hps: TreeNamespace, db_session: Session)
 
 
 def setup_eval_for_module(
-    analysis_module: ModuleType, 
+    analysis_name: str,
     hps: TreeNamespace, 
     db_session: Session,    
 ):
@@ -77,8 +79,17 @@ def setup_eval_for_module(
     1. Construct the task-model pairs to evaluate, to produce the state needed for the analyses.
     2. Add an evaluation record to the database. 
     """
+    
+    analysis_module: ModuleType = load_module_from_package(analysis_name, analysis_modules_pkg)
+    
+    #! For this project, assume only a single-level mapping between training experiments and analysis subpackages;
+    #! thus `analysis.modules.part1` corresponds to `training.modules.part1`.
+    #! In general, it might be better to go back to explicitly specifying the `expt_name` for the 
+    #! training experiment, in each analysis config file.
+    training_module_name = analysis_name.split('.')[0]
+    
     models_base, model_info, replicate_info, tasks_train, n_replicates_included = \
-        load_trained_models_and_aux_objects(hps, db_session)
+        load_trained_models_and_aux_objects(training_module_name, hps, db_session)
 
     #! TODO: Use the hyperparameters of the loaded model(s), where they were absent from the load spec
     #! (This should probably be moved to the model loading function)
@@ -118,7 +129,7 @@ def setup_eval_for_module(
     # Add evaluation record to the database
     eval_info = add_evaluation(
         db_session,
-        expt_id=str(hps.expt_id),
+        expt_name=analysis_name,
         models=model_info,
         #? Could move the flattening/conversion to `database`?
         eval_parameters=namespace_to_dict(flatten_hps(hps)),
@@ -166,6 +177,7 @@ def setup_eval_for_module(
     })
 
     return (
+        analysis_module,
         all_tasks,
         all_models,
         all_hps,
@@ -229,7 +241,7 @@ def perform_all_analyses(
 
 
 def run_analysis_module(
-    config_path: str,
+    analysis_name: str,
     fig_dump_path: Optional[str] = None,
     fig_dump_formats: List[str] = ["html"],
     no_pickle: bool = False,
@@ -261,7 +273,7 @@ def run_analysis_module(
     check_model_files(db_session)  # Ensure we don't try to load any models whose files don't exist
 
     # Load the config (hyperparameters) for the analysis module
-    hps = load_hps(config_path, config_type='analysis')
+    hps = load_hps(analysis_name, config_type='analysis')
     # If some config values (other than those under the `load` key) are unspecified, replace them with 
     # respective values from the `load` key
     # e.g. if trained on curl fields and hps.pert.type is None, use hps.train.pert.type
@@ -269,11 +281,9 @@ def run_analysis_module(
     #  but which are given by the loaded model records.)
     hps_common = use_train_hps_when_none(hps)
 
-    analysis_module: ModuleType = ANALYSIS_REGISTRY[hps_common.expt_id]
-
-    tasks, models, hps, extras, model_info, eval_info, replicate_info = \
+    analysis_module, tasks, models, hps, extras, model_info, eval_info, replicate_info = \
         setup_eval_for_module(
-            analysis_module,
+            analysis_name,
             hps_common,
             db_session,
         )

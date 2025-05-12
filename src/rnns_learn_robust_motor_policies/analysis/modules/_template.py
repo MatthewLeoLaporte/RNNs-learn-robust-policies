@@ -16,16 +16,6 @@ from rnns_learn_robust_motor_policies.types import TreeNamespace
 from rnns_learn_robust_motor_policies.types import LDict
 
 
-"""Should match the filename of the respective YAML config file in the `config` subpackage."""
-#! TODO: Could have the user pass `"part1.plant_perts"`, for example, instead of `1-1`.
-#! Then the subpackage structure of `config` could match that of `analysis`.
-#! However, then how could the user pass a custom YAML file instead of the ones in `config`?
-#! Perhaps it is best to keep the IDs in the YAML/modules, but rearrange `config` as described above,
-#! and allow the user to pass either an ID or a path to a custom YAML file. And the IDs could be 
-#! "part1.plant_perts" etc. instead of "1-1".
-ID: str = ""
-
-
 """Specify any additional colorscales needed for this analysis. 
 These will be included in the `colors` kwarg passed to `AbstractAnalysis` methods
 """

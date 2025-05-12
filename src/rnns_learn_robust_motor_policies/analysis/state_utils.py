@@ -91,13 +91,13 @@ def vmap_eval_ensemble(
     )
 
 
-def get_constant_task_input(x, n_steps, n_trials):
+def get_constant_task_input_fn(x, n_steps, n_trials):
     return lambda trial_spec, key: (
         jnp.full((n_trials, n_steps), x, dtype=float)
     )
 
 
-def get_step_task_input(x1, x2, step_step, n_steps, n_trials):
+def get_step_task_input_fn(x1, x2, step_step, n_steps, n_trials):
     def input_func(trial_spec, key):
         # Create array of x1 values
         inputs = jnp.full((n_trials, n_steps), x1, dtype=float)

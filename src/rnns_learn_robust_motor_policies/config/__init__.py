@@ -6,7 +6,6 @@ from .config import (
     PLOTLY_CONFIG,
     PRNG_CONFIG,
     STRINGS,
-    load_config, 
-    load_yaml_config,
-    load_yaml_config_as_ns,
+    load_config,
+    load_config_as_ns,
 )

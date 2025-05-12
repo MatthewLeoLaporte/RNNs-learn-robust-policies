@@ -1,8 +1,5 @@
-expt_id: 2-6
-
 #  Hyperparameters that uniquely identify the model(s)/training run(s) to analyze
 train:
-  expt_id: 2
   model:  # 
     n_steps: 100  
     hidden_size: 100
