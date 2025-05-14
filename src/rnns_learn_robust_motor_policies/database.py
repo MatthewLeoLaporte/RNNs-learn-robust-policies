@@ -63,7 +63,7 @@ import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.config import PATHS, STRINGS
 from rnns_learn_robust_motor_policies.hyperparams import flatten_hps, load_hps, take_train_histories_hps
-from rnns_learn_robust_motor_policies.misc import with_caller_logger
+from rnns_learn_robust_motor_policies.misc import exclude_unshared_keys_and_identical_values, with_caller_logger
 from rnns_learn_robust_motor_policies.tree_utils import pp
 from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace, dict_to_namespace, is_dict_with_int_keys, namespace_to_dict
 
@@ -205,7 +205,7 @@ def get_sql_type(value) -> TypeEngine:
         return JSON()
 
 
-def update_table_schema(engine, table_name: str, columns: Dict[str, Any]):
+def update_table_schema(engine, table_name: str, columns: Dict[str, Any], all_json: bool = False):
     """Dynamically add new columns using Alembic operations."""
     RecordBase.metadata.create_all(engine)
     
@@ -221,7 +221,8 @@ def update_table_schema(engine, table_name: str, columns: Dict[str, Any]):
     # Add only new columns using Alembic operations
     for key, value in columns.items():
         if key not in existing_columns:
-            column = Column(key, get_sql_type(value), nullable=True)
+            column_type = JSON() if all_json else get_sql_type(value)
+            column = Column(key, column_type, nullable=True)
             setattr(model_class, key, column)
             op.add_column(table_name, column)
             
@@ -356,9 +357,15 @@ def query_records(
     return query.all()
 
 
+def _valid_filter_key(k: str) -> bool:
+    """Check if a key is a valid filter key for a record."""
+    return not k.startswith('_') and not k in ['id', 'hash', 'created_at']
+
+
 def get_record(
     session: Session,
     record_type: str | type[BaseT],
+    enforce_unique: bool = True,
     **filters: Any,
 ) -> Optional[BaseT]:
     """Get single record matching all filters exactly.
@@ -375,9 +382,24 @@ def get_record(
     matches = query_records(session, model_class, filters)
     if not matches:
         return None
-    if len(matches) > 1:
+    if enforce_unique and len(matches) > 1:
         ids_str = ', '.join(str(match.id) for match in matches)  # type: ignore
-        raise ValueError(f"Multiple {model_class.__name__}s (record id: {ids_str}) found matching filters: {filters}")
+        all_unfiltered_params = [
+            {
+                k: v for k, v in match.__dict__.items() if _valid_filter_key(k) and k not in filters
+            }
+            for match in matches
+        ]
+        all_disparate_params = exclude_unshared_keys_and_identical_values(all_unfiltered_params)
+        err_msg = (
+            f"Multiple {model_class.__name__}s (record id: {ids_str}) found matching filters. "
+            + "The following key-value pairs distinguish each match:\n\t"
+            + '\n\t'.join([
+                f"{i}. {params}"
+                for i, params in enumerate(all_disparate_params)
+            ])
+        )
+        raise ValueError(err_msg)
     return matches[0]
 
 
@@ -624,8 +646,13 @@ def save_model_and_add_record(
     ):
         if tree is not None:
             save_tree(tree, PATHS.models, hps_train, hash_=model_hash, suffix=suffix)
-        
-    update_table_schema(session.bind, STRINGS.db_table_names.models, record_params)    
+   
+    update_table_schema(
+        session.bind, 
+        STRINGS.db_table_names.models, 
+        record_params, 
+        all_json=True,
+    )    
     
     # Create database record
     model_record = ModelRecord(
@@ -701,7 +728,12 @@ def add_evaluation(
     )
     
     # Migrate the evaluations table so it has all the necessary columns
-    update_table_schema(session.bind, STRINGS.db_table_names.evaluations, eval_parameters)
+    update_table_schema(
+        session.bind, 
+        STRINGS.db_table_names.evaluations, 
+        eval_parameters,
+        all_json=True,
+    )
     
     figure_dir = PATHS.figures / eval_hash
     figure_dir.mkdir(exist_ok=True)
@@ -840,7 +872,12 @@ def add_evaluation_figure(
     savefig(figure, figure_hash, eval_record.figure_dir, save_formats)
     
     # Update schema with new parameters
-    update_table_schema(session.bind, STRINGS.db_table_names.figures, parameters)
+    update_table_schema(
+        session.bind, 
+        STRINGS.db_table_names.figures, 
+        parameters,
+        all_json=True,
+    )
     
     if model_records is None:
         model_hashes = None

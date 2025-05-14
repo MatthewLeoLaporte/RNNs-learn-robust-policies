@@ -499,6 +499,7 @@ def get_all_module_names(package_obj, exclude_private: bool = True):
 
 
 def load_module_from_package(name: str, package: ModuleType) -> ModuleType:
+    """Given a package object and a string specifying a module within the package, load the module."""
     module_name = f"{package.__name__}.{name}"
     try: 
         module = importlib.import_module(module_name)
@@ -506,3 +507,23 @@ def load_module_from_package(name: str, package: ModuleType) -> ModuleType:
         logger.error(f"Module '{name}' not found.")
         raise ValueError(f"Module '{name}' not found.")
     return module
+
+
+def exclude_unshared_keys_and_identical_values(list_of_dicts):
+    """Filter dicts in a list to exclude unshared keys, and keys with identical values."""
+    if not list_of_dicts:
+        return []
+
+    common_keys = set(list_of_dicts[0].keys())
+    for d in list_of_dicts[1:]:
+        common_keys.intersection_update(d.keys())
+
+    keys_to_exclude = {
+        key for key in common_keys
+        if all(d[key] == list_of_dicts[0][key] for d in list_of_dicts[1:])
+    }
+
+    return [
+        {k: v for k, v in original_dict.items() if k not in keys_to_exclude}
+        for original_dict in list_of_dicts
+    ]

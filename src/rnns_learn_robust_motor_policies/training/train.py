@@ -270,6 +270,7 @@ def skip_already_trained(
         lambda hps: get_record(
             db_session, 
             ModelRecord, 
+            enforce_unique=False, 
             **namespace_to_dict(flatten_hps(get_query_hps(hps, postprocessed=True)))
         ),   
         all_hps_train,
