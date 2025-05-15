@@ -13,6 +13,7 @@ import jax_cookbook.tree as jtree
 from jax_cookbook import is_type, is_module
 
 from rnns_learn_robust_motor_policies.constants import REPLICATE_CRITERION
+from rnns_learn_robust_motor_policies.misc import dynamic_slice_with_padding
 from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
 
 
@@ -162,4 +163,36 @@ def exclude_bad_replicates(tree, *, replicate_info, axis=0):
         tree,
         is_leaf=LDict.is_of('train__pert__std'),
     )
+
+
+def get_symmetric_accel_decel_epochs(states):
+    speed = jnp.linalg.norm(states.mechanics.effector.vel, axis=-1)
+    idxs_max_speed = jnp.argmax(speed, axis=-1)
+    return LDict.of("epoch")({
+        "accel": (None, idxs_max_speed),
+        #! Assume decel is the same length as accel, after the peak speed. 
+        "decel": (idxs_max_speed, 2 * idxs_max_speed),
+    })
+
+
+def get_segment_trials_func(slice_bounds_func, axis=-2):
+    def segment_trials(all_states, **kwargs):
+        def _segment_states(states):
+            return jt.map(
+                lambda slice_bounds: jt.map(
+                    lambda arr: dynamic_slice_with_padding(
+                        arr,
+                        slice_end_idxs=slice_bounds[1],
+                        axis=axis,
+                        slice_start_idxs=slice_bounds[0],
+                    ),
+                    states,
+                ),
+                slice_bounds_func(states),
+                is_leaf=is_type(tuple),
+            )
+
+        return jt.map(_segment_states, all_states, is_leaf=is_module)
+
+    return segment_trials
     

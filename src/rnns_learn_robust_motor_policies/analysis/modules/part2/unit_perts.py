@@ -22,8 +22,9 @@ from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVEN
 from rnns_learn_robust_motor_policies.analysis.effector import EffectorTrajectories
 from rnns_learn_robust_motor_policies.analysis.measures import ALL_MEASURE_KEYS, MEASURE_LABELS
 from rnns_learn_robust_motor_policies.analysis.measures import Measures
+from rnns_learn_robust_motor_policies.analysis.network import UnitPreferences
 from rnns_learn_robust_motor_policies.analysis.profiles import Profiles
-from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate, get_constant_task_input_fn, vmap_eval_ensemble
+from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate, get_constant_task_input_fn, get_segment_trials_func, get_symmetric_accel_decel_epochs, vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.colors import ColorscaleSpec
 from rnns_learn_robust_motor_policies.config.config import PLOTLY_CONFIG
 from rnns_learn_robust_motor_policies.constants import POS_ENDPOINTS_ALIGNED
@@ -187,8 +188,65 @@ def eval_func(key_eval, hps, models, task):
 MEASURE_KEYS = (
 )
 
+
+PLANT_PERT_LABELS = {0: "no curl", 1: "curl"}
+PLANT_PERT_STYLES = dict(line_dash={0: "dot", 1: "solid"})
+
+CONTEXT_LABELS = {0: -2, 1: 0, 2: 2}
+CONTEXT_STYLES = dict(line_dash={0: "dot", 1: "solid"})
+
 # PyTree structure: [context_input, pert__amp, train__pert__std]
 # Array batch shape: [stim_amp, unit_idx, eval, replicate, condition]
 ALL_ANALYSES = [
-    
+    # (
+    #     Profiles(variant="full")
+    #     .after_transform(get_best_replicate) 
+    #     .map_at_level('train__pert__std')
+    #     .after_stacking('pert__amp')
+    #     .combine_figs_by_level(
+    #         level='context_input',
+    #         fig_params_fn=lambda fig_params, i, item: dict(
+    #             scatter_kws=dict(
+    #                 line_dash=CONTEXT_STYLES['line_dash'][i],
+    #                 legendgroup=CONTEXT_LABELS[i],
+    #                 legendgrouptitle_text=CONTEXT_LABELS[i],
+    #             ),
+    #         ),
+    #     )
+    #     .with_fig_params(
+    #         # legend_title="Context",
+    #         layout_kws=dict(
+    #             width=500,
+    #             height=300,
+    #         ),
+    #     )
+    # ),
+    (
+        UnitPreferences(
+            variant="full",
+            feature_fn=lambda task, states: states.efferent.output,
+            label="unit_prefs__unit0__nostim",
+        )
+        .after_transform(get_best_replicate)
+        .after_transform(
+            get_segment_trials_func(get_symmetric_accel_decel_epochs),
+            dependency_name="states",
+        )
+        .after_indexing(0, 0, axis_label="stim_amp")
+        .after_indexing(0, 0, axis_label="unit_stim_idx")  #! Temporary; examine perturbation of just unit 0
+    ),
+    (
+        UnitPreferences(
+            variant="full",
+            feature_fn=lambda task, states: states.efferent.output,
+            label="unit_prefs__unit0__stim",
+        )
+        .after_transform(get_best_replicate)
+        .after_transform(
+            get_segment_trials_func(get_symmetric_accel_decel_epochs),
+            dependency_name="states",
+        )
+        .after_indexing(0, 0, axis_label="stim_amp")
+        .after_indexing(0, 0, axis_label="unit_stim_idx")  #! Temporary; examine perturbation of just unit 0
+    ),
 ]

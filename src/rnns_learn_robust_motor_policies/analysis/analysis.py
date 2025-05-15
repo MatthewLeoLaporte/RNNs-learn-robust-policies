@@ -257,11 +257,12 @@ class AbstractAnalysis(Module, strict=False):
     conditions: AbstractVar[tuple[str, ...]]
     variant: AbstractVar[Optional[str]] 
     fig_params: AbstractVar[FigParamNamespace]
-
-    # By using `strict=False`, we can define some fields without needing to 
+    
+    # By using `strict=False`, we can define non-abstract fields, i.e. without needing to 
     # implement them trivially in subclasses. This violates the abstract-final design
     # pattern. This is intentional. If it leads to problems, I will learn from that.
     #! This means no non-default arguments in subclasses
+    label: Optional[str] = None
     dependency_params: dict = eqx.field(default_factory=dict)
     _prep_ops: tuple[_PrepOp, ...] = ()
     _fig_op: Optional[_FigOp] = None

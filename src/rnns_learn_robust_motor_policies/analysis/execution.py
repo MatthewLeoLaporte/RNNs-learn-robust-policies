@@ -232,8 +232,14 @@ def perform_all_analyses(
         logger.info(f"Analysis complete: {analysis}")
         return analysis, result, figs
 
+    def _get_analysis_label(analysis):
+        if analysis.label is None:
+            return f"{analysis.name}-{id(analysis)}"
+        else:
+            return analysis.label
+
     all_analyses, all_results, all_figs = jtree.unzip({
-        f"{analysis.name}-{id(analysis)}": analyse_and_save(analysis, dependencies)
+        _get_analysis_label(analysis): analyse_and_save(analysis, dependencies)
         for analysis, dependencies in zip(analyses, all_dependency_results)
     })
 

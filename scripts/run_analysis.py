@@ -5,9 +5,8 @@ Takes a single positional argument: the path to the YAML config.
 """
 
 import os
-
-
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
+
 
 import argparse
 import logging
@@ -59,9 +58,6 @@ if __name__ == '__main__':
         states_pkl_dir=states_pkl_dir,
         key=key
     )
-
-    #! TMP: Keep the debugger alive.
-    raise RuntimeError("Stop here.")
     
     
     

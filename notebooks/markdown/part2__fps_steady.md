@@ -12,22 +12,12 @@ jupyter:
     name: python3
 ---
 
----
-jupyter: python3
-format:
-  html:
-    toc: true 
-execute:
-  echo: false
----
-
-
 I'm going to try something here I haven't before: performing an evaluation/analysis as in
 `scripts/run_analysis.py`, but then operate on the results in a notebook.
 
 ```python
 # Associate this notebook with a particular analysis module to load and run.
-ANALYSIS_ID = "2-4"
+ANALYSIS_NAME = "part2.fps_steady"
 ```
 
 ```python
@@ -129,7 +119,7 @@ warnings.filterwarnings('ignore')
 key = jr.PRNGKey(PRNG_CONFIG.seed)
 _, _, key_eval = jr.split(key, 3)
 
-data, common_data, all_results, _ = run_analysis_module(ANALYSIS_ID, key=key)
+data, common_data, _, all_results, _ = run_analysis_module(ANALYSIS_NAME, key=key)
 ```
 
 ```python
@@ -849,7 +839,7 @@ for path, fig in tqdm(figs_flatten_with_paths(figs)):
 ```python
 import plotly.express as px
 
-def complex_to_polar_symmetric_angle(arr: Array) -> tuple[Array, Array]:
+def complex_to_polar_symmetric_angle(arr: Array) -> Array:
   """
   Converts complex numbers to polar coordinates with symmetric angles.
 
@@ -910,7 +900,7 @@ for i, label in enumerate(['angle', 'magnitude']):
     fig.update_traces(opacity=0.66)
     fig.show()
 
-symbols = {
+delimiters = {
     "angle": (r"\angle", ""),
     "magnitude": (r"\left|", r"\right|"),
 }
@@ -936,7 +926,7 @@ for i, label in enumerate(['angle', 'magnitude']):
             )
             for j, (idx, context) in enumerate({0: -3, 6: 3}.items())
         ])
-        var_label = f"{symbols[label][0]}\lambda{symbols[label][1]}"
+        var_label = f"{delimiters[label][0]}\lambda{delimiters[label][1]}"
         fig.update_layout(
             barmode='overlay',
             legend_title="Context",

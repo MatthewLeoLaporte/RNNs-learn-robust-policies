@@ -106,7 +106,7 @@ class UnitPreferences(AbstractAnalysis):
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
 
     n_iter_fit: int = 50
-    feature_fn: Callable = lambda task, states: task.trials_validation[0].target.pos
+    feature_fn: Callable = lambda task, states: task.validation_trials.targets["mechanics.effector.pos"].value
     key: PRNGKeyArray = eqx.field(default_factory=lambda: jr.PRNGKey(0))  # For linear fit -- not very important.
 
     def compute(

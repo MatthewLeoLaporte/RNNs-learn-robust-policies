@@ -1,21 +1,21 @@
 from functools import partial
 from typing import Optional
 
-import jax.numpy as jnp
 import jax.tree as jt
 from jaxtyping import Array, Float
 import numpy as np
 
 from feedbax.intervene import add_intervenors, schedule_intervenor
-from jax_cookbook import is_module, is_type
+from jax_cookbook import is_module
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_PERT_FUNCS
 from rnns_learn_robust_motor_policies.analysis.network import UnitPreferences
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate, vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVENOR_LABEL
-from rnns_learn_robust_motor_policies.misc import map_fn_over_tree, vectors_to_2d_angles
-from rnns_learn_robust_motor_policies.misc import dynamic_slice_with_padding
+from rnns_learn_robust_motor_policies.analysis.state_utils import get_symmetric_accel_decel_epochs
+from rnns_learn_robust_motor_policies.analysis.state_utils import get_segment_trials_func
+from rnns_learn_robust_motor_policies.misc import vectors_to_2d_angles
 from rnns_learn_robust_motor_policies.types import LDict
 
 
@@ -75,39 +75,6 @@ def get_control_forces(task, states):
     return states.efferent.output
 
 
-#! TODO: Convert to a function that takes a function states -> LDict of slice bounds
-
-def get_symmetric_accel_decel_epochs(states):
-    speed = jnp.linalg.norm(states.mechanics.effector.vel, axis=-1)
-    idxs_max_speed = jnp.argmax(speed, axis=-1)
-    return LDict.of("epoch")({
-        "accel": (None, idxs_max_speed),
-        #! Assume decel is the same length as accel, after the peak speed. 
-        "decel": (idxs_max_speed, 2 * idxs_max_speed),
-    })
-
-def get_segment_trials_func(slice_bounds_func, axis=-2):
-    def segment_trials(all_states, **kwargs):
-        def _segment_states(states):
-            return jt.map(
-                lambda slice_bounds: jt.map(
-                    lambda arr: dynamic_slice_with_padding(
-                        arr,
-                        slice_end_idxs=slice_bounds[1],
-                        axis=axis,
-                        slice_start_idxs=slice_bounds[0],
-                    ),
-                    states,
-                ),
-                slice_bounds_func(states),
-                is_leaf=is_type(tuple),
-            )
-            
-        return jt.map(_segment_states, all_states, is_leaf=is_module)
-    
-    return segment_trials
-
-
 ts = np.arange(0, 20)
 
 
@@ -123,7 +90,23 @@ ALL_ANALYSES = [
     #     # .and_transform_results(map_fn_over_tree(vectors_to_2d_angles))
     # ),
     (
-        UnitPreferences(feature_fn=get_control_forces)
+        UnitPreferences(
+            feature_fn=get_control_forces,
+            label="Prefs: control forces",
+        )
+        .after_transform(get_best_replicate)
+        .after_transform(
+            get_segment_trials_func(get_symmetric_accel_decel_epochs),
+            dependency_name="states",
+        )
+        # .after_indexing(-2, ts, axis_label="timestep")
+        # .and_transform_results(map_fn_over_tree(vectors_to_2d_angles))
+    ),
+    (
+        UnitPreferences(
+            feature_fn=get_goal_positions,
+            label="Prefs: goal positions",
+        )
         .after_transform(get_best_replicate)
         .after_transform(
             get_segment_trials_func(get_symmetric_accel_decel_epochs),

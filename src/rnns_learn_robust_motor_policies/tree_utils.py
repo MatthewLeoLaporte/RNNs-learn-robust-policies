@@ -123,6 +123,16 @@ def tree_level_labels(tree: LDict, is_leaf: Optional[Callable[[Any], bool]] = No
     return labels
 
 
+def print_ldict_tree_summary(tree):
+    """Prints a summary of the labels and keys of a pure `LDict` tree."""
+    while True:
+        try:
+            print(tree.label, '\t', list(tree.keys()))
+            tree = next(iter(tree.values()))
+        except AttributeError:
+            break
+
+
 def ldict_level_to_top(label: str, tree: PyTree, is_leaf: Optional[Callable[[Any], bool]] = None) -> list[type]:
     """Given an `LDict` label and a PyTree containing such nodes, move them to the top of the tree."""
     #? `is_leaf` doesn't seem to work as an argument to an inner `jt.structure` in transpose,

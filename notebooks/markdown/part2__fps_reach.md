@@ -12,19 +12,8 @@ jupyter:
     name: python3
 ---
 
----
-jupyter: python3
-format:
-  html:
-    toc: true 
-execute:
-  echo: false
----
-
 ```python
-NB_ID = "2-5"
-
-TRAIN_NB_ID = "2"
+ANALYSIS_NAME = "part2.fps_reach"
 ```
 
 # Analysis of fixed points during simple reaching

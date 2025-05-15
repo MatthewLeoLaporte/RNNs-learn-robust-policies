@@ -13,11 +13,11 @@ train:
   pert: 
     type: curl
     # list -> load multiple models
-    std: [0, 1.0] # [0, 0.5, 1.0, 1.5]  
-
+    std: [0, 1.5] 
+    
 eval_n: 10
 
-context_input: [-2.0, -1.0, 0, 1.0, 2.0]
+context_input: [-2.0, 0, 2.0]
 
 task:  # Passed to the base task constructor
   full:
