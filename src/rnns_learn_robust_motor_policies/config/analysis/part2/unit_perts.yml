@@ -15,22 +15,22 @@ train:
     # list -> load multiple models
     std: [0, 1.5] 
     
-eval_n: 10
+eval_n: 5
 
 context_input: [-2.0, 0, 2.0]
 
 task:  # Passed to the base task constructor
   full:
     eval_grid_n: 1
-    eval_n_directions: 1
-    eval_reach_length: 0
+    eval_n_directions: 1  #! 
+    eval_reach_length: 0.0
 
 pert:
   plant:
     amp: [0.0, 4.0]  
     type: curl
   unit:
-    amp: [0.0, 1.0]
+    amp: [0.0, 0.5]  
 
 model:
   n_steps: null

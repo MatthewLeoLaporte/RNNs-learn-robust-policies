@@ -249,7 +249,7 @@ def perform_all_analyses(
 def run_analysis_module(
     analysis_name: str,
     fig_dump_path: Optional[str] = None,
-    fig_dump_formats: List[str] = ["html"],
+    fig_dump_formats: List[str] = ["html", "webp", "svg"],
     no_pickle: bool = False,
     retain_past_fig_dumps: bool = False,
     states_pkl_dir: Optional[Path] = PATHS.states_tmp,

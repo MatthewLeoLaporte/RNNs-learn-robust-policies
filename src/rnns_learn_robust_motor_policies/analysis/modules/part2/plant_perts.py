@@ -139,7 +139,7 @@ ALL_ANALYSES = [
     (
         AlignedEffectorTrajectories()
         .after_stacking("context_input")
-        .map_at_level("train__pert__std")
+        .map_figs_at_level("train__pert__std")
         .then_transform_figs(
             partial(
                 set_axes_bounds_equal, 
@@ -148,9 +148,9 @@ ALL_ANALYSES = [
             ),
         )
     ),
-    AlignedEffectorTrajectories().after_stacking("train__pert__std").map_at_level("context_input"),
+    AlignedEffectorTrajectories().after_stacking("train__pert__std").map_figs_at_level("context_input"),
     Profiles(),  #! TODO
-    Measures(measure_keys=MEASURE_KEYS).map_at_level("pert__amp"),
-    Measures(measure_keys=MEASURE_KEYS).map_at_level("train__pert__std"),
-    Measures(measure_keys=MEASURE_KEYS).after_level_to_top("train__pert__std").map_at_level("pert__amp"),
+    Measures(measure_keys=MEASURE_KEYS).map_figs_at_level("pert__amp"),
+    Measures(measure_keys=MEASURE_KEYS).map_figs_at_level("train__pert__std"),
+    Measures(measure_keys=MEASURE_KEYS).after_level_to_top("train__pert__std").map_figs_at_level("pert__amp"),
 ]

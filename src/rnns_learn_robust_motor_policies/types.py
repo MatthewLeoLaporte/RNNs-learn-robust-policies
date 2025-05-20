@@ -18,6 +18,7 @@ TaskModelPair = namedtuple("TaskModelPair", ["task", "model"])
 
 # This can't be placed in `config.STRINGS` since that would cause a circular import
 TNS_REPR_INDENT_STR = "  "
+LDICT_REPR_INDENT_STR = "    "
 
 
 K = TypeVar('K')
@@ -253,10 +254,71 @@ class LDict(Mapping[K, V], Generic[K, V]):
     def __len__(self) -> int:
         return len(self._data)
     
+    # def __repr__(self) -> str:
+    #     #! TODO: Proper line breaks when nested
+    #     return f"LDict({repr(self.label)}, {self._data})"
+
     def __repr__(self) -> str:
-        #! TODO: Proper line breaks when nested
-        return f"LDict({repr(self._label)}, {self._data})"
-    
+        return self._repr_with_indent(0)
+
+    def _repr_with_indent(self, level: int) -> str:
+        cls_name = self.__class__.__name__
+        label_repr = f"{self.label!r}"
+        
+        # Indentation for the LDict's own structure (e.g., its closing '})')
+        current_level_indent = TNS_REPR_INDENT_STR * level
+        # Indentation for items (key: value pairs) within this LDict's data
+        item_level_indent = TNS_REPR_INDENT_STR * (level + 1)
+
+        if not self._data:
+            return f"{cls_name}.of({label_repr})({{}})"
+
+        item_strings = []
+        for key, value in self._data.items():
+            key_as_repr = repr(key)
+            value_as_repr: str
+
+            if hasattr(value, '_repr_with_indent') and callable(getattr(value, '_repr_with_indent')):
+                # Recursive call for nested LDicts (or similar)
+                # Pass level + 1 for the nested structure's own indentation
+                value_as_repr = value._repr_with_indent(level + 1)
+            else:
+                # Handle primitive types and their potential multi-line representations
+                raw_value_lines = repr(value).splitlines()
+                if not raw_value_lines: # Should not happen for standard reprs
+                    raw_value_lines = [""]
+                
+                if len(raw_value_lines) > 1:
+                    # For multi-line primitives, indent subsequent lines.
+                    # The first line is already positioned by "key: ".
+                    # Subsequent lines are indented to the item_level_indent.
+                    # This provides basic readability for multi-line strings within the LDict.
+                    indented_value_lines = [raw_value_lines[0]]
+                    for i in range(1, len(raw_value_lines)):
+                        indented_value_lines.append(f"{item_level_indent}{raw_value_lines[i]}")
+                    value_as_repr = "\n".join(indented_value_lines)
+                else:
+                    value_as_repr = raw_value_lines[0]
+            
+            # Each item string is fully formed, including its indentation and trailing comma.
+            # If value_as_repr is multi-line (e.g., from a nested LDict), its existing
+            # newlines and internal indentation are preserved.
+            item_strings.append(f"{item_level_indent}{key_as_repr}: {value_as_repr},")
+        
+        # Assemble the LDict representation
+        # Start with: LDict.of('label')({
+        # Followed by each item on a new line (if items exist)
+        # Ended by:
+        # current_level_indent})
+        
+        dict_body_content = "\n".join(item_strings)
+        
+        return (
+            f"{cls_name}.of({label_repr})({{\n"
+            f"{dict_body_content}\n"
+            f"{current_level_indent}}})"
+        )
+
     def tree_flatten_with_keys(self):
         children_with_keys = [(jtu.DictKey(k), v) for k, v in self.items()]
         return children_with_keys, (self._label, self.keys())

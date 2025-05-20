@@ -17,7 +17,7 @@ import plotly.graph_objects as go
 from sqlalchemy.orm import Session
 
 from feedbax.task import AbstractTask
-from jax_cookbook import is_type, is_none
+from jax_cookbook import is_type, is_none, vmap_multi, natural_to_sequential_axes
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.config.config import STRINGS
@@ -249,6 +249,7 @@ class AbstractAnalysis(Module, strict=False):
         'fig_params', 
         'dependency_params', 
         '_prep_ops', 
+        '_state_vmap_axes',
         '_fig_op',
         '_final_ops_by_type',
     )
@@ -265,6 +266,7 @@ class AbstractAnalysis(Module, strict=False):
     label: Optional[str] = None
     dependency_params: dict = eqx.field(default_factory=dict)
     _prep_ops: tuple[_PrepOp, ...] = ()
+    _state_vmap_axes: Optional[tuple[int, ...]] = None
     _fig_op: Optional[_FigOp] = None
     _final_ops_by_type: Mapping[_FinalOpKeyType, tuple[_FinalOp, ...]] = eqx.field(
         default_factory=lambda: MappingProxyType({'results': (), 'figs': ()})
@@ -296,10 +298,15 @@ class AbstractAnalysis(Module, strict=False):
         prepped_data = eqx.tree_at(
             lambda d: d.states, data, prepped_kwargs["data.states"]
         )
-        del prepped_kwargs["data.states"]            
-
-        result = self.compute(prepped_data, **prepped_kwargs)
-
+        del prepped_kwargs["data.states"]  
+        
+        compute = partial(self.compute, **prepped_kwargs)
+        
+        if self._state_vmap_axes is not None:
+            result = vmap_multi(compute, in_axes_sequence=self._data_vmap_multi_axes)(prepped_data)
+        else:
+            result = compute(prepped_data)
+            
         for final_op in self._final_ops_by_type.get('results', ()):
             try:
                 result = final_op.transform_func(result)
@@ -644,6 +651,23 @@ class AbstractAnalysis(Module, strict=False):
             transform_func=index_func,
             params=dict(axis=axis, idxs=idxs),
         )
+
+    def after_map(
+        self,
+        func: Callable[[Any], Any], 
+        is_leaf: Optional[Callable[[Any], bool]] = None, 
+        dependency_name: Optional[str] = None,
+    ) -> Self:
+        """
+        Returns a copy of this analysis that maps a function over the input PyTrees.
+        """
+        return self._add_prep_op(
+            name="map",
+            label=f"map-{get_name_of_callable(func)}",
+            dep_name=dependency_name,
+            transform_func=lambda dep_data, **kwargs: jt.map(func, dep_data, is_leaf=is_leaf),
+            params=dict(func=func),
+        )
     
     def after_transform(
         self, 
@@ -653,7 +677,11 @@ class AbstractAnalysis(Module, strict=False):
         label: Optional[str] = None,
     ) -> Self:
         """
-        Returns a copy of this analysis that transforms its inputs with a function before proceeding.
+        Returns a copy of this analysis that transforms its inputs with a function before
+        proceeding.
+        
+        Applies a function to one or more `LDict` levels, or to the entire input PyTree. 
+        This is less general than `after_map`.
 
         Args:
             func: The function to transform the inputs with.
@@ -697,100 +725,6 @@ class AbstractAnalysis(Module, strict=False):
 
         return obj
 
-    def and_transform_results(
-        self,
-        func: Callable[..., Any],
-        level: Optional[str] = None,
-        label: Optional[str] = None,
-        is_leaf: Optional[Callable[[Any], bool]] = None,
-    ) -> Self:
-        """Returns a copy of this analysis that transforms its PyTree of results.
-
-        The transformation occurs prior to the generation of figures, thus affects them.
-        """
-        return self._then_transform(
-            op_type='results',
-            func=func,
-            level=level,
-            label=label,
-            is_leaf=is_leaf,
-        )
-        
-    def then_transform_figs(
-        self,
-        func: Callable[..., Any],
-        level: Optional[str] = None,
-        label: Optional[str] = None,
-    ) -> Self:
-        """
-        Returns a copy of this analysis that transforms its output PyTree of figures
-        """
-        return self._then_transform(
-            op_type='figs',
-            func=func,
-            level=level,
-            label=label,
-            is_leaf=is_type(go.Figure),
-        )
-
-    def _then_transform(
-        self, 
-        op_type: _FinalOpKeyType,
-        func: Callable[..., Any], 
-        level: Optional[str] = None,
-        label: Optional[str] = None,
-        is_leaf: Optional[Callable[[Any], bool]] = None,
-    ) -> Self:
-
-        if label is None:
-            label = f"post-transform-{op_type}_{get_name_of_callable(func)}"
-
-        if level is not None:
-            # Apply the transformation leafwise across the `level` LDict level;
-            # e.g. suppose there are two keys in the `level` LDict, then the transformation
-            # will be applied to 2-tuples of figures; following the transformation, reconsistute
-            # the `level` LDict with the transformed figures.
-            @wraps(func)
-            def _transform_func(tree):
-                _Tuple = jtree.make_named_tuple_subclass("ColumnTuple")
-                
-                def _transform_level(ldict_node):
-                    if not LDict.is_of(level)(ldict_node):
-                        return ldict_node
-                    
-                    zipped = jtree.zip_(
-                        *ldict_node.values(), 
-                        is_leaf=is_leaf, 
-                        zip_cls=_Tuple,
-                    )
-                    transformed = jt.map(func, zipped, is_leaf=is_type(_Tuple))
-                    unzipped = jtree.unzip(transformed, tuple_cls=_Tuple)
-                    return LDict.of(level)(dict(zip(ldict_node.keys(), unzipped)))
-
-                return jt.map(
-                    _transform_level,
-                    tree, 
-                    is_leaf=LDict.is_of(level)
-                )
-
-            return self._add_final_op(
-                op_type=op_type,
-                name=f"then_transform_{op_type}",
-                label=label,
-                transform_func=_transform_func,
-                params=dict(level=level, transform_func=func),
-                is_leaf=is_leaf,
-            )
-        else:
-            return self._add_final_op(
-                op_type=op_type,
-                name=f"then_transform_{op_type}",
-                label=label,
-                transform_func=func,
-                params=dict(transform_func=func),
-                is_leaf=is_leaf,
-            )
-    
     def after_unstacking(
         self, 
         axis: int, 
@@ -839,41 +773,6 @@ class AbstractAnalysis(Module, strict=False):
             dep_name=dependency_name,
             transform_func=unpack_axis,
             params=dict(axis=axis, label=label), #, keys=keys),
-        )
-    
-    def after_subdict_at_level(
-        self, 
-        level: str, 
-        keys: Optional[Sequence[Hashable]] = None, 
-        idxs: Optional[Sequence[int]] = None,
-        dependency_name: Optional[str] = None,
-    ) -> Self:
-        """
-        Returns a copy of this analysis that keeps certain keys of an `LDict` level before proceeding.
-
-        Either `keys` or `idxs` must be provided, but not both: `keys` specifies the exact keys to keep,
-        whereas `idxs` specifies the indices of the keys to keep in terms of their ordering in the `LDict`.
-        """
-
-        if keys is not None and idxs is not None:
-            raise ValueError("Cannot provide both `keys` and `idxs`.")
-        
-        if keys is None and idxs is None:
-            raise ValueError("Must provide either `keys` or `idxs`.")
-
-        label = f"subdict-at-{_format_level_str(level)}_"
-        if keys is not None:
-            select_func = lambda d: subdict(d, keys)
-            label += ','.join(keys)
-        elif idxs is not None:
-            select_func = lambda d: subdict(d, [list(d.keys())[i] for i in idxs])
-            label += f"idxs-{','.join(str(i) for i in idxs)}"
-
-        return self.after_transform(
-            func=select_func, 
-            level=level, 
-            dependency_name=dependency_name,
-            label=label,
         )
 
     def after_stacking(self, level: str, dependency_name: Optional[str] = None) -> Self:
@@ -947,25 +846,99 @@ class AbstractAnalysis(Module, strict=False):
             transform_func=transpose_dependency,
             params=dict(label=label),
         )
-    
-    def map(
-        self,
-        func: Callable[[Any], Any], 
-        is_leaf: Optional[Callable[[Any], bool]] = None, 
+
+    def after_subdict_at_level(
+        self, 
+        level: str, 
+        keys: Optional[Sequence[Hashable]] = None, 
+        idxs: Optional[Sequence[int]] = None,
         dependency_name: Optional[str] = None,
     ) -> Self:
         """
-        Returns a copy of this analysis that maps a function over the input PyTrees.
+        Returns a copy of this analysis that keeps certain keys of an `LDict` level before proceeding.
+
+        Either `keys` or `idxs` must be provided, but not both: `keys` specifies the exact keys to keep,
+        whereas `idxs` specifies the indices of the keys to keep in terms of their ordering in the `LDict`.
         """
-        return self._add_prep_op(
-            name="map",
-            label=f"map-{get_name_of_callable(func)}",
-            dep_name=dependency_name,
-            transform_func=lambda dep_data, **kwargs: jt.map(func, dep_data, is_leaf=is_leaf),
-            params=dict(func=func),
+
+        if keys is not None and idxs is not None:
+            raise ValueError("Cannot provide both `keys` and `idxs`.")
+        
+        if keys is None and idxs is None:
+            raise ValueError("Must provide either `keys` or `idxs`.")
+
+        label = f"subdict-at-{_format_level_str(level)}_"
+        if keys is not None:
+            select_func = lambda d: subdict(d, keys)
+            label += ','.join(keys)
+        elif idxs is not None:
+            select_func = lambda d: subdict(d, [list(d.keys())[i] for i in idxs])
+            label += f"idxs-{','.join(str(i) for i in idxs)}"
+
+        return self.after_transform(
+            func=select_func, 
+            level=level, 
+            dependency_name=dependency_name,
+            label=label,
+        )
+        
+    def vmap_over_states(self, axes: int | Sequence[int]) -> Self:
+        """
+        Returns a copy of this analysis that vectorizes its `compute` method over one or more axes
+        of `data.states`.
+        
+        Arguments:
+            axes: The axes of `data.states` to vectorize over, expressed in natural form (e.g. 
+                to map over the first three batch axes, pass `axes=(0, 1, 2)`).
+        """
+        if isinstance(axes, int):
+            axes = (axes,)
+        else:
+            axes = tuple(axes)
+            
+        axes = natural_to_sequential_axes(axes)
+        
+        if not all(isinstance(axis, int) for axis in axes):
+            raise ValueError("`axes` must be an integer or a sequence of integers.")
+        
+        return eqx.tree_at(
+            lambda obj: obj._state_vmap_axes,
+            self,
+            axes,
+            is_leaf=is_none,
+        )
+        
+    @property
+    def _data_vmap_multi_axes(self):
+        if self._state_vmap_axes is None:
+            # We shouldn't arrive here
+            return None 
+        else:
+            return tuple(
+                (AnalysisInputData(None, None, i, None, None),)
+                for i in self._state_vmap_axes
+            )
+        
+    def and_transform_results(
+        self,
+        func: Callable[..., Any],
+        level: Optional[str] = None,
+        label: Optional[str] = None,
+        is_leaf: Optional[Callable[[Any], bool]] = None,
+    ) -> Self:
+        """Returns a copy of this analysis that transforms its PyTree of results.
+
+        The transformation occurs prior to the generation of figures, thus affects them.
+        """
+        return self._then_transform(
+            op_type='results',
+            func=func,
+            level=level,
+            label=label,
+            is_leaf=is_leaf,
         )
     
-    def map_at_level(
+    def map_figs_at_level(
         self, 
         level: str, 
         dependency_name: Optional[str] = None,
@@ -978,8 +951,8 @@ class AbstractAnalysis(Module, strict=False):
         but we've evaluated a deeper PyTree of states, where the two levels are inner. 
         """
         return self._change_fig_op(
-            name="map_at_level",
-            label=f"map_at-{_format_level_str(level)}",
+            name="map_figs_at_level",
+            label=f"map_figs_at-{_format_level_str(level)}",
             dep_name=dependency_name,
             is_leaf=LDict.is_of(level),
             slice_fn=_level_slice_fn,
@@ -990,7 +963,7 @@ class AbstractAnalysis(Module, strict=False):
             params=dict(level=level),
         )
 
-    def map_by_axis(
+    def map_figs_by_axis(
         self, 
         axis: int, 
         output_level_label: str, 
@@ -1008,8 +981,8 @@ class AbstractAnalysis(Module, strict=False):
         # TODO: combined `map_at_level` with `after_unstacking` so the user can control the 
         # keys of the resulting output LDict level
         return self._change_fig_op(
-            name="map_by_axis",
-            label=f"map_by-axis{axis}",
+            name="map_figs_by_axis",
+            label=f"map_figs_by-axis{axis}",
             dep_name=dependency_name,
             is_leaf=eqx.is_array,
             slice_fn=partial(_axis_slice_fn, axis),
@@ -1084,6 +1057,81 @@ class AbstractAnalysis(Module, strict=False):
             agg_fn=_combine_figures,
             params=dict(level=level),
         )
+
+    def then_transform_figs(
+        self,
+        func: Callable[..., Any],
+        level: Optional[str] = None,
+        label: Optional[str] = None,
+    ) -> Self:
+        """
+        Returns a copy of this analysis that transforms its output PyTree of figures
+        """
+        return self._then_transform(
+            op_type='figs',
+            func=func,
+            level=level,
+            label=label,
+            is_leaf=is_type(go.Figure),
+        )
+
+    def _then_transform(
+        self, 
+        op_type: _FinalOpKeyType,
+        func: Callable[..., Any], 
+        level: Optional[str] = None,
+        label: Optional[str] = None,
+        is_leaf: Optional[Callable[[Any], bool]] = None,
+    ) -> Self:
+
+        if label is None:
+            label = f"post-transform-{op_type}_{get_name_of_callable(func)}"
+
+        if level is not None:
+            # Apply the transformation leafwise across the `level` LDict level;
+            # e.g. suppose there are two keys in the `level` LDict, then the transformation
+            # will be applied to 2-tuples of figures; following the transformation, reconsistute
+            # the `level` LDict with the transformed figures.
+            @wraps(func)
+            def _transform_func(tree):
+                _Tuple = jtree.make_named_tuple_subclass("ColumnTuple")
+                
+                def _transform_level(ldict_node):
+                    if not LDict.is_of(level)(ldict_node):
+                        return ldict_node
+                    
+                    zipped = jtree.zip_(
+                        *ldict_node.values(), 
+                        is_leaf=is_leaf, 
+                        zip_cls=_Tuple,
+                    )
+                    transformed = jt.map(func, zipped, is_leaf=is_type(_Tuple))
+                    unzipped = jtree.unzip(transformed, tuple_cls=_Tuple)
+                    return LDict.of(level)(dict(zip(ldict_node.keys(), unzipped)))
+
+                return jt.map(
+                    _transform_level,
+                    tree, 
+                    is_leaf=LDict.is_of(level)
+                )
+
+            return self._add_final_op(
+                op_type=op_type,
+                name=f"then_transform_{op_type}",
+                label=label,
+                transform_func=_transform_func,
+                params=dict(level=level, transform_func=func),
+                is_leaf=is_leaf,
+            )
+        else:
+            return self._add_final_op(
+                op_type=op_type,
+                name=f"then_transform_{op_type}",
+                label=label,
+                transform_func=func,
+                params=dict(transform_func=func),
+                is_leaf=is_leaf,
+            )
 
     def _add_prep_op(
             self, 

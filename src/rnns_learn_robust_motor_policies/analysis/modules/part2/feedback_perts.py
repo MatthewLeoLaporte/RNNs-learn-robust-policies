@@ -259,7 +259,7 @@ ALL_ANALYSES = [
         )
         .after_transform(get_best_replicate) 
         .after_indexing(1, -2, axis_label='pert__amp') 
-        .map_at_level('train__pert__std')
+        .map_figs_at_level('train__pert__std')
         .with_fig_params(
             # legend_title="Context",
             layout_kws=dict(
@@ -278,7 +278,7 @@ ALL_ANALYSES = [
         .after_unstacking(1, "pert__amp")
         .after_transform(lohi, level="train__pert__std")
         # Save seperate figures for zero-std, as pared-down all-grey
-        .map_at_level(
+        .map_figs_at_level(
             'train__pert__std',
             fig_params_fn=measures_fig_params_fn,
         )

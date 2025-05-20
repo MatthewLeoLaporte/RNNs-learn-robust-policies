@@ -16,7 +16,7 @@ import feedbax.plotly as fbp
 from jax_cookbook import is_module, is_type, is_none
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.analysis.aligned import AlignedEffectorTrajectories, AlignedVars
+from rnns_learn_robust_motor_policies.analysis.aligned import AlignedEffectorTrajectories, AlignedVars, get_trivial_reach_origins_directions
 from rnns_learn_robust_motor_policies.analysis.analysis import _DummyAnalysis, AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS, get_pert_amp_vmap_eval_func
 from rnns_learn_robust_motor_policies.analysis.effector import EffectorTrajectories
@@ -42,6 +42,10 @@ COLOR_FUNCS = dict(
         sequence_func=lambda hps: hps.context_input,
         colorscale="thermal",
     ),
+    stim_amp=ColorscaleSpec(
+        sequence_func=lambda hps: hps.pert.unit.amp,
+        colorscale="viridis",
+    )
 )
 
 
@@ -193,60 +197,59 @@ PLANT_PERT_LABELS = {0: "no curl", 1: "curl"}
 PLANT_PERT_STYLES = dict(line_dash={0: "dot", 1: "solid"})
 
 CONTEXT_LABELS = {0: -2, 1: 0, 2: 2}
-CONTEXT_STYLES = dict(line_dash={0: "dot", 1: "solid"})
+CONTEXT_STYLES = dict(line_dash={0: "dot", 1: "dash", 2: "solid"})
+
+UNIT_STIM_IDX = 1
 
 # PyTree structure: [context_input, pert__amp, train__pert__std]
 # Array batch shape: [stim_amp, unit_idx, eval, replicate, condition]
 ALL_ANALYSES = [
-    # (
-    #     Profiles(variant="full")
-    #     .after_transform(get_best_replicate) 
-    #     .map_at_level('train__pert__std')
-    #     .after_stacking('pert__amp')
-    #     .combine_figs_by_level(
-    #         level='context_input',
-    #         fig_params_fn=lambda fig_params, i, item: dict(
-    #             scatter_kws=dict(
-    #                 line_dash=CONTEXT_STYLES['line_dash'][i],
-    #                 legendgroup=CONTEXT_LABELS[i],
-    #                 legendgrouptitle_text=CONTEXT_LABELS[i],
-    #             ),
-    #         ),
-    #     )
-    #     .with_fig_params(
-    #         # legend_title="Context",
-    #         layout_kws=dict(
-    #             width=500,
-    #             height=300,
-    #         ),
-    #     )
-    # ),
     (
-        UnitPreferences(
+        # TODO: We need profiles *without* AlignedVars (but *with* subset of states in "vars" level)
+        # TODO: for steady-state analysis. How can we modify the dependencies of `Profiles` conditionally? 
+        Profiles(
             variant="full",
-            feature_fn=lambda task, states: states.efferent.output,
-            label="unit_prefs__unit0__nostim",
+            dependency_params={
+                AlignedVars: dict(
+                    # Bypass alignment; keep aligned with x-y axes
+                    origins_directions_func=get_trivial_reach_origins_directions,
+                )
+            }
         )
-        .after_transform(get_best_replicate)
-        .after_transform(
-            get_segment_trials_func(get_symmetric_accel_decel_epochs),
-            dependency_name="states",
+        .after_transform(partial(get_best_replicate, axis=3))
+        .after_indexing(1, UNIT_STIM_IDX, axis_label="unit_stim_idx")  #! Examine just one stim unit
+        .after_unstacking(0, 'stim_amp')
+        # .map_figs_at_level('train__pert__std')
+        .combine_figs_by_level(
+            level='context_input',
+            fig_params_fn=lambda fig_params, i, item: dict(
+                scatter_kws=dict(
+                    line_dash=CONTEXT_STYLES['line_dash'][i],
+                    legendgroup=CONTEXT_LABELS[i],
+                    legendgrouptitle_text=CONTEXT_LABELS[i],
+                ),
+            ),
         )
-        .after_indexing(0, 0, axis_label="stim_amp")
-        .after_indexing(0, 0, axis_label="unit_stim_idx")  #! Temporary; examine perturbation of just unit 0
+        .with_fig_params(
+            # legend_title="Context",
+            layout_kws=dict(
+                width=500,
+                height=300,
+            ),
+        )
     ),
     (
+        # Result shape: [stim_amp, unit_stim_idx, unit_idx, feature]
         UnitPreferences(
             variant="full",
             feature_fn=lambda task, states: states.efferent.output,
-            label="unit_prefs__unit0__stim",
+            label="unit_prefs",
         )
-        .after_transform(get_best_replicate)
+        .after_transform(partial(get_best_replicate, axis=3))
         .after_transform(
             get_segment_trials_func(get_symmetric_accel_decel_epochs),
             dependency_name="states",
         )
-        .after_indexing(0, 0, axis_label="stim_amp")
-        .after_indexing(0, 0, axis_label="unit_stim_idx")  #! Temporary; examine perturbation of just unit 0
+        .vmap_over_states(axes=[0, 1])
     ),
 ]

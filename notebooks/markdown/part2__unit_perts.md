@@ -122,17 +122,45 @@ _, _, key_eval = jr.split(key, 3)
 data, common_data, _, all_results, _ = run_analysis_module(ANALYSIS_NAME, key=key)
 ```
 
+Keep the model parameters and states only for the best replicate, for the remaining analyses. 
+
+```python
+all_states = get_best_replicate(
+    data.states['full'],
+    replicate_info=common_data['replicate_info'],
+    axis=3,
+)
+
+all_models = get_best_replicate(
+    data.models["full"],
+    replicate_info=common_data['replicate_info'],
+    axis=0,
+)
+
+hps_common = common_data['hps_common']
+```
+
+Get the 
+
+```python
+prefs_readout = LDict.of('train__pert__std')({
+    tps: all_models[0][0][tps].step.net.readout.weight.T
+    for tps in hps_common.train.pert.std
+})
+
+pref_angles_readout = jt.map(vectors_to_2d_angles, prefs_readout)
+```
+
+## Examine unit preferences
+
+During the acceleration period
+
 ```python
 prefs = jt.map(
     lambda d: d["accel"],
-    all_results, 
+    all_results['unit_prefs'], 
     is_leaf=LDict.is_of("epoch")
-)
-
-prefs = LDict.of("unit_stim")({
-    k.split('__')[-1]: v["full"]
-    for k, v in prefs.items()
-})
+)['full']
 
 pref_angles = jt.map(vectors_to_2d_angles, prefs)
 ```
@@ -148,43 +176,128 @@ while True:
         break
 ```
 
-Baseline comparison
+### Exploratory comparison of preferred angle change between conditions
 
 ```python
-data.models['full']
-```
+REF_LINE_RADIUS = 0.25
 
-```python
-pref_angles_readout
-```
+stim = jnp.array([True, True], dtype=int)
+stim_unit_idx = jnp.array([1, 1], dtype=int)
 
-```python
-STIM_UNIT_IDX = 0
-
-stim = ["nostim", "nostim"]
 context_input = [-2, 2]
-pert__amp = [4.0, 4.0]
+pert__amp = [0.0, 0.0]
 train__pert__std = [1.5, 1.5]
 
-pref_angles_readout = {}
-for tps in train__pert__std:
-    best_replicate = common_data['replicate_info'][tps]['best_replicates']['best_total_loss']
-    readout_weights = data.models["full"][0][0][tps].step.net.readout.weight[best_replicate]
-    pref_angles_readout[tps] = vectors_to_2d_angles(readout_weights.T)
+prefs_to_compare = [
+    prefs[c][a][s][i, j]
+    for c, a, s, i, j in zip(context_input, pert__amp, train__pert__std, stim, stim_unit_idx)
+]
 
-pref_angle_change = angle_between_vectors(
-    prefs[stim[0]][context_input[0]][pert__amp[0]][train__pert__std[0]], 
-    prefs[stim[1]][context_input[1]][pert__amp[1]][train__pert__std[1]],
-)
+pref_angle_change = angle_between_vectors(*prefs_to_compare)
 
 fig, ax = circular_hist(pref_angle_change, mean=True)
 
 for i, tps in enumerate(train__pert__std):
-    stim_unit_pa = pref_angles_readout[tps][STIM_UNIT_IDX]
-    ax.plot([stim_unit_pa] * 2, [0, 0.5], color=f"C{i}")
-    print(stim_unit_pa)
+    for j, sui in enumerate(stim_unit_idx):
+        stim_unit_pa = pref_angles_readout[tps][sui]
+        ax.plot([stim_unit_pa] * 2, [0, REF_LINE_RADIUS], color=f"C{i}")
+```
 
-ax.plot([])
+### Exploratory measures of response change between conditions
+
+
+1. What is the max. deviation from steady-state position for each stim, and in what direction? 
+2. What about the final deviation?
+
+```python
+pos = jt.map(
+    lambda states: states.mechanics.effector.pos,
+    all_states,
+    is_leaf=is_module,
+)
+
+print(tree_level_labels(pos))
+print(jt.leaves(pos)[0].shape)
+```
+
+```python
+LAST_N_TIME_STEPS_MEAN = 5
+
+# all the trials are at the origin (0, 0); just take norm
+deviations = jt.map(partial(jnp.linalg.norm, axis=-1), pos)
+
+deviations_final, deviations_final_directions = jt.map(
+    lambda arr: jnp.mean(arr[..., -LAST_N_TIME_STEPS_MEAN:], axis=-1), 
+    (deviations, pos),
+)
+
+# time step of max deviation
+deviations_max_idxs = jt.map(partial(jnp.argmax, axis=-1), deviations)
+
+# TODO: jnp.expand_dims(max_idx, axis=(-1, -2, ...))
+# direction of max deviation
+deviations_max = jt.map(
+    lambda pos, max_idx: jnp.take_along_axis(pos, max_idx[..., None], axis=-1),
+    deviations,
+    deviations_max_idxs,
+)
+
+# positions = directions since all trials are at the origin
+deviations_max_directions = jt.map(
+    lambda pos, max_idx: jnp.take_along_axis(pos, max_idx[..., None, None], axis=-2),
+    pos,
+    deviations_max_idxs,
+)
+```
+
+1. How aligned are the max. deviation directions with the instantaneous/observational PD of the stim
+   unit?
+
+```python
+# aggregated unit-wise alignment between max deviation direction and readout direction
+max_dev_vs_readout = jt.map(
+    lambda devs_max_dirs_by_std: jt.map(
+        angle_between_vectors,
+        pref_angles_readout,
+        devs_max_dirs_by_std,
+    ),
+    deviations_max_directions,
+    is_leaf=LDict.is_of("train__pert__std"),
+)
+
+alignment_max_dev_vs_readout = jt.map(
+    lambda arr: jnp.mean(jnp.abs(arr)).item(),
+    max_dev_vs_readout,
+)
+```
+
+```python
+alignment_max_dev_vs_readout
+```
+
+2. How aligned are the max. and final deviations?
+
+```python
+# TODO
+```
+
+3. Do the deviations change in magnitude for different values of the context input? How
+   does this interact with the curl field?
+
+```python
+# TODO
+```
+
+## Examine unit activities
+
+```python
+stim_unit_idx = 51
+stim = int(True)
+replicate_i = 2
+
+activities = data.states['full'][0][0][0].net.hidden[stim, stim_unit_idx, :, replicate_i] 
+print(activities.shape)
+fbp.activity_sample_units(activities, key=jr.PRNGKey(1), unit_includes=[stim_unit_idx])
 ```
 
 ```python

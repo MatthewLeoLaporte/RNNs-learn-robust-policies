@@ -55,12 +55,13 @@ class Profiles(AbstractAnalysis):
         result = move_ldict_level_above('var', level_labels[-2], aligned_vars[self.variant])
 
         def _get_fig(fig_data, i, label, colors):                      
+            level_colors = list(colors[fig_data.label].dark.values())
             return fbp.profiles(
                 jtree.take(fig_data, i, -1),
                 varname=label.capitalize(),
                 legend_title=get_label_str(fig_data.label),
                 hline=dict(y=0, line_color="grey"),
-                colors=list(colors[fig_data.label].dark.values()),
+                colors=level_colors,
                 # stride_curves=500,
                 # curves_kws=dict(opacity=0.7),
                 **self.fig_params,

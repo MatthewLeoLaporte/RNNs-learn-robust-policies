@@ -105,6 +105,18 @@ def get_reach_origins_directions(task: AbstractTask, hps: TreeNamespace):
     return origins, directions
 
 
+def get_trivial_reach_origins_directions(task: AbstractTask, hps: TreeNamespace):
+    """Return 'aligns' 'reaches' with the x-y axes; i.e. effectively does nothing.
+    
+    The purpose of this is to avoid (for now) trying to bypass `AlignedVars` as a dependency of 
+    other analyses (e.g. `Profiles`) in cases where it doesn't make sense to align with a certain 
+    directon (e.g. certain steady-state tasks performed using `SimpleReaches`).
+    """
+    origins, _ = get_pos_endpoints(get_validation_trial_specs(task))
+    directions = jnp.broadcast_to(jnp.array([1., 0.]), origins.shape)
+    return origins, directions
+
+
 class AlignedVars(AbstractAnalysis):
     """Align spatial variable (e.g. position and velocity) coordinates with the reach direction."""
     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())

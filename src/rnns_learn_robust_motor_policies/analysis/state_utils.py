@@ -122,13 +122,16 @@ def get_best_replicate(tree, *, replicate_info, axis: int = 1, keep_axis: bool =
     else:
         _replicate_idxs_func = _original_replicate_idxs_func
     
+    def _take_best_replicate(x):
+        if eqx.is_array(x):
+            return jnp.take(x, _replicate_idxs_func(0), axis=axis)
+        else:
+            return x
+    
     def _process_node(node):
         if LDict.is_of("train__pert__std")(node):
             return LDict.of("train__pert__std")({
-                    std: jt.map(
-                        lambda arr: jnp.take(arr, _replicate_idxs_func(std), axis=axis),
-                    subtree,
-                )
+                std: jt.map(_take_best_replicate, subtree)
                 for std, subtree in node.items()
             })
         elif eqx.is_array(node):
@@ -136,7 +139,7 @@ def get_best_replicate(tree, *, replicate_info, axis: int = 1, keep_axis: bool =
             return jnp.take(node, replicate_info['best_replicates'][REPLICATE_CRITERION], axis=axis)
         else:
             return node
-    
+            
     return jt.map(
         _process_node,
         tree,
