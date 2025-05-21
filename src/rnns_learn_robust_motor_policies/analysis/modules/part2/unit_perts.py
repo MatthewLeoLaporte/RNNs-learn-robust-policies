@@ -217,9 +217,9 @@ ALL_ANALYSES = [
             }
         )
         .after_transform(partial(get_best_replicate, axis=3))
-        .after_indexing(1, UNIT_STIM_IDX, axis_label="unit_stim_idx")  #! Examine just one stim unit
-        .after_unstacking(0, 'stim_amp')
-        # .map_figs_at_level('train__pert__std')
+        .after_indexing(1, jnp.array([0,1,2,3,4]), axis_label="unit_stim_idx")  #! Examine only a few stim units
+        .after_unstacking(1, 'unit_stim_idx', above_level='pert__amp')#, dependency_name="aligned_vars")
+        .after_indexing(0, 1, axis_label="stim_amp")  #! Only examine trials with unit stim
         .combine_figs_by_level(
             level='context_input',
             fig_params_fn=lambda fig_params, i, item: dict(

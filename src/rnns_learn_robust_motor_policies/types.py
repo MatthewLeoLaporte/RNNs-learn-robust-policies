@@ -16,7 +16,6 @@ import yaml
 TaskModelPair = namedtuple("TaskModelPair", ["task", "model"])
 
 
-# This can't be placed in `config.STRINGS` since that would cause a circular import
 TNS_REPR_INDENT_STR = "  "
 LDICT_REPR_INDENT_STR = "    "
 
@@ -266,9 +265,9 @@ class LDict(Mapping[K, V], Generic[K, V]):
         label_repr = f"{self.label!r}"
         
         # Indentation for the LDict's own structure (e.g., its closing '})')
-        current_level_indent = TNS_REPR_INDENT_STR * level
+        current_level_indent = LDICT_REPR_INDENT_STR * level
         # Indentation for items (key: value pairs) within this LDict's data
-        item_level_indent = TNS_REPR_INDENT_STR * (level + 1)
+        item_level_indent = LDICT_REPR_INDENT_STR * (level + 1)
 
         if not self._data:
             return f"{cls_name}.of({label_repr})({{}})"
@@ -320,6 +319,7 @@ class LDict(Mapping[K, V], Generic[K, V]):
         )
 
     def tree_flatten_with_keys(self):
+        # Avoids `FlattenedIndexKey` appearing in key paths
         children_with_keys = [(jtu.DictKey(k), v) for k, v in self.items()]
         return children_with_keys, (self._label, self.keys())
     
@@ -343,11 +343,11 @@ class LDict(Mapping[K, V], Generic[K, V]):
     @staticmethod
     def of(label: str):
         """Returns a constructor function for the given label."""
-        return _LDictConstructor(label)
+        return LDictConstructor(label)
     
     @staticmethod
     def is_of(label: str) -> Callable[[Any], bool]:
-        """Return a predicate checking if a node is a LDict with a specific label."""
+        """Return a predicate checking if an object is an `LDict` with a given label."""
         return lambda node: isinstance(node, LDict) and node.label == label
     
     @staticmethod
@@ -389,7 +389,7 @@ class LDict(Mapping[K, V], Generic[K, V]):
             return NotImplemented
 
 
-class _LDictConstructor(Generic[K, V]):
+class LDictConstructor(Generic[K, V]):
     """Constructor for an `LDict` with a particular label."""
     def __init__(self, label: str):
         self.label = label
@@ -398,6 +398,9 @@ class _LDictConstructor(Generic[K, V]):
         if data is None:
             data = dict()
         return LDict(self.label, data)
+    
+    def __repr__(self) -> str:
+        return f"LDict.of({self.label})"
         
     def fromkeys(self, keys: Iterable[K], value: Optional[V] = None):
         return LDict.fromkeys(self.label, keys, value)
@@ -405,6 +408,11 @@ class _LDictConstructor(Generic[K, V]):
     def from_ns(self, namespace: SimpleNamespace):
         """Convert the top level of `namespace` to an `LDict`."""
         return LDict(self.label, namespace.__dict__)
+
+    @property
+    def predicate(self) -> Callable[[Any], bool]:
+        """A predicate that checks if an object is an `LDict` with this constructor's label."""
+        return lambda node: isinstance(node, LDict) and node.label == self.label
 
 
 # YAML serialisation/deserialisation for LDict objects

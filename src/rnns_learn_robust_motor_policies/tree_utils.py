@@ -16,7 +16,7 @@ from jax_cookbook import anyf, is_module, is_type
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.config import STRINGS
-from rnns_learn_robust_motor_policies.types import _Wrapped, LDict, TreeNamespace
+from rnns_learn_robust_motor_policies.types import _Wrapped, LDict, LDictConstructor, TreeNamespace
 
 
 
@@ -81,7 +81,11 @@ def falsef(x):
     return False
 
     
-def tree_level_labels(tree: LDict, is_leaf: Optional[Callable[[Any], bool]] = None, sep: Optional[str] = None) -> list[str]:
+def tree_level_labels(
+    tree: LDict, 
+    sep: Optional[str] = None,
+    is_leaf: Optional[Callable[[Any], bool]] = None,
+) -> list[str]:
     """
     Given a PyTree of LDict nodes, return a list of labels, one for each level of the tree.
     
@@ -90,37 +94,33 @@ def tree_level_labels(tree: LDict, is_leaf: Optional[Callable[[Any], bool]] = No
     labels along the way.
     """
     # Get the path to the first leaf
-    paths, _ = jtu.tree_flatten_with_path(tree, is_leaf=is_leaf)
-    if not paths:
+    leaves_with_typed_paths = jtree.leaves_with_annotated_path(
+        tree, is_leaf=is_leaf, annotation_func=_annotation_func,
+    )
+    if not leaves_with_typed_paths:
         return []
-    first_path, _ = paths[0]
+    first_path, _ = leaves_with_typed_paths[0]
     
     # Collect the labels from all LDict nodes in the path
     labels = []
-    current_node = tree
-    for path_element in first_path:
-        # If this is an LDict, collect its label
-        if isinstance(current_node, LDict):
-            labels.append(current_node.label)   
+    for node_type, _ in first_path:
+        if isinstance(node_type, LDictConstructor):
+            labels.append(node_type.label)   
         else:
-            labels.append(current_node.__class__.__name__)
-            logger.warning(
-                f"Non-LDict node encountered when labeling tree levels: {type(current_node)}; " 
-                "assuming it is a leaf, and stopping."
-            )
-            break
-        
-        # Get the node at this level
-        if isinstance(current_node, dict) or hasattr(current_node, '__getitem__'):
-            current_node = current_node[path_element.key if hasattr(path_element, 'key') else path_element]
-        
-        if is_leaf is not None and is_leaf(current_node):
-            break
+            labels.append(node_type.__name__)
         
     if sep is not None:
         labels = [label.replace(STRINGS.hps_level_label_sep, sep) for label in labels]
         
     return labels
+
+
+def _annotation_func(node):
+    #! For use with `jtree.leaves_with_annotated_path`
+    if is_type(LDict)(node):
+        return LDict.of(node.label)
+    else:
+        return type(node)
 
 
 def print_ldict_tree_summary(tree):
@@ -136,8 +136,8 @@ def print_ldict_tree_summary(tree):
 def ldict_level_to_top(label: str, tree: PyTree, is_leaf: Optional[Callable[[Any], bool]] = None) -> list[type]:
     """Given an `LDict` label and a PyTree containing such nodes, move them to the top of the tree."""
     #? `is_leaf` doesn't seem to work as an argument to an inner `jt.structure` in transpose,
-    #? e.g. to keep `Responses` on the inside; 
-    #? Wrap these inner nodes to a non-PyTree object to force them to be treated as leaves.
+    #? e.g. when we want to keep `Responses` on the inside; 
+    #? instead, wrap these inner nodes as non-PyTree objects to force them to be treated as leaves.
 
     level_labels = tree_level_labels(tree, is_leaf=is_leaf)
 
@@ -152,12 +152,12 @@ def ldict_level_to_top(label: str, tree: PyTree, is_leaf: Optional[Callable[[Any
     if is_leaf is not None:
         wrapped_tree = jt.map(_Wrapped, tree, is_leaf=is_leaf)
     else:
-        wrapped_tree = tree
-    # if label == level_labels[-1]:
-    #     wrapped_tree = tree  # No need to wrap
-    # else:
-    #     subtree_outer_label = level_labels[level_labels.index(label) + 1]
-    #     wrapped_tree = jt.map(_Wrapped, tree, is_leaf=LDict.is_of(subtree_outer_label))
+        if label == level_labels[-1]:
+            wrapped_tree = tree  # No need to wrap
+        else:
+            # Treat nodes inside the given level as leaves, so they are not carried outward
+            subtree_outer_label = level_labels[level_labels.index(label) + 1]
+            wrapped_tree = jt.map(_Wrapped, tree, is_leaf=LDict.is_of(subtree_outer_label))
 
     result = jt.transpose(
         jt.structure(wrapped_tree, is_leaf=LDict.is_of(label)),
@@ -420,3 +420,9 @@ def first_shape(tree):
     """Return the shape of the first leaf of a tree of arrays."""
     arrays = eqx.filter(tree, eqx.is_array)
     return first(arrays, is_leaf=None).shape
+
+
+@jtree.filter_wrap(eqx.is_array)
+def shapes(tree):
+    """Returns a tree of the shapes of the leaves of `tree`."""
+    return jax.tree_map(lambda x: x.shape, tree)

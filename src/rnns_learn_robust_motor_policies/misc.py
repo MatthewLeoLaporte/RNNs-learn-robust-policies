@@ -527,3 +527,16 @@ def exclude_unshared_keys_and_identical_values(list_of_dicts):
         {k: v for k, v in original_dict.items() if k not in keys_to_exclude}
         for original_dict in list_of_dicts
     ]
+    
+    
+def batch_index(arr, idxs):
+    """
+    Given a batched array of indices, take the elements of `arr` at those indices.
+    
+    If `arr` has shape `(*batch, x, ...)` and `idxs` has shape `(*batch)`, then this 
+    indexes axis `x` of `arr` at the scalar indices specified by `idxs`. This does not 
+    work for arbitrary slices over `x`, as the result would be ragged. 
+    """
+    n_final_axes = len(arr.shape) - len(idxs.shape)
+    final_axes = tuple(-i for i in range(1, n_final_axes + 1))
+    return jnp.take_along_axis(arr, jnp.expand_dims(idxs, axis=final_axes), axis=final_axes[-1])

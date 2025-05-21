@@ -22,7 +22,7 @@ import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.config.config import STRINGS
 from rnns_learn_robust_motor_policies.database import EvaluationRecord, add_evaluation_figure, savefig
-from rnns_learn_robust_motor_policies.tree_utils import subdict, tree_level_labels, ldict_level_to_top
+from rnns_learn_robust_motor_policies.tree_utils import move_ldict_level_above, subdict, tree_level_labels, ldict_level_to_top
 from rnns_learn_robust_motor_policies.misc import camel_to_snake, get_dataclass_fields, get_name_of_callable, is_json_serializable
 from rnns_learn_robust_motor_policies.plot_utils import figs_flatten_with_paths, get_label_str
 from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
@@ -728,16 +728,17 @@ class AbstractAnalysis(Module, strict=False):
     def after_unstacking(
         self, 
         axis: int, 
-        label: str, 
+        level_label: str, 
         keys: Optional[Sequence[Hashable]] = None, 
         dependency_name: Optional[str] = None,
+        above_level: Optional[str] = None,
     ) -> Self:
         """
         Returns a copy of this analysis that unpacks an array axis into an `LDict` level.
         
         Args:
             axis: The array axis to unpack
-            label: The label for the new LDict level
+            level_label: The label for the new LDict level
             keys: The keys to use for the LDict entries. If given, must match the length of the axis.
                 By default, uses integer keys starting from zero. 
             dependency_name: Optional name of specific dependency to transform
@@ -756,23 +757,32 @@ class AbstractAnalysis(Module, strict=False):
                 arr_moved = jnp.moveaxis(arr, axis, 0)
                 
                 # Create an LDict with the specified label
-                return LDict.of(label)({
+                return LDict.of(level_label)({
                     key: slice_data 
                     for key, slice_data in zip(keys, arr_moved)
                 })
             
-            return jt.map(
+            unstacked = jt.map(
                 transform_array,
                 data,
                 is_leaf=eqx.is_array,
             )
+            
+            if above_level is not None:
+                unstacked = jt.map(
+                    lambda subtree: move_ldict_level_above(level_label, above_level, subtree),
+                    unstacked,
+                    is_leaf=is_type(LDict),
+                )
+                
+            return unstacked
         
         return self._add_prep_op(
             name="after_unstacking",
-            label=f"unstack-axis{axis}-to_{_format_level_str(label)}",
+            label=f"unstack-axis{axis}-to-{_format_level_str(level_label)}",
             dep_name=dependency_name,
             transform_func=unpack_axis,
-            params=dict(axis=axis, label=label), #, keys=keys),
+            params=dict(axis=axis, level_label=level_label, above_level=above_level), #, keys=keys),
         )
 
     def after_stacking(self, level: str, dependency_name: Optional[str] = None) -> Self:
