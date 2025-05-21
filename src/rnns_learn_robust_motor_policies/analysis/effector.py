@@ -12,7 +12,7 @@ from feedbax.task import AbstractTask
 from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisDependenciesType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_pos_endpoints
 from rnns_learn_robust_motor_policies.colors import COLORSCALES
 from rnns_learn_robust_motor_policies.config import PLOTLY_CONFIG
@@ -28,7 +28,7 @@ MEAN_LIGHTEN_FACTOR = PLOTLY_CONFIG.mean_lighten_factor
 class EffectorTrajectories(AbstractAnalysis):
     conditions: tuple[str, ...] = () # ('any_system_noise',)  # TODO: Skip this analysis, if only one eval
     variant: Optional[str] = "small"
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
+    dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
         # legend_title="Reach direction",
         mean_exclude_axes=(),

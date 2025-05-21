@@ -67,7 +67,7 @@ def get_pos_endpoints(trial_specs):
 )
 
 
-def _get_eval_ensemble(models, task):
+def _get_eval_ensemble(models, task: AbstractTask):
     def eval_ensemble(key):
         return task.eval_ensemble(
             models,

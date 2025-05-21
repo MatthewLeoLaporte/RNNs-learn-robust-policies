@@ -13,7 +13,7 @@ from feedbax.bodies import SimpleFeedbackState
 from jax_cookbook import is_type
 
 from rnns_learn_robust_motor_policies.analysis.pca import PCA
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisDependenciesType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.constants import REPLICATE_CRITERION
 from rnns_learn_robust_motor_policies.plot_utils import get_label_str
 from rnns_learn_robust_motor_policies.plot_utils import calculate_array_minmax
@@ -194,7 +194,7 @@ def activity_sample_units(
 class NetworkActivity_SampleUnits(AbstractAnalysis):
     conditions: tuple[str, ...] = ()  
     variant: Optional[str] = "small"
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
+    dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
         n_units_sample=4,
         key=jr.PRNGKey(0),

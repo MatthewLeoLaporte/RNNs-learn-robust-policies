@@ -4,7 +4,7 @@ from functools import cached_property, partial, wraps
 import inspect
 import logging
 from types import LambdaType, MappingProxyType
-from typing import TYPE_CHECKING, Any, ClassVar, Iterable, Literal, NamedTuple, Optional, Dict, Self, Union
+from typing import TYPE_CHECKING, Any, ClassVar, Iterable, Literal, NamedTuple, Optional, Dict, Self, TypeAlias, Union
 from pathlib import Path
 import yaml
 
@@ -137,15 +137,18 @@ def _combine_figures(
         if not figs:
             return None
         
-        # Use first figure as base (make a copy to avoid modifying original)
-        base_fig = go.Figure(figs[0])
+        layout = figs[0].layout
         
-        # Add traces from other figures
-        for fig in figs[1:]:
-            if fig is not None:
-                base_fig.add_traces(fig.data)
+        if layout.legend.traceorder == "reversed":
+            layout.legend.traceorder = "grouped+reversed"
+            
+        if layout.legend.grouptitlefont.style is None:
+            layout.legend.grouptitlefont.style = "italic"
+                        
+        traces = [trace for fig in figs for trace in fig.data]
         
-        return base_fig
+        fig = go.Figure(data=traces, layout=layout)
+        return fig 
     
     return jt.map(
         combine_figs,
@@ -320,18 +323,20 @@ class AbstractAnalysis(Module, strict=False):
         else:
             fig_op = self._fig_op
 
-            kwargs_with_specials = prepped_kwargs.copy()
-            kwargs_with_specials["result"] = result
-            kwargs_with_specials["data.states"] = prepped_data.states
+            # `make_figs` inputs will need to be sliced for different figures.
+            # Prepare by amalgamating them.
+            prepped_kwargs_with_results = prepped_kwargs.copy()
+            prepped_kwargs_with_results["data.states"] = prepped_data.states
+            prepped_kwargs_with_results["result"] = result
 
             # Determine which dependencies to process
             target_dep_names = self._get_target_dependency_names(
-                fig_op.dep_name, kwargs_with_specials, "Fig op"
+                fig_op.dep_name, prepped_kwargs_with_results, "Fig op"
             )
 
             dependencies_to_process: Dict[str, Any] = {}
             if target_dep_names:
-                 dependencies_to_process = {name: kwargs_with_specials[name] for name in target_dep_names}
+                 dependencies_to_process = {name: prepped_kwargs_with_results[name] for name in target_dep_names}
 
             if dependencies_to_process:
                 # Find the first leaf to determine items
@@ -344,8 +349,8 @@ class AbstractAnalysis(Module, strict=False):
 
                         figs_list = []
                         for i, item in enumerate(items_to_iterate):
-                            # Create the sliced kwargs based on the potentially modified processed_kwargs
-                            sliced_kwargs = kwargs_with_specials.copy() # Start from processed state for each slice
+                            # Slice the `make_figs` inputs
+                            sliced_kwargs = prepped_kwargs_with_results.copy() # Start from processed state for each slice
                             for k, v in dependencies_to_process.items():
                                 sliced_kwargs[k] = jt.map(
                                     lambda x: fig_op.slice_fn(x, item) if fig_op.is_leaf(x) else x,
@@ -353,6 +358,7 @@ class AbstractAnalysis(Module, strict=False):
                                     is_leaf=fig_op.is_leaf
                                 )
 
+                            # Modify the `fig_params` of the `AbstractAnalysis` instance
                             analysis_for_item = self
                             if fig_op.fig_params_fn is not None:
                                 modified_fig_params = fig_op.fig_params_fn(self.fig_params, i, item)
@@ -362,6 +368,7 @@ class AbstractAnalysis(Module, strict=False):
                                     self.fig_params | modified_fig_params
                                 )
 
+                            # Pop the `data.states` back out of the amalgamated inputs, if necessary 
                             data_for_item = data
                             if "data.states" in sliced_kwargs:
                                 data_for_item = eqx.tree_at(
@@ -369,10 +376,11 @@ class AbstractAnalysis(Module, strict=False):
                                 )
                                 del sliced_kwargs["data.states"]
 
-                            # Pass sliced_kwargs to make_figs
+                            # Generate a figure by passing sliced inputs to `make_figs` of the modified instance
                             slice_figs = analysis_for_item.make_figs(data_for_item, **sliced_kwargs)
                             figs_list.append(slice_figs)
 
+                        # Potentially combine the figures into a single figure
                         if figs_list:
                              figs = fig_op.agg_fn(figs_list, items_to_iterate)
                         else:
@@ -382,7 +390,9 @@ class AbstractAnalysis(Module, strict=False):
                     except Exception as e:
                          logger.error(f"Error during fig op execution", exc_info=True)
                          raise e
-
+            else:
+                logger.warning("Fig ops require dependencies to vary over figures, but no valid dependencies were specified.")
+                
             if figs is None and self._fig_op:
                  logger.warning(f"Fig operation for {self.name} could not proceed or produced no figures.")
 
@@ -1260,9 +1270,12 @@ class AbstractAnalysis(Module, strict=False):
         return self.__class__.__name__
 
 
+AnalysisDependenciesType: TypeAlias = MappingProxyType[str, type[AbstractAnalysis]]
+
+
 class _DummyAnalysis(AbstractAnalysis):
     """An empty analysis, for debugging."""
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
+    dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = None
     fig_params: FigParamNamespace = DefaultFigParamNamespace()

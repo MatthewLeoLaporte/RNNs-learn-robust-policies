@@ -12,7 +12,7 @@ from feedbax.intervene import ConstantInput,  NetworkConstantInput, TimeSeriesPa
 from jax_cookbook import is_module
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisDependenciesType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.analysis.state_utils import angle_between_vectors, vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_constant_task_input_fn
 from rnns_learn_robust_motor_policies.types import LDict
@@ -135,7 +135,7 @@ def eval_func(key, hps, models, task):
 class UnitPreferredDirections(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType({})
+    dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType({})
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
     
     # TODO: Separate into two `AbstractAnalysis` classes in serial
@@ -193,7 +193,7 @@ class UnitPreferredDirections(AbstractAnalysis):
 class UnitStimDirections(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType({})
+    dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType({})
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
 
     def compute(self, data: AnalysisInputData, **kwargs):
@@ -237,7 +237,7 @@ def angle_to_direction(angle):
 class UnitPreferenceAlignment(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
+    dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
         results1=UnitPreferredDirections,
         results2=UnitStimDirections,
     ))
@@ -294,7 +294,7 @@ class AllResults(AbstractAnalysis):
     """Collect all the results for this analysis in one place, for interactive reasons."""
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
+    dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
         results1=UnitPreferredDirections,
         results2=UnitStimDirections,
         results3=UnitPreferenceAlignment,

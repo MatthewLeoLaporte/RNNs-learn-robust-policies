@@ -1,6 +1,7 @@
 #  Hyperparameters that uniquely identify the model(s)/training run(s) to analyze
 train:
   model:  # 
+    n_replicates: 5
     n_steps: 100  
     hidden_size: 100
     feedback_noise_std: 0.01
@@ -30,7 +31,7 @@ pert:
     amp: [0.0, 4.0]  
     type: curl
   unit:
-    amp: [0.0, 0.25]  
+    amp: [0.0, 0.05]  
 
 model:
   n_steps: null

@@ -12,7 +12,7 @@ from feedbax.bodies import SimpleFeedback
 from feedbax.nn import NetworkState
 from feedbax.task import SimpleReaches
 
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisDependenciesType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.analysis.fp_finder import (
     FixedPointFinder,
     fp_adam_optimizer,
@@ -25,7 +25,7 @@ class SteadyStateFPs(AbstractAnalysis):
     """ 
     """
 
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
+    dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = None
     fig_params: FigParamNamespace = DefaultFigParamNamespace()

@@ -16,7 +16,7 @@ import numpy as np
 from rnns_learn_robust_motor_policies.plot_utils import get_label_str
 from rnns_learn_robust_motor_policies.types import Responses, TreeNamespace
 from rnns_learn_robust_motor_policies.analysis.aligned import AlignedVars
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisDependenciesType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.constants import EVAL_REACH_LENGTH, REPLICATE_CRITERION
 from rnns_learn_robust_motor_policies.misc import lohi
 from rnns_learn_robust_motor_policies.plot import get_measure_replicate_comparisons, get_violins
@@ -354,7 +354,7 @@ def output_corr(
 
 
 class Measures(AbstractAnalysis):
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
+    dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
         aligned_vars=AlignedVars,
     ))
     measure_keys: Sequence[str] = eqx.field(
@@ -460,7 +460,7 @@ def get_one_measure_plot_per_eval_condition(plot_func, measures, colors, **kwarg
 # class Measures_CompareReplicatesLoHi(AbstractAnalysis):
 #     conditions: tuple[str, ...] = ()
 #     variant: Optional[str] = "full"
-#     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
+#     dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
 #         measure_values_lohi_train_pert_std=MeasuresLoHiPertStd,
 #     ))
 #     fig_params: FigParamNamespace = DefaultFigParamNamespace()

@@ -5,13 +5,16 @@ from typing import ClassVar, Optional, Dict, Any, Literal as L, Sequence
 
 import equinox as eqx
 from equinox import Module
+import jax
 import jax.numpy as jnp
+import jax.random as jr
 import jax.tree as jt
-from jaxtyping import PyTree
+from jaxtyping import PyTree, PRNGKeyArray
 import numpy as np
 import plotly.graph_objects as go
 
 from feedbax.intervene import NetworkConstantInput, TimeSeriesParam, add_intervenors, schedule_intervenor
+from feedbax.task import AbstractTask
 import feedbax.plotly as fbp
 from jax_cookbook import is_module, is_type, is_none
 import jax_cookbook.tree as jtree
@@ -29,6 +32,7 @@ from rnns_learn_robust_motor_policies.colors import ColorscaleSpec
 from rnns_learn_robust_motor_policies.config.config import PLOTLY_CONFIG
 from rnns_learn_robust_motor_policies.constants import POS_ENDPOINTS_ALIGNED
 from rnns_learn_robust_motor_policies.plot import add_endpoint_traces, get_violins, set_axes_bounds_equal
+from rnns_learn_robust_motor_policies.tree_utils import move_ldict_level_above
 from rnns_learn_robust_motor_policies.types import (
     RESPONSE_VAR_LABELS,
     LDict,
@@ -151,9 +155,13 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     )
     
     return tasks, models, hps, None
-
-
-def task_with_unit_stim(task, unit_idx, stim_amp, hidden_size, intervenor_label):
+    
+    
+def task_with_scaled_unit_stim(model, task, unit_idx, stim_amp_base, hidden_size, intervenor_label):
+    """Scale the magnitude of unit stim based on the length of the unit's readout vector."""
+    readout_vector_length = jnp.linalg.norm(model.step.net.readout.weight[..., unit_idx])
+    stim_amp = stim_amp_base / readout_vector_length
+    # jax.debug.print("unit_idx={unit_idx}, stim_amp={stim_amp}, readout_vector_length={readout_vector_length}", unit_idx=unit_idx, stim_amp=stim_amp, readout_vector_length=readout_vector_length)
     return eqx.tree_at(
         lambda task: (
             task.intervention_specs.validation[intervenor_label].intervenor.params.scale,
@@ -166,27 +174,70 @@ def task_with_unit_stim(task, unit_idx, stim_amp, hidden_size, intervenor_label)
         ),
         is_leaf=is_none,
     )
+    
+    
+def get_task_eval_func(task_base, hps, unit_idx, stim_amp_base):
+    def task_eval_func(model, key):
+        task = task_with_scaled_unit_stim(
+            model,
+            task_base, 
+            unit_idx, 
+            stim_amp_base, 
+            hps.train.model.hidden_size, 
+            UNIT_STIM_INTERVENOR_LABEL,
+        )
+        return task.eval(model, key=key)
+    return task_eval_func
 
 
 def eval_func(key_eval, hps, models, task):
     states = eqx.filter_vmap(
         lambda stim_amp: eqx.filter_vmap(
-            lambda unit_idx: vmap_eval_ensemble(
-                key_eval, 
-                hps,
-                models,
-                task_with_unit_stim(
-                    task, 
-                    unit_idx, 
-                    stim_amp, 
-                    hps.train.model.hidden_size, 
-                    UNIT_STIM_INTERVENOR_LABEL,
-                ),
-            ),
+            lambda unit_idx: eqx.filter_vmap(
+                lambda key: eqx.filter_vmap(
+                    get_task_eval_func(task, hps, unit_idx, stim_amp)
+                )(models, jr.split(key, hps.train.model.n_replicates))
+            )(jr.split(key_eval, hps.eval_n))
         )(jnp.arange(hps.train.model.hidden_size))
     )(jnp.array(hps.pert.unit.amp))
     
     return states
+
+
+#! This is the old eval func, without model-dependent unit stim scaling
+# def task_with_unit_stim(task, unit_idx, stim_amp, hidden_size, intervenor_label):
+#     return eqx.tree_at(
+#         lambda task: (
+#             task.intervention_specs.validation[intervenor_label].intervenor.params.scale,
+#             task.intervention_specs.validation[intervenor_label].intervenor.params.unit_spec,
+#         ),
+#         task,
+#         (
+#             stim_amp,
+#             jnp.full(hidden_size, jnp.nan).at[unit_idx].set(1.0),
+#         ),
+#         is_leaf=is_none,
+#     )
+    
+# def eval_func(key_eval, hps, models, task):
+#     states = eqx.filter_vmap(
+#         lambda stim_amp: eqx.filter_vmap(
+#             lambda unit_idx: vmap_eval_ensemble(
+#                 key_eval, 
+#                 hps,
+#                 models,
+#                 task_with_unit_stim(
+#                     task, 
+#                     unit_idx, 
+#                     stim_amp, 
+#                     hps.train.model.hidden_size, 
+#                     UNIT_STIM_INTERVENOR_LABEL,
+#                 ),
+#             ),
+#         )(jnp.arange(hps.train.model.hidden_size))
+#     )(jnp.array(hps.pert.unit.amp))
+    
+#     return states
 
 
 MEASURE_KEYS = (
@@ -201,40 +252,46 @@ CONTEXT_STYLES = dict(line_dash={0: "dot", 1: "dash", 2: "solid"})
 
 UNIT_STIM_IDX = 1
 
+def move_var_above_train_pert_std(tree, **kwargs):
+    return move_ldict_level_above('var', 'train__pert__std', tree)
+
+unit_idxs_profiles_plot = jnp.arange(10)
+
 # PyTree structure: [context_input, pert__amp, train__pert__std]
 # Array batch shape: [stim_amp, unit_idx, eval, replicate, condition]
 ALL_ANALYSES = [
     (
-        # TODO: We need profiles *without* AlignedVars (but *with* subset of states in "vars" level)
-        # TODO: for steady-state analysis. How can we modify the dependencies of `Profiles` conditionally? 
         Profiles(
             variant="full",
             dependency_params={
                 AlignedVars: dict(
                     # Bypass alignment; keep aligned with x-y axes
                     origins_directions_func=get_trivial_reach_origins_directions,
+                    where_states_to_align=lambda states, origins: LDict.of('var')(dict(
+                        pos=states.mechanics.effector.pos - origins[..., None, :],
+                    ))
                 )
             }
         )
         .after_transform(partial(get_best_replicate, axis=3))
-        .after_indexing(1, jnp.array([0,1,2,3,4]), axis_label="unit_stim_idx")  #! Examine only a few stim units
-        .after_unstacking(1, 'unit_stim_idx', above_level='pert__amp')#, dependency_name="aligned_vars")
-        .after_indexing(0, 1, axis_label="stim_amp")  #! Only examine trials with unit stim
-        .combine_figs_by_level(
+        .after_indexing(1, unit_idxs_profiles_plot, axis_label="unit_stim_idx")  #! Only make figures for a few stim units
+        .after_unstacking(1, 'unit_stim_idx', above_level='pert__amp')
+        .after_indexing(0, 1, axis_label="stim_amp")  #! Only make figures for unit stim condition
+        .after_transform(move_var_above_train_pert_std, dependency_name="vars")  # Plot train pert stds on same figure
+        .combine_figs_by_level(  # Also plot context inputs on same figure, with different line styles
             level='context_input',
             fig_params_fn=lambda fig_params, i, item: dict(
                 scatter_kws=dict(
                     line_dash=CONTEXT_STYLES['line_dash'][i],
                     legendgroup=CONTEXT_LABELS[i],
-                    legendgrouptitle_text=CONTEXT_LABELS[i],
+                    legendgrouptitle_text=f"SIUE: {CONTEXT_LABELS[i]}",
                 ),
             ),
         )
         .with_fig_params(
-            # legend_title="Context",
             layout_kws=dict(
                 width=500,
-                height=300,
+                height=350,
             ),
         )
     ),
@@ -250,6 +307,6 @@ ALL_ANALYSES = [
             get_segment_trials_func(get_symmetric_accel_decel_epochs),
             dependency_name="states",
         )
-        .vmap_over_states(axes=[0, 1])
+        .vmap_over_states(axes=[0, 1])  # Compute preferences separately for stim vs. nostim, and for each stim unit
     ),
 ]

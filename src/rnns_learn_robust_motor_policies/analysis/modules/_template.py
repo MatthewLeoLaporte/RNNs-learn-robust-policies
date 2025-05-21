@@ -10,7 +10,7 @@ from typing import ClassVar, Optional
 from equinox import Module
 
 from rnns_learn_robust_motor_policies.analysis import AbstractAnalysis
-from rnns_learn_robust_motor_policies.analysis.analysis import DefaultFigParamNamespace, FigParamNamespace
+from rnns_learn_robust_motor_policies.analysis.analysis import AnalysisDependenciesType, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.analysis.state_utils import vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.types import TreeNamespace
 from rnns_learn_robust_motor_policies.types import LDict
@@ -52,7 +52,7 @@ eval_func: Callable = vmap_eval_ensemble
 class SomeAnalysis(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
+    dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
     
     ...

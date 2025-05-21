@@ -17,6 +17,7 @@ import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.analysis import (
     AbstractAnalysis,
+    AnalysisDependenciesType,
     AnalysisInputData,
     DefaultFigParamNamespace,
     FigParamNamespace,
@@ -119,7 +120,7 @@ def get_trivial_reach_origins_directions(task: AbstractTask, hps: TreeNamespace)
 
 class AlignedVars(AbstractAnalysis):
     """Align spatial variable (e.g. position and velocity) coordinates with the reach direction."""
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
+    dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = None
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
@@ -156,7 +157,7 @@ class AlignedVars(AbstractAnalysis):
         
         
 class AlignedEffectorTrajectories(AbstractAnalysis):
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
+    dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
         aligned_vars=AlignedVars,
     ))
     conditions: tuple[str, ...] = ()

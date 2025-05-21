@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisDependenciesType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.types import TreeNamespace
 
 import jax.numpy as jnp
@@ -35,7 +35,7 @@ class StatesPCA(AbstractAnalysis):
             `(*batch, n_vars)`, retaining the batch axes in the output. 
     """
 
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
+    dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = None
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
@@ -67,7 +67,7 @@ class StatesPCA(AbstractAnalysis):
 # class ProjectPCA(AbstractAnalysis):
 #     conditions: tuple[str, ...] = ()
 #     variant: Optional[str] = "small"
-#     dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict(
+#     dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
 #         pca=PCA,
 #     ))
 #     fig_params: FigParamNamespace = DefaultFigParamNamespace()

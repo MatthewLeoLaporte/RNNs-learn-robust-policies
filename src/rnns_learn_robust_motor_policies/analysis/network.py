@@ -16,7 +16,7 @@ from feedbax.train import grad_wrap_simple_loss_func
 from feedbax.loss import nan_safe_mse
 from jax_cookbook import is_module
 
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisDependenciesType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.analysis.measures import output_corr
 from rnns_learn_robust_motor_policies.misc import center_and_rescale, ravel_except_last
 from rnns_learn_robust_motor_policies.plot import get_violins
@@ -26,7 +26,7 @@ from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
 class OutputWeightCorrelation(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
+    dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
     
     def compute(
@@ -102,7 +102,7 @@ def fit_linear(X, y, n_iter=50, *, key):
 class UnitPreferences(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
-    dependencies: ClassVar[MappingProxyType[str, type[AbstractAnalysis]]] = MappingProxyType(dict())
+    dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
 
     n_iter_fit: int = 50
