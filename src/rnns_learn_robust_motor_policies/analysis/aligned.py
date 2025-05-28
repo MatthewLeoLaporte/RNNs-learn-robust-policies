@@ -99,14 +99,14 @@ def get_aligned_vars(vars, directions):
     )
 
 
-def get_reach_origins_directions(task: AbstractTask, hps: TreeNamespace):
+def get_reach_origins_directions(task: AbstractTask, models: PyTree[Module], hps: TreeNamespace):
     pos_endpoints = get_pos_endpoints(get_validation_trial_specs(task))
     directions = pos_endpoints[1] - pos_endpoints[0]
     origins = pos_endpoints[0]
     return origins, directions
 
 
-def get_trivial_reach_origins_directions(task: AbstractTask, hps: TreeNamespace):
+def get_trivial_reach_origins_directions(task: AbstractTask, models: PyTree[Module], hps: TreeNamespace):
     """Return 'aligns' 'reaches' with the x-y axes; i.e. effectively does nothing.
     
     The purpose of this is to avoid (for now) trying to bypass `AlignedVars` as a dependency of 
@@ -125,7 +125,6 @@ class AlignedVars(AbstractAnalysis):
     variant: Optional[str] = None
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
     where_states_to_align: Callable = WHERE_VARS_TO_ALIGN
-    #! TODO: Infer this from the `task`
     origins_directions_func: Callable = get_reach_origins_directions
 
     def compute(
@@ -133,21 +132,26 @@ class AlignedVars(AbstractAnalysis):
         data: AnalysisInputData,
         **kwargs,
     ):
-        def _get_aligned_vars_by_std(task, states_by_std, hps):
-            origins, directions = self.origins_directions_func(task, hps)
+        def _get_aligned_vars(task, models_by_std, states_by_std, hps):
             
-            return jt.map(
-                lambda states: jt.map(
+            def _get_aligned_vars_by_std(states, models):
+                origins, directions = self.origins_directions_func(task, models, hps)
+                return jt.map(
                     lambda var: project_onto_direction(var, directions),
                     self.where_states_to_align(states, origins),
-                ),
+                )
+            
+            return jt.map(
+                _get_aligned_vars_by_std,
                 states_by_std,
+                models_by_std,
                 is_leaf=is_module,
             )
 
         result = jt.map(
-            _get_aligned_vars_by_std,
+            _get_aligned_vars,
             data.tasks,
+            data.models,
             data.states,
             data.hps,
             is_leaf=is_module,

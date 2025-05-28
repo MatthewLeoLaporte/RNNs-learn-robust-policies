@@ -25,6 +25,7 @@ import jax.tree as jt
 from rnns_learn_robust_motor_policies.analysis.analysis import (
     AbstractAnalysis, AnalysisInputData, _format_dict_of_params
 )
+from rnns_learn_robust_motor_policies.misc import get_md5_hexdigest
 
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,7 @@ def param_hash(params: Dict[str, Any]) -> str:
     # Convert params to a stable string representation and hash it
     params_formatted = _format_dict_of_params(params)
     param_str = json.dumps(params_formatted, sort_keys=True)
-    return hashlib.md5(param_str.encode()).hexdigest()
+    return get_md5_hexdigest(param_str)
 
 
 def get_params_for_dep_class(analysis, dep_class):

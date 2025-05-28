@@ -87,7 +87,7 @@ class OutputWeightCorrelation(AbstractAnalysis):
 
 
 def fit_linear(X, y, n_iter=50, *, key):
-    lin_model = jax.tree_map(
+    lin_model = jt.map(
         jnp.zeros_like,
         eqx.nn.Linear(X.shape[-1], 1, key=key),
     )

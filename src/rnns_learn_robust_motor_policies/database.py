@@ -63,7 +63,7 @@ import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.config import PATHS, STRINGS
 from rnns_learn_robust_motor_policies.hyperparams import flatten_hps, load_hps, take_train_histories_hps
-from rnns_learn_robust_motor_policies.misc import exclude_unshared_keys_and_identical_values, with_caller_logger
+from rnns_learn_robust_motor_policies.misc import exclude_unshared_keys_and_identical_values, get_md5_hexdigest, with_caller_logger
 from rnns_learn_robust_motor_policies.tree_utils import pp
 from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace, dict_to_namespace, is_dict_with_int_keys, namespace_to_dict
 
@@ -695,7 +695,7 @@ def generate_eval_hash(
         f"{expt_name or 'None'}",
         f"{json.dumps(eval_params, sort_keys=True)}",
     ])
-    return hashlib.md5(eval_str.encode()).hexdigest()
+    return get_md5_hexdigest(eval_str)
 
 
 def add_evaluation(
@@ -763,7 +763,7 @@ def add_evaluation(
 def generate_figure_hash(eval_hash: str, identifier: str, parameters: Dict[str, Any]) -> str:
     """Generate hash for a figure based on evaluation, identifier, and parameters."""
     figure_str = f"{eval_hash}_{identifier}_{json.dumps(parameters, sort_keys=True)}"
-    return hashlib.md5(figure_str.encode()).hexdigest()
+    return get_md5_hexdigest(figure_str)
 
 
 EXTS_WITH_EXIF = ['jpg', 'jpeg', 'tif', 'tiff', 'webp']

@@ -3,6 +3,7 @@ from copy import deepcopy
 from dataclasses import fields
 from datetime import datetime
 import functools
+import hashlib
 import importlib
 import inspect
 import json
@@ -540,3 +541,8 @@ def batch_index(arr, idxs):
     n_final_axes = len(arr.shape) - len(idxs.shape)
     final_axes = tuple(-i for i in range(1, n_final_axes + 1))
     return jnp.take_along_axis(arr, jnp.expand_dims(idxs, axis=final_axes), axis=final_axes[-1])
+
+
+def get_md5_hexdigest(content):
+    """Returns the MD5 hexdigest of an object."""
+    return hashlib.md5(str(content).encode()).hexdigest()

@@ -5,13 +5,13 @@ import json
 import os
 import yaml
 from pathlib import Path
-import hashlib
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QMessageBox,
     QSplitter, QTextEdit, QLabel, QHBoxLayout, QGroupBox
 )
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtCore import QUrl, Qt, QSize
+from rnns_learn_robust_motor_policies.misc import get_md5_hexdigest
 
 # Minimal HTML template
 TEMPLATE = '''
@@ -32,6 +32,7 @@ TEMPLATE = '''
 </body>
 </html>
 '''
+
 
 class PlotlyViewer(QMainWindow):
     def __init__(self):
@@ -87,7 +88,7 @@ class PlotlyViewer(QMainWindow):
         
     def get_cache_path(self, content):
         """Generate a cache file path based on content hash"""
-        content_hash = hashlib.md5(str(content).encode()).hexdigest()
+        content_hash = get_md5_hexdigest(content)
         return self.cache_dir / f"{content_hash}.html"
 
     def create_html(self, fig_dict):

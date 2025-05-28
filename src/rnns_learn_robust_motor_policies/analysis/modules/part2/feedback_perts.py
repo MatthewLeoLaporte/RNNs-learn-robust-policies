@@ -158,7 +158,7 @@ ORIGIN_GRID_IDX = 12
 # measure_labels = MEASURE_LABELS | custom_measure_labels
 
 
-def get_impulse_origins_directions(task, hps):
+def get_impulse_origins_directions(task, models, hps):
     # Steady-state positions
     origins = task.validation_trials.inits["mechanics.effector"].pos
 
@@ -255,7 +255,7 @@ ALL_ANALYSES = [
         Profiles(
             variant="full",
             dependency_params=aligned_vars_params,
-            vrect_kws=get_impulse_vrect_kws,  
+            vrect_kws_func=get_impulse_vrect_kws,  
         )
         .after_transform(get_best_replicate) 
         .after_indexing(1, -2, axis_label='pert__amp') 

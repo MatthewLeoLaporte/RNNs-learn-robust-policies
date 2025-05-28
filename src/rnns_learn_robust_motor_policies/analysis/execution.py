@@ -232,14 +232,8 @@ def perform_all_analyses(
         logger.info(f"Analysis complete: {analysis}")
         return analysis, result, figs
 
-    def _get_analysis_label(analysis):
-        if analysis.label is None:
-            return f"{analysis.name}-{id(analysis)}"
-        else:
-            return analysis.label
-
     all_analyses, all_results, all_figs = jtree.unzip({
-        _get_analysis_label(analysis): analyse_and_save(analysis, dependencies)
+        analysis.id_str: analyse_and_save(analysis, dependencies)
         for analysis, dependencies in zip(analyses, all_dependency_results)
     })
 
@@ -267,13 +261,6 @@ def run_analysis_module(
     if fig_dump_path is None:
         fig_dump_path = PATHS.figures_dump
 
-    if not retain_past_fig_dumps:
-        try:
-            delete_all_files_in_dir(fig_dump_path)
-            logger.info(f"Deleted existing dump figures in {fig_dump_path}")
-        except ValueError as e:
-            logger.warning(f"Failed to delete existing dump figures: {e}; directory probably doesn't exist yet")
-    
     # Start a database session for loading trained models, and saving evaluation/figure records
     db_session = get_db_session()
     check_model_files(db_session)  # Ensure we don't try to load any models whose files don't exist
@@ -380,6 +367,13 @@ def run_analysis_module(
         states=states,
         extras=extras,
     )
+    
+    if not retain_past_fig_dumps:
+        try:
+            delete_all_files_in_dir(fig_dump_path)
+            logger.info(f"Deleted existing dump figures in {fig_dump_path}")
+        except ValueError as e:
+            logger.warning(f"Failed to delete existing dump figures: {e}; directory probably doesn't exist yet")
 
     all_analyses, all_results, all_figs = perform_all_analyses(
         db_session,

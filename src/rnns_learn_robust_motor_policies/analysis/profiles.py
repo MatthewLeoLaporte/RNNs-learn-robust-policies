@@ -24,6 +24,11 @@ from rnns_learn_robust_motor_policies.types import LDict
 
 class Profiles(AbstractAnalysis):
     """Generates figures for 
+    
+    Assumes that all the aligned vars have the same number of coordinates (i.e. 
+    length of final array axis), and that these coordinates can be labeled similarly
+    by `coord_labels`. For example, this is the case when we align position, velocity, 
+    acceleration, and force in 2D. 
     """
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
@@ -40,17 +45,30 @@ class Profiles(AbstractAnalysis):
         ),
     )
     var_level_label: str = "var"
-    vrect_kws: Optional[Callable[[TreeNamespace], dict]] = None
-
+    vrect_kws_func: Optional[Callable[[TreeNamespace], dict]] = None
+    var_labels: Optional[dict[str, str]] = None  # e.g. for mapping "pos" to "position"
+    coord_labels: Optional[tuple[str, str]] = ("parallel", "orthogonal")  # None for vars with single, unlabelled coordinates (e.g. deviations) 
+    
     def make_figs(
         self,
         data: AnalysisInputData,
         *,
         vars,
         colors,
+        hps_common,
         **kwargs,
     ):
-        def _get_fig(fig_data, i, label, colors):          
+        def _get_fig(fig_data, i, coord_label, var_key, colors):      
+            if self.var_labels is not None:
+                var_label = self.var_labels[var_key]
+            else:
+                var_label = var_key
+                
+            if coord_label:
+                label = f"{coord_label} {var_label}"
+            else:
+                label = var_label
+                
             if isinstance(fig_data, LDict):            
                 colors = list(colors[fig_data.label].dark.values())
                 legend_title = get_label_str(fig_data.label)
@@ -68,34 +86,31 @@ class Profiles(AbstractAnalysis):
                 # curves_kws=dict(opacity=0.7),
                 **self.fig_params,
             )
-
+            
+        def _get_figs_by_coord(var_key, var_data):
+            if self.coord_labels is None:
+                return _get_fig(var_data, 0, "", var_key, colors)
+            else:
+                return LDict.of("coord")({
+                    coord_label: _get_fig(var_data, coord_idx, coord_label, var_key, colors)
+                    for coord_idx, coord_label in enumerate(self.coord_labels)
+                })
+            
         figs = jt.map(
             lambda results_by_var: LDict.of(self.var_level_label)({
-                var_label: LDict.of("direction")({
-                    direction_label: _get_fig(
-                        var_data, coord_idx, f"{direction_label} {var_label}", colors
-                    )
-                    for coord_idx, direction_label in enumerate(("parallel", "orthogonal"))
-                })
-                for var_label, var_data in results_by_var.items()
+                var_key: _get_figs_by_coord(var_key, var_data)
+                for var_key, var_data in results_by_var.items()
             }),
             vars[self.variant],
             is_leaf=LDict.is_of(self.var_level_label),
         )
 
-        if self.vrect_kws is not None:
-            # Allows the vrect to parametrize by the outer tree levels only
+        if self.vrect_kws_func is not None:
+            vrect_kws = self.vrect_kws_func(hps_common)
             jt.map(
-                lambda figs_by_var, hps: jt.map(
-                    lambda fig: fig.add_vrect(
-                        **self.vrect_kws(jt.leaves(hps, is_leaf=is_type(TreeNamespace))[0])
-                    ),
-                    figs_by_var,
-                    is_leaf=is_type(go.Figure),
-                ),
+                lambda fig: fig.add_vrect(**vrect_kws),
                 figs,
-                data.hps[self.variant],
-                is_leaf=LDict.is_of(self.var_level_label),
+                is_leaf=is_type(go.Figure),
             )
 
         return figs

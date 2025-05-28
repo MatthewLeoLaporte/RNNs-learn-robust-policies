@@ -20,7 +20,7 @@ from jax_cookbook import is_module, is_type, is_none
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.aligned import AlignedEffectorTrajectories, AlignedVars, get_trivial_reach_origins_directions
-from rnns_learn_robust_motor_policies.analysis.analysis import _DummyAnalysis, AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rnns_learn_robust_motor_policies.analysis.analysis import _DummyAnalysis, AbstractAnalysis, AnalysisDependenciesType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS, get_pert_amp_vmap_eval_func
 from rnns_learn_robust_motor_policies.analysis.effector import EffectorTrajectories
 from rnns_learn_robust_motor_policies.analysis.measures import ALL_MEASURE_KEYS, MEASURE_LABELS
@@ -32,7 +32,7 @@ from rnns_learn_robust_motor_policies.colors import ColorscaleSpec
 from rnns_learn_robust_motor_policies.config.config import PLOTLY_CONFIG
 from rnns_learn_robust_motor_policies.constants import POS_ENDPOINTS_ALIGNED
 from rnns_learn_robust_motor_policies.plot import add_endpoint_traces, get_violins, set_axes_bounds_equal
-from rnns_learn_robust_motor_policies.tree_utils import move_ldict_level_above
+from rnns_learn_robust_motor_policies.tree_utils import ldict_level_keys, move_ldict_level_above, tree_level_labels
 from rnns_learn_robust_motor_policies.types import (
     RESPONSE_VAR_LABELS,
     LDict,
@@ -49,38 +49,39 @@ COLOR_FUNCS = dict(
     stim_amp=ColorscaleSpec(
         sequence_func=lambda hps: hps.pert.unit.amp,
         colorscale="viridis",
-    )
+    ),
+    pert__amp=ColorscaleSpec(
+        sequence_func=lambda hps: hps.pert.plant.amp,
+        colorscale="viridis",
+    ),
 )
 
 
 UNIT_STIM_INTERVENOR_LABEL = "UnitStim"
 
+SCALE_UNIT_STIM_BY_READOUT_VECTOR_LENGTH = False
 
-def unit_stim(unit_idx, *, hps):
-    # idxs = slice(
-    #     hps.pert.unit.start_step, 
-    #     hps.pert.unit.start_step + hps.pert.unit.duration,
-    # )
-    # trial_mask = jnp.zeros((hps.train.model.n_steps - 1,), bool).at[idxs].set(True)
-    
-    unit_spec = jnp.full(hps.train.model.hidden_size, jnp.nan)
-    unit_spec = unit_spec.at[unit_idx].set(1.0)
+
+def unit_stim(hps):
+    idxs = slice(
+        hps.pert.unit.start_step, 
+        hps.pert.unit.start_step + hps.pert.unit.duration,
+    )
+    trial_mask = jnp.zeros((hps.model.n_steps - 1,), bool).at[idxs].set(True)
     
     return NetworkConstantInput.with_params(
-        # out_where=lambda state: state.hidden,
-        unit_spec=unit_spec,
-        active=True,
-        # active=TimeSeriesParam(trial_mask),
+        # active=True,
+        active=TimeSeriesParam(trial_mask),
     )
     
     
-def schedule_unit_stim(unit_idx, *, tasks, models, hps):
+def schedule_unit_stim(*, tasks, models, hps):
     tasks, models = jtree.unzip(jt.map(
         lambda task, model, hps: schedule_intervenor(
             task, model, 
             lambda model: model.step.net,
             # unit_stim(unit_idx, hps=hps),
-            NetworkConstantInput(),
+            unit_stim(hps),
             default_active=False,
             stage_name=None,  # None -> before RNN forward pass; 'hidden' -> after 
             label=UNIT_STIM_INTERVENOR_LABEL,
@@ -150,17 +151,18 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     ))
     
     # Schedule unit stim for a placeholder unit (0)
-    tasks, models = schedule_unit_stim(
-        0, tasks=tasks, models=models, hps=hps,
-    )
+    tasks, models = schedule_unit_stim(tasks=tasks, models=models, hps=hps)
     
     return tasks, models, hps, None
-    
+
     
 def task_with_scaled_unit_stim(model, task, unit_idx, stim_amp_base, hidden_size, intervenor_label):
     """Scale the magnitude of unit stim based on the length of the unit's readout vector."""
     readout_vector_length = jnp.linalg.norm(model.step.net.readout.weight[..., unit_idx])
-    stim_amp = stim_amp_base / readout_vector_length
+    if SCALE_UNIT_STIM_BY_READOUT_VECTOR_LENGTH:
+        stim_amp = stim_amp_base / readout_vector_length
+    else:
+        stim_amp = stim_amp_base
     # jax.debug.print("unit_idx={unit_idx}, stim_amp={stim_amp}, readout_vector_length={readout_vector_length}", unit_idx=unit_idx, stim_amp=stim_amp, readout_vector_length=readout_vector_length)
     return eqx.tree_at(
         lambda task: (
@@ -252,32 +254,91 @@ CONTEXT_STYLES = dict(line_dash={0: "dot", 1: "dash", 2: "solid"})
 
 UNIT_STIM_IDX = 1
 
+
+#! I'm not sure how 
+# def get_unit_stim_origins_directions(task, models, hps):
+#     origins = task.validation_trials.inits["mechanics.effector"].pos
+#     directions = jnp.broadcast_to(jnp.array([1., 0.]), origins.shape)
+#     return origins, directions
+
+
+def get_impulse_vrect_kws(hps):
+    return dict(
+        x0=hps.pert.unit.start_step,
+        x1=hps.pert.unit.start_step + hps.pert.unit.duration,
+        fillcolor="grey",
+        opacity=0.2,
+        line_width=0,
+        name='Perturbation',
+    )
+
+
 def move_var_above_train_pert_std(tree, **kwargs):
     return move_ldict_level_above('var', 'train__pert__std', tree)
 
-unit_idxs_profiles_plot = jnp.arange(10)
 
+def rearrange_profile_vars(tree, **kwargs):
+    tree = move_ldict_level_above('train__pert__std', 'pert__amp', tree)
+    tree = move_ldict_level_above('var', 'pert__amp', tree)
+    return tree
+
+
+unit_idxs_profiles_plot = jnp.arange(8)
+
+def segment_stim_epochs(states, *, hps_common, **kwargs):
+    start_step = hps_common.pert.unit.start_step
+    end_step = start_step + hps_common.pert.unit.duration
+
+    return jt.map(
+        lambda states: jt.map(
+            lambda idxs: jt.map(
+                lambda arr: arr[..., idxs, :],
+                states,
+            ),
+            LDict.of("epoch")({
+                "pre": slice(0, start_step),
+                "peri": slice(start_step, end_step),
+                "post": slice(end_step, None),
+            }),
+        ),
+        states,
+        is_leaf=is_module,
+    )
+
+def transform_profile_vars(states_by_var, **kwargs):
+    return LDict.of('var')(dict(
+        deviation=jnp.linalg.norm(states_by_var['pos'], axis=-1, keepdims=True),
+        angle=jnp.arctan2(states_by_var['pos'][..., 1], states_by_var['pos'][..., 0])[..., None],
+        speed=jnp.linalg.norm(states_by_var['vel'], axis=-1, keepdims=True),
+    ))
+        
+    
 # PyTree structure: [context_input, pert__amp, train__pert__std]
 # Array batch shape: [stim_amp, unit_idx, eval, replicate, condition]
 ALL_ANALYSES = [
     (
         Profiles(
             variant="full",
+            vrect_kws_func=get_impulse_vrect_kws,
+            coord_labels=None, 
             dependency_params={
                 AlignedVars: dict(
                     # Bypass alignment; keep aligned with x-y axes
                     origins_directions_func=get_trivial_reach_origins_directions,
                     where_states_to_align=lambda states, origins: LDict.of('var')(dict(
                         pos=states.mechanics.effector.pos - origins[..., None, :],
-                    ))
+                        vel=states.mechanics.effector.vel,
+                    )),
                 )
-            }
+            },
         )
         .after_transform(partial(get_best_replicate, axis=3))
         .after_indexing(1, unit_idxs_profiles_plot, axis_label="unit_stim_idx")  #! Only make figures for a few stim units
+        .after_transform(transform_profile_vars, level='var', dependency_name="vars")  # e.g. positions to deviations
         .after_unstacking(1, 'unit_stim_idx', above_level='pert__amp')
-        .after_indexing(0, 1, axis_label="stim_amp")  #! Only make figures for unit stim condition
-        .after_transform(move_var_above_train_pert_std, dependency_name="vars")  # Plot train pert stds on same figure
+        # .after_indexing(0, 1, axis_label="stim_amp")  #! Only make figures for unit stim condition
+        .after_unstacking(0, 'stim_amp', above_level='pert__amp')
+        .after_transform(rearrange_profile_vars, dependency_name="vars")  # Plot pert amp. on same figure
         .combine_figs_by_level(  # Also plot context inputs on same figure, with different line styles
             level='context_input',
             fig_params_fn=lambda fig_params, i, item: dict(
@@ -296,6 +357,38 @@ ALL_ANALYSES = [
         )
     ),
     (
+        UnitStimConditionRegression(
+            variant="full",
+            dependency_params={
+                AlignedVars: dict(
+                    # Bypass alignment; keep aligned with x-y axes
+                    origins_directions_func=get_trivial_reach_origins_directions,
+                    where_states_to_align=lambda states, origins: LDict.of('var')(dict(
+                        pos=states.mechanics.effector.pos - origins[..., None, :],
+                        vel=states.mechanics.effector.vel,
+                    )),
+                )
+            },
+        )
+        .after_transform(partial(get_best_replicate, axis=3))
+        .after_indexing(0, 1, axis_label="stim_amp")  #! Only do regression for stim condition
+        .after_transform(transform_profile_vars, level='var', dependency_name="vars")  # e.g. positions to deviations
+        
+    ),
+    # (
+    #     AlignedEffectorTrajectories(
+    #         variant="full",
+    #         dependency_params={
+    #             AlignedVars: dict(
+    #                 origins_directions_func=get_unit_stim_origins_directions,
+    #             )
+    #         },
+    #     )
+    #     .after_transform(partial(get_best_replicate, axis=3))
+
+        
+    # ),
+    (
         # Result shape: [stim_amp, unit_stim_idx, unit_idx, feature]
         UnitPreferences(
             variant="full",
@@ -304,9 +397,11 @@ ALL_ANALYSES = [
         )
         .after_transform(partial(get_best_replicate, axis=3))
         .after_transform(
-            get_segment_trials_func(get_symmetric_accel_decel_epochs),
+            # get_segment_trials_func(get_symmetric_accel_decel_epochs),
+            segment_stim_epochs,
             dependency_name="states",
         )
         .vmap_over_states(axes=[0, 1])  # Compute preferences separately for stim vs. nostim, and for each stim unit
     ),
 ]
+

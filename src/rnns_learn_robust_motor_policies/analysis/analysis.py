@@ -23,7 +23,7 @@ import jax_cookbook.tree as jtree
 from rnns_learn_robust_motor_policies.config.config import STRINGS
 from rnns_learn_robust_motor_policies.database import EvaluationRecord, add_evaluation_figure, savefig
 from rnns_learn_robust_motor_policies.tree_utils import move_ldict_level_above, subdict, tree_level_labels, ldict_level_to_top
-from rnns_learn_robust_motor_policies.misc import camel_to_snake, get_dataclass_fields, get_name_of_callable, is_json_serializable
+from rnns_learn_robust_motor_policies.misc import camel_to_snake, get_dataclass_fields, get_md5_hexdigest, get_name_of_callable, is_json_serializable
 from rnns_learn_robust_motor_policies.plot_utils import figs_flatten_with_paths, get_label_str
 from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
 
@@ -274,6 +274,7 @@ class AbstractAnalysis(Module, strict=False):
     _final_ops_by_type: Mapping[_FinalOpKeyType, tuple[_FinalOp, ...]] = eqx.field(
         default_factory=lambda: MappingProxyType({'results': (), 'figs': ()})
     )
+        
 
     def __call__(
         self, 
@@ -536,7 +537,7 @@ class AbstractAnalysis(Module, strict=False):
             if ops_params_dict:
                 params['ops'] = ops_params_dict
             
-            add_evaluation_figure(
+            fig_record = add_evaluation_figure(
                 db_session, 
                 eval_info, 
                 fig, 
@@ -545,38 +546,10 @@ class AbstractAnalysis(Module, strict=False):
                 **params,
             )
             
-            # Include any fields that have non-default values in the filename; 
-            # this serves to distinguish different instances of the same analysis,
-            # according to the kwargs passed by the user upon instantiation.
-            #! TODO: Exclude based on `_FigOp` and `_PrepOp`; e.g. if a 
-            #! `_PrepOp` is used to stack, then we don't need to include the 
-            #!  altered stack axis in the filename
-            non_default_field_params_str = _format_dict_of_params(
-                self._non_default_field_params, 
-                join_str='__',
-            )
-            
             # Additionally dump to specified path if provided
             if dump_path is not None:                                
                 # Create a unique filename
-                analysis_name = camel_to_snake(self.name)
-                # Build filename parts, filtering out empty strings
-                filename_parts = [
-                    analysis_name,
-                    self.variant,
-                ]
-                
-                # Add prep ops filename string if present
-                if ops_filename_str:
-                    filename_parts.append(ops_filename_str)
-
-                filename_parts.append(non_default_field_params_str)
-                    
-                # Add index to distinguish multiple figures from the same analysis
-                filename_parts.append(str(i))
-                
-                # Join all non-empty parts
-                filename = '__'.join(filter(None, filename_parts))
+                filename = f"{self.id_str}_{i}"
 
                 savefig(fig, filename, dump_path, dump_formats, metadata=params)
                 
@@ -1257,6 +1230,27 @@ class AbstractAnalysis(Module, strict=False):
                 
         return result
 
+    @cached_property
+    def md5_str(self):
+        """An md5 hash string that identifies this analysis.
+        
+        The hash is computed from the analysis parameter values and not the instance itself.
+        """
+        ops_params, _ = self._extract_ops_info()
+        params = {**ops_params, **self._field_params}
+        return get_md5_hexdigest(params)
+    
+    @cached_property
+    def id_str(self):
+        """A string that identifies this analysis.
+        
+        If the user does not supply a label, append an md5 hash to the analysis class name. 
+        """
+        if self.label is not None:
+            return self.label
+        else:
+            return f"{self.name}_{self.md5_str}"
+    
     def _params_to_save(self, hps: PyTree[TreeNamespace], **kwargs):
         """Additional parameters to save.
         

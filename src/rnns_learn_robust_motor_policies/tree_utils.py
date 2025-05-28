@@ -1,4 +1,4 @@
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, KeysView, Mapping
 import logging
 from types import SimpleNamespace
 from typing import Any, Optional, TypeVar, Sequence
@@ -215,6 +215,11 @@ def move_ldict_level_above(inner_label: str, outer_label: str, tree: PyTree, is_
         tree,
         is_leaf=LDict.is_of(outer_label),
     )
+
+
+def ldict_level_keys(tree: PyTree, label: str) -> KeysView:
+    """Returns the keys of the first `LDict` node with the given label."""
+    return first(tree, is_leaf=LDict.is_of(label)).keys()
 
 
 # def align_levels_and_map(
