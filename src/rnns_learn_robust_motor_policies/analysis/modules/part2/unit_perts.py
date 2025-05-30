@@ -311,25 +311,48 @@ def transform_profile_vars(states_by_var, **kwargs):
         angle=jnp.arctan2(states_by_var['pos'][..., 1], states_by_var['pos'][..., 0])[..., None],
         speed=jnp.linalg.norm(states_by_var['vel'], axis=-1, keepdims=True),
     ))
-        
+
+
+class UnitStimConditionRegression(AbstractAnalysis):
+    """Regression analysis for unit stimulation conditions."""
+    inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+        vars=AlignedVars,
+    ))
+    conditions: tuple[str, ...] = ()
+    variant: Optional[str] = "full"
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
+
+    def compute(self, data: AnalysisInputData, **kwargs) -> dict[str, PyTree[Any]]:
+        # Placeholder implementation
+        return {}
+    
+    def make_figs(self, data: AnalysisInputData, *, result: Optional[Any], **kwargs) -> PyTree[go.Figure]:
+        # Placeholder implementation
+        return None
+
+
+DEPENDENCIES = {
+    "aligned_vars_trivial": AlignedVars(
+        # Bypass alignment; keep aligned with x-y axes
+        origins_directions_func=get_trivial_reach_origins_directions,
+        where_states_to_align=lambda states, origins: LDict.of('var')(dict(
+            pos=states.mechanics.effector.pos - origins[..., None, :],
+            vel=states.mechanics.effector.vel,
+        )),
+    ),
+}
+
     
 # PyTree structure: [context_input, pert__amp, train__pert__std]
 # Array batch shape: [stim_amp, unit_idx, eval, replicate, condition]
-ALL_ANALYSES = [
-    (
+ALL_ANALYSES = {
+    "unit_stim_profiles": (
         Profiles(
             variant="full",
             vrect_kws_func=get_impulse_vrect_kws,
             coord_labels=None, 
-            dependency_params={
-                AlignedVars: dict(
-                    # Bypass alignment; keep aligned with x-y axes
-                    origins_directions_func=get_trivial_reach_origins_directions,
-                    where_states_to_align=lambda states, origins: LDict.of('var')(dict(
-                        pos=states.mechanics.effector.pos - origins[..., None, :],
-                        vel=states.mechanics.effector.vel,
-                    )),
-                )
+            custom_dependencies={
+                "vars": "aligned_vars_trivial",
             },
         )
         .after_transform(partial(get_best_replicate, axis=3))
@@ -356,44 +379,34 @@ ALL_ANALYSES = [
             ),
         )
     ),
-    (
-        UnitStimConditionRegression(
-            variant="full",
-            dependency_params={
-                AlignedVars: dict(
-                    # Bypass alignment; keep aligned with x-y axes
-                    origins_directions_func=get_trivial_reach_origins_directions,
-                    where_states_to_align=lambda states, origins: LDict.of('var')(dict(
-                        pos=states.mechanics.effector.pos - origins[..., None, :],
-                        vel=states.mechanics.effector.vel,
-                    )),
-                )
-            },
-        )
-        .after_transform(partial(get_best_replicate, axis=3))
-        .after_indexing(0, 1, axis_label="stim_amp")  #! Only do regression for stim condition
-        .after_transform(transform_profile_vars, level='var', dependency_name="vars")  # e.g. positions to deviations
+    # "unit_stim_regression": (
+    #     UnitStimConditionRegression(
+    #         variant="full",
+    #         custom_dependencies={
+    #             "vars": "aligned_vars_trivial",
+    #         },
+    #     )
+    #     .after_transform(partial(get_best_replicate, axis=3))
+    #     .after_indexing(0, 1, axis_label="stim_amp")  #! Only do regression for stim condition
+    #     .after_transform(transform_profile_vars, level='var', dependency_name="vars")  # e.g. positions to deviations
         
-    ),
-    # (
+    # ),
+    # "aligned_effector_trajectories": (
     #     AlignedEffectorTrajectories(
     #         variant="full",
-    #         dependency_params={
-    #             AlignedVars: dict(
-    #                 origins_directions_func=get_unit_stim_origins_directions,
-    #             )
+    #         custom_dependencies={
+    #             "aligned_vars": "aligned_vars_trivial",
     #         },
     #     )
     #     .after_transform(partial(get_best_replicate, axis=3))
 
         
     # ),
-    (
+    "unit_preferences": (
         # Result shape: [stim_amp, unit_stim_idx, unit_idx, feature]
         UnitPreferences(
             variant="full",
             feature_fn=lambda task, states: states.efferent.output,
-            label="unit_prefs",
         )
         .after_transform(partial(get_best_replicate, axis=3))
         .after_transform(
@@ -403,5 +416,6 @@ ALL_ANALYSES = [
         )
         .vmap_over_states(axes=[0, 1])  # Compute preferences separately for stim vs. nostim, and for each stim unit
     ),
-]
+}
+
 

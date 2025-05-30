@@ -27,6 +27,7 @@ from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_repli
 from rnns_learn_robust_motor_policies.misc import get_constant_input_fn
 from rnns_learn_robust_motor_policies.types import LDict, unflatten_dict_keys
 from rnns_learn_robust_motor_policies.perturbations import feedback_impulse
+from rnns_learn_robust_motor_policies.colors import ColorscaleSpec
 
 
 COLOR_FUNCS = dict()
@@ -173,10 +174,10 @@ def get_impulse_origins_directions(task, models, hps):
     return origins, directions
 
 
-aligned_vars_params = {
-    AlignedVars: dict(
+DEPENDENCIES = {
+    "aligned_vars_impulse": AlignedVars(
         origins_directions_func=get_impulse_origins_directions,
-    )
+    ),
 }
 
 
@@ -208,15 +209,8 @@ def measures_fig_params_fn(fig_params, i, item):
 
 # State PyTree structure: ['pert__var', 'context_input', 'train__pert__std']
 # Array batch shape: (evals, replicates, impulse amplitudes, reach conditions)
-ALL_ANALYSES = [
-    # 1. Example trial sets (single trial, single replicate)
-    # 2. Aligned profiles: compare training conditions 
-    # 3. Aligned profiles: compare feedback variables for lo-hi train conditions
-    # 4. Measures: Comparison across train conditions
-    # 5. Measures: Comparison across lo-hi train conditions
-    # 6. Measures: Comparison across impulse amplitudes
-    
-    # (
+ALL_ANALYSES = {
+    # "effector_trajectories": (
     #     EffectorTrajectories(
     #         variant="full",
     #         colorscale_axis=1,  # impulse amplitude  # TODO: change to 0 if indexing eval
@@ -234,27 +228,36 @@ ALL_ANALYSES = [
     #     )
     # ),
 
-    (
+    "aligned_trajectories": (
         AlignedEffectorTrajectories(
             variant="full",
             colorscale_axis=1,
             colorscale_key='pert__amp',
-            dependency_params=aligned_vars_params,
+            custom_dependencies={
+                "aligned_vars": "aligned_vars_impulse",
+            },
         )
         .after_transform(get_best_replicate)
     ),
 
-    (
+    "aligned_trajectories_by_train_std": (
         #! This is broken; nothing appears. 
-        AlignedEffectorTrajectories(variant="full")
+        AlignedEffectorTrajectories(
+            variant="full",
+            custom_dependencies={
+                "aligned_vars": "aligned_vars_impulse",
+            },
+        )
         .after_transform(get_best_replicate)
         .after_stacking(level='train__pert__std')
     ),
 
-    (
+    "profiles": (
         Profiles(
             variant="full",
-            dependency_params=aligned_vars_params,
+            custom_dependencies={
+                "vars": "aligned_vars_impulse",
+            },
             vrect_kws_func=get_impulse_vrect_kws,  
         )
         .after_transform(get_best_replicate) 
@@ -269,10 +272,12 @@ ALL_ANALYSES = [
         )
     ),
 
-    (
+    "measures": (
         Measures(
             measure_keys=MEASURE_KEYS,
-            dependency_params=aligned_vars_params,
+            custom_dependencies={
+                "vars": "aligned_vars_impulse",
+            },
         )
         .after_transform(get_best_replicate)
         .after_unstacking(1, "pert__amp")
@@ -292,4 +297,4 @@ ALL_ANALYSES = [
             level='train__pert__std'
         )
     ),
-]
+}

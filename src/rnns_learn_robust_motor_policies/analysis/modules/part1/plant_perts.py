@@ -91,9 +91,9 @@ i_eval = 0  # For single-eval plots
 
 # PyTree levels: 
 # State batch shape: (eval, replicate, condition)
-ALL_ANALYSES = [
-    # By condition, all evals for the best replicate only
-    (
+ALL_ANALYSES = {
+    "effector_trajectories_by_condition": (
+        # By condition, all evals for the best replicate only
         EffectorTrajectories(
             colorscale_axis=1, 
             colorscale_key="reach_condition",
@@ -105,8 +105,8 @@ ALL_ANALYSES = [
         # .with_fig_params()
     ),  
 
-    # By replicate, single eval
-    (
+    "effector_trajectories_by_replicate": (
+        # By replicate, single eval
         EffectorTrajectories(
             colorscale_axis=0, 
             colorscale_key="replicate",
@@ -117,8 +117,8 @@ ALL_ANALYSES = [
         )
     ),
 
-    # Single eval for a single replicate
-    (
+    "effector_trajectories_single": (
+        # Single eval for a single replicate
         EffectorTrajectories(
             colorscale_axis=0, 
             colorscale_key="reach_condition",
@@ -133,10 +133,10 @@ ALL_ANALYSES = [
         )
     ),
 
-    AlignedEffectorTrajectories().after_stacking(level='pert__amp'),
-    AlignedEffectorTrajectories().after_stacking(level='train__pert__std'),
-    Profiles().after_transform(get_best_replicate),
-    measures_base,
-    measures_base.after_transform(lohi, level='train__pert__std'),
-    measures_base.after_transform(lohi, level=['train__pert__std', 'pert__amp']),
-]
+    "aligned_trajectories_by_pert_amp": AlignedEffectorTrajectories().after_stacking(level='pert__amp'),
+    "aligned_trajectories_by_train_std": AlignedEffectorTrajectories().after_stacking(level='train__pert__std'),
+    "profiles": Profiles().after_transform(get_best_replicate),
+    "measures": measures_base,
+    "measures_lohi_train_std": measures_base.after_transform(lohi, level='train__pert__std'),
+    "measures_lohi_train_std_and_pert_amp": measures_base.after_transform(lohi, level=['train__pert__std', 'pert__amp']),
+}

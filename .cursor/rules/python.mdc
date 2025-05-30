@@ -1,0 +1,25 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+- Make no modifications whatsoever that are not strictly necessary to achieve
+  the goal(s) implied by the context of the current conversation. If you do notice something 
+  amiss or broken that is not directly related to the current context, please 
+  mention it briefly at the end of your response.
+- In particular, do not modify existing code merely to add comments.
+- Use try-except blocks as rarely as possible. Prefer typing-based flow and 
+  `isinstance` checks.
+- Use `logger.error` prior to raising exceptions when this would make it clearer 
+  where the error originates.
+- Preserve original inline comments in your solutions, when their respective lines 
+  of code are also preserved.
+  If you are certain that the comment has become irrelevant, replace its leading `#` with `#!`,
+  on each line of the comment.
+- If I ask you for clarification and you need to correct your previous response, do not 
+  include code from that response in the new response, commented out. Just provide the 
+  most current solution.
+- Do not use hyphens, angle brackets, or multiple hash symbols to emphasize comments. If a 
+  comment is absolutely critical, you can lead with `#! ` rather than `# `.
+- If a comment is uncertain or represents a question, use `#?` instead of `#` to begin it. 

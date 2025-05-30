@@ -19,7 +19,7 @@ import jax_cookbook.tree as jtree
 
 import rnns_learn_robust_motor_policies
 from rnns_learn_robust_motor_policies.analysis import modules as analysis_modules_pkg
-from rnns_learn_robust_motor_policies.analysis._dependencies import compute_dependencies
+from rnns_learn_robust_motor_policies.analysis._dependencies import compute_dependency_results
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, get_validation_trial_specs, logger
 from rnns_learn_robust_motor_policies.colors import COMMON_COLOR_SPECS, setup_colors
 from rnns_learn_robust_motor_policies.config import PATHS
@@ -190,23 +190,25 @@ def setup_eval_for_module(
 
 def perform_all_analyses(
     db_session: Session,
-    analyses: Sequence[AbstractAnalysis],
+    analyses: dict[str, AbstractAnalysis],
     data: AnalysisInputData,
     model_info: ModelRecord,
     eval_info: EvaluationRecord,
     *,
     fig_dump_path: Optional[Path] = None,
     fig_dump_formats: List[str] = ["html"],
+    custom_dependencies: Optional[dict[str, AbstractAnalysis]] = None,
     **kwargs,
 ) -> tuple[PyTree, PyTree[go.Figure]]:
-    """Given a list of instances of `AbstractAnalysis`, perform all analyses and save any figures."""
+    """Given a list or dict of instances of `AbstractAnalysis`, perform all analyses and save any figures."""
     # Each value in `analyses` is a function that is passed a bunch of information and returns some result.
     # e.g. the result of `"aligned_vars": get_aligned_vars` will be passed to *all* analyses
     # This ensures that dependencies are only calculated once.
     # However, note that dependencies should have unique keys since they will be aggregated into a 
     # single dict before performing the analyses.
     # TODO: Only pass the dependencies to each analysis that it actually needs
-    all_dependency_results = compute_dependencies(analyses, data, **kwargs)
+    
+    all_dependency_results = compute_dependency_results(analyses, data, custom_dependencies, **kwargs)
 
     if not any(analyses):
         raise ValueError("No analyses given to perform")
@@ -233,8 +235,8 @@ def perform_all_analyses(
         return analysis, result, figs
 
     all_analyses, all_results, all_figs = jtree.unzip({
-        analysis.id_str: analyse_and_save(analysis, dependencies)
-        for analysis, dependencies in zip(analyses, all_dependency_results)
+        analysis_key: analyse_and_save(analysis, dependencies)
+        for (analysis_key, analysis), dependencies in zip(analyses.items(), all_dependency_results)
     })
 
     return all_analyses, all_results, all_figs
@@ -383,6 +385,7 @@ def run_analysis_module(
         eval_info,
         fig_dump_path=Path(fig_dump_path),
         fig_dump_formats=fig_dump_formats,
+        custom_dependencies=getattr(analysis_module, 'DEPENDENCIES', {}),
         **common_inputs,
     )
 

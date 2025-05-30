@@ -32,7 +32,7 @@ OUTPUT_WHERE = lambda state: state.net.output
 class FrequencyResponse(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
-    dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType({})
+    inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType({})
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
     
     def compute(self, data: AnalysisInputData, **kwargs):
@@ -139,6 +139,6 @@ def frequency_analysis(input_, output, dt):
     return freqs, gain, phase
 
 
-ALL_ANALYSES = [
-    FrequencyResponse(),
-]
+ALL_ANALYSES = {
+    "frequency_response": FrequencyResponse(),
+}

@@ -120,7 +120,7 @@ def get_trivial_reach_origins_directions(task: AbstractTask, models: PyTree[Modu
 
 class AlignedVars(AbstractAnalysis):
     """Align spatial variable (e.g. position and velocity) coordinates with the reach direction."""
-    dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = None
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
@@ -161,7 +161,7 @@ class AlignedVars(AbstractAnalysis):
         
         
 class AlignedEffectorTrajectories(AbstractAnalysis):
-    dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+    inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
         aligned_vars=AlignedVars,
     ))
     conditions: tuple[str, ...] = ()

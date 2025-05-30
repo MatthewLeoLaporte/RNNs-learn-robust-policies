@@ -1,4 +1,3 @@
-
 from collections.abc import Callable
 from types import MappingProxyType
 from typing import ClassVar, Optional
@@ -32,7 +31,7 @@ class Profiles(AbstractAnalysis):
     """
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
-    dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+    inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
         vars=AlignedVars,
     ))
     fig_params: FigParamNamespace = DefaultFigParamNamespace(

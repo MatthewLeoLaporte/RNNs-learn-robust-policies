@@ -127,16 +127,16 @@ MEASURE_KEYS = (
 )
 
         
-ALL_ANALYSES = [
-    # By condition, all evals for the best replicate only
-#     (
-#        EffectorTrajectories(
-#             colorscale_axis=1, 
-#             colorscale_key="reach_condition",
-#         )
-#         .after_transform(get_best_replicate)  # By default has `axis=1` for replicates
-#     ),
-    (
+ALL_ANALYSES = {
+    # "effector_trajectories_by_condition": (
+    #     # By condition, all evals for the best replicate only
+    #     EffectorTrajectories(
+    #         colorscale_axis=1, 
+    #         colorscale_key="reach_condition",
+    #     )
+    #     .after_transform(get_best_replicate)  # By default has `axis=1` for replicates
+    # ),
+    "aligned_trajectories_by_context_input": (
         AlignedEffectorTrajectories()
         .after_stacking("context_input")
         .map_figs_at_level("train__pert__std")
@@ -148,9 +148,9 @@ ALL_ANALYSES = [
             ),
         )
     ),
-    AlignedEffectorTrajectories().after_stacking("train__pert__std").map_figs_at_level("context_input"),
-    Profiles(),  #! TODO
-    Measures(measure_keys=MEASURE_KEYS).map_figs_at_level("pert__amp"),
-    Measures(measure_keys=MEASURE_KEYS).map_figs_at_level("train__pert__std"),
-    Measures(measure_keys=MEASURE_KEYS).after_level_to_top("train__pert__std").map_figs_at_level("pert__amp"),
-]
+    "aligned_trajectories_by_train_std": AlignedEffectorTrajectories().after_stacking("train__pert__std").map_figs_at_level("context_input"),
+    "profiles": Profiles(),  #! TODO
+    "measures_by_pert_amp": Measures(measure_keys=MEASURE_KEYS).map_figs_at_level("pert__amp"),
+    "measures_by_train_std": Measures(measure_keys=MEASURE_KEYS).map_figs_at_level("train__pert__std"),
+    "measures_train_std_by_pert_amp": Measures(measure_keys=MEASURE_KEYS).after_level_to_top("train__pert__std").map_figs_at_level("pert__amp"),
+}

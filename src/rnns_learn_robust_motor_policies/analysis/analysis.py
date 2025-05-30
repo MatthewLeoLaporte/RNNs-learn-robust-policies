@@ -235,8 +235,8 @@ class AbstractAnalysis(Module, strict=False):
     we could avoid this limitation.    
     
     Abstract class attributes:
-        dependencies: Specifies the subclasses of `AbstractAnalysis`
-            whose results are needed for this subclass of `AbstractAnalysis`.
+        inputs: Specifies the named input ports and their default dependency types
+            for this subclass of `AbstractAnalysis`.
         variant: Label of the evaluation variant this analysis uses (primarily).
     
     Abstract fields:
@@ -247,17 +247,17 @@ class AbstractAnalysis(Module, strict=False):
             that case we could give the condition `"any_system_noise"` to those analyses.
     """
     _exclude_fields = (
-        'dependencies', 
+        'inputs', 
         'conditions', 
         'fig_params', 
-        'dependency_params', 
+        'custom_dependencies', #! Should this be here?
         '_prep_ops', 
         '_state_vmap_axes',
         '_fig_op',
         '_final_ops_by_type',
     )
 
-    dependencies: AbstractClassVar[MappingProxyType[str, type[Self]]]
+    inputs: AbstractClassVar[MappingProxyType[str, type[Self]]]
     conditions: AbstractVar[tuple[str, ...]]
     variant: AbstractVar[Optional[str]] 
     fig_params: AbstractVar[FigParamNamespace]
@@ -266,8 +266,7 @@ class AbstractAnalysis(Module, strict=False):
     # implement them trivially in subclasses. This violates the abstract-final design
     # pattern. This is intentional. If it leads to problems, I will learn from that.
     #! This means no non-default arguments in subclasses
-    label: Optional[str] = None
-    dependency_params: dict = eqx.field(default_factory=dict)
+    custom_dependencies: Mapping[str, str | Self] = eqx.field(default_factory=dict)
     _prep_ops: tuple[_PrepOp, ...] = ()
     _state_vmap_axes: Optional[tuple[int, ...]] = None
     _fig_op: Optional[_FigOp] = None
@@ -405,6 +404,16 @@ class AbstractAnalysis(Module, strict=False):
                 raise e
 
         return result, figs
+
+    @property
+    def dependencies(self) -> Dict[str, type[Self] | Self | str]:
+        """Get the complete mapping of dependency names to their sources.
+        
+        Combines default inputs with custom overrides.
+        """
+        result = dict(self.inputs)
+        result.update(self.custom_dependencies)
+        return result
 
     def _get_target_dependency_names(
         self,
@@ -548,8 +557,8 @@ class AbstractAnalysis(Module, strict=False):
             
             # Additionally dump to specified path if provided
             if dump_path is not None:                                
-                # Create a unique filename
-                filename = f"{self.id_str}_{i}"
+                # Create a unique filename using class name and hash
+                filename = f"{self.name}_{self.md5_str}_{i}"
 
                 savefig(fig, filename, dump_path, dump_formats, metadata=params)
                 
@@ -1240,17 +1249,6 @@ class AbstractAnalysis(Module, strict=False):
         params = {**ops_params, **self._field_params}
         return get_md5_hexdigest(params)
     
-    @cached_property
-    def id_str(self):
-        """A string that identifies this analysis.
-        
-        If the user does not supply a label, append an md5 hash to the analysis class name. 
-        """
-        if self.label is not None:
-            return self.label
-        else:
-            return f"{self.name}_{self.md5_str}"
-    
     def _params_to_save(self, hps: PyTree[TreeNamespace], **kwargs):
         """Additional parameters to save.
         
@@ -1269,7 +1267,7 @@ AnalysisDependenciesType: TypeAlias = MappingProxyType[str, type[AbstractAnalysi
 
 class _DummyAnalysis(AbstractAnalysis):
     """An empty analysis, for debugging."""
-    dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = None
     fig_params: FigParamNamespace = DefaultFigParamNamespace()

@@ -62,10 +62,10 @@ def setup_eval_tasks_and_models(task_base: Module, models_base: LDict[float, Mod
             for context_input in hps.context_input
         })
     )
-    # # Provides any additional data needed for the analysis
-    # extras = SimpleNamespace()  
+    # Provides any additional data needed for the analysis
+    extras = SimpleNamespace()  
     
-    # return all_tasks, all_models, all_hps, extras
+    return all_tasks, all_models, all_hps, extras
 
 
 # Unlike `feedback_perts`, we don't need to vmap over impulse amplitude 
@@ -81,13 +81,12 @@ END_STEP = 100
 
 # State PyTree structure: ['context_input', 'train__pert__std']
 # Array batch shape: (evals, replicates, reach conditions)
-ALL_ANALYSES = [
-    (
+ALL_ANALYSES = {
+    "states_pca": (
         StatesPCA(n_components=N_PCA, where_states=lambda states: states.net.hidden)
         .after_transform(get_best_replicate)
         .after_indexing(-2, np.arange(START_STEP, END_STEP), axis_label="timestep")
     ),
-
-]
+}
 
 

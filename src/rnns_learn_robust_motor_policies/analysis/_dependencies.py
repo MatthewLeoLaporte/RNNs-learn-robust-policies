@@ -20,6 +20,7 @@ import hashlib
 import json
 from typing import Optional, Set, Dict, Any
 
+import equinox as eqx
 import jax.tree as jt
 
 from rnns_learn_robust_motor_policies.analysis.analysis import (
@@ -46,12 +47,33 @@ def get_params_for_dep_class(analysis, dep_class):
     return dep_params.get(dep_class, {})
 
 
-def get_dependency_id_and_params(analysis, dep_name, dep_class):
+def resolve_dependency_node(analysis, dep_name, dep_source):
+    """Resolve a dependency source to an analysis instance and create a graph node ID.
+    
+    Args:
+        analysis: The analysis instance requesting the dependency
+        dep_name: The name of the dependency port  
+        dep_source: Either a class type, string reference, or analysis instance
+        
+    Returns:
+        tuple: (node_id, params, analysis_instance)
+    """
     class_params = analysis.dependency_kwargs().get(dep_name, {})
-    field_params = get_params_for_dep_class(analysis, dep_class)
-    params = {**field_params, **class_params}
-    node_id = f"{dep_name}_{param_hash(params)}"
-    return node_id, params
+    
+    if isinstance(dep_source, str):
+        # This shouldn't happen if dependencies are properly resolved beforehand
+        raise ValueError(f"String dependency '{dep_source}' should be resolved before dependency graph building")
+    elif isinstance(dep_source, type):
+        # Class type - create instance and use its hash
+        field_params = get_params_for_dep_class(analysis, dep_source)
+        params = {**field_params, **class_params}
+        analysis_instance = dep_source(**params)
+        node_id = f"{dep_name}_{analysis_instance.md5_str}"
+        return node_id, params, analysis_instance
+    else:
+        # Already an analysis instance - use its hash directly
+        node_id = f"{dep_name}_{dep_source.md5_str}"
+        return node_id, class_params, dep_source
 
 
 def build_dependency_graph(analyses: Sequence[AbstractAnalysis]) -> tuple[dict[str, Set[str]], dict]:
@@ -61,44 +83,47 @@ def build_dependency_graph(analyses: Sequence[AbstractAnalysis]) -> tuple[dict[s
     Only include dependencies for analyses whose conditions are met.
     """
     graph = defaultdict(set)
-    dep_instances = {}  # Maps node_id -> (dep_class, params)
+    nodes = {}  # Maps node_id -> (analysis_instance, params)
     
     # TODO: Filter analyses by their conditions
     # analyses_to_process = [a for a in analyses if conditions_are_met(a)]
 
-    def add_deps(analysis):        
-        for dep_name, dep_class in analysis.dependencies.items():
-            node_id, params = get_dependency_id_and_params(
-                analysis, dep_name, dep_class
+    def _add_deps(analysis: AbstractAnalysis):        
+        for dep_name, dep_source in analysis.dependencies.items():
+            node_id, params, dep_instance = resolve_dependency_node(
+                analysis, dep_name, dep_source
             )
             
-            if node_id not in dep_instances:
+            if node_id not in nodes:
                 # Record the mapping
-                dep_instances[node_id] = (dep_class, params)
-                add_subdeps(dep_class, params, node_id)
-            
-    
-    def add_subdeps(dep_class, params, node_id):
-        temp_instance = dep_class(**params)
-        for subdep_name, subdep_class in temp_instance.dependencies.items():
-            subdep_id, subdep_params = get_dependency_id_and_params(
-                temp_instance, subdep_name, subdep_class
-            )
-            
-            graph[node_id].add(subdep_id)
-            
-            if subdep_id not in dep_instances:
-                dep_instances[subdep_id] = (subdep_class, subdep_params)
-                add_subdeps(subdep_class, subdep_params, subdep_id)
+                nodes[node_id] = (dep_instance, params)
+                # Recursively add subdependencies
+                _add_deps(dep_instance)
         
     for analysis in analyses:  
-        add_deps(analysis)
+        _add_deps(analysis)
 
-    for node_id in dep_instances:
+    # Build the actual graph edges
+    for analysis in analyses:
+        for dep_name, dep_source in analysis.dependencies.items():
+            node_id, _, _ = resolve_dependency_node(analysis, dep_name, dep_source)
+            # The analysis itself doesn't have a node_id, but we need to track its dependencies
+            # Actually, let's add analysis nodes too for completeness
+            analysis_node_id = f"analysis_{analysis.md5_str}"
+            graph[analysis_node_id].add(node_id)
+    
+    # Add dependency-to-dependency edges  
+    for node_id, (dep_instance, _) in nodes.items():
+        for subdep_name, subdep_source in dep_instance.dependencies.items():
+            subdep_node_id, _, _ = resolve_dependency_node(dep_instance, subdep_name, subdep_source) 
+            graph[node_id].add(subdep_node_id)
+
+    # Ensure all nodes exist in graph (even leaf nodes)
+    for node_id in nodes:
         if node_id not in graph:
             graph[node_id] = set()
         
-    return dict(graph), dep_instances
+    return dict(graph), nodes
 
 
 def topological_sort(graph: dict[str, Set[str]]) -> list[str]:
@@ -131,17 +156,55 @@ def topological_sort(graph: dict[str, Set[str]]) -> list[str]:
     return order
 
 
-def compute_dependencies(
-    analyses: Sequence[AbstractAnalysis],
+def compute_dependency_results(
+    analyses: dict[str, AbstractAnalysis],
     data: AnalysisInputData,
+    custom_dependencies: Optional[Dict[str, AbstractAnalysis]] = None,
     **kwargs,
 ) -> dict:
     """Compute all dependencies in correct order.
     
-    Any `kwargs` are provided as baseline dependencies, and included in the returned dict.
+    Args:
+        analyses: Analysis instances to process (sequence or dict)
+        data: Input data for analysis  
+        custom_dependencies: Optional dict of custom dependency instances (from DEPENDENCIES)
+        **kwargs: Additional baseline dependencies
     """
-    # Build dependency graph with parameter-specific nodes
-    graph, dep_instances = build_dependency_graph(analyses)
+    if custom_dependencies is None:
+        custom_dependencies = {}
+        
+    analyses_list = list(analyses.values())
+    
+    # Combine lookup sources: custom_dependencies (DEPENDENCIES) + all_analyses_lookup (ALL_ANALYSES)
+    dependency_lookup = custom_dependencies | analyses
+    
+    # Resolve any string dependencies in the analyses
+    if dependency_lookup:
+        resolved_analyses = []
+        for analysis in analyses_list:
+            resolved_deps = {}
+            for dep_name, dep_source in analysis.dependencies.items():
+                if isinstance(dep_source, str):
+                    if dep_source in dependency_lookup:
+                        resolved_deps[dep_name] = dependency_lookup[dep_source]
+                    else:
+                        available_keys = list(dependency_lookup.keys())
+                        raise ValueError(f"Dependency with key '{dep_source}' not found. Available keys: {available_keys}")
+                else:
+                    resolved_deps[dep_name] = dep_source
+            
+            if resolved_deps != dict(analysis.dependencies):
+                # Create new analysis instance with resolved dependencies
+                analysis = eqx.tree_at(
+                    lambda a: a.custom_dependencies,
+                    analysis, 
+                    resolved_deps,
+                )
+            resolved_analyses.append(analysis)
+        analyses_list = resolved_analyses
+
+    # Build dependency graph with resolved dependencies
+    graph, dep_instances = build_dependency_graph(analyses_list)
     
     # Get computation order
     comp_order = topological_sort(graph)
@@ -151,15 +214,16 @@ def compute_dependencies(
     computed_results = {}  # Maps node_id -> result
     
     for node_id in comp_order:
-        dep_class, params = dep_instances[node_id]
+        # Skip analysis nodes (they'll be computed later)
+        if node_id.startswith("analysis_"):
+            continue
+            
+        dep_instance, params = dep_instances[node_id]
         
-        # Create instance with parameters
-        dep_instance = dep_class(**params)
+        # Extract the base name (without hash)
+        base_name = node_id.split('_')[0]
         
-        # Extract the base name (without parameter hash)
-        base_name = node_id.rsplit('_', 1)[0]
-        
-        # Compute and store the result, passing all the dependencies computed so far
+        # Compute and store the result
         logger.debug(f"Computing dependency: {dep_instance}")
         result = dep_instance.compute(data, **results, **params)
         
@@ -167,16 +231,16 @@ def compute_dependencies(
         computed_results[node_id] = result
         results[base_name] = result
         
-    # Construct a dict of dependency results to supply to each of the requested analyses
+    # Construct dependency results for each analysis
     all_dependency_results = []
-    for analysis in analyses:
+    for analysis in analyses_list:
         dependency_results = kwargs.copy()
 
-        for dep_name, dep_class in analysis.dependencies.items():
+        for dep_name, dep_source in analysis.dependencies.items():
             if dep_name not in results:
                 raise ValueError(f"Dependency '{dep_name}' for {analysis.name} was not computed")
 
-            node_id, _ = get_dependency_id_and_params(analysis, dep_name, dep_class)
+            node_id, _, _ = resolve_dependency_node(analysis, dep_name, dep_source)
             
             if node_id in computed_results:
                 dependency_results[dep_name] = computed_results[node_id]

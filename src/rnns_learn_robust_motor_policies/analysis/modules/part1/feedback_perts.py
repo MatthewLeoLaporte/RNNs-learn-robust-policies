@@ -199,20 +199,15 @@ MEASURE_KEYS = [
 # measure_labels = MEASURE_LABELS | custom_measure_labels
 
 
-ALL_ANALYSES = [
-    # 1. Example trial sets (single trial, single replicate)
-    # 2. Aligned profiles: compare training conditions 
-    # 3. Aligned profiles: compare feedback variables for lo-hi train conditions
-    # 4. Measures: Comparison across train conditions
-    # 5. Measures: Comparison across lo-hi train conditions
-    # 6. Measures: Comparison across impulse amplitudes
+ALL_ANALYSES = {
+    "measures": Measures(measure_keys=MEASURE_KEYS),
     
-    Measures(measure_keys=MEASURE_KEYS),
-
-    # Effector_SingleEval(
-    #     variant="full",
-    #     #! TODO: This doesn't result in the impulse amplitude *values* showing up in the legend!
-    #     #! (could try to access `colorscale_key` from `hps`, in `Effector_SingleEval`)
-    #     colorscale_key='pert__amp',
-    # ).with_fig_params(legend_title="Impulse amplitude"),
-]
+    # "effector_single_eval": (
+    #     Effector_SingleEval(
+    #         variant="full",
+    #         #! TODO: This doesn't result in the impulse amplitude *values* showing up in the legend!
+    #         #! (could try to access `colorscale_key` from `hps`, in `Effector_SingleEval`)
+    #         colorscale_key='pert__amp',
+    #     ).with_fig_params(legend_title="Impulse amplitude")
+    # ),
+}

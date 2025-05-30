@@ -78,8 +78,8 @@ def get_control_forces(task, states):
 ts = np.arange(0, 20)
 
 
-ALL_ANALYSES = [
-    # (
+ALL_ANALYSES = {
+    # "unit_prefs_goal_positions": (
     #     UnitPreferences(feature_fn=get_goal_positions)
     #     .after_transform(get_best_replicate)
     #     .after_transform(
@@ -89,10 +89,9 @@ ALL_ANALYSES = [
     #     # .after_indexing(-2, ts, axis_label="timestep")
     #     # .and_transform_results(map_fn_over_tree(vectors_to_2d_angles))
     # ),
-    (
+    "unit_prefs_control_forces": (
         UnitPreferences(
             feature_fn=get_control_forces,
-            label="Prefs: control forces",
         )
         .after_transform(get_best_replicate)
         .after_transform(
@@ -102,10 +101,9 @@ ALL_ANALYSES = [
         # .after_indexing(-2, ts, axis_label="timestep")
         # .and_transform_results(map_fn_over_tree(vectors_to_2d_angles))
     ),
-    (
+    "unit_prefs_goal_positions": (
         UnitPreferences(
             feature_fn=get_goal_positions,
-            label="Prefs: goal positions",
         )
         .after_transform(get_best_replicate)
         .after_transform(
@@ -115,7 +113,7 @@ ALL_ANALYSES = [
         # .after_indexing(-2, ts, axis_label="timestep")
         # .and_transform_results(map_fn_over_tree(vectors_to_2d_angles))
     ),
-]
+}
 
 
 #! Can visualize the unit preference regression using `planar_regression`, below.
