@@ -27,6 +27,7 @@ from rnns_learn_robust_motor_policies.analysis.measures import ALL_MEASURE_KEYS,
 from rnns_learn_robust_motor_policies.analysis.measures import Measures
 from rnns_learn_robust_motor_policies.analysis.network import UnitPreferences
 from rnns_learn_robust_motor_policies.analysis.profiles import Profiles
+from rnns_learn_robust_motor_policies.analysis.regression import Regression
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate, get_constant_task_input_fn, get_segment_trials_func, get_symmetric_accel_decel_epochs, vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.colors import ColorscaleSpec
 from rnns_learn_robust_motor_policies.config.config import PLOTLY_CONFIG
@@ -313,22 +314,11 @@ def transform_profile_vars(states_by_var, **kwargs):
     ))
 
 
-class UnitStimConditionRegression(AbstractAnalysis):
-    """Regression analysis for unit stimulation conditions."""
-    inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
-        vars=AlignedVars,
-    ))
-    conditions: tuple[str, ...] = ()
-    variant: Optional[str] = "full"
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
-
-    def compute(self, data: AnalysisInputData, **kwargs) -> dict[str, PyTree[Any]]:
-        # Placeholder implementation
-        return {}
-    
-    def make_figs(self, data: AnalysisInputData, *, result: Optional[Any], **kwargs) -> PyTree[go.Figure]:
-        # Placeholder implementation
-        return None
+def max_deviation_after_stim(states_by_var, *, hps_common, **kwargs):
+    deviation = jnp.linalg.norm(states_by_var['pos'], axis=-1)
+    pert_end = hps_common.pert.unit.start_step + hps_common.pert.unit.duration
+    ts = jnp.arange(pert_end, hps_common.model.n_steps)
+    return jnp.max(deviation[..., ts], axis=-1)
 
 
 DEPENDENCIES = {
@@ -346,51 +336,54 @@ DEPENDENCIES = {
 # PyTree structure: [context_input, pert__amp, train__pert__std]
 # Array batch shape: [stim_amp, unit_idx, eval, replicate, condition]
 ALL_ANALYSES = {
-    "unit_stim_profiles": (
-        Profiles(
-            variant="full",
-            vrect_kws_func=get_impulse_vrect_kws,
-            coord_labels=None, 
-            custom_dependencies={
-                "vars": "aligned_vars_trivial",
-            },
-        )
-        .after_transform(partial(get_best_replicate, axis=3))
-        .after_indexing(1, unit_idxs_profiles_plot, axis_label="unit_stim_idx")  #! Only make figures for a few stim units
-        .after_transform(transform_profile_vars, level='var', dependency_name="vars")  # e.g. positions to deviations
-        .after_unstacking(1, 'unit_stim_idx', above_level='pert__amp')
-        # .after_indexing(0, 1, axis_label="stim_amp")  #! Only make figures for unit stim condition
-        .after_unstacking(0, 'stim_amp', above_level='pert__amp')
-        .after_transform(rearrange_profile_vars, dependency_name="vars")  # Plot pert amp. on same figure
-        .combine_figs_by_level(  # Also plot context inputs on same figure, with different line styles
-            level='context_input',
-            fig_params_fn=lambda fig_params, i, item: dict(
-                scatter_kws=dict(
-                    line_dash=CONTEXT_STYLES['line_dash'][i],
-                    legendgroup=CONTEXT_LABELS[i],
-                    legendgrouptitle_text=f"SIUE: {CONTEXT_LABELS[i]}",
-                ),
-            ),
-        )
-        .with_fig_params(
-            layout_kws=dict(
-                width=500,
-                height=350,
-            ),
-        )
-    ),
-    # "unit_stim_regression": (
-    #     UnitStimConditionRegression(
+    # "unit_stim_profiles": (
+    #     Profiles(
     #         variant="full",
+    #         vrect_kws_func=get_impulse_vrect_kws,
+    #         coord_labels=None, 
     #         custom_dependencies={
     #             "vars": "aligned_vars_trivial",
     #         },
     #     )
     #     .after_transform(partial(get_best_replicate, axis=3))
-    #     .after_indexing(0, 1, axis_label="stim_amp")  #! Only do regression for stim condition
+    #     .after_indexing(1, unit_idxs_profiles_plot, axis_label="unit_stim_idx")  #! Only make figures for a few stim units
     #     .after_transform(transform_profile_vars, level='var', dependency_name="vars")  # e.g. positions to deviations
-        
+    #     .after_unstacking(1, 'unit_stim_idx', above_level='pert__amp')
+    #     # .after_indexing(0, 1, axis_label="stim_amp")  #! Only make figures for unit stim condition
+    #     .after_unstacking(0, 'stim_amp', above_level='pert__amp')
+    #     .after_transform(rearrange_profile_vars, dependency_name="vars")  # Plot pert amp. on same figure
+    #     .combine_figs_by_level(  # Also plot context inputs on same figure, with different line styles
+    #         level='context_input',
+    #         fig_params_fn=lambda fig_params, i, item: dict(
+    #             scatter_kws=dict(
+    #                 line_dash=CONTEXT_STYLES['line_dash'][i],
+    #                 legendgroup=CONTEXT_LABELS[i],
+    #                 legendgrouptitle_text=f"SIUE: {CONTEXT_LABELS[i]}",
+    #             ),
+    #         ),
+    #     )
+    #     .with_fig_params(
+    #         layout_kws=dict(
+    #             width=500,
+    #             height=350,
+    #         ),
+    #     )
     # ),
+    "unit_stim_regression": (
+        Regression(
+            variant="full",
+            custom_dependencies=dict(
+                regressor_tree="aligned_vars_trivial",
+            ),
+        )
+        .after_transform(partial(get_best_replicate, axis=3))
+        .after_indexing(0, 1, axis_label="stim_amp")  #! Only do regression for stim condition
+        .after_transform(lambda subtree, **kwargs: subtree[1.5], level="train__pert__std")  #! Only for trained on perturbations
+        # .after_transform(transform_profile_vars, level='var', dependency_name="regressor_tree")  #
+        # e.g. positions to deviations
+        .after_transform(max_deviation_after_stim, level="var", dependency_name="regressor_tree")
+        .vmap(axes=0, dependency_names="regressor_tree")
+    ),
     # "aligned_effector_trajectories": (
     #     AlignedEffectorTrajectories(
     #         variant="full",
@@ -402,20 +395,20 @@ ALL_ANALYSES = {
 
         
     # ),
-    "unit_preferences": (
-        # Result shape: [stim_amp, unit_stim_idx, unit_idx, feature]
-        UnitPreferences(
-            variant="full",
-            feature_fn=lambda task, states: states.efferent.output,
-        )
-        .after_transform(partial(get_best_replicate, axis=3))
-        .after_transform(
-            # get_segment_trials_func(get_symmetric_accel_decel_epochs),
-            segment_stim_epochs,
-            dependency_name="states",
-        )
-        .vmap_over_states(axes=[0, 1])  # Compute preferences separately for stim vs. nostim, and for each stim unit
-    ),
+    # "unit_preferences": (
+    #     # Result shape: [stim_amp, unit_stim_idx, unit_idx, feature]
+    #     UnitPreferences(
+    #         variant="full",
+    #         feature_fn=lambda task, states: states.efferent.output,
+    #     )
+    #     .after_transform(partial(get_best_replicate, axis=3))
+    #     .after_transform(
+    #         # get_segment_trials_func(get_symmetric_accel_decel_epochs),
+    #         segment_stim_epochs,
+    #         dependency_name="states",
+    #     )
+    #     .vmap_over_states(axes=[0, 1])  # Compute preferences separately for stim vs. nostim, and for each stim unit
+    # ),
 }
 
 

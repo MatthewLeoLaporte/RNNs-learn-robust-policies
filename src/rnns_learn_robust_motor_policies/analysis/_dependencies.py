@@ -68,11 +68,11 @@ def resolve_dependency_node(analysis, dep_name, dep_source):
         field_params = get_params_for_dep_class(analysis, dep_source)
         params = {**field_params, **class_params}
         analysis_instance = dep_source(**params)
-        node_id = f"{dep_name}_{analysis_instance.md5_str}"
+        node_id = (dep_name, analysis_instance.md5_str)
         return node_id, params, analysis_instance
     else:
         # Already an analysis instance - use its hash directly
-        node_id = f"{dep_name}_{dep_source.md5_str}"
+        node_id = (dep_name, dep_source.md5_str)
         return node_id, class_params, dep_source
 
 
@@ -109,7 +109,7 @@ def build_dependency_graph(analyses: Sequence[AbstractAnalysis]) -> tuple[dict[s
             node_id, _, _ = resolve_dependency_node(analysis, dep_name, dep_source)
             # The analysis itself doesn't have a node_id, but we need to track its dependencies
             # Actually, let's add analysis nodes too for completeness
-            analysis_node_id = f"analysis_{analysis.md5_str}"
+            analysis_node_id = ("analysis", analysis.md5_str)
             graph[analysis_node_id].add(node_id)
     
     # Add dependency-to-dependency edges  
@@ -215,13 +215,10 @@ def compute_dependency_results(
     
     for node_id in comp_order:
         # Skip analysis nodes (they'll be computed later)
-        if node_id.startswith("analysis_"):
+        if node_id[0] == "analysis":
             continue
             
         dep_instance, params = dep_instances[node_id]
-        
-        # Extract the base name (without hash)
-        base_name = node_id.split('_')[0]
         
         # Compute and store the result
         logger.debug(f"Computing dependency: {dep_instance}")
@@ -229,7 +226,7 @@ def compute_dependency_results(
         
         # Store in both dictionaries
         computed_results[node_id] = result
-        results[base_name] = result
+        results[node_id[0]] = result
         
     # Construct dependency results for each analysis
     all_dependency_results = []

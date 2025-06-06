@@ -8,6 +8,7 @@ from typing import ClassVar, Sequence, Optional, Tuple
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import jax.random as jr
 import jax.tree as jt
 from jaxtyping import PRNGKeyArray
 
@@ -146,12 +147,11 @@ def fit_regression_from_pytree_vmap(
         
         return models, feature_names
     
-#! TODO: Modify analysis/dependencies handling to allow for custom dependencies; 
-#! i.e. we don't want to hardcode `AlignedVars` here.
+    
 class Regression(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
-    dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+    inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
         regressor_tree=AlignedVars,
     ))
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
@@ -170,5 +170,5 @@ class Regression(AbstractAnalysis):
         # independents: SIUE and curl field amplitude are in PyTree structure 
         # dependents: computed from `aligned_vars` as in `transform_profile_vars`
         
-        models, feature_names = fit_regression_from_pytree_vmap(regressor_tree, key=self.key)
+        models, feature_names = fit_regression_from_pytree_vmap(regressor_tree[self.variant], key=self.key)
         return models

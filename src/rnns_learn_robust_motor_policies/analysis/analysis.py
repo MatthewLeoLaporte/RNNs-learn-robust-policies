@@ -208,7 +208,84 @@ def get_validation_trial_specs(task: AbstractTask):
         return eqx.filter_vmap(lambda task: task.validation_trials)(task)
     else:
         return task.validation_trials
+    
 
+def _extract_vmapped_kwargs_to_args(func, vmapped_dep_names: Sequence[str]):
+    """Convert specified kwargs to positional args for vmapping."""
+    def modified_func(data, *vmapped_deps, **remaining_kwargs):
+        # Reconstruct the full kwargs dict
+        full_kwargs = remaining_kwargs | dict(zip(vmapped_dep_names, vmapped_deps))
+        return func(data, **full_kwargs)
+    
+    return modified_func
+
+
+def _build_in_axes_sequence(
+    dependency_axes: Mapping[str, tuple[int, ...]],
+    vmapped_dep_names: tuple[str, ...],
+) -> tuple[int, ...]:
+    """Build the in_axes_sequence for vmapping over inputs to `AbstractAnalysis.compute`."""
+    if not dependency_axes:
+        return ()
+    
+    max_levels = max(len(axes) for axes in dependency_axes.values())
+    
+    in_axes_sequence = []
+    for level in range(max_levels):
+        # Data axis
+        data_axis = None
+        if "data.states" in dependency_axes:
+            state_axes = dependency_axes["data.states"]
+            if level < len(state_axes):
+                data_axis = AnalysisInputData(None, None, state_axes[level], None, None)
+            else:
+                data_axis = AnalysisInputData(None, None, None, None, None)
+        else:
+            data_axis = AnalysisInputData(None, None, None, None, None)
+        
+        # Vmapped dependency axes
+        vmapped_dep_axes = []
+        for dep_name in vmapped_dep_names:
+            if dep_name in dependency_axes:
+                dep_axes = dependency_axes[dep_name]
+                if level < len(dep_axes):
+                    vmapped_dep_axes.append(dep_axes[level])
+                else:
+                    vmapped_dep_axes.append(None)
+            else:
+                vmapped_dep_axes.append(None)
+        
+        in_axes_sequence.append((data_axis, *vmapped_dep_axes))
+    
+    return tuple(in_axes_sequence)
+
+
+class _AnalysisVmapSpec(Module):
+    """Handles specifications for vmapping over inputs to `AbstractAnalysis.compute`."""
+    dependency_axes: Mapping[str, tuple[int, ...]] = eqx.field(default_factory=dict)
+    vmapped_dep_names: tuple[str, ...] = ()
+    in_axes_sequence: tuple[int, ...] = ()
+    
+    def with_dependencies(self, dep_names: Sequence[str], axes: tuple[int, ...]) -> Self:
+        """Return a new VmapSpecs with additional dependencies using the same axes."""
+        new_dependency_axes = dict(self.dependency_axes)
+        
+        # Add all dependencies with the same axes
+        for dep_name in dep_names:
+            new_dependency_axes[dep_name] = axes
+        
+        new_vmapped_dep_names = tuple(
+            name for name in new_dependency_axes.keys() if name != "data.states"
+        )
+        
+        new_in_axes_sequence = _build_in_axes_sequence(new_dependency_axes, new_vmapped_dep_names)
+        
+        return _AnalysisVmapSpec(
+            dependency_axes=new_dependency_axes,
+            vmapped_dep_names=new_vmapped_dep_names,
+            in_axes_sequence=new_in_axes_sequence,
+        )
+        
 
 _FinalOpKeyType = Literal['results', 'figs']
 
@@ -268,13 +345,12 @@ class AbstractAnalysis(Module, strict=False):
     #! This means no non-default arguments in subclasses
     custom_dependencies: Mapping[str, str | Self] = eqx.field(default_factory=dict)
     _prep_ops: tuple[_PrepOp, ...] = ()
-    _state_vmap_axes: Optional[tuple[int, ...]] = None
+    _vmap_spec: Optional[_AnalysisVmapSpec] = None
     _fig_op: Optional[_FigOp] = None
     _final_ops_by_type: Mapping[_FinalOpKeyType, tuple[_FinalOp, ...]] = eqx.field(
         default_factory=lambda: MappingProxyType({'results': (), 'figs': ()})
     )
         
-
     def __call__(
         self, 
         data: AnalysisInputData,
@@ -303,11 +379,17 @@ class AbstractAnalysis(Module, strict=False):
         )
         del prepped_kwargs["data.states"]  
         
-        compute = partial(self.compute, **prepped_kwargs)
-        
-        if self._state_vmap_axes is not None:
-            result = vmap_multi(compute, in_axes_sequence=self._data_vmap_multi_axes)(prepped_data)
+        if self._vmap_spec is not None:
+            vmapped_deps = [prepped_kwargs.pop(name) for name in self._vmap_spec.vmapped_dep_names]
+            
+            compute_func = _extract_vmapped_kwargs_to_args(self.compute, self._vmap_spec.vmapped_dep_names)
+            compute_func = partial(compute_func, **prepped_kwargs)
+            
+            result = vmap_multi(compute_func, in_axes_sequence=self._vmap_spec.in_axes_sequence)(
+                prepped_data, *vmapped_deps,
+            )
         else:
+            compute = partial(self.compute, **prepped_kwargs)
             result = compute(prepped_data)
             
         for final_op in self._final_ops_by_type.get('results', ()):
@@ -700,7 +782,11 @@ class AbstractAnalysis(Module, strict=False):
 
             for level in levels:
                 def _transform_level(dep_data, level=level, **kwargs):  
-                    return jt.map(func, dep_data, is_leaf=LDict.is_of(level))
+                    return jt.map(
+                        lambda node: func(node, **kwargs), 
+                        dep_data, 
+                        is_leaf=LDict.is_of(level),
+                    )
                 
                 level_str = _format_level_str(level)
 
@@ -884,29 +970,39 @@ class AbstractAnalysis(Module, strict=False):
             label=label,
         )
         
-    def vmap_over_states(self, axes: int | Sequence[int]) -> Self:
+    def vmap(self, axes: int | Sequence[int], dependency_names: str | Sequence[str]) -> Self:
         """
         Returns a copy of this analysis that vectorizes its `compute` method over one or more axes
-        of `data.states`.
+        of one of its inputs.
         
         Arguments:
             axes: The axes of `data.states` to vectorize over, expressed in natural form (e.g. 
                 to map over the first three batch axes, pass `axes=(0, 1, 2)`).
         """
+        if isinstance(dependency_names, str):
+            dependency_names = (dependency_names,)
+        
         if isinstance(axes, int):
             axes = (axes,)
         else:
             axes = tuple(axes)
-            
-        axes = natural_to_sequential_axes(axes)
         
-        if not all(isinstance(axis, int) for axis in axes):
+        normalized_dep_names = [_normalize_name(name) for name in dependency_names]
+        
+        sequential_axes = natural_to_sequential_axes(axes)
+
+        if not all(isinstance(axis, int) for axis in sequential_axes):
             raise ValueError("`axes` must be an integer or a sequence of integers.")
         
+        if self._vmap_spec is None:
+            vmap_spec = _AnalysisVmapSpec()
+        else:
+            vmap_spec = self._vmap_spec
+        
         return eqx.tree_at(
-            lambda obj: obj._state_vmap_axes,
+            lambda obj: obj._vmap_spec,
             self,
-            axes,
+            vmap_spec.with_dependencies(normalized_dep_names, sequential_axes),
             is_leaf=is_none,
         )
         
