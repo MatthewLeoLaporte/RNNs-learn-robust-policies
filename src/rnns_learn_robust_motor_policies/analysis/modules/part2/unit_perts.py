@@ -284,7 +284,7 @@ def rearrange_profile_vars(tree, **kwargs):
     return tree
 
 
-unit_idxs_profiles_plot = jnp.arange(8)
+unit_idxs_profiles_plot = jnp.array([2, 83, 95, 97, 43, 48]) # jnp.arange(8)
 
 def segment_stim_epochs(states, *, hps_common, **kwargs):
     start_step = hps_common.pert.unit.start_step
@@ -321,6 +321,83 @@ def max_deviation_after_stim(states_by_var, *, hps_common, **kwargs):
     return jnp.max(deviation[..., ts], axis=-1)
 
 
+class UnitStimRegressionFigures(AbstractAnalysis):
+    """Figures for unit stimulation regression."""
+    inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+        regression_results=None,
+        
+    ))
+    conditions: tuple[str, ...] = ()
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
+    variant: Optional[str] = "full"
+
+    def make_figs(
+        self, 
+        data: AnalysisInputData, 
+        *, 
+        regression_results, 
+        replicate_info, 
+        **kwargs,
+    ) -> PyTree[go.Figure]:
+        regression_weights = regression_results[0].weight
+        feature_labels = regression_results[1]
+
+        figs = {}
+        
+        # ## Plot single regressor weights against each other
+        fig = go.Figure(layout=dict(
+            xaxis_title="SIUE regression weight",
+            yaxis_title="Curl amp. regression weight",
+        ))
+        fig.add_trace(go.Scatter(
+            x=regression_weights[:, 0, 1], 
+            y=regression_weights[:, 0, 2],
+            mode="markers",
+            hovertemplate="unit %{pointNumber}: (%{x}, %{y})",
+        ))
+        
+        figs[(feature_labels[1], feature_labels[2])] = fig
+        
+        # ## Plot SIUE weight against feedback input weights (input idxs 5,6 & 7,8)
+        # fig = go.Figure()
+        # # Model should not depend on SIUE or pert amp; select 0 for each 
+        # models = data.models['full'][0][0][1.5]
+        # models_best_replicate = get_best_replicate(models, replicate_info=replicate_info[1.5], axis=0)
+        # input_weights = models_best_replicate.step.net.hidden.weight_ih
+        
+        # feedback_slices = {
+        #     "pos": slice(5, 7),
+        #     "vel": slice(7, 9),
+        # }
+        # gate_slices = {
+        #     "reset": slice(0, 100),
+        #     "update": slice(100, 200),
+        #     "candidate": slice(200, 300),
+        # }
+        
+        # # TODO: Make into nested LDict
+        # for fb_var, idxs in feedback_slices.items():
+        #     fig = go.Figure(layout=dict(
+        #         xaxis_title=f"SIUE regression weight",
+        #         yaxis_title=f"{fb_var} feedback input weight"
+        #     ))
+        #     weight_amp = jnp.linalg.norm(input_weights[..., idxs], axis=-1)
+            
+        #     for gate, gate_idxs in gate_slices.items():
+        #         fig.add_trace(go.Scatter(
+        #             x=regression_weights[:, 0, 1],
+        #             y=weight_amp[gate_idxs],
+        #             mode="markers",
+        #             name=gate,
+        #         ))
+            
+        #     label = f"{fb_var}-fb-input-weight_vs_siue-reg-weight"
+        #     fig.write_html(f"{label}.html")
+        #     fig.write_image(f"{label}.webp")
+        
+        return LDict.of("comparison")(figs)
+        
+
 DEPENDENCIES = {
     "aligned_vars_trivial": AlignedVars(
         # Bypass alignment; keep aligned with x-y axes
@@ -336,39 +413,39 @@ DEPENDENCIES = {
 # PyTree structure: [context_input, pert__amp, train__pert__std]
 # Array batch shape: [stim_amp, unit_idx, eval, replicate, condition]
 ALL_ANALYSES = {
-    # "unit_stim_profiles": (
-    #     Profiles(
-    #         variant="full",
-    #         vrect_kws_func=get_impulse_vrect_kws,
-    #         coord_labels=None, 
-    #         custom_dependencies={
-    #             "vars": "aligned_vars_trivial",
-    #         },
-    #     )
-    #     .after_transform(partial(get_best_replicate, axis=3))
-    #     .after_indexing(1, unit_idxs_profiles_plot, axis_label="unit_stim_idx")  #! Only make figures for a few stim units
-    #     .after_transform(transform_profile_vars, level='var', dependency_name="vars")  # e.g. positions to deviations
-    #     .after_unstacking(1, 'unit_stim_idx', above_level='pert__amp')
-    #     # .after_indexing(0, 1, axis_label="stim_amp")  #! Only make figures for unit stim condition
-    #     .after_unstacking(0, 'stim_amp', above_level='pert__amp')
-    #     .after_transform(rearrange_profile_vars, dependency_name="vars")  # Plot pert amp. on same figure
-    #     .combine_figs_by_level(  # Also plot context inputs on same figure, with different line styles
-    #         level='context_input',
-    #         fig_params_fn=lambda fig_params, i, item: dict(
-    #             scatter_kws=dict(
-    #                 line_dash=CONTEXT_STYLES['line_dash'][i],
-    #                 legendgroup=CONTEXT_LABELS[i],
-    #                 legendgrouptitle_text=f"SIUE: {CONTEXT_LABELS[i]}",
-    #             ),
-    #         ),
-    #     )
-    #     .with_fig_params(
-    #         layout_kws=dict(
-    #             width=500,
-    #             height=350,
-    #         ),
-    #     )
-    # ),
+    "unit_stim_profiles": (
+        Profiles(
+            variant="full",
+            vrect_kws_func=get_impulse_vrect_kws,
+            coord_labels=None, 
+            custom_dependencies={
+                "vars": "aligned_vars_trivial",
+            },
+        )
+        .after_transform(partial(get_best_replicate, axis=3))
+        .after_indexing(1, unit_idxs_profiles_plot, axis_label="unit_stim_idx")  #! Only make figures for a few stim units
+        .after_transform(transform_profile_vars, level='var', dependency_name="vars")  # e.g. positions to deviations
+        .after_unstacking(1, 'unit_stim_idx', above_level='pert__amp')
+        # .after_indexing(0, 1, axis_label="stim_amp")  #! Only make figures for unit stim condition
+        .after_unstacking(0, 'stim_amp', above_level='pert__amp')
+        .after_transform(rearrange_profile_vars, dependency_name="vars")  # Plot pert amp. on same figure
+        .combine_figs_by_level(  # Also plot context inputs on same figure, with different line styles
+            level='context_input',
+            fig_params_fn=lambda fig_params, i, item: dict(
+                scatter_kws=dict(
+                    line_dash=CONTEXT_STYLES['line_dash'][i],
+                    legendgroup=CONTEXT_LABELS[i],
+                    legendgrouptitle_text=f"SIUE: {CONTEXT_LABELS[i]}",
+                ),
+            ),
+        )
+        .with_fig_params(
+            layout_kws=dict(
+                width=500,
+                height=350,
+            ),
+        )
+    ),
     "unit_stim_regression": (
         Regression(
             variant="full",
@@ -383,6 +460,11 @@ ALL_ANALYSES = {
         # e.g. positions to deviations
         .after_transform(max_deviation_after_stim, level="var", dependency_name="regressor_tree")
         .vmap(axes=0, dependency_names="regressor_tree")
+    ),
+    "unit_stim_regression_figures": UnitStimRegressionFigures(
+        custom_dependencies=dict(
+            regression_results="unit_stim_regression",
+        ),
     ),
     # "aligned_effector_trajectories": (
     #     AlignedEffectorTrajectories(

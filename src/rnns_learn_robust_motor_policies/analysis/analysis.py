@@ -351,12 +351,13 @@ class AbstractAnalysis(Module, strict=False):
         default_factory=lambda: MappingProxyType({'results': (), 'figs': ()})
     )
         
-    def __call__(
+    def _compute_with_ops(
         self, 
         data: AnalysisInputData,
         **kwargs,
-    ) -> tuple[PyTree[Any], PyTree[go.Figure]]:
-
+    ) -> dict[str, PyTree[Any]]:
+        """Perform computations with prep-ops, vmap, and result final-ops applied."""
+        
         # Transform dependencies prior to performing the analysis
         # e.g. see `after_stacking` for an example of defining a pre-op
         prepped_kwargs = kwargs.copy() # Start with original kwargs for modification
@@ -398,6 +399,37 @@ class AbstractAnalysis(Module, strict=False):
             except Exception as e:
                 logger.error(f"Error during execution of final op '{final_op.name}'", exc_info=True)
                 raise e
+        
+        return result
+
+    def _make_figs_with_ops(
+        self, 
+        data: AnalysisInputData,
+        result: dict[str, PyTree[Any]],
+        **kwargs,
+    ) -> PyTree[go.Figure]:
+        """Generate figures with fig-ops and figure final-ops applied."""
+        
+        # Transform dependencies prior to making figures
+        prepped_kwargs = kwargs.copy()
+        prepped_kwargs['data.states'] = data.states
+        for prep_op in self._prep_ops:
+            dep_names_to_process = self._get_target_dependency_names(
+                prep_op.dep_name, prepped_kwargs, "Prep-op"
+            )
+
+            # Apply transformation to identified dependencies
+            for name in dep_names_to_process:
+                 try:
+                     prepped_kwargs[name] = prep_op.transform_func(prepped_kwargs[name], **kwargs)
+                 except Exception as e:
+                     logger.error(f"Error applying prep_op transform to '{name}'", exc_info=True)
+                     raise e
+        
+        prepped_data = eqx.tree_at(
+            lambda d: d.states, data, prepped_kwargs["data.states"]
+        )
+        del prepped_kwargs["data.states"]
 
         figs: PyTree[go.Figure] = None
         if self._fig_op is None:
@@ -485,6 +517,16 @@ class AbstractAnalysis(Module, strict=False):
                 logger.error(f"Error during execution of final op '{final_fig_op.name}'", exc_info=True)
                 raise e
 
+        return figs
+
+    def __call__(
+        self, 
+        data: AnalysisInputData,
+        **kwargs,
+    ) -> tuple[PyTree[Any], PyTree[go.Figure]]:
+        """Perform analysis: compute results and generate figures."""
+        result = self._compute_with_ops(data, **kwargs)
+        figs = self._make_figs_with_ops(data, result, **kwargs)
         return result, figs
 
     @property

@@ -201,23 +201,21 @@ def perform_all_analyses(
     **kwargs,
 ) -> tuple[PyTree, PyTree[go.Figure]]:
     """Given a list or dict of instances of `AbstractAnalysis`, perform all analyses and save any figures."""
-    # Each value in `analyses` is a function that is passed a bunch of information and returns some result.
-    # e.g. the result of `"aligned_vars": get_aligned_vars` will be passed to *all* analyses
-    # This ensures that dependencies are only calculated once.
-    # However, note that dependencies should have unique keys since they will be aggregated into a 
-    # single dict before performing the analyses.
-    # TODO: Only pass the dependencies to each analysis that it actually needs
     
+    # Phase 1: Compute all analysis nodes (dependencies + leaves) 
     all_dependency_results = compute_dependency_results(analyses, data, custom_dependencies, **kwargs)
 
     if not any(analyses):
         raise ValueError("No analyses given to perform")
 
-    def analyse_and_save(analysis: AbstractAnalysis, dependencies: dict):
-        # Get all figures and results for this analysis.
-        # Pass *all* dependencies to every analysis
-        logger.info(f"Start analysis: {analysis}")
-        result, figs = analysis(data, **dependencies)
+    # Phase 2: Generate figures for leaf analyses only
+    def make_figs_and_save(analysis_key: str, analysis: AbstractAnalysis, dependencies: dict):
+        logger.info(f"Making figures: {analysis_key}")
+        # Get the computed result for this analysis (computed in phase 1)
+        result = dependencies.pop('result')
+        
+        figs = analysis._make_figs_with_ops(data, result, **dependencies)
+        
         if figs is not None:
             analysis.save_figs(
                 db_session,
@@ -230,12 +228,11 @@ def perform_all_analyses(
                 dump_formats=fig_dump_formats,
                 **dependencies,
             )
-            logger.info(f"Figures saved: {analysis}")
-        logger.info(f"Analysis complete: {analysis}")
+        logger.info(f"Figures saved: {analysis_key}")
         return analysis, result, figs
 
     all_analyses, all_results, all_figs = jtree.unzip({
-        analysis_key: analyse_and_save(analysis, dependencies)
+        analysis_key: make_figs_and_save(analysis_key, analysis, dependencies)
         for (analysis_key, analysis), dependencies in zip(analyses.items(), all_dependency_results)
     })
 

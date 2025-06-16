@@ -89,7 +89,7 @@ def fit_single_regression(tree, interaction_indices, n_features, key, n_iter=50)
     # Create and fit model
     lin_model = jt.map(
         jnp.zeros_like,
-        eqx.nn.Linear(X.shape[-1], 1, key=key),
+        eqx.nn.Linear(X.shape[-1], 1, use_bias=False, key=key),
     )
     
     trainer = SimpleTrainer(
@@ -171,4 +171,4 @@ class Regression(AbstractAnalysis):
         # dependents: computed from `aligned_vars` as in `transform_profile_vars`
         
         models, feature_names = fit_regression_from_pytree_vmap(regressor_tree[self.variant], key=self.key)
-        return models
+        return models, feature_names

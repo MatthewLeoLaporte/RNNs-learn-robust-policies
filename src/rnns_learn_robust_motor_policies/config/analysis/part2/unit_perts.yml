@@ -16,7 +16,7 @@ train:
     # list -> load multiple models
     std: [0, 1.5] 
     
-eval_n: 5
+eval_n: 10
 
 context_input: [-2.0, 0, 2.0]
 
