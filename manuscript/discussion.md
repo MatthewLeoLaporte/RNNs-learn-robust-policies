@@ -2,7 +2,11 @@
 created: 2024-11-08T10:50
 updated: 2024-11-08T23:39
 ---
+Our results show that a single-layer RNN can vary the robustness of its reaching policy through systematic variations in its neural properties, driven by information about UE. 
 
+While we have not determined whether or how the brain computes an analog of the SIUE, we do demonstrate that a continuum of policies of varying robustness can be generated through a simple and general computational shift (**be specific**) which could be implemented locally in the brain, and we provide specific, testable predictions about the neural activity in brain areas which may do so. 
+
+More broadly, our results suggest that local populations of neurons across the brain may adjust their robustness or **reactivity** to ~~**external influences**, including the influences of~~ other neural populations, according to information about their unpredictability.
 ## Questions 
 
 What are the emergent properties of a system that learns to be robust? 
@@ -39,6 +43,40 @@ For example, consider these plots of the max and sum net control force, across c
 Similar effects are seen for non-hybrid networks trained on different curl stds.
 
 The explanation here is that control gains go up for more robust networks, and so we expect their *worst-case local efficiency* to be worse, however overall they may be more efficient in terms of total expenditure because their strategies more effectively solve the task.
+
+## Neurophysiology
+
+### Scaling of unit gains 
+
+#### In response to mechanical perturbations
+
+See [[Neural tuning#Mechanical perturbation at steady state|here]]. Basically, 
+
+1. Manipulate environmental unpredictability as an analogue of the unpredictability signal.
+2. Measure baseline force direction preferences in a center-out reaching task, or during center-out perturbation of a postural stabilization task.
+3. Measure activity after a fixed perturbation, across unpredictability contexts.
+
+#### In response to feedback perturbations
+
+Do a visual perturbation, e.g. a target jump, and examine the magnitude of neural responses across unpredictability contexts. 
+
+This is related to the [[#Scaling of input-driving|next section]]. Perhaps it belongs there?
+
+### Scaling of input-driving
+
+#### Tangling
+
+If tangling is related to being input-driven, does that mean that we should expect higher tangling in more-unpredictable contexts? Where should we expect this increase in tangling to appear? 
+
+#### Others
+
+Do any of the following change with environmental unpredictability?
+
+- Changes in membrane excitability or other local properties that change responsiveness to synaptic inputs
+- Changes in thalamocortical loops, or the activity of interneurons that gate information flow.
+- Changes in oscillatory activity, e.g. decrease in beta band power due to a potential association of beta oscillations with maintaining the current motor policy.
+
+This could be partly justified by the feedback gain results. Additional justification might be possible by examining how the reset/update gate activity of the GRU network changes with unpredictability context, however this would not provide a direct analogy to any of the above, I think. 
 
 ## Limitations and concerns
 
@@ -78,9 +116,21 @@ Note that in the future we can approach this problem without needing entirely di
 
 Another option is to explicitly separate the network into policy and state estimation layers.
 
+### Biomechanics 
+
+As our biomechanical model is a point mass, there is no distinction between proprioceptive and visual feedback. There is only a distinction in terms of feedback noise and delay. 
+
 ### Replicates and learning
 
 - We are mainly concerned with what performance is *possible*
 - The variance of performance and policies among replicates indicates 
 - Thus when showing single-replicate data, we choose the best replicate for a training condition
 - We also exclude replicates which perform much worse than the best replicate
+
+#### Exclusion from further analysis based on performance measures
+
+The logic here is that systems like the brain will have much more efficient learning systems, and that we are approximating their efficiency by taking advantage of variance between model initializations.
+
+In other words: we are interested in the kind of performance that is feasible with these kinds of networked controllers, more than the kind of performance that we should expect on average (or in the worst case) given the technical details of network initialization etc.
+
+**For this reason, it may be best just to consider the best-performing replicate in each case, except for supplementary analysis where we should the variation between replicates.**

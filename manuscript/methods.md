@@ -3,25 +3,141 @@ created: 2024-11-08T10:03
 updated: 2024-11-12T10:42
 ---
 
-## Models
+## Inducing model uncertainty
 
-### Networks
+
+
+### Part 1: Single strategy networks
+
+The curl field parameter was sampled i.i.d. from a zero-mean Gaussian distribution. 
+
+Multiple ensembles of 
+
+### Part 2: Hybrid strategy networks
+
+The curl field paramer is sampled i.i.d. from a zero-mean normal distribution, and then scaled by an additional uniform sample i.i.d. in $[0, 1]$. The network only receives the value of the uniform sample; it receives no information about the direction or the relative amplitude of the curl field, on a given trial.
+
+The uniform sample represents dynamical uncertainty. If its value is 0, then regardless of the sampled curl parameter, the network’s prior model of the dynamics will be accurate. When its value is 1, then the network should learn to expect a perturbation from the given Gaussian distribution.
+
+Through the product of the uniform sample with the standard normal sample, the uniform sample controls the effective standard deviation of the Gaussian distribution from which the curl parameter is sampled. Thus the network has information about the distribution from which the curl parameter is sampled, or the probability that a curl field of a given amplitude will be present. As this is a signal of how uncertain the network should be in its prior model of the dynamics, we refer to it as *scalar information about uncertainty in the environment* (SIUE).
+
+Or **scalar information about system uncertainty** (SISU).
+
+## Model
+
+### System dynamics
+
+We use a discrete-time representation
+$$\mathbf{x}_{k+1}=\mathbf{f}(\mathbf{x}_{k},\mathbf{u}_{k},k)$$
+
+The baseline (unperturbed) system dynamics are just the dynamics of the biomechanical model being controlled.
 
 ### Biomechanics
 
-- [ ] **Velocity damping**
+Point mass. Discrete:
 
+$$x_{t+1}=\mathbf{A}x+\mathbf{B}u=\begin{bmatrix}~1&0&\Delta t&0~\\~0&1&0&\Delta t~\\~0&0&1&0~\\~0&0&0&1~\end{bmatrix}\begin{bmatrix}p_x\\p_y\\~v_x~\\v_y\end{bmatrix}+\begin{bmatrix}~\Delta t^2/2m & 0~\\~ 0 & \Delta t^2/2m~\\~\Delta t/m & 0~\\~0 & \Delta t/m~\end{bmatrix}\begin{bmatrix}~f_x~\\f_y\end{bmatrix}$$
+
+With drag; e.g. in the continuous case.
+$$\mathbf{f}_{d}=-k_{d}\mathbf{v}$$
+$$\frac{d}{dt}x=\begin{bmatrix}~0&0&1&0~\\~0&0&0&1~\\~0&0&-\frac{k_{d}}{m}&0~\\~0&0&0&-\frac{k_{d}}{m}~\end{bmatrix}\begin{bmatrix}p_x\\p_y\\~v_x~\\v_y\end{bmatrix}+\begin{bmatrix}~0&0~\\~0&0~\\~1/m&0~\\~0&1/m~\end{bmatrix}\begin{bmatrix}f_x\\~f_y~\end{bmatrix}$$
 ### Feedback
 
-## Task
+Position and velocity. Separate models trained with zero delay, or with 2-step (~20 ms) delay. 
 
-Summarize the tasks, but perhaps describe them in more detail in [[#Training]] and [[#Analysis]].
+### Network
 
-- Simple (not delayed) reaching 
+100 gated recurrent units [1].
 
-### From notebook 1-2a
+TODO: Use something other than $\mathbf{x}$ to avoid confusion with system state.
 
-We will generally evaluate on a $2\times2$ grid of center-out reach sets (i.e. 4 sets total), with 24 reach directions per set. This is to ensure good coverage and a larger set of conditions/trials on which to perform statistics.
+
+$$
+\mathbf{z}_{t}=\sigma(\mathbf{W}_{\mathrm{ih},z}\mathbf{u}_{t}+\mathbf{W}_{\mathrm{hh},z}\mathbf{x}_{t-1}+\mathbf{b}_{z})
+$$
+$$
+\mathbf{r}_{t}=\sigma(\mathbf{W}_{\mathrm{ih},r}\mathbf{u}_{t}+\mathbf{W}_{\mathrm{hh},r}\mathbf{x}_{t-1}+\mathbf{b}_{r})
+$$$$
+\^{\mathbf{x}}_{t}=\phi(\mathbf{W}_{\mathrm{ih},x}\mathbf{u}_{t}+\mathbf{W}_{\mathrm{hh},x}(\mathbf{r}_{t}\odot\mathbf{x}_{t-1})+\mathbf{b}_{h})
+$$$$
+\mathbf{x}_{t}=(1-\mathbf{z}_{t})\odot\mathbf{x}_{t-1}+\mathbf{z}_{t}\odot\^{\mathbf{x}}_{t}
+$$
+Linear readout.
+
+$$
+\mathbf{o}_{t}=\mathbf{W}_{\mathrm{ho}}\mathbf{x}_{t}
+$$
+
+### System noise
+
+Gaussian. Sensory → additive. 
+
+Motor → additive + multiplicative.
+
+## Units
+
+See [[units|here]]. 
+
+> [!Note]
+> I guess this shouldn’t be a separate section, but that we should just mention the values + units for given quantities, wherever they are first introduced.
+> 
+
+
+## Software
+
+Python; JAX + Equinox + Feedbax.
+
+## Training
+
+- Which weights are trained
+- Weight initialization
+- Adam optimizer
+- 10,000 batches × 250 trials.
+
+### Replicates
+
+For each training condition, an ensemble of 5 model replicates was trained, with different random weight initializations.
+
+### Task 
+
+Undelayed point-to-point reaching. 
+
+### Cost function
+
+Quadratic in position errors, final velocities, control forces, and network activities.
+
+### Optimality 
+
+Performance was not significantly altered by the following measures:
+
+- [ ] **Introduce perturbations after initial training period without them**
+- [x] Learning rate schedule, e.g. [[2024-11-08|Cosine annealing schedule]] 
+- [x] Try `optax.adamw` for [[2024-11-08#Weight decay|weight decay regularization]]
+	- Doesn’t make much of a difference
+### Hyperparameters
+
+Try training at different network sizes etc.
+
+### Hardware and cost
+
+#### Titan Xp
+
+Training takes about 10 min per ensemble of 10 models; i.e. about 4 h for 30 models
+
+#### MacBook Pro
+
+M4 Pro with 14-Core CPU, 48 GB RAM
+
+## Analyses
+
+### Visualize and quantify robustness (Parts 1 and 2)
+
+Center-out task with consistent perturbations 
+
+Robustness measures: max lateral displacement, max parallel velocity, max net control force, max parallel force
+#### Task description
+
+Evaluate on a  grid of center-out reach sets (i.e. 4 sets total), with 24 reach directions per set. This is to ensure good coverage and a larger set of conditions/trials on which to perform statistics.
 
 In the case of visualization of center-out sets, we'll use a smaller version of the task with only a single set of 7 reaches (using an odd number helps with visualization).
 
@@ -30,92 +146,19 @@ For 4 sets of 24 center-out reaches (i.e. 96 reach conditions), with 10 replicat
 - reduce the number of evaluation reaches (e.g. `n_evals` or `eval_n_directions`);
 - wait to evaluate until we have decided on a subset of trials to plot; i.e. define a function to evaluate subsets of data as needed;
 - evaluate on CPU (assuming we have more RAM available).
+#### Part 1
 
-## Training
+Compare models trained on different training std.
 
-- Which parameters are trained
-- Parameter initialization
-- Adam optimizer
-- [[2024-11-08|Cosine annealing schedule]] (isn’t critical for convergence)
-### Cost function
+#### Part 2 
 
-- Position and velocity errors
-- Control forces (not necessarily network output!)
-- Network activity
-- [ ] Weight decay?
-- [ ] Readout norm?
+Compare different SIUE
 
-### Part 1: Single strategy networks
-
-### Part 2: Hybrid strategy networks
-
-#### Training methods
-
-##### Binary context switch (BCS)
-
-The network is simply given a Boolean (0-1) input which indicates whether the training perturbation is currently active, though it vary in amplitude and direction.
-
-##### Direct amplitude information (DAI)
-
-The field strength for each training trial is sampled i.i.d. from a zero-mean normal distribution.
-
-The network receives the absolute value of the standard normal sample, prior to its scaling by `field_std`.
-
-##### Probabilistic amplitude information (PAI)
-
-In each case, the field amplitude may also be scaled by a constant factor (i.e. the `train_std`) on each run.
-
-###### Amplitude scaling factor (PAI-ASF)
-
-The field strength is sampled i.i.d. from a zero-mean normal distribution, and then scaled by a uniform sample i.i.d. in $[0, 1]$. 
-
-The network receives the value of the uniform sample. Because of the product with a standard normal sample, the uniform sample is the standard deviation of the zero-mean normal distribution from which the trial’s field amplitude is sampling. Thus the network has information about the standard deviation, and thus the probability that it will experience a field at least as absolutely strong as any given threshold. It does not receive information about the exact strength of the field, on a given trial.
-
-###### Noisy context (PAI-N)
-
-Similar to [[#Direct amplitude information (DAI)|DAI]], except that Gaussian noise is added to the absolute field amplitude before providing it to the network. Thuis
-
-### Replicates
-#### Exclusion from further analysis based on performance measures
-
-The logic here is that systems like the brain will have much more efficient learning systems, and that we are approximating their efficiency by taking advantage of variance between model initializations.
-
-In other words: we are interested in the kind of performance that is feasible with these kinds of networked controllers, more than the kind of performance that we should expect on average (or in the worst case) given the technical details of network initialization etc.
-
-**For this reason, it may be best just to consider the best-performing replicate in each case, except for supplementary analysis where we should the variation between replicates.**
-
-### Optimality 
-
-It may be necessary to do one or more of the following to get optimal models:
-
-- [ ] **Introduce perturbations after initial training period without them**
-- [x] Learning rate schedule
-- ~~Batch size schedule (increase later in training)~~ This is essentially equivalent to a learning rate schedule.
-- [ ] Gradient clipping
-- [x] Try `optax.adamw` for [[2024-11-08#Weight decay|weight decay regularization]]
-	- Doesn’t make much of a difference
-
-### Hyperparameters
-
-Try training at different network sizes etc.
-
-### Hardware and cost
-
-Titan Xp
-
-Training takes about 10 min per ensemble of 10 models; i.e. about 4 h for 30 models
-
-## Analysis
-
-### Validation task
-
-### Robustness measures
-
-### Feedback perturbations
+### Feedback perturbations (Part 2)
 
 - How to make pos vs. vel perturbations comparable?
 - Choose amplitudes to align the max (or sum?) deviation for the control (zero train std) condition?
-### Single-unit stimulation
+### Single-unit stimulation (Part 2)
 
 Outline based on a conversation with Gunnar:
 
@@ -125,6 +168,15 @@ Outline based on a conversation with Gunnar:
 - Repeat this for all the other units
 - Now we can e.g. do a scatter plot of the regression parameters across all the units
 
+### State-space analysis 
+
+PCA
+
+Eigendecomposition of fixed point Jacobians 
+
+Validation trajectories: How do FPs change with reach condition and SIUE?
+
+Perturbation responses: How do 
 ## Summary of conditions
 
 - 3 train and 3 test perturbation conditions (control, curl, random) such that for each noise+delay condition we can do 3x3 train-test comparisons
