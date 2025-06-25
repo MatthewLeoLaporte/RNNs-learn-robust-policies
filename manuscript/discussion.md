@@ -104,7 +104,7 @@ Accelerant/retardant fields are not very interesting; they either stabilize or d
 
 Random velocity-dependent fields are just some interpolation between an accelerant and a curl field.
 
-### Separation principle
+### Separation principle / network partitioning
 
 We use undifferentiated networks. 
 
@@ -112,13 +112,15 @@ However, certain things are harder to investigate in this context.
 
 - What does the network’s forward model look like? For example, in the case of adaptation (CW curl) vs. robustening (mixed direction curl) what is the difference in the effect on the forward model?
 
-Note that in the future we can approach this problem without needing entirely distinct networks. For example, weight partitioning.
+Note that in the future we can approach this problem without needing entirely distinct networks. For example, weight partitioning / unit subsets.
 
 Another option is to explicitly separate the network into policy and state estimation layers.
 
 ### Biomechanics 
 
 As our biomechanical model is a point mass, there is no distinction between proprioceptive and visual feedback. There is only a distinction in terms of feedback noise and delay. 
+
+Instead of approximating the biomechanics by using Euler’s method and a net force calculation, we could solve for the discrete iterations [[Point mass without numerical integration|exactly]], even (apparently) in the case that we have drag force and a curl field.
 
 ### Replicates and learning
 
