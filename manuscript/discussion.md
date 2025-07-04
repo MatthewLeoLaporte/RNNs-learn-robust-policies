@@ -44,6 +44,23 @@ Similar effects are seen for non-hybrid networks trained on different curl stds.
 
 The explanation here is that control gains go up for more robust networks, and so we expect their *worst-case local efficiency* to be worse, however overall they may be more efficient in terms of total expenditure because their strategies more effectively solve the task.
 
+### Robust vs. adaptive control 
+
+These are not cleanly separable, in practice. 
+
+See [[Robust versus adaptive control|here]] for some brainstorming about this.
+
+- We cannot prevent a closed-loop RNN from using the information that is available to it on a given trial. 
+- Can we force it to use the information only for robustening, but not adapting, its policy?
+- We might want to try to make the perturbations *mopre* unpredictable within trials, so that adaptive control would be ineffective. But the more we try to make the perturbations unpredictable, the closer they get to high-frequency noise, against which there can be no robustening of responses. (However, we may be able to at least observe what happens as the perturbations trend more unpredictable.)
+
+However, the SISU-dependent changes in part 2 do suggest a robustening response. If the network were able to improve its performance in response to unpredictable perturbations primarily by implementing an adaptive strategy, such as by sampling the perturbations early in the trial, then we might expect its performance to be 
+
+> [!Note]
+> There is a supplementary analysis we could use to help demonstrate this: reverse the direction of the curl field midway through the reach. If the response is adaptive, then performance should be significantly worse after the field is reversed, since the adaptation presumably involves a force profile that specifically counteracts the originally sampled curl direction. However, if the policy is a robust one, then the change in field direction should of course still change the trajectory, but there should be no 
+> 
+
+
 ## Neurophysiology
 
 ### Scaling of unit gains 
@@ -96,6 +113,13 @@ It makes technical sense to treat a linearization of a *steady state* fixed poin
 
 When the system is in an unsteady closed loop state (e.g. on its way to a target position) but we compute the fixed points as though the system is in a steady state (or, in open loop) then the fixed points we calculate are not necessarily ever reached by the system in practice. The system is merely falling toward those fixed points, from some point in state space. 
 
+### H-infinity robust control
+
+- Applies to *linear, time-invariant* systems. However, there are extensions.
+- Considers the response to worst-case *exogenous* disturbances.
+	- e.g. what frequency input to the system will blow up the output the most? 
+- *Does not capture closed-loop/state-dependent perturbations* such as curl force fields.
+
 ### Types of perturbations studied
 
 ##### Why not accelerant/retardant fields, or random velocity-dependent fields?
@@ -116,11 +140,15 @@ Note that in the future we can approach this problem without needing entirely di
 
 Another option is to explicitly separate the network into policy and state estimation layers.
 
-### Biomechanics 
+### Biomechanical and biophysical realism
 
 As our biomechanical model is a point mass, there is no distinction between proprioceptive and visual feedback. There is only a distinction in terms of feedback noise and delay. 
 
 Instead of approximating the biomechanics by using Euler’s method and a net force calculation, we could solve for the discrete iterations [[Point mass without numerical integration|exactly]], even (apparently) in the case that we have drag force and a curl field.
+
+Co-contraction is also observed, though it alone has less of an effect on robustening than was once supposed. 
+
+In humans and other animals, increasing feedback gains should be observed across the motor hierarchy. For example, in unpredictable environments we should expect both spinal reflex circuits and central state estimators to be tuned towards reactivity when dynamical uncertainty affects high-level motor plans (i.e. prediction errors cannot be canceled out before reaching the brain).
 
 ### Replicates and learning
 
