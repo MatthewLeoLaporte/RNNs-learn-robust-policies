@@ -7,9 +7,14 @@ Human reaching movements exhibit a fundamental trade-off between robustness and 
 
 *Bridge better: investigate the neural basis, mechanisms… rather than just jumping into predictions
 
-(Methods/results) To generate testable neural predictions, we trained a single-layer recurrent neural network (RNN) to perform straight reaches with feedback, while manipulating the dynamical unpredictability (DU) through balanced perturbations of the mechanics. The RNN, when input with scalar information about the DU (SIDU) on each training trial, learned a continuum of policies of varying robustness. Behavioural signatures on test trials reflected those seen in theory and human experiments, and their robustness was manipulable by the SIDU alone. 
+(Methods/results) To generate testable neural predictions, we trained a single-layer recurrent
+neural network (RNN) to perform straight reaches with feedback, while manipulating the system
+unpredictability (SU) through balanced perturbations of the mechanics. The RNN, when input with
+scalar information about the SU (SISU) on each training trial, learned a continuum of policies of
+varying robustness. Behavioural signatures on test trials reflected those seen in theory and human
+experiments, and their robustness was manipulable by the SISU alone. 
 
-We then probed the unit responses and population dynamics of the trained network. First, \[something about unit tuning via perturbation analysis.\]. Second, the RNN’s fixed point trajectories varied with the SIUE, **being arranged along a top principle component of the population activity** (maybe more general: dimensionality reduction → systematic organization in state space). The dynamics of individual fixed points became both richer and more stable, as the value of the SIUE increases. 
+We then probed the unit responses and population dynamics of the trained network. First, \[something about unit tuning via perturbation analysis.\]. Second, the RNN’s fixed point trajectories varied with the SISU, **being arranged along a top principle component of the population activity** (maybe more general: dimensionality reduction → systematic organization in state space). The dynamics of individual fixed points became both richer and more stable, as the value of the SISU increases. 
 
 That simple and general computational shift (**be specific**) which could be implemented locally in the brain, and we provide specific, testable predictions about the neural activity in brain areas which may do so. More broadly, our results suggest that local populations of neurons across the brain may adjust their robustness or **reactivity** to ~~**external influences**, including the influences of~~ other neural populations, according to information about their unpredictability.
 

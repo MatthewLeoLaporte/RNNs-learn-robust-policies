@@ -324,17 +324,17 @@ class AbstractAnalysis(Module, strict=False):
             that case we could give the condition `"any_system_noise"` to those analyses.
     """
     _exclude_fields = (
-        'inputs', 
+        'dependencies', 
         'conditions', 
         'fig_params', 
         'custom_dependencies', #! Should this be here?
         '_prep_ops', 
-        '_state_vmap_axes',
+        # '_state_vmap_axes',
         '_fig_op',
         '_final_ops_by_type',
     )
 
-    inputs: AbstractClassVar[MappingProxyType[str, type[Self]]]
+    default_dependencies: AbstractClassVar[MappingProxyType[str, type[Self]]]
     conditions: AbstractVar[tuple[str, ...]]
     variant: AbstractVar[Optional[str]] 
     fig_params: AbstractVar[FigParamNamespace]
@@ -535,9 +535,7 @@ class AbstractAnalysis(Module, strict=False):
         
         Combines default inputs with custom overrides.
         """
-        result = dict(self.inputs)
-        result.update(self.custom_dependencies)
-        return result
+        return dict(self.default_dependencies) | self.custom_dependencies
 
     def _get_target_dependency_names(
         self,
@@ -1048,16 +1046,16 @@ class AbstractAnalysis(Module, strict=False):
             is_leaf=is_none,
         )
         
-    @property
-    def _data_vmap_multi_axes(self):
-        if self._state_vmap_axes is None:
-            # We shouldn't arrive here
-            return None 
-        else:
-            return tuple(
-                (AnalysisInputData(None, None, i, None, None),)
-                for i in self._state_vmap_axes
-            )
+    # @property
+    # def _data_vmap_multi_axes(self):
+    #     if self._state_vmap_axes is None:
+    #         # We shouldn't arrive here
+    #         return None 
+    #     else:
+    #         return tuple(
+    #             (AnalysisInputData(None, None, i, None, None),)
+    #             for i in self._state_vmap_axes
+    #         )
         
     def and_transform_results(
         self,
@@ -1405,7 +1403,7 @@ AnalysisDependenciesType: TypeAlias = MappingProxyType[str, type[AbstractAnalysi
 
 class _DummyAnalysis(AbstractAnalysis):
     """An empty analysis, for debugging."""
-    inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    default_dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = None
     fig_params: FigParamNamespace = DefaultFigParamNamespace()

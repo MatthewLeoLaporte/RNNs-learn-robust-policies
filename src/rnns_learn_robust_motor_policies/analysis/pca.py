@@ -35,12 +35,13 @@ class StatesPCA(AbstractAnalysis):
             `(*batch, n_vars)`, retaining the batch axes in the output. 
     """
 
-    dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    default_dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = None
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
     n_components: Optional[int] = None
     where_states: Optional[Callable[[SimpleFeedbackState], PyTree[Array]]] = None
+    return_data: bool = True
 
     def compute(
         self,
@@ -57,17 +58,25 @@ class StatesPCA(AbstractAnalysis):
         pca = PCA(n_components=self.n_components).fit(
             jnp.concatenate(jt.leaves(states_reshaped))
         )
+        
+        batch_transform = lambda x: jt.map(batch_reshape(pca.transform), x)
+
+        if self.return_data:
+            data = jt.map(batch_transform, states_for_pca)
+        else:
+            data = None
 
         return TreeNamespace(
             pca=pca,
-            batch_transform=lambda x: jt.map(batch_reshape(pca.transform), x),
+            batch_transform=batch_transform,
+            data=data,
         )
     
 
 # class ProjectPCA(AbstractAnalysis):
 #     conditions: tuple[str, ...] = ()
 #     variant: Optional[str] = "small"
-#     dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+#     default_dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
 #         pca=PCA,
 #     ))
 #     fig_params: FigParamNamespace = DefaultFigParamNamespace()

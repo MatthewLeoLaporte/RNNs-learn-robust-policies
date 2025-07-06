@@ -58,6 +58,8 @@ def resolve_dependency_node(analysis, dep_name, dep_source, dependency_lookup=No
     """
     class_params = analysis.dependency_kwargs().get(dep_name, {})
     # Recursively resolve string dependencies
+    if dep_source is None:
+        raise ValueError(f"Dependency '{dep_name}' is None")
     if isinstance(dep_source, str):
         if dependency_lookup is not None and dep_source in dependency_lookup:
             dep_instance = dependency_lookup[dep_source]

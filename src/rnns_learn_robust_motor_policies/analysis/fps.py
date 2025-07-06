@@ -25,7 +25,7 @@ class SteadyStateFPs(AbstractAnalysis):
     """ 
     """
 
-    dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    default_dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = None
     fig_params: FigParamNamespace = DefaultFigParamNamespace()

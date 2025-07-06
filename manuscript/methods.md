@@ -30,7 +30,7 @@ The curl field paramer is sampled i.i.d. from a zero-mean normal distribution, a
 
 The uniform sample represents dynamical uncertainty. If its value is 0, then regardless of the sampled curl parameter, the network’s prior model of the dynamics will be accurate. When its value is 1, then the network should learn to expect a perturbation from the given Gaussian distribution.
 
-Through the product of the uniform sample with the standard normal sample, the uniform sample controls the effective standard deviation of the Gaussian distribution from which the curl parameter is sampled. Thus the network has information about the distribution from which the curl parameter is sampled, or the probability that a curl field of a given amplitude will be present. As this is a signal of how uncertain the network should be in its prior model of the dynamics, we refer to it as *scalar information about uncertainty in the environment* (SIUE).
+Through the product of the uniform sample with the standard normal sample, the uniform sample controls the effective standard deviation of the Gaussian distribution from which the curl parameter is sampled. Thus the network has information about the distribution from which the curl parameter is sampled, or the probability that a curl field of a given amplitude will be present. As this is a signal of how uncertain the network should be in its prior model of the dynamics, we refer to it as *scalar information about uncertainty in the environment* (SISU).
 
 Or **scalar information about system uncertainty** (SISU).
 
@@ -258,7 +258,7 @@ Compare models trained on different training std.
 
 #### Part 2 
 
-Compare different SIUE
+Compare different SISU
 
 ### Feedback perturbations (Part 2)
 
@@ -281,7 +281,7 @@ PCA
 
 Eigendecomposition of fixed point Jacobians 
 
-Validation trajectories: How do FPs change with reach condition and SIUE?
+Validation trajectories: How do FPs change with reach condition and SISU?
 
 Perturbation responses: How do 
 

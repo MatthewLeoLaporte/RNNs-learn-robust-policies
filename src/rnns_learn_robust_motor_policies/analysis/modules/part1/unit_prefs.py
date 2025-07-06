@@ -78,7 +78,7 @@ def get_control_forces(task, states):
 ts = np.arange(0, 20)
 
 
-ALL_ANALYSES = {
+ANALYSES = {
     # "unit_prefs_goal_positions": (
     #     UnitPreferences(feature_fn=get_goal_positions)
     #     .after_transform(get_best_replicate)

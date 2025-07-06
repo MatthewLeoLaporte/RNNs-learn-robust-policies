@@ -52,13 +52,13 @@ eval_func: Callable = vmap_eval_ensemble
 class SomeAnalysis(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
-    dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    default_dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
     
     ...
  
    
 """Determines which analyses are performed by `run_analysis.py`, for this module."""
-ALL_ANALYSES = [
+ANALYSES = [
     SomeAnalysis(),
 ]

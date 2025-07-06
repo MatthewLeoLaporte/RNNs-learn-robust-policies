@@ -151,7 +151,7 @@ def fit_regression_from_pytree_vmap(
 class Regression(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
-    inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+    default_dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
         regressor_tree=AlignedVars,
     ))
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
@@ -167,7 +167,7 @@ class Regression(AbstractAnalysis):
 
     def compute(self, data: AnalysisInputData, *, regressor_tree, **kwargs):
         # Regression 
-        # independents: SIUE and curl field amplitude are in PyTree structure 
+        # independents: SISU and curl field amplitude are in PyTree structure 
         # dependents: computed from `aligned_vars` as in `transform_profile_vars`
         
         models, feature_names = fit_regression_from_pytree_vmap(regressor_tree[self.variant], key=self.key)

@@ -20,17 +20,17 @@ Within each module under `rnns_learn_robust_motor_policies.analysis.modules`, fo
   evaluate them on. 
 - `eval_func` defines how to evaluate the model-task pairings, for example if the evaluation
   requires `vmap`.
-- `ALL_ANALYSES` describes the instances of `AbstractAnalysis` (superclass defined ipy).
+- `ANALYSES` describes the instances of `AbstractAnalysis` (superclass defined ipy).
   This defines the set of analyses to perform. 
 - `DEPENDENCIES` includes other instances of `AbstractAnalysis` which are available as 
   inputs to other instances, but for which figures are not made, and results are not 
   finally returned.
 
-Each subclass of `AbstractAnalysis` defines `inputs: ClassVar`, where keys are input names and
+Each subclass of `AbstractAnalysis` defines `default_dependencies: ClassVar`, where keys are input names and
 values are defaults (as other types of `AbstractAnalysis` to be evaluated); [run_analysis.py](mdc:scripts/run_analysis.py) uses 
 the tools in [_dependencies.py](mdc:src/rnns_learn_robust_motor_policies/analysis/_dependencies.py) (via [execution.py](mdc:src/rnns_learn_robust_motor_policies/analysis/execution.py)) to ensure that any dependencies of the set of analyses specified
-explicitly by `ALL_ANALYSES`, will be computed and passed as appropriate, and that each dependency
-will only be computed once if is a dependency of multiple entries in `ALL_ANALYSES`. 
+explicitly by `ANALYSES`, will be computed and passed as appropriate, and that each dependency
+will only be computed once if is a dependency of multiple entries in `ANALYSES`. 
 
 Special types are define in [types.py](mdc:src/rnns_learn_robust_motor_policies/types.py). In particular, `LDict` is used to label `dict` levels of a
 PyTree so that we can easily map their key values, to and from the values of (e.g.) columns in the

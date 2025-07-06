@@ -4,7 +4,7 @@ updated: 2024-11-08T23:39
 ---
 Our results show that a single-layer RNN can vary the robustness of its reaching policy through systematic variations in its neural properties, driven by information about UE. 
 
-While we have not determined whether or how the brain computes an analog of the SIUE, we do demonstrate that a continuum of policies of varying robustness can be generated through a simple and general computational shift (**be specific**) which could be implemented locally in the brain, and we provide specific, testable predictions about the neural activity in brain areas which may do so. 
+While we have not determined whether or how the brain computes an analog of the SISU, we do demonstrate that a continuum of policies of varying robustness can be generated through a simple and general computational shift (**be specific**) which could be implemented locally in the brain, and we provide specific, testable predictions about the neural activity in brain areas which may do so. 
 
 More broadly, our results suggest that local populations of neurons across the brain may adjust their robustness or **reactivity** to ~~**external influences**, including the influences of~~ other neural populations, according to information about their unpredictability.
 ## Questions 

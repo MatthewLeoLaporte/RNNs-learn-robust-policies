@@ -1,21 +1,47 @@
-from functools import partial 
+"""
+Do PCA on hidden states during reaching. See how tangling varies over them. 
 
+I am not sure how well this will work, given that each trajectory won't visit the same place 
+in state space many times. However, it may be the case that there are still significant differences 
+across SISU. 
+"""
+
+from collections.abc import Callable
+from functools import partial 
+from types import MappingProxyType
+from typing import ClassVar, Optional, Dict, Any, Literal as L, Sequence
+
+import equinox as eqx
+from equinox import Module
 import jax.tree as jt
+from jaxtyping import Array, Float, PyTree
+import numpy as np
+import plotly.graph_objects as go
 
 from feedbax.intervene import add_intervenors, schedule_intervenor
-from jax_cookbook import is_module
+import feedbax.plotly as fbp
+from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.analysis.aligned import AlignedEffectorTrajectories
+from rnns_learn_robust_motor_policies.analysis.aligned import AlignedEffectorTrajectories, AlignedVars
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisDependenciesType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS
+from rnns_learn_robust_motor_policies.analysis.effector import EffectorTrajectories
+from rnns_learn_robust_motor_policies.analysis.measures import ALL_MEASURE_KEYS, MEASURE_LABELS
 from rnns_learn_robust_motor_policies.analysis.measures import Measures
+from rnns_learn_robust_motor_policies.analysis.pca import StatesPCA
 from rnns_learn_robust_motor_policies.analysis.profiles import Profiles
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate, get_constant_task_input_fn, vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.colors import ColorscaleSpec
-from rnns_learn_robust_motor_policies.plot import set_axes_bounds_equal
+from rnns_learn_robust_motor_policies.config.config import PLOTLY_CONFIG
+from rnns_learn_robust_motor_policies.constants import POS_ENDPOINTS_ALIGNED
+from rnns_learn_robust_motor_policies.plot import add_endpoint_traces, get_violins, set_axes_bounds_equal
 from rnns_learn_robust_motor_policies.tree_utils import move_ldict_level_above
 from rnns_learn_robust_motor_policies.types import (
+    RESPONSE_VAR_LABELS,
     LDict,
+    Responses,
+    TreeNamespace,
 )
 
 
@@ -91,57 +117,54 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     return tasks, models, hps, None
 
 
-MEASURE_KEYS = (
-    "max_parallel_vel_forward",
-    # "max_orthogonal_vel_signed",
-    # "max_orthogonal_vel_left",
-    # "max_orthogonal_vel_right",  # -2
-    "largest_orthogonal_distance",
-    # "max_orthogonal_distance_left",
-    # "sum_orthogonal_distance",
-    "sum_orthogonal_distance_abs",
-    "end_position_error",
-    # "end_velocity_error",  # -1
-    "max_parallel_force_forward",
-    # "sum_parallel_force",  # -2
-    # "max_orthogonal_force_right",  # -1
-    "sum_orthogonal_force_abs",
-    "max_net_force",
-    "sum_net_force",
-)
-
+class Tangling(AbstractAnalysis):
+    default_dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+        #! What is an appropriate default, here? Should we use `None` defaults?
+        states=StatesPCA,
+    ))
+    conditions: tuple[str, ...] = ()
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
+    variant: Optional[str] = "full"
+    eps: float = 1e-6  # TODO: Allow for `lambda states: ...`
+    
+    def compute(self, data: AnalysisInputData, states, hps_common, **kwargs) -> dict:
+        #! Should probably be hps_common.dt, top-level
+        dt = hps_common.train.model.dt  
+        dxdt = self._flow_field(states.net.hidden, dt)
         
-ANALYSES = {
-    # "effector_trajectories_by_condition": (
-    #     # By condition, all evals for the best replicate only
-    #     EffectorTrajectories(
-    #         colorscale_axis=1, 
-    #         colorscale_key="reach_condition",
+    
+    def _flow_field(self, arr: Array, dt: float) -> Array:
+        # Assume `arr` has shape (..., timestep, dim)
+        # Simple finite difference approximation of the flow field.
+        return (arr[..., 1:, :] - arr[..., :-1, :]) / dt
+
+N_PCA = 10
+
+DEPENDENCIES = {
+    "hidden_states_pca": (
+        StatesPCA(
+            n_components=N_PCA, 
+            where_states=lambda states: states.net.hidden,
+        )
+        .after_transform(get_best_replicate)
+        # .after_indexing(-2, np.arange(START_STEP, END_STEP), axis_label="timestep")
+    ),
+    # "tangling": (
+    #     Tangling(
+    #         custom_dependencies=dict(
+    #             states="hidden_states_pca",
+    #         ),
     #     )
-    #     .after_transform(get_best_replicate)  # By default has `axis=1` for replicates
-    # ),
-    "aligned_trajectories_by_context_input": (
-        AlignedEffectorTrajectories()
-        .after_stacking("context_input")
-        .map_figs_at_level("train__pert__std")
-        .then_transform_figs(
-            partial(
-                set_axes_bounds_equal, 
-                padding_factor=0.1,
-                trace_selector=lambda trace: trace.showlegend is True,
+    # )
+}
+
+
+ANALYSES = {
+    "tangling": (
+        Tangling(
+            custom_dependencies=dict(
+                states="hidden_states_pca",
             ),
         )
-    ),
-    "aligned_trajectories_by_train_std": AlignedEffectorTrajectories().after_stacking("train__pert__std").map_figs_at_level("context_input"),
-    "profiles": (
-        Profiles()
-        .after_transform(get_best_replicate)
-        .after_transform(
-            lambda tree, **kws: move_ldict_level_above("var", "train__pert__std", tree),
-            dependency_name="vars",
-        )
-    ),
-    "measures_by_pert_amp": Measures(measure_keys=MEASURE_KEYS).map_figs_at_level("pert__amp"),
-    "measures_by_train_std": Measures(measure_keys=MEASURE_KEYS).map_figs_at_level("train__pert__std"),
-    "measures_train_std_by_pert_amp": Measures(measure_keys=MEASURE_KEYS).after_level_to_top("train__pert__std").map_figs_at_level("pert__amp"),
+    )
 }

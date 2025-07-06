@@ -1,7 +1,7 @@
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from types import ModuleType
-from typing import List, Optional
+from typing import Any, List, Optional
 
 import dill as pickle
 import equinox as eqx
@@ -199,8 +199,15 @@ def perform_all_analyses(
     fig_dump_formats: List[str] = ["html"],
     custom_dependencies: Optional[dict[str, AbstractAnalysis]] = None,
     **kwargs,
-) -> tuple[PyTree, PyTree[go.Figure]]:
+) -> tuple[PyTree[AbstractAnalysis], PyTree[Any], PyTree[go.Figure]]:
     """Given a list or dict of instances of `AbstractAnalysis`, perform all analyses and save any figures."""
+    
+    if not analyses:
+        logger.warning("No analyses given to perform; nothing returned")
+        return None, None, None
+    
+    if not all(isinstance(value, AbstractAnalysis) for value in analyses.values()):
+        raise ValueError("All analyses defined in given analysis module must be instances of `AbstractAnalysis`")
     
     # Phase 1: Compute all analysis nodes (dependencies + leaves) 
     all_dependency_results = compute_dependency_results(analyses, data, custom_dependencies, **kwargs)
@@ -209,12 +216,12 @@ def perform_all_analyses(
         raise ValueError("No analyses given to perform")
 
     # Phase 2: Generate figures for leaf analyses only
-    def make_figs_and_save(analysis_key: str, analysis: AbstractAnalysis, dependencies: dict):
+    def make_figs_and_save(analysis_key: str, analysis: AbstractAnalysis, inputs: dict):
         logger.info(f"Making figures: {analysis_key}")
         # Get the computed result for this analysis (computed in phase 1)
-        result = dependencies.pop('result')
+        result = inputs.pop('result')
         
-        figs = analysis._make_figs_with_ops(data, result, **dependencies)
+        figs = analysis._make_figs_with_ops(data, result, **inputs)
         
         if figs is not None:
             analysis.save_figs(
@@ -226,7 +233,7 @@ def perform_all_analyses(
                 model_info,
                 dump_path=fig_dump_path,
                 dump_formats=fig_dump_formats,
-                **dependencies,
+                **inputs,
             )
         logger.info(f"Figures saved: {analysis_key}")
         return analysis, result, figs
@@ -254,7 +261,7 @@ def run_analysis_module(
     1. Construct all task-model pairs defined by the module's `setup_eval_tasks_and_models` 
        function, then evaluate them according to the module's `eval_func`. The result is 
        a PyTree of states for different evaluation/training conditions. 
-    2. Perform all analyses defined by the module's `ALL_ANALYSES` attribute,
+    2. Perform all analyses defined by the module's `ANALYSES` attribute,
        given all the available data (states, tasks, models, hyperparameters, etc.).
     """
     if fig_dump_path is None:
@@ -376,7 +383,7 @@ def run_analysis_module(
 
     all_analyses, all_results, all_figs = perform_all_analyses(
         db_session,
-        analysis_module.ALL_ANALYSES,
+        analysis_module.ANALYSES,
         data,
         model_info,
         eval_info,

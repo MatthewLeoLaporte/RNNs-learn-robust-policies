@@ -321,11 +321,19 @@ def max_deviation_after_stim(states_by_var, *, hps_common, **kwargs):
     return jnp.max(deviation[..., ts], axis=-1)
 
 
+class UnitFbGains(AbstractAnalysis):
+    """Compute unit feedback gains."""
+    default_dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    conditions: tuple[str, ...] = ()
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
+    variant: Optional[str] = "full"
+    
+
 class UnitStimRegressionFigures(AbstractAnalysis):
     """Figures for unit stimulation regression."""
-    inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+    default_dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
         regression_results=None,
-        
+        unit_fb_gains=None,
     ))
     conditions: tuple[str, ...] = ()
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
@@ -336,6 +344,7 @@ class UnitStimRegressionFigures(AbstractAnalysis):
         data: AnalysisInputData, 
         *, 
         regression_results, 
+        unit_fb_gains,
         replicate_info, 
         **kwargs,
     ) -> PyTree[go.Figure]:
@@ -346,7 +355,7 @@ class UnitStimRegressionFigures(AbstractAnalysis):
         
         # ## Plot single regressor weights against each other
         fig = go.Figure(layout=dict(
-            xaxis_title="SIUE regression weight",
+            xaxis_title="SISU regression weight",
             yaxis_title="Curl amp. regression weight",
         ))
         fig.add_trace(go.Scatter(
@@ -358,9 +367,9 @@ class UnitStimRegressionFigures(AbstractAnalysis):
         
         figs[(feature_labels[1], feature_labels[2])] = fig
         
-        # ## Plot SIUE weight against feedback input weights (input idxs 5,6 & 7,8)
+        # ## Plot SISU weight against feedback input weights (input idxs 5,6 & 7,8)
         # fig = go.Figure()
-        # # Model should not depend on SIUE or pert amp; select 0 for each 
+        # # Model should not depend on SISU or pert amp; select 0 for each 
         # models = data.models['full'][0][0][1.5]
         # models_best_replicate = get_best_replicate(models, replicate_info=replicate_info[1.5], axis=0)
         # input_weights = models_best_replicate.step.net.hidden.weight_ih
@@ -378,7 +387,7 @@ class UnitStimRegressionFigures(AbstractAnalysis):
         # # TODO: Make into nested LDict
         # for fb_var, idxs in feedback_slices.items():
         #     fig = go.Figure(layout=dict(
-        #         xaxis_title=f"SIUE regression weight",
+        #         xaxis_title=f"SISU regression weight",
         #         yaxis_title=f"{fb_var} feedback input weight"
         #     ))
         #     weight_amp = jnp.linalg.norm(input_weights[..., idxs], axis=-1)
@@ -391,7 +400,7 @@ class UnitStimRegressionFigures(AbstractAnalysis):
         #             name=gate,
         #         ))
             
-        #     label = f"{fb_var}-fb-input-weight_vs_siue-reg-weight"
+        #     label = f"{fb_var}-fb-input-weight_vs_SISU-reg-weight"
         #     fig.write_html(f"{label}.html")
         #     fig.write_image(f"{label}.webp")
         
@@ -407,12 +416,15 @@ DEPENDENCIES = {
             vel=states.mechanics.effector.vel,
         )),
     ),
+    "unit_fb_gains": UnitFbGains(
+        variant="full",
+    ),
 }
 
     
 # PyTree structure: [context_input, pert__amp, train__pert__std]
 # Array batch shape: [stim_amp, unit_idx, eval, replicate, condition]
-ALL_ANALYSES = {
+ANALYSES = {
     "unit_stim_profiles": (
         Profiles(
             variant="full",
@@ -435,7 +447,7 @@ ALL_ANALYSES = {
                 scatter_kws=dict(
                     line_dash=CONTEXT_STYLES['line_dash'][i],
                     legendgroup=CONTEXT_LABELS[i],
-                    legendgrouptitle_text=f"SIUE: {CONTEXT_LABELS[i]}",
+                    legendgrouptitle_text=f"SISU: {CONTEXT_LABELS[i]}",
                 ),
             ),
         )

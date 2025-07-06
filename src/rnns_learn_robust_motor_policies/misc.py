@@ -75,7 +75,7 @@ def get_gpu_memory(gpu_idx=0):
     return memory_free_values[gpu_idx]
 
 
-def lohi(x: Iterable):
+def lohi(x: Iterable, **kwargs):
     """Returns a tuple containing the first and last values of a sequence, mapping, or other iterable."""
     if isinstance(x, Mapping):
         # TODO: Maybe should return first and last key-value pairs?

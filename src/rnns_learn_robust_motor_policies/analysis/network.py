@@ -26,7 +26,7 @@ from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
 class OutputWeightCorrelation(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
-    inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    default_dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
     
     def compute(
@@ -102,7 +102,7 @@ def fit_linear(X, y, n_iter=50, *, key):
 class UnitPreferences(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
-    inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    default_dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
 
     n_iter_fit: int = 50

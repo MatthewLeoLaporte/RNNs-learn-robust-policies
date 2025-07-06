@@ -73,7 +73,7 @@ PLANT_PERT_LABELS = {0: "no curl", 1: "curl"}
 PLANT_PERT_STYLES = dict(line_dash={0: "dot", 1: "solid"})
 
 
-ALL_ANALYSES = {
+ANALYSES = {
     "effector_trajectories_steady": (
         # -- Steady-state --
         # 0. Show that context perturbation does not cause a significant change in force output at steady-state.

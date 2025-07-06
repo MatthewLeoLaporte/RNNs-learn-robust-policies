@@ -81,7 +81,7 @@ END_STEP = 100
 
 # State PyTree structure: ['context_input', 'train__pert__std']
 # Array batch shape: (evals, replicates, reach conditions)
-ALL_ANALYSES = {
+ANALYSES = {
     "states_pca": (
         StatesPCA(n_components=N_PCA, where_states=lambda states: states.net.hidden)
         .after_transform(get_best_replicate)

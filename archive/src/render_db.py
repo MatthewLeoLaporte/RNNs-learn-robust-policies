@@ -1,5 +1,4 @@
 """
-
 Replacement for `render.py`. Here, `render_notebook` will load all trained models that the notebook is able to process
 from the database of trained models. It also loads all combination rules (for the respective notebook) from `eval_rules.yml`,
 and adds combinations to satisfy the rules.

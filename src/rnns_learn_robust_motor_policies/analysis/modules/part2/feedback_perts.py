@@ -209,7 +209,7 @@ def measures_fig_params_fn(fig_params, i, item):
 
 # State PyTree structure: ['pert__var', 'context_input', 'train__pert__std']
 # Array batch shape: (evals, replicates, impulse amplitudes, reach conditions)
-ALL_ANALYSES = {
+ANALYSES = {
     # "effector_trajectories": (
     #     EffectorTrajectories(
     #         variant="full",

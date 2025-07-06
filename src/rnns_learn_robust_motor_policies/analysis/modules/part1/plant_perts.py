@@ -16,6 +16,7 @@ from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_repli
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVENOR_LABEL
 from rnns_learn_robust_motor_policies.misc import lohi
 from rnns_learn_robust_motor_policies.plot import get_violins, set_axes_bounds_equal, set_axis_bounds_equal
+from rnns_learn_robust_motor_policies.tree_utils import ldict_level_to_bottom, move_ldict_level_above
 from rnns_learn_robust_motor_policies.types import LDict
 
 
@@ -91,7 +92,7 @@ i_eval = 0  # For single-eval plots
 
 # PyTree levels: 
 # State batch shape: (eval, replicate, condition)
-ALL_ANALYSES = {
+ANALYSES = {
     "effector_trajectories_by_condition": (
         # By condition, all evals for the best replicate only
         EffectorTrajectories(
@@ -135,7 +136,14 @@ ALL_ANALYSES = {
 
     "aligned_trajectories_by_pert_amp": AlignedEffectorTrajectories().after_stacking(level='pert__amp'),
     "aligned_trajectories_by_train_std": AlignedEffectorTrajectories().after_stacking(level='train__pert__std'),
-    "profiles": Profiles().after_transform(get_best_replicate),
+    "profiles": (
+        Profiles()
+        .after_transform(get_best_replicate)
+        .after_transform(
+            lambda tree, **kws: move_ldict_level_above("var", "train__pert__std", tree),
+            dependency_name="vars",
+        )
+    ),
     "measures": measures_base,
     "measures_lohi_train_std": measures_base.after_transform(lohi, level='train__pert__std'),
     "measures_lohi_train_std_and_pert_amp": measures_base.after_transform(lohi, level=['train__pert__std', 'pert__amp']),

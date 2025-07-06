@@ -199,7 +199,7 @@ MEASURE_KEYS = [
 # measure_labels = MEASURE_LABELS | custom_measure_labels
 
 
-ALL_ANALYSES = {
+ANALYSES = {
     "measures": Measures(measure_keys=MEASURE_KEYS),
     
     # "effector_single_eval": (

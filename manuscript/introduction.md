@@ -42,29 +42,46 @@ If possible, build on stuff from previous section.
 
 #### Definition of robustness
 
-**General: Maintaining performance despite unpredictability of environmental dynamics.**
+**In general, robustness may refer to the ability of an agent to maintain performance, despite unpredictability of environmental dynamics.** 
+Crucially, no agent can tolerate totally unbounded perturbations. It is always possible to find a breaking perturbation, such as a large enough noise injection or physical push.
+So, to what manner of unpredictability is an agent robust? What distribution can a perturbation be sampled from, such that not starting with any more specific knowledge of the perturbation, the agent can still complete its task? 
 
-- Note that this implies the unpredictable dynamics are still in some distribution; we can always find a breaking perturbation. 
+> [!Note]
+> Importantly, to quantify robustness we frame this more like “given a fixed distribution of perturbations and two agents performing the same task, which agent’s performance is less degraded by perturbations from that distribution?”
+> 
+
+An agent may be robust to unstructured perturbations such as *Gaussian noise*.
+In this case, robustness mostly entails safeguarding the existing deterministic structure of the agent’s policy.
+For example, when that policy is implemented by a dynamical controller whose internal trajectories are already nearly tangled, then any small, unstructured perturbation may be sufficient to divert the current operating trajectory and cause a discontinuity in behaviour [@RussoEtAl2018]. 
+A more-robust version of this controller might spread out its internal trajectories (i.e. reduce tangling) sufficiently to eliminate such discontinuities. 
 
 [@PerichEtAl2024]
 > Deterministic dynamics facilitate  robust movement generation, but flexible motor output requires rapid responses to unexpected inputs.
 
-This uses robustness in a different way than we do. In particular, I think it refers to the *robustness to noise* described in [@RussoEtAl2018]. They demonstrated this robustness by training a network to generate 1) a tangled motor trajectory (a figure eight), **via** 2) a *constrained* hidden state trajectory, which was essentially the figure eight trajectory plus a third dimension, parameterized so they could control the state-space distance between the crossed-over states of the figure eight. When the parameter (i.e. distance) was made to be smaller, then the system was less robust to noise – that is, small variations in the state were more likely to lead to an intersection of state trajectories.
+> [!Note]
+> [@RussoEtAl2018] demonstrated noise robustness by training a network to generate 1) a tangled motor trajectory (a figure eight), **via** 2) a *constrained* hidden state trajectory, which was essentially the figure eight trajectory plus a third dimension, parameterized so they could control the state-space distance between the crossed-over states of the figure eight. When the parameter (i.e. distance) was made to be smaller, then the system was less robust to noise – that is, small variations in the state were more likely to lead to an intersection of state trajectories.
+> 
 
-On the other hand, when there are unexpected but lower-frequency exogenous inputs, robustness means *increase control gains*, i.e. input sensitivity.
+On the other hand, perturbations’ unpredictability may be structured.
+A participant in a reaching experiment may anticipate that the current trial will be disturbed in a structured way, but have no information about the exact parameters. 
+~~If they have a model of the distribution the perturbation parameters will be sampled from~~, ~~if their model for the task is close to optimal, and they cannot learn the remainder~~, then robustness entails *increasing their control gains* [@CrevecoeurEtAl2019]. 
+Two signatures of this are increased *feedback reactivity* (i.e. sensory gains) and *movement vigour* (e.g. peak forward velocity).
 
-Note that a more robust model in our sense has higher feedback gains (i.e. stronger response to unexpected inputs).
-#### Characteristics of robust motor control policies
+There is a tradeoff in the response to structured versus unstructured unpredictability. 
+When an agent knows that its internal models are *structurally* incomplete or inaccurate, and that there will be structured variability in the environment, it should place more confidence on recent sensory information, and respond to errors more aggressively.
+But responding more aggressively is counterproductive when the environment’s deviations from nominal predictions are merely unstructured. 
 
-A key characteristic of robust policies is their increased *reactivity* (i.e. sensory feedback gains) and *vigour* (e.g. peak forward velocity). ~~This emerges from optimization pressure, and is easy to explain:~~ given the unreliability of internal models in unpredictable contexts, an agent should place more confidence on recent sensory information, and try to minimize errors (both goal errors and disturbance effects) more aggressively.
+> [!important] 
+> See [here](https://console.anthropic.com/workbench/cd413896-4458-49c4-bf25-c7c9f2eb15d4) for a discussion on the distinction between unstructured (noise) and structured perturbations. 
 
-However, there is a tradeoff: robust policies are more costly. We should expect agents that minimize cost to prefer less-robust policies, as long as the environment is predictable. 
+There is also a tradeoff when tuning control gains: higher-gain policies are more costly. 
+We should expect agents that are more cost-sensitive to prefer lower-gain as long as the environment is predictable. 
 This tradeoff between efficient and robust policies has been observed in human reaching movements. 
 When a sudden perturbation appears on a random trial in a longer sequence of mostly unperturbed trials, individuals’ reaches become more vigorous (and reactive?) on the subsequent, unperturbed trial, and this effect washes out as the consecutive, unperturbed trials continue.
 
 #### Strategy tradeoffs in human experiments
 
-[@CrevecoeurEtAl2019]
+
 
 > [!note]
 > Fred & Steve used *a version of robust control*. Do not need to be specific when citing the paper.
