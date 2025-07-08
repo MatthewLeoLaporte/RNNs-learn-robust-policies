@@ -31,7 +31,7 @@ class Profiles(AbstractAnalysis):
     """
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
-    default_dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
         vars=AlignedVars,
     ))
     fig_params: FigParamNamespace = DefaultFigParamNamespace(

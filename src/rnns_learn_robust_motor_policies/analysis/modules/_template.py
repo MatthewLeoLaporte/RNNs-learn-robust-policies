@@ -52,7 +52,7 @@ eval_func: Callable = vmap_eval_ensemble
 class SomeAnalysis(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
-    default_dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
     
     ...

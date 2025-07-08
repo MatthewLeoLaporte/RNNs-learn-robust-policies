@@ -61,8 +61,8 @@ def resolve_dependency_node(analysis, dep_name, dep_source, dependency_lookup=No
     if dep_source is Required:
         raise ValueError(
             f"Dependency '{dep_name}' for analysis '{analysis.name}' is marked as Required but was not provided. "
-            "Pass it via `custom_dependencies` on that analysis instance, or reference an entry in the module-level "
-            "`DEPENDENCIES` dict and point to it by name from `custom_dependencies`."
+            "Pass it via `custom_inputs` on that analysis instance, or reference an entry in the module-level "
+            "`DEPENDENCIES` dict and point to it by name from `custom_inputs`."
         )
     class_params = analysis.dependency_kwargs().get(dep_name, {})
     # Recursively resolve string dependencies

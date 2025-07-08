@@ -389,7 +389,6 @@ def run_analysis_module(
         eval_info,
         fig_dump_path=Path(fig_dump_path),
         fig_dump_formats=fig_dump_formats,
-        #! TODO: Rename this to avoid confusion with `AbstractAnalysis.custom_dependencies`
         custom_dependencies=getattr(analysis_module, 'DEPENDENCIES', {}),
         **common_inputs,
     )

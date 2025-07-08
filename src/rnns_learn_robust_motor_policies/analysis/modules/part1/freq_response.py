@@ -32,7 +32,7 @@ OUTPUT_WHERE = lambda state: state.net.output
 class FrequencyResponse(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
-    default_dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType({})
+    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType({})
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
     
     def compute(self, data: AnalysisInputData, **kwargs):

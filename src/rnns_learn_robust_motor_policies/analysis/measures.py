@@ -354,7 +354,7 @@ def output_corr(
 
 
 class Measures(AbstractAnalysis):
-    default_dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
         aligned_vars=AlignedVars,
     ))
     measure_keys: Sequence[str] = eqx.field(
@@ -460,7 +460,7 @@ def get_one_measure_plot_per_eval_condition(plot_func, measures, colors, **kwarg
 # class Measures_CompareReplicatesLoHi(AbstractAnalysis):
 #     conditions: tuple[str, ...] = ()
 #     variant: Optional[str] = "full"
-#     default_dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+#     default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
 #         measure_values_lohi_train_pert_std=MeasuresLoHiPertStd,
 #     ))
 #     fig_params: FigParamNamespace = DefaultFigParamNamespace()

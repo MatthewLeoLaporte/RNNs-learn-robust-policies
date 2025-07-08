@@ -323,7 +323,7 @@ def max_deviation_after_stim(states_by_var, *, hps_common, **kwargs):
 
 class UnitFbGains(AbstractAnalysis):
     """Compute unit feedback gains."""
-    default_dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
     conditions: tuple[str, ...] = ()
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
     variant: Optional[str] = "full"
@@ -331,7 +331,7 @@ class UnitFbGains(AbstractAnalysis):
 
 class UnitStimRegressionFigures(AbstractAnalysis):
     """Figures for unit stimulation regression."""
-    default_dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
         regression_results=None,
         unit_fb_gains=None,
     ))
@@ -430,7 +430,7 @@ ANALYSES = {
             variant="full",
             vrect_kws_func=get_impulse_vrect_kws,
             coord_labels=None, 
-            custom_dependencies={
+            custom_inputs={
                 "vars": "aligned_vars_trivial",
             },
         )
@@ -461,7 +461,7 @@ ANALYSES = {
     "unit_stim_regression": (
         Regression(
             variant="full",
-            custom_dependencies=dict(
+            custom_inputs=dict(
                 regressor_tree="aligned_vars_trivial",
             ),
         )
@@ -474,14 +474,14 @@ ANALYSES = {
         .vmap(axes=0, dependency_names="regressor_tree")
     ),
     "unit_stim_regression_figures": UnitStimRegressionFigures(
-        custom_dependencies=dict(
+        custom_inputs=dict(
             regression_results="unit_stim_regression",
         ),
     ),
     # "aligned_effector_trajectories": (
     #     AlignedEffectorTrajectories(
     #         variant="full",
-    #         custom_dependencies={
+    #         custom_inputs={
     #             "aligned_vars": "aligned_vars_trivial",
     #         },
     #     )

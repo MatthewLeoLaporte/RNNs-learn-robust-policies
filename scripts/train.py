@@ -13,16 +13,12 @@ os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
 import argparse
 import warnings
+from rnns_learn_robust_motor_policies._warnings import enable_warning_dedup
 
 import jax.random as jr
 
 from rnns_learn_robust_motor_policies.config import PRNG_CONFIG
 from rnns_learn_robust_motor_policies.training import train_and_save_models
-
-
-# TODO: Figure out why the warning from this module appears.
-# It seems to have to do with `_train_step` in `feedbax.train`
-warnings.filterwarnings("ignore", module="equinox._module")
 
 
 if __name__ == '__main__':
@@ -33,9 +29,15 @@ if __name__ == '__main__':
     parser.add_argument("--n-std-exclude", type=int, default=2, help="In postprocessing, exclude model replicates with n_std greater than this value.")
     parser.add_argument("--save-figures", action='store_true', help="Save figures in postprocessing.")
     parser.add_argument("--seed", type=int, default=None, help="Random seed for the training.")
+    parser.add_argument("--show-duplicate-warnings", action="store_false",
+                        help="If set, all occurrences of each distinct warning message are shown.")
     
     args = parser.parse_args()
     
+    # Optionally install warning de-duplication.
+    if not args.show_duplicate_warnings:
+        enable_warning_dedup()
+
     if args.seed is None:
         key = jr.PRNGKey(PRNG_CONFIG.seed)
     else:

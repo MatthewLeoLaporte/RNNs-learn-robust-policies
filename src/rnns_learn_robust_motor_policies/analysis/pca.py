@@ -35,7 +35,7 @@ class StatesPCA(AbstractAnalysis):
             `(*batch, n_vars)`, retaining the batch axes in the output. 
     """
 
-    default_dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = None
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
@@ -77,7 +77,7 @@ class StatesPCA(AbstractAnalysis):
 # class ProjectPCA(AbstractAnalysis):
 #     conditions: tuple[str, ...] = ()
 #     variant: Optional[str] = "small"
-#     default_dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+#     default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
 #         pca=PCA,
 #     ))
 #     fig_params: FigParamNamespace = DefaultFigParamNamespace()

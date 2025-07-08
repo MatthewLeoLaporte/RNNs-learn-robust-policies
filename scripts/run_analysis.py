@@ -11,6 +11,8 @@ os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 import argparse
 import logging
 from pathlib import Path
+import warnings
+from rnns_learn_robust_motor_policies._warnings import enable_warning_dedup
 
 # NOTE: JAX arrays are not directly picklable if they contain device memory references.
 # Since we're using pickle to cache states which may contain JAX arrays, we rely on JAX's
@@ -35,8 +37,14 @@ if __name__ == '__main__':
     parser.add_argument("--retain-past-fig-dumps", action="store_true", help="Do not save states to pickle.")
     parser.add_argument("--states-pkl-dir", type=str, default=None, help="Alternative directory for state pickle files (default: PATHS.states_tmp)")
     parser.add_argument("--seed", type=int, default=None, help="Random seed for the analysis.")
+    parser.add_argument("--show-duplicate-warnings", action="store_true",
+                        help="If set, all occurrences of each distinct warning message are shown.")
     
     args = parser.parse_args()
+    
+    # Optionally install warning de-duplication.
+    if not args.show_duplicate_warnings:
+        enable_warning_dedup()
     
     if args.seed is None:
         key = jr.PRNGKey(PRNG_CONFIG.seed)

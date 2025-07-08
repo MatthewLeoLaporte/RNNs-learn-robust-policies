@@ -25,9 +25,9 @@ task:  # Passed to the base task constructor
     eval_grid_n: 2
     eval_n_directions: 24
     # eval_reach_length: 0.5
-  # small:
-  #   eval_grid_n: 1
-  #   eval_n_directions: 7
+  small:
+    eval_grid_n: 2
+    eval_n_directions: 7
   #   # eval_reach_length: 0.5
 
 pert:

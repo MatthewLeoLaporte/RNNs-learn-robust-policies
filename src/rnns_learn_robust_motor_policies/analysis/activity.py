@@ -194,7 +194,7 @@ def activity_sample_units(
 class NetworkActivity_SampleUnits(AbstractAnalysis):
     conditions: tuple[str, ...] = ()  
     variant: Optional[str] = "small"
-    default_dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
         n_units_sample=4,
         key=jr.PRNGKey(0),

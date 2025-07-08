@@ -28,7 +28,7 @@ MEAN_LIGHTEN_FACTOR = PLOTLY_CONFIG.mean_lighten_factor
 class EffectorTrajectories(AbstractAnalysis):
     conditions: tuple[str, ...] = () # ('any_system_noise',)  # TODO: Skip this analysis, if only one eval
     variant: Optional[str] = "small"
-    default_dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
         # legend_title="Reach direction",
         mean_exclude_axes=(),

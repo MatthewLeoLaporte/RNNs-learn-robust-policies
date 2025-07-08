@@ -233,7 +233,7 @@ ANALYSES = {
             variant="full",
             colorscale_axis=1,
             colorscale_key='pert__amp',
-            custom_dependencies={
+            custom_inputs={
                 "aligned_vars": "aligned_vars_impulse",
             },
         )
@@ -244,7 +244,7 @@ ANALYSES = {
         #! This is broken; nothing appears. 
         AlignedEffectorTrajectories(
             variant="full",
-            custom_dependencies={
+            custom_inputs={
                 "aligned_vars": "aligned_vars_impulse",
             },
         )
@@ -255,7 +255,7 @@ ANALYSES = {
     "profiles": (
         Profiles(
             variant="full",
-            custom_dependencies={
+            custom_inputs={
                 "vars": "aligned_vars_impulse",
             },
             vrect_kws_func=get_impulse_vrect_kws,  
@@ -275,7 +275,7 @@ ANALYSES = {
     "measures": (
         Measures(
             measure_keys=MEASURE_KEYS,
-            custom_dependencies={
+            custom_inputs={
                 "vars": "aligned_vars_impulse",
             },
         )

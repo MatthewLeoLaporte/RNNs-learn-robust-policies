@@ -26,7 +26,7 @@ Within each module under `rnns_learn_robust_motor_policies.analysis.modules`, fo
   inputs to other instances, but for which figures are not made, and results are not 
   finally returned.
 
-Each subclass of `AbstractAnalysis` defines `default_dependencies: ClassVar`, where keys are input names and
+Each subclass of `AbstractAnalysis` defines `default_inputs: ClassVar`, where keys are input names and
 values are defaults (as other types of `AbstractAnalysis` to be evaluated); [run_analysis.py](mdc:scripts/run_analysis.py) uses 
 the tools in [_dependencies.py](mdc:src/rnns_learn_robust_motor_policies/analysis/_dependencies.py) (via [execution.py](mdc:src/rnns_learn_robust_motor_policies/analysis/execution.py)) to ensure that any dependencies of the set of analyses specified
 explicitly by `ANALYSES`, will be computed and passed as appropriate, and that each dependency

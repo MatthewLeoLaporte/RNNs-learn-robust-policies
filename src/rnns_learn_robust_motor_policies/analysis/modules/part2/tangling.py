@@ -13,7 +13,10 @@ from typing import ClassVar, Optional, Dict, Any, Literal as L, Sequence
 
 import equinox as eqx
 from equinox import Module
+import jax
+import jax.numpy as jnp
 import jax.tree as jt
+from feedbax.misc import batch_reshape  # for flattening/unflattening
 from jaxtyping import Array, Float, PyTree
 import numpy as np
 import plotly.graph_objects as go
@@ -32,6 +35,7 @@ from rnns_learn_robust_motor_policies.analysis.measures import Measures
 from rnns_learn_robust_motor_policies.analysis.pca import StatesPCA
 from rnns_learn_robust_motor_policies.analysis.profiles import Profiles
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate, get_constant_task_input_fn, vmap_eval_ensemble
+from rnns_learn_robust_motor_policies.analysis.tangling import Tangling
 from rnns_learn_robust_motor_policies.colors import ColorscaleSpec
 from rnns_learn_robust_motor_policies.config.config import PLOTLY_CONFIG
 from rnns_learn_robust_motor_policies.constants import POS_ENDPOINTS_ALIGNED
@@ -117,27 +121,11 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     return tasks, models, hps, None
 
 
-class Tangling(AbstractAnalysis):
-    default_dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
-        # states=Required,
-    ))
-    conditions: tuple[str, ...] = ()
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
-    variant: Optional[str] = "full"
-    eps: float = 1e-6  # TODO: Allow for `lambda states: ...`
-    
-    def compute(self, data: AnalysisInputData, *, hps_common, **kwargs) -> dict:
-        #! Should probably be hps_common.dt, top-level
-        dt = hps_common.train.model.dt  
-        dxdt = self._flow_field(data.states, dt)
-        
-    
-    def _flow_field(self, arr: Array, dt: float) -> Array:
-        # Assume `arr` has shape (..., timestep, dim)
-        # Simple finite difference approximation of the flow field.
-        return (arr[..., 1:, :] - arr[..., :-1, :]) / dt
+
+
 
 N_PCA = 10
+
 
 DEPENDENCIES = {
     "hidden_states_pca": (
@@ -150,7 +138,7 @@ DEPENDENCIES = {
     ),
     # "tangling": (
     #     Tangling(
-    #         custom_dependencies=dict(
+    #         custom_inputs=dict(
     #             states="hidden_states_pca",
     #         ),
     #     )
@@ -163,11 +151,7 @@ ANALYSES = {
     # This is an example of how to use a CallWithDeps transform to get the PCA results
     # directly in data.states, rather than having to make `StatesPCA` a dependency of `Tangling`
     "tangling": (
-        Tangling(
-            # custom_dependencies=dict(
-            #     states="hidden_states_pca",
-            # ),
-        )
+        Tangling(variant="small")
         .after_transform(get_best_replicate)
         .after_transform(
             lambda states: jt.map(lambda x: x.net.hidden, states, is_leaf=is_module),

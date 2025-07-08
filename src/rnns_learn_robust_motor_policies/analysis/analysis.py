@@ -330,17 +330,17 @@ class AbstractAnalysis(Module, strict=False):
             that case we could give the condition `"any_system_noise"` to those analyses.
     """
     _exclude_fields = (
-        'dependencies', 
+        'default_inputs', 
         'conditions', 
         'fig_params', 
-        'custom_dependencies', #! Should this be here?
+        'custom_inputs', #! Should this be here?
         '_prep_ops', 
         # '_state_vmap_axes',
         '_fig_op',
         '_final_ops_by_type',
     )
 
-    default_dependencies: AbstractClassVar[MappingProxyType[str, type[Self]]]
+    default_inputs: AbstractClassVar[MappingProxyType[str, type[Self]]]
     conditions: AbstractVar[tuple[str, ...]]
     variant: AbstractVar[Optional[str]] 
     fig_params: AbstractVar[FigParamNamespace]
@@ -349,7 +349,7 @@ class AbstractAnalysis(Module, strict=False):
     # implement them trivially in subclasses. This violates the abstract-final design
     # pattern. This is intentional. If it leads to problems, I will learn from that.
     #! This means no non-default arguments in subclasses
-    custom_dependencies: Mapping[str, str | Self] = eqx.field(default_factory=dict)
+    custom_inputs: Mapping[str, str | Self] = eqx.field(default_factory=dict)
     _prep_ops: tuple[_PrepOp, ...] = ()
     _vmap_spec: Optional[_AnalysisVmapSpec] = None
     _fig_op: Optional[_FigOp] = None
@@ -357,6 +357,17 @@ class AbstractAnalysis(Module, strict=False):
         default_factory=lambda: MappingProxyType({'results': (), 'figs': ()})
     )
         
+    def __post_init__(self):
+        """Validate that custom_inputs only override valid ports."""
+        if self.custom_inputs:
+            invalid_ports = set(self.custom_inputs.keys()) - set(self.default_inputs.keys())
+            if invalid_ports:
+                valid_ports = list(self.default_inputs.keys())
+                raise ValueError(
+                    f"Invalid port(s) in custom_inputs: {invalid_ports}. "
+                    f"Valid ports for {self.__class__.__name__} are: {valid_ports}"
+                )
+
     def _compute_with_ops(
         self, 
         data: AnalysisInputData,
@@ -364,11 +375,10 @@ class AbstractAnalysis(Module, strict=False):
     ) -> dict[str, PyTree[Any]]:
         """Perform computations with prep-ops, vmap, and result final-ops applied."""
         
-        # Transform dependencies prior to performing the analysis
+        # Transform inputs prior to performing the analysis
         # e.g. see `after_stacking` for an example of defining a pre-op
-
         prepped_kwargs = self._run_prep_ops(data, kwargs)
-        
+        # Transformed `data.states` end up in own temporary key, so move back into `data`
         prepped_data = eqx.tree_at(
             lambda d: d.states, data, prepped_kwargs["data.states"]
         )
@@ -517,7 +527,7 @@ class AbstractAnalysis(Module, strict=False):
         
         Combines default inputs with custom overrides.
         """
-        return dict(self.default_dependencies) | self.custom_dependencies
+        return dict(self.default_inputs) | self.custom_inputs
 
     def _get_target_dependency_names(
         self,
@@ -1267,13 +1277,13 @@ class AbstractAnalysis(Module, strict=False):
         port_map = getattr(transform_func, "_cwd_port_map", {})
 
         if port_map:
-            new_custom_deps = dict(self.custom_dependencies)
+            new_custom_deps = dict(self.custom_inputs)
             for global_lbl, port_key in port_map.items():
                 if port_key not in self.dependencies:
                     new_custom_deps[port_key] = global_lbl  # reference original label
 
             analysis_with_deps = eqx.tree_at(
-                lambda a: a.custom_dependencies,
+                lambda a: a.custom_inputs,
                 self,
                 new_custom_deps,
             )
@@ -1436,7 +1446,7 @@ AnalysisDependenciesType: TypeAlias = MappingProxyType[str, type[AbstractAnalysi
 
 class _DummyAnalysis(AbstractAnalysis):
     """An empty analysis, for debugging."""
-    default_dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = None
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
