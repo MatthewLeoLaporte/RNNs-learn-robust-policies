@@ -59,6 +59,12 @@ class SomeAnalysis(AbstractAnalysis):
  
    
 """Determines which analyses are performed by `run_analysis.py`, for this module."""
-ANALYSES = [
-    SomeAnalysis(),
-]
+ANALYSES = {
+    "analysis_label": SomeAnalysis(),
+}
+
+"""Analyses which may be used as dependencies by entries in `ANALYSES`, 
+but which themselves are not computed/rendered and returned."""
+DEPENDENCIES = {
+    # "dep_label": SomeOtherAnalysis(),
+}

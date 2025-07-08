@@ -24,7 +24,7 @@ from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.aligned import AlignedEffectorTrajectories, AlignedVars
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisDependenciesType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisDependenciesType, AnalysisInputData, CallWithDeps, DefaultFigParamNamespace, FigParamNamespace, Required
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS
 from rnns_learn_robust_motor_policies.analysis.effector import EffectorTrajectories
 from rnns_learn_robust_motor_policies.analysis.measures import ALL_MEASURE_KEYS, MEASURE_LABELS
@@ -119,18 +119,17 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
 
 class Tangling(AbstractAnalysis):
     default_dependencies: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
-        #! What is an appropriate default, here? Should we use `None` defaults?
-        states=StatesPCA,
+        # states=Required,
     ))
     conditions: tuple[str, ...] = ()
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
     variant: Optional[str] = "full"
     eps: float = 1e-6  # TODO: Allow for `lambda states: ...`
     
-    def compute(self, data: AnalysisInputData, states, hps_common, **kwargs) -> dict:
+    def compute(self, data: AnalysisInputData, *, hps_common, **kwargs) -> dict:
         #! Should probably be hps_common.dt, top-level
         dt = hps_common.train.model.dt  
-        dxdt = self._flow_field(states.net.hidden, dt)
+        dxdt = self._flow_field(data.states, dt)
         
     
     def _flow_field(self, arr: Array, dt: float) -> Array:
@@ -159,12 +158,27 @@ DEPENDENCIES = {
 }
 
 
+# State batch shape: (eval, replicate, condition)
 ANALYSES = {
+    # This is an example of how to use a CallWithDeps transform to get the PCA results
+    # directly in data.states, rather than having to make `StatesPCA` a dependency of `Tangling`
     "tangling": (
         Tangling(
-            custom_dependencies=dict(
-                states="hidden_states_pca",
+            # custom_dependencies=dict(
+            #     states="hidden_states_pca",
+            # ),
+        )
+        .after_transform(get_best_replicate)
+        .after_transform(
+            lambda states: jt.map(lambda x: x.net.hidden, states, is_leaf=is_module),
+            dependency_name="data.states",
+        )
+        .after_transform(
+            # lambda ns: ns.data,  # only pass the PCs of the hidden states
+            CallWithDeps("hidden_states_pca")(
+                lambda pca_results, states: pca_results.batch_transform(states),
             ),
+            dependency_name="data.states",
         )
     )
 }

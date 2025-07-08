@@ -101,7 +101,13 @@ class _FinalOp(NamedTuple):
     transform_func: Callable[[PyTree[go.Figure]], PyTree[go.Figure]]
     params: dict[str, Any] = {}
     is_leaf: Callable[[Any], bool] = None
-
+    
+    
+"""Sentinel indicating a required dependency."""
+#! TODO: Make Generic, if that makes sense -- so we can indicate the type to the user 
+class _RequiredType: ...
+Required = _RequiredType()
+    
 
 PARAM_SEQ_LEN_TRUNCATE = 9
 
@@ -360,20 +366,8 @@ class AbstractAnalysis(Module, strict=False):
         
         # Transform dependencies prior to performing the analysis
         # e.g. see `after_stacking` for an example of defining a pre-op
-        prepped_kwargs = kwargs.copy() # Start with original kwargs for modification
-        prepped_kwargs['data.states'] = data.states
-        for prep_op in self._prep_ops:
-            dep_names_to_process = self._get_target_dependency_names(
-                prep_op.dep_name, prepped_kwargs, "Prep-op"
-            )
 
-            # Apply transformation to identified dependencies
-            for name in dep_names_to_process:
-                 try:
-                     prepped_kwargs[name] = prep_op.transform_func(prepped_kwargs[name], **kwargs)
-                 except Exception as e:
-                     logger.error(f"Error applying prep_op transform to '{name}'", exc_info=True)
-                     raise e
+        prepped_kwargs = self._run_prep_ops(data, kwargs)
         
         prepped_data = eqx.tree_at(
             lambda d: d.states, data, prepped_kwargs["data.states"]
@@ -411,21 +405,9 @@ class AbstractAnalysis(Module, strict=False):
         """Generate figures with fig-ops and figure final-ops applied."""
         
         # Transform dependencies prior to making figures
-        prepped_kwargs = kwargs.copy()
-        prepped_kwargs['data.states'] = data.states
-        for prep_op in self._prep_ops:
-            dep_names_to_process = self._get_target_dependency_names(
-                prep_op.dep_name, prepped_kwargs, "Prep-op"
-            )
 
-            # Apply transformation to identified dependencies
-            for name in dep_names_to_process:
-                 try:
-                     prepped_kwargs[name] = prep_op.transform_func(prepped_kwargs[name], **kwargs)
-                 except Exception as e:
-                     logger.error(f"Error applying prep_op transform to '{name}'", exc_info=True)
-                     raise e
-        
+        prepped_kwargs = self._run_prep_ops(data, kwargs)
+
         prepped_data = eqx.tree_at(
             lambda d: d.states, data, prepped_kwargs["data.states"]
         )
@@ -559,7 +541,7 @@ class AbstractAnalysis(Module, strict=False):
             if not target_names and self.dependencies: # Log only if dependencies were expected
                  logger.warning(f"{op_context} needs dependencies (dep_name_spec=None), but none found in kwargs.")
         else:
-            dep_name_spec = jt.map(_normalize_name, dep_name_spec)
+            # dep_name_spec = jt.map(_normalize_name, dep_name_spec)
             if isinstance(dep_name_spec, str):
                 # Single dependency name
                 if dep_name_spec in available_kwargs:
@@ -823,7 +805,7 @@ class AbstractAnalysis(Module, strict=False):
             for level in levels:
                 def _transform_level(dep_data, level=level, **kwargs):  
                     return jt.map(
-                        lambda node: func(node, **kwargs), 
+                        lambda node: _call_user_func(func, node, kwargs), 
                         dep_data, 
                         is_leaf=LDict.is_of(level),
                     )
@@ -1027,7 +1009,8 @@ class AbstractAnalysis(Module, strict=False):
         else:
             axes = tuple(axes)
         
-        normalized_dep_names = [_normalize_name(name) for name in dependency_names]
+        # normalized_dep_names = [_normalize_name(name) for name in dependency_names]
+        normalized_dep_names = dependency_names
         
         sequential_axes = natural_to_sequential_axes(axes)
 
@@ -1279,10 +1262,28 @@ class AbstractAnalysis(Module, strict=False):
             transform_func: Callable,
             params: Optional[Dict[str, Any]] = None,
     ) -> Self:
+        # If the transform consumes extra dependencies, ensure the analysis
+        # instance knows about them so the graph builder evaluates them.
+        port_map = getattr(transform_func, "_cwd_port_map", {})
+
+        if port_map:
+            new_custom_deps = dict(self.custom_dependencies)
+            for global_lbl, port_key in port_map.items():
+                if port_key not in self.dependencies:
+                    new_custom_deps[port_key] = global_lbl  # reference original label
+
+            analysis_with_deps = eqx.tree_at(
+                lambda a: a.custom_dependencies,
+                self,
+                new_custom_deps,
+            )
+        else:
+            analysis_with_deps = self
+
         return eqx.tree_at(
             lambda a: a._prep_ops,
-            self,
-            self._prep_ops + (_PrepOp(
+            analysis_with_deps,
+            analysis_with_deps._prep_ops + (_PrepOp(
                 name=name,
                 label=label,
                 dep_name=dep_name, 
@@ -1397,6 +1398,38 @@ class AbstractAnalysis(Module, strict=False):
     def name(self) -> str:
         return self.__class__.__name__
 
+    def _run_prep_ops(self, data: AnalysisInputData, kwargs: Dict[str, Any]):
+        """Apply all prep-ops in sequence, consuming extra CallWithDeps deps."""
+
+        prepped_kwargs = kwargs.copy() # Start with original kwargs for modification
+        prepped_kwargs['data.states'] = data.states
+        
+        for prep_op in self._prep_ops:
+            dep_names_to_process = self._get_target_dependency_names(
+                prep_op.dep_name, prepped_kwargs, "Prep-op"
+            )
+
+            for name in dep_names_to_process:
+                try:
+                    prepped_kwargs[name] = _call_user_func(
+                        prep_op.transform_func,
+                        prepped_kwargs[name],
+                        kwargs,
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Error applying prep_op transform to '{name}'", exc_info=True
+                    )
+                    raise e
+
+            # Pop any CallWithDeps-only dependencies that are not part of the analysis interface
+            port_map = getattr(prep_op.transform_func, "_cwd_port_map", {})
+            for port_key in port_map.values():
+                if port_key not in self.dependencies:
+                    prepped_kwargs.pop(port_key, None)
+
+        return prepped_kwargs
+
 
 AnalysisDependenciesType: TypeAlias = MappingProxyType[str, type[AbstractAnalysis]]
 
@@ -1414,5 +1447,107 @@ class _DummyAnalysis(AbstractAnalysis):
     
     def make_figs(self, data: AnalysisInputData, **kwargs) -> PyTree[go.Figure]:
         return None
+
+
+# --------------------------------------------------------------------------- #
+# Helper: safely forward kwargs to user-supplied callbacks                   #
+# --------------------------------------------------------------------------- #
+
+def _call_user_func(func, dep_data, extra_kwargs):
+    """Invoke *func* with *dep_data* and the subset of *extra_kwargs* it accepts.
+
+    If *func* originated from CallWithDeps we may need to translate
+    user-visible dependency labels (e.g. "hidden_states_pca") that are
+    present in *extra_kwargs* into the unique, private port names
+    (e.g. "__cwd_1") that the wrapper will look up internally.  The
+    mapping is stored on the wrapper object as ``_cwd_port_map``.
+    """
+    port_map: dict[str, str] | None = getattr(func, "_cwd_port_map", None)
+    port_names = set(port_map.values()) if port_map else set()
+
+    sig = inspect.signature(func)
+
+    # Fast path: the function accepts **kwargs; forward everything.
+    if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+        return func(dep_data, **extra_kwargs)
+
+    # Otherwise filter down to only the kwargs explicitly listed.
+    filtered = {
+        k: v for k, v in extra_kwargs.items() 
+        if k in sig.parameters or k in port_names
+    }
+    return func(dep_data, **filtered)
+
+
+class CallWithDeps:
+    """Wrap *func* so that selected dependency values are routed into its
+    positional and keyword parameters when used inside `after_transform` or
+    similar prep-ops.
+
+    Usage
+    -----
+    ```python
+    .after_transform(
+        CallWithDeps("pca")(lambda pca, x: pca.batch_transform(x)),
+        dependency_name="data.states",
+    )
+    ```
+
+    Positional mapping: each entry in *pos_deps* is either a dependency name
+    (looked up in the `**kwargs` dict passed by the pipeline) or the literal
+    value ``None`` which indicates where the *current* dependency (i.e.
+    `dependency_name` being transformed) should be inserted.  If ``None`` is
+    absent, the current dependency is appended after the mapped ones.
+
+    Keyword mapping: ``CallWithDeps(z="other_dep")`` will forward the value of
+    "other_dep" to the keyword parameter ``z`` of *func*.
+    """
+
+    _counter = 0
+
+    def __init__(self, *pos_deps: str | None, **kw_deps: str):
+        self.pos_deps = pos_deps
+        self.kw_deps = kw_deps
+
+    def __call__(self, func: Callable):
+        # Build a stable mapping from global dependency label -> unique internal port name
+        label_set = [d for d in self.pos_deps if d is not None] + list(self.kw_deps.values())
+        label_to_port: dict[str, str] = {}
+        for lbl in label_set:
+            if lbl not in label_to_port:
+                CallWithDeps._counter += 1
+                label_to_port[lbl] = f"__cwd_{CallWithDeps._counter:x}"
+
+        @wraps(func)
+        def wrapper(dep_data, **all_kwargs):
+            # Build positional arguments
+            pos_args = []
+            for dep in self.pos_deps:
+                if dep is None:
+                    pos_args.append(dep_data)
+                else:
+                    port = label_to_port[dep]
+                    try:
+                        pos_args.append(all_kwargs[port])
+                    except KeyError:
+                        raise KeyError(f"Dependency '{dep}' not found in kwargs for CallWithDeps wrapper") from None
+
+            if None not in self.pos_deps:
+                pos_args.append(dep_data)
+
+            # Build keyword arguments mapped explicitly
+            mapped_kwargs = {}
+            for param, dep_name in self.kw_deps.items():
+                port = label_to_port[dep_name]
+                try:
+                    mapped_kwargs[param] = all_kwargs[port]
+                except KeyError:
+                    raise KeyError(f"Dependency '{dep_name}' not found for keyword param '{param}'") from None
+
+            # Expose map on wrapper BEFORE returning
+            return func(*pos_args, **mapped_kwargs)
+        wrapper._cwd_port_map = label_to_port
+
+        return wrapper
 
 

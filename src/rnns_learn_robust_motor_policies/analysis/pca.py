@@ -39,6 +39,7 @@ class StatesPCA(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = None
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
+    
     n_components: Optional[int] = None
     where_states: Optional[Callable[[SimpleFeedbackState], PyTree[Array]]] = None
     return_data: bool = True
