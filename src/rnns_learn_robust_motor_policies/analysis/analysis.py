@@ -1,5 +1,6 @@
 from collections.abc import Callable, Hashable, Mapping, Sequence
 import dataclasses
+from dataclasses import dataclass
 from functools import cached_property, partial, wraps
 import inspect
 import logging
@@ -17,7 +18,7 @@ import plotly.graph_objects as go
 from sqlalchemy.orm import Session
 
 from feedbax.task import AbstractTask
-from jax_cookbook import is_type, is_none, vmap_multi, natural_to_sequential_axes
+from jax_cookbook import is_type, is_none, is_module, vmap_multi, natural_to_sequential_axes
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.config.config import STRINGS
@@ -49,6 +50,78 @@ class AnalysisInputData(Module):
     states: PyTree[Module]
     hps: PyTree[TreeNamespace]  
     extras: PyTree[TreeNamespace] 
+    
+
+
+# --------------------------------------------------------------------------- #
+# Sentinel for forwarding attributes (and optional transforms) from            #
+# `AnalysisInputData` to analysis input ports                                  #
+# --------------------------------------------------------------------------- #
+
+
+@dataclass(frozen=True, slots=True)
+class _DataField:
+    """Description of what to extract from `AnalysisInputData`.
+
+    Parameters
+    ----------
+    attr
+        Name of the attribute to forward (must be one of the dataclass fields
+        of `AnalysisInputData`).
+    where, is_leaf
+        If *where* is provided the forwarded value becomes
+
+        ``jax.tree.map(where, getattr(data, attr), is_leaf=is_leaf)``.
+    """
+
+    attr: str
+    where: Optional[Callable] = None
+    is_leaf: Optional[Callable[[Any], bool]] = is_module
+
+    # Allow the author to write `Data.states(where=..., is_leaf=...)`
+    def __call__(
+        self,
+        *,
+        where: Optional[Callable] = None,
+        is_leaf: Optional[Callable[[Any], bool]] = None,
+    ) -> "_DataField":
+        """Return a new `_DataField` overriding *where* and/or *is_leaf*.
+
+        Any argument left as ``None`` inherits the value from the receiver
+        instance so that `Data.states(where=...)` keeps the default
+        ``is_leaf=is_module``.
+        """
+        return _DataField(
+            self.attr,
+            where if where is not None else self.where,
+            is_leaf if is_leaf is not None else self.is_leaf,
+        )
+
+    def __repr__(self):  # noqa: D401
+        return f"Data.{self.attr}"
+
+
+class _DataProxy:
+    """Expose only valid `AnalysisInputData` attributes.
+
+    Any attempt to access a non-existent field fails *eagerly* at import time.
+    """
+
+    _allowed = tuple(AnalysisInputData.__annotations__.keys())
+
+    def __getattr__(self, item: str) -> _DataField:  # noqa: D401
+        if item not in self._allowed:
+            raise AttributeError(
+                f"'Data' has no attribute '{item}'. Valid attributes are: {', '.join(self._allowed)}"
+            )
+        return _DataField(item)
+
+    def __repr__(self):  # noqa: D401
+        return "Data"
+
+
+# Public sentinel instance
+Data = _DataProxy()
 
 
 class FigParamNamespace(TreeNamespace):
@@ -522,7 +595,7 @@ class AbstractAnalysis(Module, strict=False):
         return result, figs
 
     @property
-    def dependencies(self) -> Dict[str, type[Self] | Self | str]:
+    def inputs(self) -> Dict[str, type[Self] | Self | str]:
         """Get the complete mapping of dependency names to their sources.
         
         Combines default inputs with custom overrides.
@@ -543,12 +616,12 @@ class AbstractAnalysis(Module, strict=False):
 
         if dep_name_spec is None:
             # Use all dependencies relevant to this analysis instance found in kwargs
-            target_names = [k for k in self.dependencies if k in available_kwargs]
+            target_names = [k for k in self.inputs if k in available_kwargs]
             # Process the states and `compute` results by default
             target_names.append('data.states')
             if 'result' in available_kwargs:
                 target_names.append('result')
-            if not target_names and self.dependencies: # Log only if dependencies were expected
+            if not target_names and self.inputs: # Log only if dependencies were expected
                  logger.warning(f"{op_context} needs dependencies (dep_name_spec=None), but none found in kwargs.")
         else:
             # dep_name_spec = jt.map(_normalize_name, dep_name_spec)
@@ -774,6 +847,20 @@ class AbstractAnalysis(Module, strict=False):
             transform_func=lambda dep_data, **kwargs: jt.map(func, dep_data, is_leaf=is_leaf),
             params=dict(func=func),
         )
+        
+    def after_transform_states(
+        self, 
+        func: Callable[..., Any],  # Must take two arguments: a PyTree, and **kwargs
+        level: Optional[str | Sequence[str]] = None,
+        label: Optional[str] = None,
+    ) -> Self:
+        """Returns a copy of this analysis that transforms the evaluated states before proceeding."""
+        return self.after_transform(
+            func=func,
+            level=level,
+            label=label,
+            dependency_name="data.states",
+        )
     
     def after_transform(
         self, 
@@ -783,8 +870,7 @@ class AbstractAnalysis(Module, strict=False):
         label: Optional[str] = None,
     ) -> Self:
         """
-        Returns a copy of this analysis that transforms its inputs with a function before
-        proceeding.
+        Returns a copy of this analysis that transforms its inputs before proceeding.
         
         Applies a function to one or more `LDict` levels, or to the entire input PyTree. 
         This is less general than `after_map`.
@@ -908,7 +994,7 @@ class AbstractAnalysis(Module, strict=False):
         Args:
             level: The label of the `LDict` level in the PyTree to stack by. 
             dependency_name: Optional name of the specific dependency to stack.
-                If None, will stack all dependencies listed in self.dependencies.
+                If None, will stack all dependencies listed in self.inputs.
             
         Returns:
             A copy of this analysis with stacking operation and updated parameters
@@ -1141,7 +1227,7 @@ class AbstractAnalysis(Module, strict=False):
         Args:
             axis: The axis to slice and combine along
             dependency_name: Optional name of specific dependency to slice.
-                If None, will slice all dependencies listed in self.dependencies.
+                If None, will slice all dependencies listed in self.inputs.
         """
         return self._change_fig_op(
             name="combine_figs_by_axis",
@@ -1174,7 +1260,7 @@ class AbstractAnalysis(Module, strict=False):
         Args:
             level: The LDict level to iterate over and combine across
             dependency_name: Optional name of specific dependency to iterate over.
-                If None, will iterate over all dependencies listed in self.dependencies.
+                If None, will iterate over all dependencies listed in self.inputs.
         """
         return self._change_fig_op(
             name="combine_figs_by_level",
@@ -1279,7 +1365,7 @@ class AbstractAnalysis(Module, strict=False):
         if port_map:
             new_custom_deps = dict(self.custom_inputs)
             for global_lbl, port_key in port_map.items():
-                if port_key not in self.dependencies:
+                if port_key not in self.inputs:
                     new_custom_deps[port_key] = global_lbl  # reference original label
 
             analysis_with_deps = eqx.tree_at(
@@ -1435,7 +1521,7 @@ class AbstractAnalysis(Module, strict=False):
             # Pop any CallWithDeps-only dependencies that are not part of the analysis interface
             port_map = getattr(prep_op.transform_func, "_cwd_port_map", {})
             for port_key in port_map.values():
-                if port_key not in self.dependencies:
+                if port_key not in self.inputs:
                     prepped_kwargs.pop(port_key, None)
 
         return prepped_kwargs

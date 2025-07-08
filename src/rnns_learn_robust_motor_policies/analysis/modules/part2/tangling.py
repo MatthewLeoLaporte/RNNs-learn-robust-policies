@@ -121,9 +121,6 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     return tasks, models, hps, None
 
 
-
-
-
 N_PCA = 10
 
 
@@ -136,13 +133,6 @@ DEPENDENCIES = {
         .after_transform(get_best_replicate)
         # .after_indexing(-2, np.arange(START_STEP, END_STEP), axis_label="timestep")
     ),
-    # "tangling": (
-    #     Tangling(
-    #         custom_inputs=dict(
-    #             states="hidden_states_pca",
-    #         ),
-    #     )
-    # )
 }
 
 
@@ -153,16 +143,15 @@ ANALYSES = {
     "tangling": (
         Tangling(variant="small")
         .after_transform(get_best_replicate)
+        # .after_transform_states(
+        #     lambda states: jt.map(lambda x: x.net.hidden, states, is_leaf=is_module),
+        # )
         .after_transform(
-            lambda states: jt.map(lambda x: x.net.hidden, states, is_leaf=is_module),
-            dependency_name="data.states",
-        )
-        .after_transform(
-            # lambda ns: ns.data,  # only pass the PCs of the hidden states
             CallWithDeps("hidden_states_pca")(
                 lambda pca_results, states: pca_results.batch_transform(states),
             ),
-            dependency_name="data.states",
+            dependency_name="state",
         )
     )
+
 }

@@ -12,11 +12,19 @@ from sklearn.neighbors import KDTree
 from feedbax.misc import batch_reshape  # for flattening/unflattening
 from jax_cookbook.misc import crop_to_shortest
 
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisDependenciesType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rnns_learn_robust_motor_policies.analysis.analysis import (
+    AbstractAnalysis, 
+    AnalysisDependenciesType, 
+    AnalysisInputData, 
+    Data, 
+    DefaultFigParamNamespace, 
+    FigParamNamespace,
+)
+
 
 class Tangling(AbstractAnalysis):
     default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
-        # states=Required,
+        state=Data.states(where=lambda states: states.net.hidden),
     ))
     conditions: tuple[str, ...] = ()
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
@@ -33,10 +41,10 @@ class Tangling(AbstractAnalysis):
     # can be tuned from configs if desired.
     leaf_size: int = 40
     
-    def compute(self, data: AnalysisInputData, *, hps_common, **kwargs) -> dict:
+    def compute(self, data: AnalysisInputData, *, state, hps_common, **kwargs) -> dict:
         #! Should probably be hps_common.dt, top-level
         dt = hps_common.train.model.dt  
-        state = data.states[self.variant]
+        state = state[self.variant]
         flow = jt.map(lambda x: self._flow_field(x, dt), state)
         tangling = jt.map(lambda x, dxdt: self._tangling(x, dxdt), state, flow)
         return tangling

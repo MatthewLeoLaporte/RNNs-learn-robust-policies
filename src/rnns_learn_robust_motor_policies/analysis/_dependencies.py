@@ -15,20 +15,61 @@ import logging
 from collections import defaultdict
 from collections.abc import Sequence
 import hashlib
+import inspect
 import json
-from typing import Optional, Set, Dict, Any
+from typing import Optional, Set, Dict, Any, ClassVar, Callable
 
 import equinox as eqx
 import jax.tree as jt
-import inspect
 
 from rnns_learn_robust_motor_policies.analysis.analysis import (
-    AbstractAnalysis, AnalysisInputData, _format_dict_of_params, Required
+    AbstractAnalysis, AnalysisInputData, _format_dict_of_params, Required,
+    _DataField, FigParamNamespace, DefaultFigParamNamespace, AnalysisDependenciesType
 )
+from types import MappingProxyType
 from rnns_learn_robust_motor_policies.misc import get_md5_hexdigest
 
 
 logger = logging.getLogger(__name__)
+
+# --------------------------------------------------------------------------- #
+# Helper analysis to forward attributes from AnalysisInputData                #
+# --------------------------------------------------------------------------- #
+
+
+class _DataForwarder(AbstractAnalysis):
+    """Forwards a single attribute of `AnalysisInputData`.
+
+    This node exists only to integrate `Data.<attr>` references into the
+    dependency graph.  It performs no computation other than returning the
+    chosen attribute and produces no figures.
+    """
+
+    # Name of the attribute (e.g. "states", "models", …) to be forwarded
+    attr: str = ""
+    where: Optional[Callable] = None
+    is_leaf: Optional[Callable[[Any], bool]] = None
+
+    # No dependencies of its own
+    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType({})  # type: ignore
+    conditions: tuple[str, ...] = ()
+    variant: Optional[str] = None
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
+
+    # Pure forwarding
+    def compute(self, data: AnalysisInputData, **kwargs):  # noqa: D401
+        value = getattr(data, self.attr)
+        if self.where is not None:
+            value = jt.map(self.where, value, is_leaf=self.is_leaf)
+        return value
+
+    def make_figs(self, data: AnalysisInputData, *, result=None, **kwargs):  # noqa: D401
+        # nothing plotted
+        return None
+
+    def __post_init__(self):  # noqa: D401
+        if not self.attr:
+            raise ValueError("_DataForwarder.attr must be provided")
 
 
 def param_hash(params: Dict[str, Any]) -> str:
@@ -64,6 +105,17 @@ def resolve_dependency_node(analysis, dep_name, dep_source, dependency_lookup=No
             "Pass it via `custom_inputs` on that analysis instance, or reference an entry in the module-level "
             "`DEPENDENCIES` dict and point to it by name from `custom_inputs`."
         )
+    # Handle forwarding of attributes from AnalysisInputData via the `Data` sentinel
+    if isinstance(dep_source, _DataField):
+        # Treat each attribute as a unique forwarding analysis node, including any transform
+        analysis_instance = _DataForwarder(
+            attr=dep_source.attr,
+            where=dep_source.where,
+            is_leaf=dep_source.is_leaf,
+        )
+        node_id = analysis_instance.md5_str
+        return node_id, {}, analysis_instance
+    
     class_params = analysis.dependency_kwargs().get(dep_name, {})
     # Recursively resolve string dependencies
     if dep_source is None:
@@ -115,7 +167,7 @@ def build_dependency_graph(analyses: Sequence[AbstractAnalysis], dependency_look
         if md5_id not in nodes:
             nodes[md5_id] = (analysis, {})
 
-            deps_list = list(analysis.dependencies.keys())
+            deps_list = list(analysis.inputs.keys())
             _validate_signature(
                 analysis.compute,
                 deps_list,
@@ -128,7 +180,7 @@ def build_dependency_graph(analyses: Sequence[AbstractAnalysis], dependency_look
                 "make_figs",
                 analysis.name,
             )
-            for dep_name, dep_source in analysis.dependencies.items():
+            for dep_name, dep_source in analysis.inputs.items():
                 dep_node_id, params, dep_instance = resolve_dependency_node(
                     analysis, dep_name, dep_source, dependency_lookup=dependency_lookup
                 )
@@ -141,13 +193,13 @@ def build_dependency_graph(analyses: Sequence[AbstractAnalysis], dependency_look
     for analysis in analyses:
         _add_deps(analysis)
     for analysis in analyses:
-        for dep_name, dep_source in analysis.dependencies.items():
+        for dep_name, dep_source in analysis.inputs.items():
             _, _, dep_instance = resolve_dependency_node(analysis, dep_name, dep_source, dependency_lookup=dependency_lookup)
             analysis_node_id = analysis.md5_str
             dep_node_id = dep_instance.md5_str
             graph[analysis_node_id].add(dep_node_id)
     for node_id, (dep_instance, _) in nodes.items():
-        for subdep_name, subdep_source in dep_instance.dependencies.items():
+        for subdep_name, subdep_source in dep_instance.inputs.items():
             _, _, subdep_instance = resolve_dependency_node(dep_instance, subdep_name, subdep_source, dependency_lookup=dependency_lookup)
             graph[node_id].add(subdep_instance.md5_str)
     for node_id in nodes:
@@ -220,7 +272,7 @@ def compute_dependency_results(
         dep_instance, params = dep_instances[node_id]
         # Only pass baseline kwargs and the relevant dependencies under their local names
         dep_kwargs = baseline_kwargs.copy()
-        for dep_name, dep_source in dep_instance.dependencies.items():
+        for dep_name, dep_source in dep_instance.inputs.items():
             _, _, sub_dep_instance = resolve_dependency_node(
                 dep_instance, 
                 dep_name, 
@@ -250,7 +302,7 @@ def compute_dependency_results(
         if analysis_hash in computed_results:
             dependency_results['result'] = computed_results[analysis_hash]
         # Add dependencies
-        for dep_name, dep_source in analysis.dependencies.items():
+        for dep_name, dep_source in analysis.inputs.items():
             _, _, dep_instance = resolve_dependency_node(analysis, dep_name, dep_source, dependency_lookup=dependency_lookup)
             dep_hash = dep_instance.md5_str
             if dep_hash in computed_results:
