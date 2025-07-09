@@ -27,7 +27,7 @@ from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
 from rnns_learn_robust_motor_policies.analysis.aligned import AlignedEffectorTrajectories, AlignedVars
-from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisDependenciesType, AnalysisInputData, CallWithDeps, DefaultFigParamNamespace, FigParamNamespace, Required
+from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisDependenciesType, AnalysisInputData, CallWithDeps, Data, DefaultFigParamNamespace, FigParamNamespace, Required
 from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS
 from rnns_learn_robust_motor_policies.analysis.effector import EffectorTrajectories
 from rnns_learn_robust_motor_policies.analysis.measures import ALL_MEASURE_KEYS, MEASURE_LABELS
@@ -138,20 +138,23 @@ DEPENDENCIES = {
 
 # State batch shape: (eval, replicate, condition)
 ANALYSES = {
-    # This is an example of how to use a CallWithDeps transform to get the PCA results
-    # directly in data.states, rather than having to make `StatesPCA` a dependency of `Tangling`
+    # This is an example of how to use a CallWithDeps transform to get the PCs 
+    # without having to make `StatesPCA` a dependency of `Tangling`
     "tangling": (
-        Tangling(variant="small")
+        Tangling(
+            variant="small",
+            custom_inputs=dict(
+                state=Data.states(where=lambda states: states.net.hidden),
+            )
+        )
         .after_transform(get_best_replicate)
-        # .after_transform_states(
-        #     lambda states: jt.map(lambda x: x.net.hidden, states, is_leaf=is_module),
-        # )
         .after_transform(
+            # Pull in the PCA results and use them to transform the hidden states
             CallWithDeps("hidden_states_pca")(
                 lambda pca_results, states: pca_results.batch_transform(states),
             ),
             dependency_name="state",
-        )
+        )               
     )
 
 }

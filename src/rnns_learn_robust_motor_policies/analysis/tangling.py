@@ -24,6 +24,7 @@ from rnns_learn_robust_motor_policies.analysis.analysis import (
 
 class Tangling(AbstractAnalysis):
     default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+        #! Maybe should not hardcode this here, but make it `Required`
         state=Data.states(where=lambda states: states.net.hidden),
     ))
     conditions: tuple[str, ...] = ()

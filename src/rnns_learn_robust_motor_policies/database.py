@@ -94,11 +94,12 @@ class ModelRecord(RecordBase):
     id: Mapped[int] = mapped_column(primary_key=True)
     hash: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    expt_name: Mapped[str]
     is_path_defunct: Mapped[bool] = mapped_column(default=False)
+    version_info: Mapped[Optional[dict[str, str]]]
+    
     postprocessed: Mapped[bool] = mapped_column(default=False)
     has_replicate_info: Mapped[bool]
-    version_info: Mapped[Optional[dict[str, str]]]
+    expt_name: Mapped[str]
     
     # Explicitly define some parameter columns to avoid typing issues, though our dynamic column 
     # migration would handle whatever parameters the user happens to pass, without this.

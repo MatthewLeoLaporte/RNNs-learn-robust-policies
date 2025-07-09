@@ -119,8 +119,8 @@ class _DataProxy:
     def __repr__(self):  # noqa: D401
         return "Data"
 
-
-# Public sentinel instance
+"""Sentinel for forwarding attributes from `AnalysisInputData` to analysis input ports."""
+#! TODO: Rename to something more explicit, e.g. `EvalDataIn`
 Data = _DataProxy()
 
 

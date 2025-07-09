@@ -22,14 +22,33 @@ from rnns_learn_robust_motor_policies.analysis import modules as analysis_module
 from rnns_learn_robust_motor_policies.analysis._dependencies import compute_dependency_results
 from rnns_learn_robust_motor_policies.analysis.analysis import AbstractAnalysis, AnalysisInputData, get_validation_trial_specs, logger
 from rnns_learn_robust_motor_policies.colors import COMMON_COLOR_SPECS, setup_colors
+# Access project paths and string constants
 from rnns_learn_robust_motor_policies.config import PATHS
 from rnns_learn_robust_motor_policies.constants import REPLICATE_CRITERION
-from rnns_learn_robust_motor_policies.database import EvaluationRecord, ModelRecord, add_evaluation, check_model_files, get_db_session
-from rnns_learn_robust_motor_policies.hyperparams import flatten_hps, load_hps, use_train_hps_when_none
+# `record_to_dict` converts SQLAlchemy records to plain dicts
+from rnns_learn_robust_motor_policies.database import (
+    EvaluationRecord,
+    ModelRecord,
+    add_evaluation,
+    check_model_files,
+    get_db_session,
+)
+# Added utilities for unflattening record hyperparameters into namespaces
+from rnns_learn_robust_motor_policies.hyperparams import fill_missing_train_hps_from_record
+from rnns_learn_robust_motor_policies.types import (
+    LDict,
+    TreeNamespace,
+    namespace_to_dict,
+)
+# `cast_hps` is needed to convert dictionaries (e.g. `where`) back into the expected objects
+from rnns_learn_robust_motor_policies.hyperparams import (
+    flatten_hps,
+    load_hps,
+    use_train_hps_when_none,
+)
 from rnns_learn_robust_motor_policies.misc import delete_all_files_in_dir, log_version_info, load_module_from_package
 from rnns_learn_robust_motor_policies.setup_utils import query_and_load_model
 import rnns_learn_robust_motor_policies.training.modules as training_modules_pkg
-from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace, namespace_to_dict
 
 
 def load_trained_models_and_aux_objects(training_module_name: str, hps: TreeNamespace, db_session: Session):
@@ -91,10 +110,10 @@ def setup_eval_for_module(
     models_base, model_info, replicate_info, tasks_train, n_replicates_included = \
         load_trained_models_and_aux_objects(training_module_name, hps, db_session)
 
-    #! TODO: Use the hyperparameters of the loaded model(s), where they were absent from the load spec
-    #! (This should probably be moved to the model loading function)
-    # model_hps = jt.map(record_to_namespace, model_info, is_leaf=is_type(RecordBase))
-    # hps = jt.map(lambda hps, model_hps: model_hps | hps, hps, model_hps)
+    # Fill-in any missing training hyper-parameters **out-of-place** and switch to
+    # the enriched version from here onward.
+    hps_filled = fill_missing_train_hps_from_record(hps, model_info)
+    hps = hps_filled  #  use the enriched version for everything below
 
     #! For this project, the training task should not vary with the train field std 
     #! so we just keep a single one of them.
@@ -132,6 +151,7 @@ def setup_eval_for_module(
         expt_name=analysis_name,
         models=model_info,
         #? Could move the flattening/conversion to `database`?
+        #! TODO: Could exclude train parameters, since 
         eval_parameters=namespace_to_dict(flatten_hps(hps)),
         version_info=version_info,
     )
@@ -185,6 +205,7 @@ def setup_eval_for_module(
         model_info,
         eval_info,
         replicate_info,
+        hps_filled,  # base hyper-parameters after filling
     )
 
 
@@ -273,19 +294,29 @@ def run_analysis_module(
 
     # Load the config (hyperparameters) for the analysis module
     hps = load_hps(analysis_name, config_type='analysis')
-    # If some config values (other than those under the `load` key) are unspecified, replace them with 
-    # respective values from the `load` key
-    # e.g. if trained on curl fields and hps.pert.type is None, use hps.train.pert.type
-    # (In `setup_tasks_and_models` we then fill out any fields that are entirely missing from the config, 
-    #  but which are given by the loaded model records.)
-    hps_common = use_train_hps_when_none(hps)
+    # Establish a provisional common namespace (needed for querying the DB); this
+    # will be superseded after we load the model records and fill in any missing
+    # hyper-parameters.
+    provisional_hps_common = use_train_hps_when_none(hps)
 
-    analysis_module, tasks, models, hps, extras, model_info, eval_info, replicate_info = \
+    (
+        analysis_module, 
+        tasks, 
+        models, 
+        hps, 
+        extras, 
+        model_info, 
+        eval_info, 
+        replicate_info, 
+        hps_common,
+    ) = \
         setup_eval_for_module(
             analysis_name,
-            hps_common,
+            provisional_hps_common,
             db_session,
         )
+
+
 
     trial_specs = jt.map(get_validation_trial_specs, tasks, is_leaf=is_module)
 
@@ -394,3 +425,6 @@ def run_analysis_module(
     )
 
     return data, common_inputs, all_analyses, all_results, all_figs
+
+
+# -----------------------------------------------------------------------------
