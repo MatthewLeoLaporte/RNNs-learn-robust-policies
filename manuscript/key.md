@@ -1,0 +1,6 @@
+- **TPS**: Standard deviation of the distribution from which the training perturbation magnitude was drawn, i.e. train pert. std.
+- **SU**: System uncertainty; in part 1 controlled by TPS, in part 2 by TPS * SISU
+- **SISU**: Scalar information about system uncertainty
+- **PA**: Perturbation amplitude during evaluation.
+- **CF**: Curl fields.
+- **SIRF**: State independent random fields. 

@@ -1,6 +1,10 @@
 .gitmessage
 COMMIT_MSG.txt
 
+*claude.md
+*o3.md 
+*gem25p.md
+
 # Mac
 .DS_Store
 
