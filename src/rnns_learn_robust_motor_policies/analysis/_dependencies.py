@@ -198,10 +198,23 @@ def build_dependency_graph(analyses: Sequence[AbstractAnalysis], dependency_look
             analysis_node_id = analysis.md5_str
             dep_node_id = dep_instance.md5_str
             graph[analysis_node_id].add(dep_node_id)
-    for node_id, (dep_instance, _) in nodes.items():
+            # Ensure every edge target is also present in `nodes`
+            if dep_node_id not in nodes:
+                nodes[dep_node_id] = (dep_instance, {})
+
+    for node_id, (dep_instance, _) in list(nodes.items()):
         for subdep_name, subdep_source in dep_instance.inputs.items():
-            _, _, subdep_instance = resolve_dependency_node(dep_instance, subdep_name, subdep_source, dependency_lookup=dependency_lookup)
-            graph[node_id].add(subdep_instance.md5_str)
+            _, _, sub_dep_instance = resolve_dependency_node(
+                dep_instance,
+                subdep_name,
+                subdep_source,
+                dependency_lookup=dependency_lookup,
+            )
+            sub_dep_id = sub_dep_instance.md5_str
+            graph[node_id].add(sub_dep_id)
+            if sub_dep_id not in nodes:
+                nodes[sub_dep_id] = (sub_dep_instance, {})
+
     for node_id in nodes:
         if node_id not in graph:
             graph[node_id] = set()
@@ -290,7 +303,9 @@ def compute_dependency_results(
         else:
             log_name = f"{dep_instance.__class__.__name__} ({dep_instance.md5_str})"
         
-        logger.info(f"Computing analysis node: {log_name}")
+        if not log_name.startswith("_DataForwarder"):
+            logger.info(f"Computing analysis node: {log_name}")
+        
         result = dep_instance._compute_with_ops(data, **dep_kwargs)
         computed_results[node_id] = result
     

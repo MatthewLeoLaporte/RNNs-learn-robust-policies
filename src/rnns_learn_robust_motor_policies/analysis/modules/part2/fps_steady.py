@@ -33,6 +33,12 @@ from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_repli
 from rnns_learn_robust_motor_policies.tree_utils import take_replicate
 from rnns_learn_robust_motor_policies.types import TreeNamespace
 from rnns_learn_robust_motor_policies.types import LDict
+from rnns_learn_robust_motor_policies.analysis.fps_tmp import (
+    SteadyStateFPs,
+    SteadyStateJacobians,
+    JacobianEigenspectra,
+    FPsInPCSpace,
+)
 
 
 """Specify any additional colorscales needed for this analysis. 
@@ -79,14 +85,20 @@ START_STEP = 0
 END_STEP = 100
 
 
-# State PyTree structure: ['context_input', 'train__pert__std']
-# Array batch shape: (evals, replicates, reach conditions)
-ANALYSES = {
+DEPENDENCIES = {
     "states_pca": (
         StatesPCA(n_components=N_PCA, where_states=lambda states: states.net.hidden)
         .after_transform(get_best_replicate)
         .after_indexing(-2, np.arange(START_STEP, END_STEP), axis_label="timestep")
     ),
+}
+
+
+# State PyTree structure: ['context_input', 'train__pert__std']
+# Array batch shape: (evals, replicates, reach conditions)
+ANALYSES = {
+    "fps_in_pc_space": FPsInPCSpace(custom_inputs=dict(pca_results="states_pca")),
+    "jacobian_eigenspectra": JacobianEigenspectra().map_figs_at_level("train__pert__std"),
 }
 
 

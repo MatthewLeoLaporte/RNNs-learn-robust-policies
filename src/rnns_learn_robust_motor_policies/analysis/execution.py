@@ -34,7 +34,7 @@ from rnns_learn_robust_motor_policies.database import (
     get_db_session,
 )
 # Added utilities for unflattening record hyperparameters into namespaces
-from rnns_learn_robust_motor_policies.hyperparams import fill_missing_train_hps_from_record
+from rnns_learn_robust_motor_policies.database import fill_missing_train_hps_from_record
 from rnns_learn_robust_motor_policies.types import (
     LDict,
     TreeNamespace,
@@ -49,6 +49,9 @@ from rnns_learn_robust_motor_policies.hyperparams import (
 from rnns_learn_robust_motor_policies.misc import delete_all_files_in_dir, log_version_info, load_module_from_package
 from rnns_learn_robust_motor_policies.setup_utils import query_and_load_model
 import rnns_learn_robust_motor_policies.training.modules as training_modules_pkg
+
+
+STATES_CACHE_SUBDIR = "states"
 
 
 def load_trained_models_and_aux_objects(training_module_name: str, hps: TreeNamespace, db_session: Session):
@@ -273,7 +276,7 @@ def run_analysis_module(
     fig_dump_formats: List[str] = ["html", "webp", "svg"],
     no_pickle: bool = False,
     retain_past_fig_dumps: bool = False,
-    states_pkl_dir: Optional[Path] = PATHS.states_tmp,
+    states_pkl_dir: Optional[Path] = PATHS.cache / "states",
     *,
     key,
 ):
@@ -287,6 +290,11 @@ def run_analysis_module(
     """
     if fig_dump_path is None:
         fig_dump_path = PATHS.figures_dump
+
+    # Ensure the directory for state pickles exists
+    if states_pkl_dir is None:
+        states_pkl_dir = PATHS.cache / STATES_CACHE_SUBDIR
+    states_pkl_dir.mkdir(parents=True, exist_ok=True)
 
     # Start a database session for loading trained models, and saving evaluation/figure records
     db_session = get_db_session()
@@ -425,6 +433,3 @@ def run_analysis_module(
     )
 
     return data, common_inputs, all_analyses, all_results, all_figs
-
-
-# -----------------------------------------------------------------------------

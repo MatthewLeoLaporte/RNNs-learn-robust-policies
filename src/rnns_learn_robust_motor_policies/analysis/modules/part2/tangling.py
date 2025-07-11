@@ -122,6 +122,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
 
 
 N_PCA = 10
+TANGLING_AGG_T_SLICE = slice(1, None)
 
 
 DEPENDENCIES = {
@@ -134,6 +135,21 @@ DEPENDENCIES = {
         # .after_indexing(-2, np.arange(START_STEP, END_STEP), axis_label="timestep")
     ),
 }
+
+
+def rms(x: Array, axis: int = -1) -> Array:
+    """Returns the root mean square of `x` along `axis`."""
+    return jnp.sqrt(jnp.mean(x ** 2, axis=axis))
+
+
+class PCPlot(AbstractAnalysis):
+    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    conditions: tuple[str, ...] = ()  
+    variant: Optional[str] = "small"
+    fig_params: FigParamNamespace = DefaultFigParamNamespace(
+        title="",
+        x_label="",
+    )
 
 
 # State batch shape: (eval, replicate, condition)
@@ -154,7 +170,11 @@ ANALYSES = {
                 lambda pca_results, states: pca_results.batch_transform(states),
             ),
             dependency_name="state",
-        )               
+        ) 
+        #! TODO: Do the RMS in a separate analysis -> violin plots
+        .then_transform_result(
+            lambda result: jt.map(lambda x: rms(x[..., TANGLING_AGG_T_SLICE]), result),
+        )              
     )
 
 }

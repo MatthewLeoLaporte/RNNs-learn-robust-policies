@@ -9,6 +9,10 @@ from typing import TYPE_CHECKING, Any, ClassVar, Iterable, Literal, NamedTuple, 
 from pathlib import Path
 import yaml
 
+import dill as pickle  # for result caching
+from pathlib import Path
+import hashlib
+
 import equinox as eqx
 from equinox import AbstractVar, AbstractClassVar, Module
 import jax.numpy as jnp
@@ -21,11 +25,12 @@ from feedbax.task import AbstractTask
 from jax_cookbook import is_type, is_none, is_module, vmap_multi, natural_to_sequential_axes
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.config.config import STRINGS
+from rnns_learn_robust_motor_policies.config.config import STRINGS, PATHS
 from rnns_learn_robust_motor_policies.database import EvaluationRecord, add_evaluation_figure, savefig
 from rnns_learn_robust_motor_policies.tree_utils import move_ldict_level_above, subdict, tree_level_labels, ldict_level_to_top
 from rnns_learn_robust_motor_policies.misc import camel_to_snake, get_dataclass_fields, get_md5_hexdigest, get_name_of_callable, is_json_serializable
 from rnns_learn_robust_motor_policies.plot_utils import figs_flatten_with_paths, get_label_str
+from rnns_learn_robust_motor_policies.tree_utils import _hash_pytree
 from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
 
 
@@ -50,13 +55,9 @@ class AnalysisInputData(Module):
     states: PyTree[Module]
     hps: PyTree[TreeNamespace]  
     extras: PyTree[TreeNamespace] 
-    
 
 
-# --------------------------------------------------------------------------- #
-# Sentinel for forwarding attributes (and optional transforms) from            #
-# `AnalysisInputData` to analysis input ports                                  #
-# --------------------------------------------------------------------------- #
+RESULTS_CACHE_SUBDIR = "results"
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,6 +119,7 @@ class _DataProxy:
 
     def __repr__(self):  # noqa: D401
         return "Data"
+
 
 """Sentinel for forwarding attributes from `AnalysisInputData` to analysis input ports."""
 #! TODO: Rename to something more explicit, e.g. `EvalDataIn`
@@ -407,6 +409,7 @@ class AbstractAnalysis(Module, strict=False):
         'conditions', 
         'fig_params', 
         'custom_inputs', #! Should this be here?
+        'cache_result',
         '_prep_ops', 
         # '_state_vmap_axes',
         '_fig_op',
@@ -415,7 +418,7 @@ class AbstractAnalysis(Module, strict=False):
 
     default_inputs: AbstractClassVar[MappingProxyType[str, type[Self]]]
     conditions: AbstractVar[tuple[str, ...]]
-    variant: AbstractVar[Optional[str]] 
+    variant: AbstractVar[Optional[str]]  #! TODO: Rename to `task_variant`
     fig_params: AbstractVar[FigParamNamespace]
     
     # By using `strict=False`, we can define non-abstract fields, i.e. without needing to 
@@ -423,6 +426,11 @@ class AbstractAnalysis(Module, strict=False):
     # pattern. This is intentional. If it leads to problems, I will learn from that.
     #! This means no non-default arguments in subclasses
     custom_inputs: Mapping[str, str | Self] = eqx.field(default_factory=dict)
+    # Opt-in toggle for result caching.  When True, the result of `compute`
+    # is saved to / loaded from PATHS.cache / "results" using a hash that
+    # captures the analysis parameters plus the *actual* inputs passed to
+    # `compute`.
+    cache_result: bool = False
     _prep_ops: tuple[_PrepOp, ...] = ()
     _vmap_spec: Optional[_AnalysisVmapSpec] = None
     _fig_op: Optional[_FigOp] = None
@@ -456,19 +464,59 @@ class AbstractAnalysis(Module, strict=False):
             lambda d: d.states, data, prepped_kwargs["data.states"]
         )
         del prepped_kwargs["data.states"]  
-        
-        if self._vmap_spec is not None:
-            vmapped_deps = [prepped_kwargs.pop(name) for name in self._vmap_spec.vmapped_dep_names]
-            
-            compute_func = _extract_vmapped_kwargs_to_args(self.compute, self._vmap_spec.vmapped_dep_names)
-            compute_func = partial(compute_func, **prepped_kwargs)
-            
-            result = vmap_multi(compute_func, in_axes_sequence=self._vmap_spec.in_axes_sequence)(
-                prepped_data, *vmapped_deps,
-            )
-        else:
-            compute = partial(self.compute, **prepped_kwargs)
-            result = compute(prepped_data)
+
+        def _run_compute():
+            if self._vmap_spec is not None:
+                vmapped_deps = [prepped_kwargs.pop(name) for name in self._vmap_spec.vmapped_dep_names]
+                compute_func = _extract_vmapped_kwargs_to_args(
+                    self.compute, self._vmap_spec.vmapped_dep_names
+                )
+                compute_func = partial(compute_func, **prepped_kwargs)
+                return vmap_multi(compute_func, in_axes_sequence=self._vmap_spec.in_axes_sequence)(
+                    prepped_data, *vmapped_deps,
+                )
+            else:
+                compute_fn = partial(self.compute, **prepped_kwargs)
+                return compute_fn(prepped_data)
+
+        if self.cache_result:
+            cache_root = PATHS.cache / RESULTS_CACHE_SUBDIR
+            cache_root.mkdir(parents=True, exist_ok=True)
+
+            try:
+                inputs_hash = _hash_pytree((prepped_data, prepped_kwargs))
+            except Exception as e:
+                logger.error(
+                    f"Failed to hash inputs for caching of {self.name}: {e}", exc_info=True
+                )
+                # Fallback: disable caching for this invocation
+                return _run_compute()
+
+            cache_fname = f"{self.md5_str}_{inputs_hash}.pkl"
+            cache_path = cache_root / cache_fname
+
+            if cache_path.exists():
+                try:
+                    with open(cache_path, "rb") as f:
+                        return pickle.load(f)
+                except Exception as e:
+                    logger.warning(
+                        f"Could not load cached result for {self.name} (will recompute): {e}"
+                    )
+
+            result = _run_compute()
+
+            try:
+                with open(cache_path, "wb") as f:
+                    pickle.dump(result, f)
+                logger.info(f"Saved cache for {self.name} to {cache_path}")
+            except Exception as e:
+                logger.warning(f"Could not save cache for {self.name}: {e}")
+
+            return result
+
+        # ---- No caching requested ---------------------------------------- #
+        result = _run_compute()
             
         for final_op in self._final_ops_by_type.get('results', ()):
             try:
@@ -1136,7 +1184,7 @@ class AbstractAnalysis(Module, strict=False):
     #             for i in self._state_vmap_axes
     #         )
         
-    def and_transform_results(
+    def then_transform_result(
         self,
         func: Callable[..., Any],
         level: Optional[str] = None,

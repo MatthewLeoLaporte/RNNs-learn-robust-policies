@@ -17,7 +17,6 @@ import yaml
 
 from rnns_learn_robust_motor_policies.config import STRINGS, load_config
 from rnns_learn_robust_motor_policies.constants import get_iterations_to_save_model_parameters
-from rnns_learn_robust_motor_policies.database import ModelRecord, record_to_dict
 from rnns_learn_robust_motor_policies.misc import copy_delattr
 from rnns_learn_robust_motor_policies.tree_utils import (
     tree_level_labels,
@@ -29,7 +28,6 @@ from rnns_learn_robust_motor_policies.types import (
     TreeNamespace,
     dict_to_namespace,
     is_dict_with_int_keys,
-    unflatten_dict_keys,
 )
 
 
@@ -240,87 +238,3 @@ def use_train_hps_when_none(hps: TreeNamespace) -> TreeNamespace:
     return hps
 
 
-def fill_missing_train_hps_from_record(
-    hps: TreeNamespace,
-    model_info: PyTree[ModelRecord],
-) -> TreeNamespace:
-    """Populate any *unspecified* values under ``train`` in *hps* with values taken
-    from the first model record in *model_info* and return an **enriched copy**.
-
-    Notes
-    -----
-    * All records in *model_info* are assumed to be identical except for
-      ``train__pert__std`` (this is how training sweeps are organised in the
-      current project).
-    * Only columns whose names start with ``train__`` are considered.  A small
-      set of bookkeeping columns (``id``, ``hash`` …) are always ignored.
-    * The original *hps* namespace is **not** modified; the caller receives a
-      new namespace instance containing the additional information.
-    """
-
-    # ---------------------------------------------------------------------
-    # 1. Collect a representative DB record and turn it back into a nested
-    #    namespace.
-    # ---------------------------------------------------------------------
-    sample_record: ModelRecord = jt.leaves(model_info, is_leaf=is_type(ModelRecord))[0]
-
-    IGNORE_COLS = {
-        "id",
-        "hash",
-        "expt_name",
-        "created_at",
-        "is_path_defunct",
-        "version_info",
-        "postprocessed",
-        "has_replicate_info",
-    }
-
-    flat_params = {
-        k: v
-        for k, v in record_to_dict(sample_record).items()
-        if (
-            k not in IGNORE_COLS
-            and k != "pert__std"  # varies across loaded models
-        )
-    }
-
-    if not flat_params:
-        # Nothing to add – return early
-        return hps
-
-    # The DB columns come from flattening the *training* hps namespace, so they
-    # correspond to the subtree that should live under ``train``.
-    nested_params = unflatten_dict_keys(flat_params, sep=STRINGS.hps_level_label_sep)
-    record_hps_dict = {"train": nested_params}
-
-    record_hps = dict_to_namespace(
-        record_hps_dict,
-        to_type=TreeNamespace,
-        exclude=is_dict_with_int_keys,
-    )
-
-    # ---------------------------------------------------------------------
-    # 2. Recursive merge: only replace values that are currently *None* or
-    #    missing in *hps* so that explicit analysis-config overrides win.
-    # ---------------------------------------------------------------------
-    # Work on a *copy* so that callers can decide whether to keep or discard the
-    # original object.
-    new_hps = deepcopy(hps)
-
-    def _merge_missing(dest: TreeNamespace, src: TreeNamespace):
-        for attr, src_val in src.items():
-            if hasattr(dest, attr):
-                dest_val = getattr(dest, attr)
-                if isinstance(dest_val, TreeNamespace) and isinstance(src_val, TreeNamespace):
-                    _merge_missing(dest_val, src_val)
-                elif dest_val is None:
-                    setattr(dest, attr, src_val)
-            else:
-                setattr(dest, attr, src_val)
-
-    _merge_missing(new_hps, record_hps)
-
-    # Ensure special fields regain their wrapped types (e.g. train.where -> LDict)
-    new_hps = cast_hps(new_hps, config_type="analysis")
-
-    return new_hps

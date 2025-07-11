@@ -35,7 +35,7 @@ if __name__ == '__main__':
                       help="Format(s) to dump figures in, comma-separated (e.g., 'html,png,pdf')")
     parser.add_argument("--no-pickle", action="store_true", help="Do not use pickle for states (don't load existing or save new).")
     parser.add_argument("--retain-past-fig-dumps", action="store_true", help="Do not save states to pickle.")
-    parser.add_argument("--states-pkl-dir", type=str, default=None, help="Alternative directory for state pickle files (default: PATHS.states_tmp)")
+    parser.add_argument("--states-pkl-dir", type=str, default=None, help="Alternative directory for state pickle files (default: PATHS.cache/'states')")
     parser.add_argument("--seed", type=int, default=None, help="Random seed for the analysis.")
     parser.add_argument("--show-duplicate-warnings", action="store_true",
                         help="If set, all occurrences of each distinct warning message are shown.")
@@ -55,7 +55,7 @@ if __name__ == '__main__':
     fig_dump_formats = args.fig_dump_formats.split(',')
     
     # Set states pickle directory
-    states_pkl_dir = Path(args.states_pkl_dir) if args.states_pkl_dir else PATHS.states_tmp
+    states_pkl_dir = Path(args.states_pkl_dir) if args.states_pkl_dir else PATHS.cache / "states"
     
     _ = run_analysis_module(
         analysis_name=args.analysis_name, 
