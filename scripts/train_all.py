@@ -23,7 +23,8 @@ import optax
 import feedbax
 
 import rnns_learn_robust_motor_policies
-from rnns_learn_robust_motor_policies import PRNG_CONFIG
+from rnns_learn_robust_motor_policies.config import PRNG_CONFIG
+from rnns_learn_robust_motor_policies._warnings import enable_warning_dedup
 from rnns_learn_robust_motor_policies.database import get_db_session
 from rnns_learn_robust_motor_policies.hyperparams import load_hps
 from rnns_learn_robust_motor_policies.misc import log_version_info
@@ -39,8 +40,8 @@ warnings.filterwarnings("ignore", module="equinox._module")
 logger = logging.getLogger(os.path.basename(__file__))
 
 
-CONFIG_FILENAME = 'train_all'
-CONFIGS = resources.files('rnns_learn_robust_motor_policies.config')
+CONFIG_FILENAME = 'all'
+CONFIGS = resources.files('rnns_learn_robust_motor_policies.config.training')
 
 
 def unwrap_value(v: Any) -> Any:
@@ -132,15 +133,23 @@ if __name__ == '__main__':
     parser.add_argument("--postprocess", action='store_false', help="Postprocess each model after training.")
     parser.add_argument("--n-std-exclude", type=int, default=2, help="In postprocessing, exclude model replicates with n_std greater than this value.")
     parser.add_argument("--save-figures", action='store_true', help="Save figures in postprocessing.")
+    parser.add_argument("--seed", type=int, default=None, help="Random seed for the training.")
+    parser.add_argument("--show-duplicate-warnings", action="store_false",
+                        help="If set, all occurrences of each distinct warning message are shown.")
     args = parser.parse_args()
+    
+    # Optionally install warning de-duplication.
+    if not args.show_duplicate_warnings:
+        enable_warning_dedup()
     
     version_info = log_version_info(
         jax, eqx, optax, git_modules=(feedbax, rnns_learn_robust_motor_policies),
     )
     
-    db_session = get_db_session()
-    
-    key = jr.PRNGKey(PRNG_CONFIG.seed)
+    if args.seed is None:
+        key = jr.PRNGKey(PRNG_CONFIG.seed)
+    else:
+        key = jr.PRNGKey(args.seed)
     
     if not args.config_path:
         resource = CONFIGS.joinpath(f'{CONFIG_FILENAME}.yml')
@@ -161,22 +170,20 @@ if __name__ == '__main__':
     for expt_id, expt_configs in configs.items():
     
         # Get defaults for this experiment
-        hps_common: TreeNamespace = load_hps(str(expt_id))
+        expt_hps: TreeNamespace = load_hps(str(expt_id), config_type='training')
         
         # Train each set of models with its respective config
         for i, config in enumerate(expt_configs):
             
             logger.info(f"Training models for experiment {expt_id}, config {i} of {len(expt_configs)}")
             
-            hps = hps_common | config
             
             trained_models, train_histories, model_records = train_and_save_models(
-                db_session, 
-                hps,
-                key,
+                hps=expt_hps | config,
+                expt_name=str(expt_id),
                 untrained_only=args.untrained_only,
                 postprocess=args.postprocess,
                 n_std_exclude=args.n_std_exclude,
                 save_figures=args.save_figures,
-                version_info=version_info,
+                key=key,
             )

@@ -1,4 +1,4 @@
-'1':
+part1:
   product:  # take the cartesian product of the following sets of runs
     - name: noise_levels
       model:
@@ -21,7 +21,7 @@
             std: 
               value: [0, 0.01, 0.1, 1]
 
-'2':
+part2:
   product:  # take the cartesian product of the following sets of runs
     - name: noise_levels
       model:

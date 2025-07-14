@@ -145,7 +145,8 @@ def where_strs_to_funcs(where_strs: Sequence[str] | dict[int, Sequence[str]]):
 
 
 def train_and_save_models(
-    expt_name: str, 
+    hps: TreeNamespace,
+    expt_name: str,
     untrained_only: bool = True,
     postprocess: bool = True,
     n_std_exclude: int = 2,  # re: postprocessing
@@ -153,7 +154,7 @@ def train_and_save_models(
     *,
     key: PRNGKeyArray,
 ):
-    """Given a path to a YAML config, execute the respective training run.
+    """Given hyperparameters and experiment name, execute the respective training run.
     
     The config must have a top-level key `id` whose positive integer value 
     indicates which training experiment to run. 
@@ -164,8 +165,6 @@ def train_and_save_models(
         jax, eqx, optax, git_modules=(feedbax, rnns_learn_robust_motor_policies),
     )
     
-    hps_train: TreeNamespace = load_hps(expt_name, config_type='training')
-    
     key_init, key_train, key_eval = jr.split(key, 3)
 
     # User specifies which variant to run using the `id` key
@@ -173,11 +172,17 @@ def train_and_save_models(
     
     # `all_hps` is a tree of pair-specific hps
     task_model_pairs, all_hps_train = jtree.unzip(
-        training_module.get_train_pairs(hps_train, key_init)
+        training_module.get_train_pairs(hps | dict(expt_name=expt_name), key_init)
     )
 
     if untrained_only:
-        task_model_pairs = skip_already_trained(db_session, task_model_pairs, all_hps_train, n_std_exclude, save_figures)
+        task_model_pairs = skip_already_trained(
+            db_session, 
+            task_model_pairs, 
+            all_hps_train, 
+            n_std_exclude, 
+            save_figures,
+        )
         
     if not any(jt.leaves(task_model_pairs, is_leaf=is_type(TaskModelPair))):
         logger.info("No models to train. Exiting.")
@@ -187,32 +192,32 @@ def train_and_save_models(
     # TODO: Also get `trainer`, `loss_func`, ... as trees like `task_model_pairs`
     # Otherwise certain hyperparameters (e.g. learning rate) will be constant 
     # when the user might expect them to vary due to their config file. 
-    trainer, loss_func = train_setup(hps_train)
+    trainer, loss_func = train_setup(hps)
     
     ## Train and save all the models.
     # TODO: Is this correct? Or should we pass the task for the respective training method?
     task_baseline: AbstractTask = jt.leaves(task_model_pairs, is_leaf=is_type(TaskModelPair))[0].task
 
-    def train_and_save_pair(pair, hps_train):
+    def train_and_save_pair(pair, hps):
         trained_model, train_history = train_pair(
             trainer, 
             pair,
-            hps_train.n_batches, 
+            hps.n_batches, 
             key=key_train,  #! Use the same PRNG key for all training runs
             ensembled=True,
             loss_func=loss_func,
             task_baseline=task_baseline,  
-            where_train=where_strs_to_funcs(dict(hps_train.where)),
-            batch_size=hps_train.batch_size, 
+            where_train=where_strs_to_funcs(dict(hps.where)),
+            batch_size=hps.batch_size, 
             log_step=LOG_STEP,
-            save_model_parameters=hps_train.save_model_parameters,
-            state_reset_iterations=hps_train.state_reset_iterations,
+            save_model_parameters=hps.save_model_parameters,
+            state_reset_iterations=hps.state_reset_iterations,
             # disable_tqdm=True,
         )
         model_record = save_model_and_add_record(
             db_session,
             trained_model,
-            hps_train,
+            hps,
             train_history=train_history,
             version_info=version_info,
         )
@@ -224,9 +229,8 @@ def train_and_save_models(
                 process_all=True,
                 save_figures=save_figures,
             )
-            
         return trained_model, train_history, model_record
-        
+    
     trained_models, train_histories, model_records = jtree.unzip(jtree.map_tqdm(
         # TODO: Could return already-trained models instead of None; would need to return `already_trained` bool from `skip_already_trained`
         lambda pair, hps: train_and_save_pair(pair, hps) if pair is not None else None,

@@ -472,7 +472,8 @@ def check_model_files(
             record.has_replicate_info = replicate_info_file_exists
         
         if clean_orphaned_files != 'no':
-            archive_dir = PATHS.models / "archive"
+            archive_dir = PATHS.models.parent / f"{PATHS.models.name}_archive"
+            archive_dir.mkdir(exist_ok=True)
             for file_path in PATHS.models.glob("*.eqx"):
                 file_hash = file_path.stem 
                 if file_hash not in known_hashes: 

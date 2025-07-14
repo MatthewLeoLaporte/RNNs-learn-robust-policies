@@ -172,9 +172,9 @@ ANALYSES = {
             dependency_name="state",
         ) 
         #! TODO: Do the RMS in a separate analysis -> violin plots
-        .then_transform_result(
-            lambda result: jt.map(lambda x: rms(x[..., TANGLING_AGG_T_SLICE]), result),
-        )              
+        # .then_transform_result(
+        #     lambda result: jt.map(lambda x: rms(x[..., TANGLING_AGG_T_SLICE]), result),
+        # )              
     )
 
 }

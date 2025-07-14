@@ -2,6 +2,7 @@
 COMMIT_MSG.txt
 COMMIT_MSG_STASH.txt
 
+.specstory
 *claude.md
 *o3.md 
 *gem25p.md

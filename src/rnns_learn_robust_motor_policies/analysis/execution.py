@@ -324,8 +324,6 @@ def run_analysis_module(
             db_session,
         )
 
-
-
     trial_specs = jt.map(get_validation_trial_specs, tasks, is_leaf=is_module)
 
     #! Currently, colorscales do not vary with the task variant or conditions, but are just determined by the 
