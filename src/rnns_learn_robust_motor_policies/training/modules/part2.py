@@ -26,7 +26,7 @@ TrainingMethodLabel: TypeAlias = L["bcs", "dai", "pai-asf", "pai-n"]
 
 
 # Separate this def by training method so that we can multiply by `field_std` in the "pai-asf" case,
-# without it affecting the context input. That is, in all three cases `field_std` is a factor of 
+# without it affecting the SISU. That is, in all three cases `field_std` is a factor of 
 # the actual field strength, but in `"bcs"` and `"dai"` it is multiplied by the 
 # `scale` parameter, which is not seen by the network in those cases; and in `"pai-asf"` it is
 # multiplied by the `field` parameter, which is not seen by the network in that case. 
@@ -69,8 +69,8 @@ disturbance_active: LDict[str, Callable] = LDict.of("train__method")({
 })
 
 
-# Define how the network's context input will be determined from the trial specs, to which it is then added
-CONTEXT_INPUT_FUNCS = LDict.of("train__method")({
+# Define how the network's SISU will be determined from the trial specs, to which it is then added
+SISU_FUNCS = LDict.of("train__method")({
     "bcs": lambda trial_specs, key: trial_specs.intervene[PLANT_INTERVENOR_LABEL].active.astype(float),
     "dai": lambda trial_specs, key: get_field_amplitude(trial_specs.intervene[PLANT_INTERVENOR_LABEL]),
     "pai-asf": lambda trial_specs, key: trial_specs.intervene[PLANT_INTERVENOR_LABEL].scale,
@@ -88,7 +88,7 @@ P_PERTURBED = LDict.of("train__method")({
 """Either scale the field strength by a constant std, or sample the std for each trial.
 
 Note that in the `"pai-asf"` case the actual field amplitude is still scaled by `field_std`, 
-but this is done in `disturbance_params` so that the magnitude of the context input 
+but this is done in `disturbance_params` so that the magnitude of the SISU 
 is the same on average between the `"dai"` and `"pai-asf"` methods.
 """
 SCALE_FUNCS = LDict.of("train__method")({
@@ -139,7 +139,7 @@ def setup_task_model_pair(
     models_base = jtree.get_ensemble(
         point_mass_nn,
         task_base,
-        n_extra_inputs=1,  # Contextual input
+        n_extra_inputs=1,  # for SISU
         n=hps_train.model.n_replicates,
         dt=hps_train.model.dt,
         mass=MASS,
@@ -154,8 +154,8 @@ def setup_task_model_pair(
     
     try:
         task = task_base.add_input(
-            name="context", 
-            input_fn=CONTEXT_INPUT_FUNCS[hps_train.method],
+            name="sisu", 
+            input_fn=SISU_FUNCS[hps_train.method],
         )
     except AttributeError:
         raise ValueError("No training method label assigned to hps_train.method")

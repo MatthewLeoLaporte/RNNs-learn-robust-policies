@@ -50,8 +50,8 @@ from rnns_learn_robust_motor_policies.types import (
 
 
 COLOR_FUNCS = dict(
-    context_input=ColorscaleSpec(
-        sequence_func=lambda hps: hps.context_input,
+    sisu=ColorscaleSpec(
+        sequence_func=lambda hps: hps.sisu,
         colorscale="thermal",
     ),
 )
@@ -96,13 +96,13 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
         is_leaf=is_module,
     )
     
-    # Also vary tasks by context input
-    tasks = LDict.of("context_input")({
-        context_input: jt.map(
+    # Also vary tasks by SISU
+    tasks = LDict.of('sisu')({
+        sisu: jt.map(
             lambda task: task.add_input(
-                name="context",
+                name="sisu",
                 input_fn=get_constant_task_input_fn(
-                    context_input, 
+                    sisu, 
                     hps.model.n_steps - 1, 
                     task.n_validation_trials,
                 ),
@@ -110,7 +110,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
             tasks_by_amp,
             is_leaf=is_module,
         )
-        for context_input in hps.context_input
+        for sisu in hps.sisu
     })
     
     # The outer levels of `models` have to match those of `tasks`

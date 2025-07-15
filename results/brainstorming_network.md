@@ -4,15 +4,15 @@ updated: 2024-11-12T15:55
 ---
 ## Unit perturbations and tuning
 
-- Change in unit gains with value of context input
+- Change in unit gains with value of SISU
 ### Feedback gains
 
-How do the individual units change their responses to a feedback impulse when the context input changes?
+How do the individual units change their responses to a feedback impulse when the SISU changes?
 
 What happens if we send sensory feedback to only a subset of network units?
 
 - Do more-robust networks have stronger weights between these units, and the rest of the network? 
-- Does increasing the context input, increase the effective gains between these units and the rest of the network? 
+- Does increasing the SISU, increase the effective gains between these units and the rest of the network? 
 
 If we perturb these units individually, and we also ensure that there is no direct readout from them, then any effect on the output must be through other units in the network.
 
@@ -26,15 +26,15 @@ How robust are hidden trajectories to unit perturbations?
 
 ## Fixed points
 
-- Interpolating the goals-goals and inits-goals manifolds across context inputs
+- Interpolating the goals-goals and inits-goals manifolds across SISUs
 - Do fixed points change location in state space?
-- Do attractors steepen with increasing context input?
+- Do attractors steepen with increasing SISU?
 
 ### Linearization
 
 Compute the Jacobians.
 
-- Vmap over reach conditions and context inputs – though figures will only be over context inputs
+- Vmap over reach conditions and SISUs – though figures will only be over SISUs
 
 #### Eigenspectra of Jacobians
 
@@ -90,5 +90,5 @@ Because $\lVert \mathbf{x}(t) \rVert$ cannot be small for an RNN, then by contro
 e.g. as measured by number of PCs needed to reconstruct X% of the output.
 
 - Does training on perturbations (vs. not) affect the dimensionality?
-- Does the context input?
+- Does the SISU?
 

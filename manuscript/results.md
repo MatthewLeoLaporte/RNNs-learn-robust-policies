@@ -85,7 +85,7 @@ As on NCM poster. **Was this with or without a mechanical perturbation?** We sho
 
 ### Unit stimulation
 
-
+See [[Neural tuning#Context-dependence of unit stimulation effects]].
 
 ## Supplementary: Adaptation versus robustness
 

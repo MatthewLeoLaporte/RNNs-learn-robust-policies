@@ -151,6 +151,7 @@ def train_and_save_models(
     postprocess: bool = True,
     n_std_exclude: int = 2,  # re: postprocessing
     save_figures: bool = True,  # re: postprocessing
+    version_info: Optional[dict] = None,
     *,
     key: PRNGKeyArray,
 ):
@@ -160,10 +161,7 @@ def train_and_save_models(
     indicates which training experiment to run. 
     """
     db_session = get_db_session()
-    
-    version_info = log_version_info(
-        jax, eqx, optax, git_modules=(feedbax, rnns_learn_robust_motor_policies),
-    )
+
     
     key_init, key_train, key_eval = jr.split(key, 3)
 

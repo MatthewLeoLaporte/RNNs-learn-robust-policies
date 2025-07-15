@@ -36,7 +36,7 @@ Demonstrate that in terms of measures, the models trained on perturbations are a
 
 The maximum control forces tend to increase with robustness, but often the sum of overall forces decreases. 
 
-For example, consider these plots of the max and sum net control force, across changing context input, for models trained on curl fields, and evaluated on amplitude 2 curl fields:
+For example, consider these plots of the max and sum net control force, across changing SISU, for models trained on curl fields, and evaluated on amplitude 2 curl fields:
 
 ![[file-20241128121846572.png]]
 
@@ -71,11 +71,11 @@ See [[Neural tuning#Mechanical perturbation at steady state|here]]. Basically,
 
 1. Manipulate environmental unpredictability as an analogue of the unpredictability signal.
 2. Measure baseline force direction preferences in a center-out reaching task, or during center-out perturbation of a postural stabilization task.
-3. Measure activity after a fixed perturbation, across unpredictability contexts.
+3. Measure activity after a fixed perturbation, across SU / SISU.
 
 #### In response to feedback perturbations
 
-Do a visual perturbation, e.g. a target jump, and examine the magnitude of neural responses across unpredictability contexts. 
+Do a visual perturbation, e.g. a target jump, and examine the magnitude of neural responses across SISU.
 
 This is related to the [[#Scaling of input-driving|next section]]. Perhaps it belongs there?
 

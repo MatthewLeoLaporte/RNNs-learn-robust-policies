@@ -34,7 +34,7 @@ from rnns_learn_robust_motor_policies.tree_utils import take_replicate
 from rnns_learn_robust_motor_policies.types import TreeNamespace
 from rnns_learn_robust_motor_policies.types import LDict
 from rnns_learn_robust_motor_policies.analysis.fps_tmp import (
-    SteadyStateFPs,
+    NNSteadyStateFPs,
     SteadyStateJacobians,
     JacobianEigenspectra,
     FPsInPCSpace,
@@ -54,18 +54,18 @@ def setup_eval_tasks_and_models(task_base: Module, models_base: LDict[float, Mod
     This is similar to `feedback_perts`, but without an impulse.
     """
     all_tasks, all_models, all_hps = jtree.unzip(
-        LDict.of("context_input")({
-            context_input: (
+        LDict.of('sisu')({
+            sisu: (
                 task_base.add_input(
-                    name="context",
+                    name="sisu",
                     input_fn=get_constant_input_fn(
-                        context_input, hps.model.n_steps, task_base.n_validation_trials,
+                        sisu, hps.model.n_steps, task_base.n_validation_trials,
                     ),
                 ),
                 models_base,  
-                hps | dict(context_input=context_input),
+                hps | dict(sisu=sisu),
             )
-            for context_input in hps.context_input
+            for sisu in hps.sisu
         })
     )
     # Provides any additional data needed for the analysis
@@ -94,7 +94,7 @@ DEPENDENCIES = {
 }
 
 
-# State PyTree structure: ['context_input', 'train__pert__std']
+# State PyTree structure: ['sisu', 'train__pert__std']
 # Array batch shape: (evals, replicates, reach conditions)
 ANALYSES = {
     "fps_in_pc_space": FPsInPCSpace(custom_inputs=dict(pca_results="states_pca")),

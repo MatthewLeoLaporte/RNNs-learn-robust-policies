@@ -206,7 +206,7 @@ def end_position_error(pos, eval_reach_length=1, last_n_steps=10):
 def get_measures_to_rate(model, task, hps):
     states = vmap_eval_ensemble(jr.PRNGKey(0), hps, model, task)
 
-    origins, directions = get_reach_origins_directions(task, hps)
+    origins, directions = get_reach_origins_directions(task, model, hps)
     aligned_pos = get_aligned_vars(
         states.mechanics.effector.pos - origins[..., None, :],
         directions,
@@ -630,7 +630,8 @@ def process_model_post_training(
             hps | dict(n_std_exclude=n_std_exclude, postprocessed=True),
             train_history=train_histories,
             replicate_info=replicate_info,
-            version_info=log_version_info(jax, eqx),
+            # Assume we want to keep the version info from training, not post-training
+            version_info=model_record.version_info,  
         )
         
     except Exception as e:
@@ -660,7 +661,7 @@ def process_model_post_training(
         )
     
     session.commit()
-    logger.info(f"Processed model {model_record.hash}")
+    logger.info(f"Post-training processing finished for model {model_record.hash}")
     
     
 def main(

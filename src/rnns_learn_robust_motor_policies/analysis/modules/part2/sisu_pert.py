@@ -1,4 +1,4 @@
-"""What happens if we change the network's context input, at steady state or during a reach?
+"""What happens if we change the network's sisu input, at steady state or during a reach?
 """
 
 import equinox as eqx
@@ -18,20 +18,20 @@ from rnns_learn_robust_motor_policies.types import LDict
 
 
 COLOR_FUNCS = dict(
-    # pert__amp=lambda hps: [final - hps.pert.context.init for final in hps.pert.context.final],
-    # context_input=lambda hps: [final - hps.pert.context.init for final in hps.pert.context.final],
-    pert__context__amp=ColorscaleSpec(
-        sequence_func=lambda hps: [final - hps.pert.context.init for final in hps.pert.context.final],
+    # pert__amp=lambda hps: [final - hps.pert.sisu.init for final in hps.pert.sisu.final],
+    # sisu=lambda hps: [final - hps.pert.sisu.init for final in hps.pert.sisu.final],
+    pert__sisu__amp=ColorscaleSpec(
+        sequence_func=lambda hps: [final - hps.pert.sisu.init for final in hps.pert.sisu.final],
         colorscale="thermal",
     ),
 )
 
 
 def setup_eval_tasks_and_models(task_base, models_base, hps):
-    """Modify the task so that context inputs vary over trials.
+    """Modify the task so that SISU varies over trials.
     
     Note that this is a bit different to how we perturb state variables; normally we'd use an intervenor 
-    but since the context input is supplied by the task, we can just change the way that's defined.
+    but since the SISU is supplied by the task, we can just change the way that's defined.
     """
     plant_disturbance = PLANT_PERT_FUNCS[hps.pert.plant.type]
     
@@ -44,23 +44,23 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
         label=PLANT_INTERVENOR_LABEL,
     )
     
-    #! Neither `pert__amp` nor `context__input` are entirely valid as labels here, I think
-    tasks, models, hps = jtree.unzip(LDict.of("pert__context__amp")({
-        context_final: (
+    #! Neither `pert__amp` nor `sisu` are entirely valid as labels here, I think
+    tasks, models, hps = jtree.unzip(LDict.of("pert__sisu__amp")({
+        sisu_final: (
             task_base.add_input(
-                name="context",
+                name="sisu",
                 input_fn=get_step_task_input_fn(
-                    hps.pert.context.init, 
-                    context_final,
-                    hps.pert.context.step,  
+                    hps.pert.sisu.init, 
+                    sisu_final,
+                    hps.pert.sisu.step,  
                     hps.model.n_steps - 1, 
                     task_base.n_validation_trials,
                 ),
             ),
             models_base, 
-            hps | dict(pert=dict(amp=context_final - hps.pert.context.init)),
+            hps | dict(pert=dict(amp=sisu_final - hps.pert.sisu.init)),
         )
-        for context_final in hps.pert.context.final
+        for sisu_final in hps.pert.sisu.final
     }))
     
     return tasks, models, hps, None
@@ -76,7 +76,7 @@ PLANT_PERT_STYLES = dict(line_dash={0: "dot", 1: "solid"})
 ANALYSES = {
     "effector_trajectories_steady": (
         # -- Steady-state --
-        # 0. Show that context perturbation does not cause a significant change in force output at steady-state.
+        # 0. Show that SISU perturbation does not cause a significant change in force output at steady-state.
         EffectorTrajectories(
             variant="steady",
             pos_endpoints=False,
@@ -87,7 +87,7 @@ ANALYSES = {
             .after_transform(get_best_replicate)  # By default has `axis=1` for replicates
             .with_fig_params(
                 mean_exclude_axes=(-3,),  # Average over all extra batch axes *except* reach direction/condition
-                legend_title="Context<br>pert. amp.",
+                legend_title="SISU<br>pert. amp.",
             )
     ),
 
@@ -109,23 +109,23 @@ ANALYSES = {
     # ),
 
     "network_activity_steady": (
-        # 1. Activity of sample units, to show they change when context input does
+        # 1. Activity of sample units, to show they change when SISU does
         NetworkActivity_SampleUnits(variant="steady")
             .after_transform(get_best_replicate)
             .after_level_to_top('train__pert__std')
             .with_fig_params(
-                legend_title="Context pert. amp.",  #! No effect
+                legend_title="SISU pert. amp.",  #! No effect
             )
     ),
 
     "aligned_trajectories_reach": (
         # -- Reaching --
-        # 2. Plot aligned vars for reaching +/- plant pert, +/- context pert on same plot
+        # 2. Plot aligned vars for reaching +/- plant pert, +/- SISU pert on same plot
         # (It only makes sense to do this for reaches (not ss), at least for curl fields.)
         # Hide individual trials for this plot, since they make it hard to distinguish the means;
         # the variability should be clear from other plots. 
         AlignedEffectorTrajectories(variant="reach")
-            .after_stacking(level="pert__context__amp")
+            .after_stacking(level="pert__sisu__amp")
             .combine_figs_by_axis(
                 axis=3,  # Not 2, because of the prior stacking
                 fig_params_fn=lambda fig_params, i, item: dict(
@@ -137,7 +137,7 @@ ANALYSES = {
                 ),
             )
             .with_fig_params(
-                legend_title="Final context<br>input",
+                legend_title="Final SISU",
                 scatter_kws=dict(line_width=0),  # Hide individual trials
                 layout_kws=dict(
                     legend_title_font_weight="bold",
@@ -170,7 +170,7 @@ ANALYSES = {
 
     # "network_activity_project_pca": (
     #     # 4. Perform PCA wrt baseline `reach` variant, and project `steady` variant into that space
-    #     # (To show that context input causally varies the network activity in a null direction)
+    #     # (To show that SISU causally varies the network activity in a null direction)
     #     NetworkActivity_ProjectPCA(
     #         variant="steady", 
     #         variant_pca="reach_pca",

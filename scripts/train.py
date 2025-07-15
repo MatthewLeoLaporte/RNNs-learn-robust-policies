@@ -8,6 +8,15 @@ Takes a single positional argument: the path to the YAML config.
 
 import os
 
+import equinox as eqx
+import jax
+import optax
+
+import feedbax
+
+import rnns_learn_robust_motor_policies
+from rnns_learn_robust_motor_policies.misc import log_version_info
+
 
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
@@ -30,7 +39,7 @@ if __name__ == '__main__':
     parser.add_argument("--n-std-exclude", type=int, default=2, help="In postprocessing, exclude model replicates with n_std greater than this value.")
     parser.add_argument("--save-figures", action='store_true', help="Save figures in postprocessing.")
     parser.add_argument("--seed", type=int, default=None, help="Random seed for the training.")
-    parser.add_argument("--show-duplicate-warnings", action="store_false",
+    parser.add_argument("--show-duplicate-warnings", action="store_true",
                         help="If set, all occurrences of each distinct warning message are shown.")
     
     args = parser.parse_args()
@@ -44,6 +53,10 @@ if __name__ == '__main__':
     else:
         key = jr.PRNGKey(args.seed)
 
+    version_info = log_version_info(
+        jax, eqx, optax, git_modules=(feedbax, rnns_learn_robust_motor_policies),
+    )
+    
     hps = load_hps(args.expt_name, config_type='training')
     
     trained_models, train_histories, model_records = train_and_save_models(
@@ -53,5 +66,6 @@ if __name__ == '__main__':
         postprocess=args.postprocess,
         n_std_exclude=args.n_std_exclude,
         save_figures=args.save_figures,
+        version_info=version_info,
         key=key,
     )

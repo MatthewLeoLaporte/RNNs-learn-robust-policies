@@ -83,21 +83,21 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     #     is_leaf=is_module,
     # )
 
-    # Generate tasks with different context inputs
+    # Generate tasks with different SISU
     # TODO: Ideally we'd just `tree_at` or `vmap` a single instance, instead of constructing a whole PyTree of them
     all_tasks, all_models, all_hps = jtree.unzip(jt.map(
-        lambda task, models, hps: LDict.of("context_input")({
-            context_input: (
+        lambda task, models, hps: LDict.of('sisu')({
+            sisu: (
                 task.add_input(
-                    name="context",
+                    name="sisu",
                     input_fn=get_constant_input_fn(
-                        context_input, hps.model.n_steps, task.n_validation_trials,
+                        sisu, hps.model.n_steps, task.n_validation_trials,
                     ),
                 ),
                 models,  
-                hps | dict(context_input=context_input),
+                hps | dict(sisu=sisu),
             )
-            for context_input in hps.context_input
+            for sisu in hps.sisu
         }),
         all_tasks,
         all_models,
@@ -207,7 +207,7 @@ def measures_fig_params_fn(fig_params, i, item):
     return fig_params
 
 
-# State PyTree structure: ['pert__var', 'context_input', 'train__pert__std']
+# State PyTree structure: ['pert__var', 'sisu', 'train__pert__std']
 # Array batch shape: (evals, replicates, impulse amplitudes, reach conditions)
 ANALYSES = {
     # "effector_trajectories": (
@@ -264,7 +264,7 @@ ANALYSES = {
         .after_indexing(1, -2, axis_label='pert__amp') 
         .map_figs_at_level('train__pert__std')
         .with_fig_params(
-            # legend_title="Context",
+            # legend_title="SISU",
             layout_kws=dict(
                 width=500,
                 height=300,
@@ -288,7 +288,7 @@ ANALYSES = {
             fig_params_fn=measures_fig_params_fn,
         )
         .with_fig_params(
-            legend_title="Context",
+            legend_title="SISU",
             xaxis_title="Feedback impulse amplitude",
             violinmode="group",
         )

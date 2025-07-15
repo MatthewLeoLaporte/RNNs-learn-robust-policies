@@ -43,8 +43,8 @@ from rnns_learn_robust_motor_policies.types import (
 
 
 COLOR_FUNCS = dict(
-    context_input=ColorscaleSpec(
-        sequence_func=lambda hps: hps.context_input,
+    sisu=ColorscaleSpec(
+        sequence_func=lambda hps: hps.sisu,
         colorscale="thermal",
     ),
     stim_amp=ColorscaleSpec(
@@ -129,13 +129,13 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
         is_leaf=is_module,
     )
     
-    # Also vary tasks by context input
-    tasks = LDict.of("context_input")({
-        context_input: jt.map(
+    # Also vary tasks by SISU
+    tasks = LDict.of('sisu')({
+        sisu: jt.map(
             lambda task: task.add_input(
-                name="context",
+                name="sisu",
                 input_fn=get_constant_task_input_fn(
-                    context_input, 
+                    sisu, 
                     hps.model.n_steps - 1, 
                     task.n_validation_trials,
                 ),
@@ -143,7 +143,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
             tasks_by_amp,
             is_leaf=is_module,
         )
-        for context_input in hps.context_input
+        for sisu in hps.sisu
     })
     
     # The outer levels of `models` have to match those of `tasks`
@@ -250,8 +250,8 @@ MEASURE_KEYS = (
 PLANT_PERT_LABELS = {0: "no curl", 1: "curl"}
 PLANT_PERT_STYLES = dict(line_dash={0: "dot", 1: "solid"})
 
-CONTEXT_LABELS = {0: -2, 1: 0, 2: 2}
-CONTEXT_STYLES = dict(line_dash={0: "dot", 1: "dash", 2: "solid"})
+SISU_LABELS = {0: -2, 1: 0, 2: 2}
+SISU_STYLES = dict(line_dash={0: "dot", 1: "dash", 2: "solid"})
 
 UNIT_STIM_IDX = 1
 
@@ -422,7 +422,7 @@ DEPENDENCIES = {
 }
 
     
-# PyTree structure: [context_input, pert__amp, train__pert__std]
+# PyTree structure: [sisu, pert__amp, train__pert__std]
 # Array batch shape: [stim_amp, unit_idx, eval, replicate, condition]
 ANALYSES = {
     "unit_stim_profiles": (
@@ -441,13 +441,13 @@ ANALYSES = {
         # .after_indexing(0, 1, axis_label="stim_amp")  #! Only make figures for unit stim condition
         .after_unstacking(0, 'stim_amp', above_level='pert__amp')
         .after_transform(rearrange_profile_vars, dependency_name="vars")  # Plot pert amp. on same figure
-        .combine_figs_by_level(  # Also plot context inputs on same figure, with different line styles
-            level='context_input',
+        .combine_figs_by_level(  # Also plot SISU on same figure, with different line styles
+            level='sisu',
             fig_params_fn=lambda fig_params, i, item: dict(
                 scatter_kws=dict(
-                    line_dash=CONTEXT_STYLES['line_dash'][i],
-                    legendgroup=CONTEXT_LABELS[i],
-                    legendgrouptitle_text=f"SISU: {CONTEXT_LABELS[i]}",
+                    line_dash=SISU_STYLES['line_dash'][i],
+                    legendgroup=SISU_LABELS[i],
+                    legendgrouptitle_text=f"SISU: {SISU_LABELS[i]}",
                 ),
             ),
         )

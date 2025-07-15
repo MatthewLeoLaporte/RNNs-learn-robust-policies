@@ -36,7 +36,7 @@ class ColorscaleSpec(NamedTuple):
 COLORSCALES: dict[str, Union[str, Sequence[str], Sequence[tuple]]] = dict(
     train__pert__std='viridis',
     pert__amp='plotly3',
-    context_input='thermal',
+    sisu='thermal',
     pert_var=plc.qualitative.D3,  # list[str]
     reach_condition='phase',
     replicate='twilight',
@@ -50,12 +50,12 @@ Values are hyperparameter where-functions so we can try to load them one-by-one.
 """
 COMMON_COLOR_SPECS = {
     k: ColorscaleSpec(func) for k, func in dict(
-        # context_input= 
+        # sisu= 
         pert__amp=lambda hps: hps.pert.amp,
         train__pert__std=lambda hps: hps.train.pert.std,
         # pert_var=  #? 
         #  reach_condition=  #? 
-        context_input=lambda hps: hps.context_input,
+        sisu=lambda hps: hps.sisu,
         trial=lambda hps: range(hps.eval_n),
     ).items()
 }

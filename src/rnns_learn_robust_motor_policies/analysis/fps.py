@@ -49,7 +49,7 @@ def get_endpoint_positions(task):
 def get_initial_network_inputs(task):
     trials = task.validation_trials
     return jnp.concatenate([
-        trials.inputs['context'][..., None],
+        trials.inputs['sisu'][..., None],
         trials.inputs['effector_target'].pos,
         trials.inputs['effector_target'].vel,
     ], axis=-1)[:, 0, :]  # Index the first time step

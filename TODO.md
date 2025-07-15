@@ -5,7 +5,7 @@
 
 ## Next
 
-- [ ] [[TODO-analysis#Influence of context input on network dynamics]]
+- [ ] [[TODO-analysis#Influence of SISU on network dynamics]]
 - [ ] [[TODO-analysis#Variation in effective direction, over a reach]]
 - [ ] [[TODO-analysis#Individual unit ablation]]
 
@@ -152,7 +152,7 @@ Out of [[methods#Training methods|these]].
 
 #### Current state 
 
-- BCS is in some ways the best for constant fields, as behaviour is approximately the same across training stds, for context input 0
+- BCS is in some ways the best for constant fields, as behaviour is approximately the same across training stds, for SISU 0
 - BCS does not even work for curl fields
 - DAI works in both cases, but the results show the worst spread of robust behaviour, probably because the network has little uncertainty about how perturbed it will be
 - PAI works in both cases, but appears to be [[2024-12-13#PhD|inducing]] a bias/adaptation in the curl field case.

@@ -29,8 +29,8 @@ task:  # Passed to the base task constructor
   #   eval_n_directions: 7
 
 pert:
-  context:
-    # Timestep of context input step 
+  sisu:
+    # Timestep of SISU step 
     step: 10
     # Values pre and post step
     init: 0  

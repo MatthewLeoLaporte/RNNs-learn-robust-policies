@@ -2,14 +2,14 @@
 created: 2024-11-08T11:02
 updated: 2024-11-08T11:36
 ---
-## Training networks with contextual inputs
+## Training networks with SISU
 
 - [x] Some loss plots
 
 ## Plant perturbations
 
-Show that changing the context input controls the robustness of the behaviour.
-### Aligned trajectories, varying the context input
+Show that changing the SISU controls the robustness of the behaviour.
+### Aligned trajectories, varying the SISU
 
 #### Trained and evaluated on curl fields, no delay
 
@@ -22,23 +22,23 @@ Evaluation curl fields have amplitude 2.
 
 ###### Train std. 0.5
 
-As with PAI-ASF, at context -3 we have some unrobust behaviour even in the absence of curl.
+As with PAI-ASF, at SISU -3 we have some unrobust behaviour even in the absence of curl.
 ![[file-20241214105913680.png]]
 ![[file-20241214105953597.png]]
 
 ###### Train std 1.0
 
-The “hyperrobust” oscillations in control force show up much earlier and more clearly than in PAI-ASF. However, unlike PAI-ASF, there are no strange oscillations in the control for for context 2+
+The “hyperrobust” oscillations in control force show up much earlier and more clearly than in PAI-ASF. However, unlike PAI-ASF, there are no strange oscillations in the control for for SISU 2+
 
 ![[file-20241214110010210.png]]
 
 ###### Train std. 1.5
 
-The hyperrobust behaviour at high context inputs disappears.
+The hyperrobust behaviour at high SISUs disappears.
 ![[file-20241214110058954.png]]
-###### Comparison of -2, 0, and 2 context input trajectories, across train stds
+###### Comparison of -2, 0, and 2 SISU trajectories, across train stds
 
-Compared to PAI-ASF, the spread between train stds is somewhat more similar comparing context inputs.
+Compared to PAI-ASF, the spread between train stds is somewhat more similar comparing SISUs.
 
 ![[file-20241214110229948.png]]
 ![[file-20241214110238678.png]]
@@ -50,12 +50,12 @@ Compared to PAI-ASF, the spread between train stds is somewhat more similar comp
 > This section has disturbance amplitude 4
 
 
-- At low field std (0.4), even very high values of the context input do not induce the network to be robust to the amp 4 curl field. Perhaps this makes sense if we consider that the network never 
-- Increasing the context input increases the magnitude of the control forces, as expected
+- At low field std (0.4), even very high values of the SISU do not induce the network to be robust to the amp 4 curl field. Perhaps this makes sense if we consider that the network never 
+- Increasing the SISU increases the magnitude of the control forces, as expected
 - The control force trajectories at intermediate std look pretty similar to [[results-1#^compare-curl-train-aligned|those]] for the part 1 networks
-- The context input 0 condition does not look identical to the baseline network condition from part 1; it looks smoother, probably because the network is more robust overall, even when it is not given to expect a disturbance, whereas the baseline network was not exposed to perturbations during training at all
-- With increasing context input, the behaviour seems to asymptotically converge on a “most robust” achievable trajectory, which becomes more robust with increasing field std. 
-- With increasing std, *everything* becomes relatively more robust – so while the negative context inputs remain “less robust” than the zero context input for that training condition, they may be more robust than the zero context input for a weaker training condition (for example)
+- The SISU 0 condition does not look identical to the baseline network condition from part 1; it looks smoother, probably because the network is more robust overall, even when it is not given to expect a disturbance, whereas the baseline network was not exposed to perturbations during training at all
+- With increasing SISU, the behaviour seems to asymptotically converge on a “most robust” achievable trajectory, which becomes more robust with increasing field std. 
+- With increasing std, *everything* becomes relatively more robust – so while the negative SISUs remain “less robust” than the zero SISU for that training condition, they may be more robust than the zero SISU for a weaker training condition (for example)
 - The relationship starts to break down around std 2.0
 
 Std 0.4
@@ -71,7 +71,7 @@ Std 1.6
 Std 2.0
 ![[file-20241126114358068.png]]
 
-###### Comparison of -2, 0, and 2 context input trajectories, across train stds
+###### Comparison of -2, 0, and 2 SISU trajectories, across train stds
 
 ![[file-20241126121811342.png]]
 ![[file-20241126121822102.png]]
@@ -81,29 +81,30 @@ Std 2.0
 
 This makes it clearer that 
 
-- hyperrobustness does not occur with this training method, and in fact not much happens when we increase the context above 1;
-- there is significant variation in robustness for different train stds, at context 0 (compare this to the PAI method below, where stds up to 1.2 are all pretty similar for context 0)
+- hyperrobustness does not occur with this training method, and in fact not much happens when we
+  increase the SISU above 1;
+- there is significant variation in robustness for different train stds, at SISU 0 (compare this to the PAI method below, where stds up to 1.2 are all pretty similar for SISU 0)
 
-Context -2
+SISU -2
 ![[file-20241128111504513.png]]
-Context 0
+SISU 0
 ![[file-20241128111521393.png]]
-Context 1
+SISU 1
 ![[file-20241128111543963.png]]
-Context 2
+SISU 2
 ![[file-20241128111610673.png]]
 
 ##### Trained with PAI-ASF
 
-- The position trajectories for zero-context look reasonably similar to [[results-1#^compare-curl-train-aligned|those]] from part 1
+- The position trajectories for SISU 0 look reasonably similar to [[results-1#^compare-curl-train-aligned|those]] from part 1
 
 ###### Train std. 0.0
 
-If train std is 0.0, there is only a slight difference in behaviour as context input changes, presumably because the context input is still driving a small change in network dynamics.
+If train std is 0.0, there is only a slight difference in behaviour as SISU changes, presumably because the SISU is still driving a small change in network dynamics.
 ![[file-20241214103416783.png]]
 ###### Train std 0.5
 
-Even in the absence of curl, context -3 shows some unrobust behaviour
+Even in the absence of curl, SISU -3 shows some unrobust behaviour
 
 ![[file-20241214103643630.png]]
 Versus at curl 2
@@ -112,12 +113,12 @@ Versus at curl 2
 ![[file-20241214103844637.png]]
 ###### Train std 1.5
 
-Note that at higher contexts, the control force starts oscillating, but that this does not appear to affect performance *on average*.
+Note that at higher SISU, the control force starts oscillating, but that this does not appear to affect performance *on average*.
 ![[file-20241214103938075.png]]
-###### Comparison of -2, 0, and 2 context input trajectories, across train stds
+###### Comparison of -2, 0, and 2 SISU trajectories, across train stds
 
-- Context input -2 is the most similar across stds. 
-- Context 0 shows a spread, suggesting the entire network learns to be more robust regardless of context input
+- SISU -2 is the most similar across stds. 
+- SISU 0 shows a spread, suggesting the entire network learns to be more robust regardless of SISU
 
 ![[file-20241214104101160.png]]
 ![[file-20241214104116202.png]]
@@ -130,8 +131,8 @@ Note that at higher contexts, the control force starts oscillating, but that thi
 TODO.
 ##### Trained with DAI
 
-- As in the non-delayed case, there is a kind of asymptotic effect with the context input, and the achievable robustness depends on the train std
-- Very high values of the context input can smooth out the oscillations, but do not seem to be able to decrease the lateral deviations beyound some bound, even as the train std is increased to the point that things because absolutely unstable
+- As in the non-delayed case, there is a kind of asymptotic effect with the SISU, and the achievable robustness depends on the train std
+- Very high values of the SISU can smooth out the oscillations, but do not seem to be able to decrease the lateral deviations beyound some bound, even as the train std is increased to the point that things because absolutely unstable
 
 Std 0.4
 ![[file-20241126135507506.png]]
@@ -140,13 +141,13 @@ Std 0.4
 Std 0.8
 ![[file-20241126135524479.png]]
 
-The highest context input here is particular interesting
+The highest SISU here is particular interesting
 ![[file-20241126135809600.png]]
 
 Std 1.2
 ![[file-20241126135617359.png]]
 
-###### Comparison of -2, 0, and 1 context input trajectories, across train stds
+###### Comparison of -2, 0, and 1 SISU trajectories, across train stds
 
 Something weird happens before train std 2.
 
@@ -158,7 +159,7 @@ Something weird happens before train std 2.
 
 TODO.
 
-###### Comparison of -2, 0, and 1 context input trajectories, across train stds
+###### Comparison of -2, 0, and 1 SISU trajectories, across train stds
 
 TODO.
 
@@ -179,7 +180,7 @@ This was less obvious to me than with curl fields.
 ![[file-20241216103238833.png]]
 ![[file-20241216103250619.png]]
 ![[file-20241216103301681.png]]
-###### Comparison of -2, 0, 2 context input trajectories, across train stds
+###### Comparison of -2, 0, 2 SISU trajectories, across train stds
 
 -2, No perturbation: 
 ![[file-20241216103339839.png]]
@@ -203,7 +204,7 @@ This was less obvious to me than with curl fields.
 ![[file-20241216104506681.png]]
 ![[file-20241216104513355.png]]
 
-###### Comparison of -2, 0, 1, 2 context input trajectories, across train stds
+###### Comparison of -2, 0, 1, 2 SISU trajectories, across train stds
 ![[file-20241216104650490.png]]
 ![[file-20241216104700020.png]]
 ![[file-20241216104741439.png]]
@@ -213,7 +214,7 @@ This was less obvious to me than with curl fields.
 
 #### Trained and evaluated on curl fields, no delay
 
-- The max forward force is ~identical both with and without evaluation curl. This suggests an initial open-loop difference in strategy due to context input.
+- The max forward force is ~identical both with and without evaluation curl. This suggests an initial open-loop difference in strategy due to SISU.
 
 ##### BCS-75
 ###### No disturbance
@@ -244,7 +245,7 @@ TODO.
 
 ## Feedback perturbations
 
-Likewise, show that changing the context input appears to change the feedback gains.
+Likewise, show that changing the SISU appears to change the feedback gains.
 
 ### Aligned trajectories
 
@@ -315,19 +316,19 @@ Very similar to the responses for position, except somewhat smaller forces.
 **Std 0.0**
 
 ![[file-20241201132111309.png]]
-The context inputs are slightly more separated here than they were for BCS, but only slightly.
+The SISUs are slightly more separated here than they were for BCS, but only slightly.
 
 ![[file-20241201132142649.png]]
 
 **Std 0.04**
 ![[file-20241201132252629.png]]
-The relationship in the orthogonal forces seems more ordered than in BCS, which is probably related to the extremely bounded (i.e. no hyper-robust) performance seen for DAI. Not that context 2 does not oscillate much more than the others.
+The relationship in the orthogonal forces seems more ordered than in BCS, which is probably related to the extremely bounded (i.e. no hyper-robust) performance seen for DAI. Not that SISU 2 does not oscillate much more than the others.
 
 ![[file-20241201132332929.png]]
 The same orderliness is also reflected in the positions:
 ![[file-20241201132534688.png]]
 
-These are a lot more similar than they are for BCS. There is higher variance for context -2, but it is not much worse than any of the other context inputs. 
+These are a lot more similar than they are for BCS. There is higher variance for SISU -2, but it is not much worse than any of the other SISUs. 
 ![[file-20241201132638777.png]]
 
 ###### Velocity feedback impulse
@@ -360,7 +361,7 @@ Again, usually very similar to position feedback impulse response.
 
 Note that the grey violins are the std 0.0 condition, which is being compared with one of the other conditions (1.0 amp curl, or 0.04 amp constant)
 
-- Baseline (train std 0.0) still sees some variation between context inputs — often at negative contexts. This is OK since the context input drives a network even that has not optimized to use it for anything, especially outside the range (0-1) that it was trained on. 
+- Baseline (train std 0.0) still sees some variation between SISUs — often at negative SISU. This is OK since the SISU drives a network even that has not optimized to use it for anything, especially outside the range (0-1) that it was trained on. 
 - [ ] When publishing these, generate the grey/baseline sets as separate figs, use `get_underlay_fig` to remove their axes etc, export to images, and then composite them as images
 
 #### Trained on curl fields
@@ -438,43 +439,43 @@ These FPs are for a set of center-out reaches.
 ##### DAI
 
 ##### PAI
-###### Context input 0, comparing 4 reach directions
+###### SISU 0, comparing 4 reach directions
 ![[plotly-20241212-141528]]
 
-###### Context input 1, comparing 4 reach directions
+###### SISU 1, comparing 4 reach directions
 ![[plotly-20241212-141647]]
 
-###### Comparison of context inputs for a single direction
+###### Comparison of SISUs for a single direction
 ![[plotly-20241212-142259]]
 
 #### Trained on curl fields, evaluated on amp. 2 curl field
 ##### DAI
-###### Context input 0, comparing 4 reach directions
+###### SISU 0, comparing 4 reach directions
 ![[plotly-20241212-134054]]
 
 ![[plotly-20241212-134110]]
 
-###### Comparing context inputs, for a single reach direction
+###### Comparing SISUs, for a single reach direction
 ![[plotly-20241212-134208]]
 
-###### Goals-goals and inits-goals FPs across context inputs
+###### Goals-goals and inits-goals FPs across SISUs
 ![[plotly-20241212-134339]]
 
 ##### PAI
 
-###### Context input 0, comparing 4 reach directions
+###### SISU 0, comparing 4 reach directions
 
 ![[plotly-20241212-132341]]
 ![[plotly-20241212-132845]]
 
-###### Context input 1, comparing 4 reach directions
+###### SISU 1, comparing 4 reach directions
 ![[plotly-20241212-132631]]
 ![[plotly-20241212-132812]]
 
 
-###### Comparison of context inputs for a single direction
+###### Comparison of SISUs for a single direction
 ![[plotly-20241212-133032]]
-###### Goals-goals and inits-goals FPs across context inputs
+###### Goals-goals and inits-goals FPs across SISUs
 ![[plotly-20241212-133252]]
 
 
@@ -509,18 +510,18 @@ This is for a grid of steady (i.e. goal-goal) state positions across the workspa
 
 ### Effect of delay on robustness scaling
 
-As we increase the feedback delay, how does the relationship between X and the context input change?
+As we increase the feedback delay, how does the relationship between X and the SISU change?
 
 Be decisive about what X is.
 
 ### Output correlations
 
-The readout norm will be fixed for each hybrid network; however, it may be the case that the output correlation (i.e. partitioning of activity between null and potent spaces) will vary with the context input. 
+The readout norm will be fixed for each hybrid network; however, it may be the case that the output correlation (i.e. partitioning of activity between null and potent spaces) will vary with the SISU. 
 
 Quantify this.
 
 ### Floor on control forces? Minimum work needed to complete task?
 
-This is for the zero-noise, curl amplitude 2 condition, trained on curls. Note that as we increase train std and context input, the integral over the absolute lateral forces bottoms out around 20. Is this because there is a minimum amount of work that is necessary to complete the task, under these conditions, which we are approaching by adopting a more robust strategy?
+This is for the zero-noise, curl amplitude 2 condition, trained on curls. Note that as we increase train std and SISU, the integral over the absolute lateral forces bottoms out around 20. Is this because there is a minimum amount of work that is necessary to complete the task, under these conditions, which we are approaching by adopting a more robust strategy?
 
 ![[file-20241128121329199.png]]

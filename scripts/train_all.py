@@ -134,7 +134,7 @@ if __name__ == '__main__':
     parser.add_argument("--n-std-exclude", type=int, default=2, help="In postprocessing, exclude model replicates with n_std greater than this value.")
     parser.add_argument("--save-figures", action='store_true', help="Save figures in postprocessing.")
     parser.add_argument("--seed", type=int, default=None, help="Random seed for the training.")
-    parser.add_argument("--show-duplicate-warnings", action="store_false",
+    parser.add_argument("--show-duplicate-warnings", action="store_true",
                         help="If set, all occurrences of each distinct warning message are shown.")
     args = parser.parse_args()
     
@@ -161,7 +161,7 @@ if __name__ == '__main__':
     configs = parse_batch_config(batch_config)
     
     if not args.expt_id == "":
-        configs = {args.expt_id: configs[args.expt_id]}      
+        configs = {args.expt_id: configs[args.expt_id]}    
     
     logger.info(f"Training models for experiments: {', '.join(str(s) for s in configs.keys())}")  
     
@@ -185,5 +185,6 @@ if __name__ == '__main__':
                 postprocess=args.postprocess,
                 n_std_exclude=args.n_std_exclude,
                 save_figures=args.save_figures,
+                version_info=version_info,
                 key=key,
             )

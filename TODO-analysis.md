@@ -1,11 +1,11 @@
 
-- [ ] Try training a significantly larger network in part 2 and see if the context 0 curves overlap more
+- [ ] Try training a significantly larger network in part 2 and see if the SISU 0 curves overlap more
 
 ### Behaviour 
 
 - [ ] See how much more robust the baseline model is in part 1, if we **decrease the weight on the control cost**. (Will also affect the time urgency.)
 	- My expectation is that it will of course increase the forces and decrease the movement duration, but that depending on the perturbation this will actually make it *less* robust (e.g. curl fields)
-- [ ] In part 2, what is the relationship between train std. and robustness, at a given context input? 
+- [ ] In part 2, what is the relationship between train std. and robustness, at a given SISU? 
 
 #### Measures
 
@@ -21,24 +21,24 @@
 > [!NOTE]
 > Using part 2 hybrid models, since otherwise there is no basis from comparison between more- and less-robust networks.
 
-#### Influence of context input on network dynamics 
+#### Influence of SISU on network dynamics 
 
-Module: `part2.context_pert`.
+Module: `part2.sisu_pert`.
 ##### Steady-state
 
-- [x] Run a steady-state trial and change the context input (but nothing else) midway through
-	- or, ramp the context input across the trial
+- [x] Run a steady-state trial and change the SISU (but nothing else) midway through
+	- or, ramp the SISU across the trial
 	- how does the activity change?
-	- does the point mass move? hopefully not, but the network was never trained with within-trial variation of the context
+	- does the point mass move? hopefully not, but the network was never trained with within-trial variation of SISU
 
 ##### Reaching
 
-Repeat `context_inputs` for reaching trials that are perturbed with a curl field; compare baseline optimal vs. robust to context-perturbed optimal vs. robust
+Repeat `sisu` for reaching trials that are perturbed with a curl field; compare baseline optimal vs. robust to context-perturbed optimal vs. robust
 
 ##### Interpretation
 
-When we perturb context input at steady-state, we observe that the unit activities change, but the point mass more or less does not move. 
-This suggests that the direct influence of the context input is in the null space of the network.
+When we perturb SISU at steady-state, we observe that the unit activities change, but the point mass more or less does not move. 
+This suggests that the direct influence of the SISU is in the null space of the network.
 
 When we perturb during a reach, the trajectories are altered and the point mass moves differently?
 
@@ -54,7 +54,7 @@ Module: `part2.unit_perts`.
 > [!NOTE] 
 > Also we can analyze these two individually at steady state, but the preferred directions on their own don’t tell us much.)
 > 
-> - [ ] **Do tuning curves get narrower** (i.e. do units become less active more quickly as they move away from their preferred direction?) with context input?
+> - [ ] **Do tuning curves get narrower** (i.e. do units become less active more quickly as they move away from their preferred direction?) with SISU?
 
 Here, our analysis is based on evaluation on two tasks.
 
@@ -76,7 +76,7 @@ Here, our analysis is based on evaluation on two tasks.
 
 - At steady state, perturb each unit in the network
 - Compare the direction of max acceleration, to the preferred direction of the same unit from 1. Note that the instantaneous preferences may not capture the unit-specific effects on recurrent processing, whereas unit perturbations should induce them.
-- Do the preferred & perturbed directions align more, for low vs. high context inputs? 
+- Do the preferred & perturbed directions align more, for low vs. high SISUs? 
 - Also can do other analyses on the perturbed responses...
 
 #### Variation in effective direction, over a reach 
@@ -103,14 +103,14 @@ Fix the activity of each unit to zero, in turn.
 - [ ] **Examine the loss curve over iterations of the fixed point optimization**
 	- Get an idea how quickly it converges, if this varies much between conditions, and if there is something to be understood about the FPs that (appear to) fail to converge
 	- possibly, plot the hidden state over the optimization, like I did once before (when I showed that the multiple FPs found by the algorithm were actually corresponding to a single FP, by allowing them to converge more)
-- [ ] Try to get rid of dislocations in fixed point trajectories (though they aren’t very bad except at context -2)
+- [ ] Try to get rid of dislocations in fixed point trajectories (though they aren’t very bad except at SISU -2)
 
 #### Translation (in)variance 
 
 - [x] Do fixed points vary with goal position (i.e. target input), or just with the difference between target and feedback inputs?
 	- for example, do the fixed points change if we translate the target and feedback position inputs in the same way?
 	- The “ring” of steady-state (“goal-goal”) FPs for simple reaching suggests this might be the case. 
-	- **They do vary.** The grid of steady-state FPS form a planar grid in the space of the top three PCs. As context input changes, this grid translates along an ~orthogonal direction. 
+	- **They do vary.** The grid of steady-state FPS form a planar grid in the space of the top three PCs. As SISU changes, this grid translates along an ~orthogonal direction. 
 	- **Should plot the readout vector** and see if the direction of translation is roughly aligned with it, which would make sense. 
 
 #### Steady-state FPs 
@@ -122,15 +122,15 @@ i.e. find steady-state FPs, then change the feedback input and see if the locati
 - [ ] As we increase the perturbation size, do the eigenvectors become aligned? Do they point in the direction in state space that would increase the readout in the corrective direction?
 - [ ] **Identify the most unstable eigenvectors. Which units have the strongest contribution?** If we perturb these units at steady state, versus some other randomly selected set of units, do we get a large “corrective” change in the network output?
 
-##### Variation with context input
+##### Variation with SISU
 
-- [ ] **How do the init-goal and goal-goal fixed point structures vary with context input?**
+- [ ] **How do the init-goal and goal-goal fixed point structures vary with SISU?**
 
 #### Steady-state Jacobian eigenspectra 
 
 - [ ] What are the “wing” eigenvalues, e.g. seen for the origin steady-state FP, in DAI+curl?
 	- Note that they seem to be the strongest oscillatory modes
-	- They become larger (i.e. decay more slowly) and higher-frequency with increasing context input 
+	- They become larger (i.e. decay more slowly) and higher-frequency with increasing SISU 
 	- They become relatively larger and higher-frequency when training on stronger field std.
 
 ##### Stimulation of Jacobian eigenvectors
@@ -138,7 +138,7 @@ i.e. find steady-state FPs, then change the feedback input and see if the locati
 - [ ] At the origin steady state FP, perturb the eigenvectors of the Jacobian
 
 When we stimulate them what is different from when we stimulate one of the eigenvectors whose eigenvalue is in the circle around 0? 
-How does this change based on context input? e.g. the “circle around origin” doesn’t really exist for the less-robust networks.
+How does this change based on SISU? e.g. the “circle around origin” doesn’t really exist for the less-robust networks.
 
 #### Steady-state Hessian 
 
@@ -179,7 +179,7 @@ Stimulate all the units in the network simultaneously, to mimic TMS/tDCS. Specif
 - TMS is analogous to adding to the hidden vector (i.e. directly increasing the firing rate)
 - tDCS is analogous to adding a small bias term (i.e. in Feedbax, add to the hidden state *after* doing the recurrent update, but before the nonlinearity)
 
-How does this vary with context input? If there are clear differences, then we may be able to predict what will happen when we apply TMS/tDCS.
+How does this vary with SISU? If there are clear differences, then we may be able to predict what will happen when we apply TMS/tDCS.
 
 #### Other 
 ##### Poincare graph - phase portraits
@@ -195,4 +195,4 @@ How does this vary with context input? If there are clear differences, then we m
 
 If this does work, then:
 
-- [ ] See how context input (and train std? reach directions?) shifts the plot
+- [ ] See how SISU (and train std? reach directions?) shifts the plot
