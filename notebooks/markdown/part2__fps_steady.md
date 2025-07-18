@@ -68,31 +68,31 @@ import feedbax.plotly as fbp
 from feedbax.task import centreout_endpoints
 import jax_cookbook.tree as jtree
 
-from rnns_learn_robust_motor_policies.analysis.execution import run_analysis_module
-from rnns_learn_robust_motor_policies.analysis.fp_finder import (
+from rlrmp.analysis.execution import run_analysis_module
+from rlrmp.analysis.fp_finder import (
     FixedPointFinder,
     FPFilteredResults,
     fp_adam_optimizer,
     take_top_fps,
 )
-from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate, exclude_bad_replicates
-from rnns_learn_robust_motor_policies.colors import (
+from rlrmp.analysis.state_utils import get_best_replicate, exclude_bad_replicates
+from rlrmp.colors import (
     COLORSCALES,
     MEAN_LIGHTEN_FACTOR, COMMON_COLOR_SPECS,
 )
-from rnns_learn_robust_motor_policies.config import PRNG_CONFIG, PATHS
-from rnns_learn_robust_motor_policies.database import add_evaluation_figure, savefig
-from rnns_learn_robust_motor_policies.misc import create_arr_df, take_non_nan, lohi
-from rnns_learn_robust_motor_policies.plot import (
+from rlrmp.config import PRNG_CONFIG, PATHS
+from rlrmp.database import add_evaluation_figure, savefig
+from rlrmp.misc import create_arr_df, take_non_nan, lohi
+from rlrmp.plot import (
     plot_eigvals_df,
     plot_fp_pcs,
     set_axes_bounds_equal,
 )
-from rnns_learn_robust_motor_policies.plot_utils import (
+from rlrmp.plot_utils import (
     figs_flatten_with_paths,
     figleaves,
 )
-from rnns_learn_robust_motor_policies.tree_utils import (
+from rlrmp.tree_utils import (
     first,
     first_shape as fs,
     pp,
@@ -100,7 +100,7 @@ from rnns_learn_robust_motor_policies.tree_utils import (
     take_replicate,
     tree_level_labels,
 )
-from rnns_learn_robust_motor_policies.types import LDict, TreeNamespace
+from rlrmp.types import LDict, TreeNamespace
 ```
 
 ```python
@@ -170,7 +170,7 @@ all_readout_weights_pc = pca_batch_transform(all_readout_weights)
 This is because the existing code expects the context input level to be on the inside
 
 ```python
-from rnns_learn_robust_motor_policies.tree_utils import ldict_level_to_bottom, ldict_level_to_top, move_ldict_level_above
+from rlrmp.tree_utils import ldict_level_to_bottom, ldict_level_to_top, move_ldict_level_above
 
 #! TODO: Could avoid this if we use stack-and-vmap instead of needing to `jt.map` over LDict levels
 #! in the fixed point finding functions
@@ -1365,7 +1365,7 @@ condition_func = lambda df: df[
 ```
 
 ```python
-from rnns_learn_robust_motor_policies.misc import round_to_list
+from rlrmp.misc import round_to_list
 
 eigval_figs = jt.map(
     lambda eigval_df: plot_eigvals_df(

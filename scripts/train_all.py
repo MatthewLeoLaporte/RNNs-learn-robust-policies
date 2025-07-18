@@ -22,14 +22,14 @@ import optax
 
 import feedbax
 
-import rnns_learn_robust_motor_policies
-from rnns_learn_robust_motor_policies.config import PRNG_CONFIG
-from rnns_learn_robust_motor_policies._warnings import enable_warning_dedup
-from rnns_learn_robust_motor_policies.database import get_db_session
-from rnns_learn_robust_motor_policies.hyperparams import load_hps
-from rnns_learn_robust_motor_policies.misc import log_version_info
-from rnns_learn_robust_motor_policies.training.train import train_and_save_models
-from rnns_learn_robust_motor_policies.types import TreeNamespace
+import rlrmp
+from rlrmp.config import PRNG_CONFIG
+from rlrmp._warnings import enable_warning_dedup
+from rlrmp.database import get_db_session
+from rlrmp.hyperparams import load_hps
+from rlrmp.misc import log_version_info
+from rlrmp.training.train import train_and_save_models
+from rlrmp.types import TreeNamespace
 
 
 # TODO: Figure out why the warning from this module appears.
@@ -41,7 +41,7 @@ logger = logging.getLogger(os.path.basename(__file__))
 
 
 CONFIG_FILENAME = 'all'
-CONFIGS = resources.files('rnns_learn_robust_motor_policies.config.training')
+CONFIGS = resources.files('rlrmp.config.training')
 
 
 def unwrap_value(v: Any) -> Any:
@@ -143,7 +143,7 @@ if __name__ == '__main__':
         enable_warning_dedup()
     
     version_info = log_version_info(
-        jax, eqx, optax, git_modules=(feedbax, rnns_learn_robust_motor_policies),
+        jax, eqx, optax, git_modules=(feedbax, rlrmp),
     )
     
     if args.seed is None:

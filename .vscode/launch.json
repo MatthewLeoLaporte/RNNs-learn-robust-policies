@@ -15,7 +15,10 @@
             "program": "${workspaceFolder}/scripts/run_analysis.py",
             "console": "integratedTerminal",
             "args": ["${command:pickArgs}"],
-            "env": {"PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2"},
+            "env": {
+                "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2",
+                // "PYTHONSTARTUP": "${workspaceFolder}/scripts/debug_startup.py"
+            },
             // "preLaunchTask": "activate-conda-env"
         },        
         {

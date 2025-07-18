@@ -21,7 +21,7 @@ import numpy as np
 import jax.numpy as jnp
 import plotly.graph_objects as go
 
-from rnns_learn_robust_motor_policies.analysis.tangling import _get_tangling_core
+from rlrmp.analysis.tangling import _get_tangling_core
 
 
 def generate_braid(T: int = 2000, freq_x: int = 2, freq_y: int = 3, phase: float = 0.5):

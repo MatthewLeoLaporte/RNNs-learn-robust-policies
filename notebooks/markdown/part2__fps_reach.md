@@ -94,19 +94,19 @@ from feedbax.task import (
 )
 from feedbax.xabdeef.losses import simple_reach_loss
 
-from rnns_learn_robust_motor_policies import PROJECT_SEED
-from rnns_learn_robust_motor_policies.colors import (
+from rlrmp import PROJECT_SEED
+from rlrmp.colors import (
     COLORSCALES, 
     MEAN_LIGHTEN_FACTOR,
     get_colors_dicts,
 )
-from rnns_learn_robust_motor_policies.constants import (
+from rlrmp.constants import (
     EVAL_REACH_LENGTH,
     INTERVENOR_LABEL,
     REPLICATE_CRITERION,
     WORKSPACE,
 )
-from rnns_learn_robust_motor_policies.database import (
+from rlrmp.database import (
     ModelRecord,
     get_db_session,
     get_model_record,
@@ -114,46 +114,46 @@ from rnns_learn_robust_motor_policies.database import (
     add_evaluation_figure,
     use_record_params_where_none,
 )
-from rnns_learn_robust_motor_policies.analysis.fp_finder import (
+from rlrmp.analysis.fp_finder import (
     FixedPointFinder,
     FPFilteredResults,
     fp_adam_optimizer,
     take_top_fps,
 )
-from rnns_learn_robust_motor_policies.analysis.fps import (
+from rlrmp.analysis.fps import (
     get_simple_reach_first_fps,
 )
-from rnns_learn_robust_motor_policies.misc import (
+from rlrmp.misc import (
     create_arr_df, 
     log_version_info,
 )
-from rnns_learn_robust_motor_policies.plot import (
+from rlrmp.plot import (
     plot_eigvals_df,
     plot_fp_pcs,
 )
-from rnns_learn_robust_motor_policies.plot_utils import (
+from rlrmp.plot_utils import (
     PlotlyFigureWidget as PFW,
     figs_flatten_with_paths,
     figleaves,
     copy_fig_json,
 )
-from rnns_learn_robust_motor_policies.post_training import setup_replicate_info
-from rnns_learn_robust_motor_policies.setup_utils import (
+from rlrmp.post_training import setup_replicate_info
+from rlrmp.setup_utils import (
     get_base_task,
     query_and_load_model,
     set_model_noise,
     setup_models_only,
 )
-from rnns_learn_robust_motor_policies.state_utils import (
+from rlrmp.state_utils import (
     vmap_eval_ensemble,
     get_pos_endpoints,
 )
-from rnns_learn_robust_motor_policies.tree_utils import (
+from rlrmp.tree_utils import (
     pp,
     subdict, 
     take_replicate,
 )
-from rnns_learn_robust_motor_policies.types import (
+from rlrmp.types import (
     ContextInputDict,
     PertAmpDict, 
     TrainingMethodDict,

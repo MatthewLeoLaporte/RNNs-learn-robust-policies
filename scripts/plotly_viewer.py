@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtCore import QUrl, Qt, QSize
-from rnns_learn_robust_motor_policies.misc import get_md5_hexdigest
+from rlrmp.misc import get_md5_hexdigest
 
 # Minimal HTML template
 TEMPLATE = '''

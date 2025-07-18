@@ -14,21 +14,21 @@ import optax
 
 import feedbax
 
-import rnns_learn_robust_motor_policies
-from rnns_learn_robust_motor_policies.misc import log_version_info
+import rlrmp
+from rlrmp.misc import log_version_info
 
 
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
 import argparse
 import warnings
-from rnns_learn_robust_motor_policies._warnings import enable_warning_dedup
+from rlrmp._warnings import enable_warning_dedup
 
 import jax.random as jr
 
-from rnns_learn_robust_motor_policies.config import PRNG_CONFIG
-from rnns_learn_robust_motor_policies.training import train_and_save_models
-from rnns_learn_robust_motor_policies.config import load_hps
+from rlrmp.config import PRNG_CONFIG
+from rlrmp.training import train_and_save_models
+from rlrmp.config import load_hps
 
 
 if __name__ == '__main__':
@@ -54,7 +54,7 @@ if __name__ == '__main__':
         key = jr.PRNGKey(args.seed)
 
     version_info = log_version_info(
-        jax, eqx, optax, git_modules=(feedbax, rnns_learn_robust_motor_policies),
+        jax, eqx, optax, git_modules=(feedbax, rlrmp),
     )
     
     hps = load_hps(args.expt_name, config_type='training')

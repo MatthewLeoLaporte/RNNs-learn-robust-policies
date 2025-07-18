@@ -2,6 +2,8 @@
 COMMIT_MSG.txt
 COMMIT_MSG_STASH.txt
 
+# LLM stuff
+.serena
 .specstory
 *claude.md
 *o3.md 

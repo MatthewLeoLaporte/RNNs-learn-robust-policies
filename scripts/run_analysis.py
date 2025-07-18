@@ -12,7 +12,7 @@ import argparse
 import logging
 from pathlib import Path
 import warnings
-from rnns_learn_robust_motor_policies._warnings import enable_warning_dedup
+from rlrmp._warnings import enable_warning_dedup
 
 # NOTE: JAX arrays are not directly picklable if they contain device memory references.
 # Since we're using pickle to cache states which may contain JAX arrays, we rely on JAX's
@@ -20,8 +20,8 @@ from rnns_learn_robust_motor_policies._warnings import enable_warning_dedup
 # host-accessible device arrays).
 import jax.random as jr
 
-from rnns_learn_robust_motor_policies.analysis.execution import run_analysis_module
-from rnns_learn_robust_motor_policies.config import PATHS, PRNG_CONFIG
+from rlrmp.analysis.execution import run_analysis_module
+from rlrmp.config import PATHS, PRNG_CONFIG
 
 
 logger = logging.getLogger(os.path.basename(__file__))

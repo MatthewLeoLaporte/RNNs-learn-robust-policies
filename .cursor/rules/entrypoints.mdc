@@ -9,12 +9,12 @@ There are two main entry points for execution: [train.py](mdc:41 RNNs learn robu
 When calling either script, the user passes a string which indicates (respectively) either the set
 of training runs to run, or the set of analyses to perform. Based on this string the script will
 load the matching config/hyperparameters from a YAML file under
-`rnns_learn_robust_motor_policies.config`. Likewise, it will load the run-specific implementation
-from modules under `rnns_learn_robust_motor_policies.training.modules`, or
-`rnns_learn_robust_motor_policies.analysis.modules`. 
+`rlrmp.config`. Likewise, it will load the run-specific implementation
+from modules under `rlrmp.training.modules`, or
+`rlrmp.analysis.modules`. 
 
-Within each module under `rnns_learn_robust_motor_policies.analysis.modules`, for example
-[plant_perts.py](mdc:41 RNNs learn robust policies/41 RNNs learn robust policies/41 RNNs learn robust policies/41 RNNs learn robust policies/41 RNNs learn robust policies/41 RNNs learn robust policies/41 RNNs learn robust policies/41 RNNs learn robust policies/41 RNNs learn robust policies/41 RNNs learn robust policies/src/rnns_learn_robust_motor_policies/analysis/modules/part1/plant_perts.py),
+Within each module under `rlrmp.analysis.modules`, for example
+[plant_perts.py](mdc:41 RNNs learn robust policies/41 RNNs learn robust policies/41 RNNs learn robust policies/41 RNNs learn robust policies/41 RNNs learn robust policies/41 RNNs learn robust policies/41 RNNs learn robust policies/41 RNNs learn robust policies/41 RNNs learn robust policies/41 RNNs learn robust policies/src/rlrmp/analysis/modules/part1/plant_perts.py),
 
 - `setup_eval_tasks_and_models` sets up the pairings of models to evaluate, and the tasks to
   evaluate them on. 
@@ -28,10 +28,10 @@ Within each module under `rnns_learn_robust_motor_policies.analysis.modules`, fo
 
 Each subclass of `AbstractAnalysis` defines `default_inputs: ClassVar`, where keys are input names and
 values are defaults (as other types of `AbstractAnalysis` to be evaluated); [run_analysis.py](mdc:scripts/run_analysis.py) uses 
-the tools in [_dependencies.py](mdc:src/rnns_learn_robust_motor_policies/analysis/_dependencies.py) (via [execution.py](mdc:src/rnns_learn_robust_motor_policies/analysis/execution.py)) to ensure that any dependencies of the set of analyses specified
+the tools in [_dependencies.py](mdc:src/rlrmp/analysis/_dependencies.py) (via [execution.py](mdc:src/rlrmp/analysis/execution.py)) to ensure that any dependencies of the set of analyses specified
 explicitly by `ANALYSES`, will be computed and passed as appropriate, and that each dependency
 will only be computed once if is a dependency of multiple entries in `ANALYSES`. 
 
-Special types are define in [types.py](mdc:src/rnns_learn_robust_motor_policies/types.py). In particular, `LDict` is used to label `dict` levels of a
+Special types are define in [types.py](mdc:src/rlrmp/types.py). In particular, `LDict` is used to label `dict` levels of a
 PyTree so that we can easily map their key values, to and from the values of (e.g.) columns in the
-database ([database.py](mdc:src/rnns_learn_robust_motor_policies/database.py)) in which model, evaluation, and figure records are kept. 
+database ([database.py](mdc:src/rlrmp/database.py)) in which model, evaluation, and figure records are kept. 
