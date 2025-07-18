@@ -187,7 +187,7 @@ def setup_eval_for_module(
 
     # Outer level is task variants, inner is the structure returned by `setup_func`
     # i.e. "task variants" are a way to evaluate different sets of conditions
-    all_tasks, all_models, all_hps, all_extras = jtree.unzip({
+    all_tasks, all_models, all_hps, all_extras = jtree.unzip(LDict.of('task_variant')({
         variant_key: get_task_variant(
             task_base,
             models_base,
@@ -197,7 +197,7 @@ def setup_eval_for_module(
             **variant_params,
         )
         for variant_key, variant_params in namespace_to_dict(hps.task).items()
-    })
+    }))
 
     return (
         analysis_module,
@@ -257,6 +257,7 @@ def perform_all_analyses(
                 model_info,
                 dump_path=fig_dump_path,
                 dump_formats=fig_dump_formats,
+                label=analysis_key,
                 **inputs,
             )
         logger.info(f"Figures saved: {analysis_key}")

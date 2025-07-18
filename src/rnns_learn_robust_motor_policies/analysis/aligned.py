@@ -132,6 +132,8 @@ class AlignedVars(AbstractAnalysis):
         data: AnalysisInputData,
         **kwargs,
     ):
+        #! TODO: Remove the hardcoding of `by_std` 
+        #! -- I don't think this is the case anymore here, anyway?
         def _get_aligned_vars(task, models_by_std, states_by_std, hps):
             
             def _get_aligned_vars_by_std(states, models):

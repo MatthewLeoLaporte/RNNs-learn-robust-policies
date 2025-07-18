@@ -2,7 +2,7 @@
 created: 2024-11-08T10:51
 updated: 2024-11-08T11:07
 ---
-`> [!Note]
+> [!Note]
 >  What minimally do we need to cover so that people will be on board with the approach?
 > 
 
@@ -10,7 +10,12 @@ updated: 2024-11-08T11:07
 
 **Strengthen the gap statement from the abstract in the first paragraph (or two).**
 
-Effective movement in unpredictable environments demands robustness, or the ability to maintain performance despite uncertain perturbations. Faced with unpredictability, agents can make model-free adjustments to *robusten* their existing motor control policies. Robustening does not mean learning specific dynamics, but enhances performance across a distribution of possible perturbations. 
+To win their way through uncertain environments, agents should implement robust policies. 
+Both primates+ and artificial neural networks (ANNs)+ learn, and can adapt their motor policies to compensate for ongoing perturbations.
+Yet not all perturbations are predictable in time for a precise adaptation.
+When humans anticipate such a perturbation, we increase the vigour and reactivity of our movements to mitigate its effect, regardless of its precise form. 
+
+Robustening does not mean learning the specifics of unknown dynamics, but enhances performance across a distribution of possible perturbations. 
 
 ## Justification and background
 
@@ -18,8 +23,23 @@ Effective movement in unpredictable environments demands robustness, or the abil
 
 ### Current understanding of motor cortex
 
-- Low-dimensional / population dynamics on manifolds
-- Autonomous versus input driven dynamics;
+- populations of many neurons coordinate their activity to [@KalaskaEtAl1997;@KakeiEtAl1999;@GeorgopoulosEtAl1982;@CheneyFetz1980;@ShenAlexander1997]
+- Facilitates “robust movement generation” [@RussoEtAl2018;@SussilloEtAl2015]
+	- also: neuronal death [@Pakkenberg2003], unreliable synapses [@TsodyksMarkram1997]
+- when they are undisturbed, they generate dynamics which are coherent, or intrinsically predictable
+	- i.e. describing smooth trajectories on manifolds which are relatively low-dimensional [@SadtlerEtAl2014;@GallegoEtAl2018;@GallegoEtAl2017;@ElsayedEtAl2016;@KaufmanEtAl2014] (relative to the number of neurons in the population)
+	- “well-described as a feedforward system with deterministic dynamics” [@MichaelsEtAl2016;@ChurchlandEtAl2012]
+	- “undisturbed”: means “no unpredicted inputs”, not “no inputs” 
+		- dynamics may still appear coherent if inputs are predictable [@SeelyEtAl2016;@SussilloEtAl2015]
+			- i.e. if the inputs match what the network should expect given its outputs and its model of the system it is controlling
+		- importantly, “motor cortex in mice requires constant input as it generates behaviour” [@SauerbreiEtAl2020]
+- however, motor cortex is only one part of the closed loop which generates behaviour [@PruszynskiEtAl2011;@ScottEtAl2015]
+	- it cannot be entirely autonomous, but must respond to sensory feedback
+		- “its neurons respond rapidly to limb perturbations and other sensory inputs” [@CheneyFetz1984;@PruszynskiEtAl2011;@SauerbreiEtAl2020]
+	- unpredictable inputs may drive the network over trajectories it would not follow spontaneously
+	- error-correction 
+- input-driven dynamics are confined to a distinct subspace [@PerichEtAl2024]
+	- allows the dynamics on the intrinsic manifold (different subspace) to proceed, while integrating the effects of the disturbance affecting the input subspace
 
 #### Endogenous dynamics and tangling 
 

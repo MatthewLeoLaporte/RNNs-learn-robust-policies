@@ -13,7 +13,7 @@ from rnns_learn_robust_motor_policies.analysis.profiles import Profiles
 from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_replicate, get_constant_task_input_fn, vmap_eval_ensemble
 from rnns_learn_robust_motor_policies.colors import ColorscaleSpec
 from rnns_learn_robust_motor_policies.plot import set_axes_bounds_equal
-from rnns_learn_robust_motor_policies.tree_utils import move_ldict_level_above
+from rnns_learn_robust_motor_policies.tree_utils import ldict_level_to_bottom, move_ldict_level_above
 from rnns_learn_robust_motor_policies.types import (
     LDict,
 )
@@ -133,11 +133,19 @@ ANALYSES = {
         )
     ),
     "aligned_trajectories_by_train_std": AlignedEffectorTrajectories().after_stacking("train__pert__std").map_figs_at_level('sisu'),
-    "profiles": (
+    "profiles_by_train_std": (
         Profiles()
         .after_transform(get_best_replicate)
         .after_transform(
-            lambda tree, **kws: move_ldict_level_above("var", "train__pert__std", tree),
+            lambda tree, **kws: ldict_level_to_bottom("train__pert__std", tree),
+            dependency_name="vars",
+        )
+    ),
+    "profiles_by_sisu": (
+        Profiles()
+        .after_transform(get_best_replicate)
+        .after_transform(
+            lambda tree, **kws: ldict_level_to_bottom("sisu", tree),
             dependency_name="vars",
         )
     ),

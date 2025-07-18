@@ -1,15 +1,10 @@
 """
-Analysis of fixed point (FP) structure of the network at steady state.
+Analysis of fixed point (FP) structure of the network during reaching.
 
-Includes eigendecomposition of the linearization (Jacobian).
-
-Steady state FPs are the "goal-goal" FPs; i.e. the point mass is at the goal, so the
-network will stabilize on some hidden state that outputs a constant force that does not change the
-position of the point mass on average.
-
-This contrasts with non-steady-state FPs, which correspond to network outputs which should
-cause the point mass to move, and thus the network's feedback input (and thus FP) to
-change.
+This analysis finds fixed points during simple reaching tasks, including:
+1. Goal-goal fixed points (steady state)
+2. Init-goal fixed points (initial state)
+3. Fixed points along the trajectory during reaching
 """
 
 from collections.abc import Callable, Sequence
@@ -33,6 +28,14 @@ from rnns_learn_robust_motor_policies.analysis.state_utils import get_best_repli
 from rnns_learn_robust_motor_policies.tree_utils import take_replicate
 from rnns_learn_robust_motor_policies.types import TreeNamespace
 from rnns_learn_robust_motor_policies.types import LDict
+from rnns_learn_robust_motor_policies.analysis.fps_tmp2 import (
+    ReachFPs,
+    ReachFPsInPCSpace,
+    ReachTrajectoriesInPCSpace,
+    ReachDirectionTrajectories,
+)
+from rnns_learn_robust_motor_policies.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS
+from feedbax.intervene import add_intervenors, schedule_intervenor
 
 
 """Specify any additional colorscales needed for this analysis. 
@@ -43,29 +46,65 @@ COLOR_FUNCS: dict[str, Callable[[TreeNamespace], Sequence]] = dict(
 
 
 def setup_eval_tasks_and_models(task_base: Module, models_base: LDict[float, Module], hps: TreeNamespace):
-    """Define a task where the point mass is already at the goal.
-
-    This is similar to `feedback_perts`, but without an impulse.
-    """
-    all_tasks, all_models, all_hps = jtree.unzip(
-        LDict.of('sisu')({
-            sisu: (
-                task_base.add_input(
-                    name="sisu",
-                    input_fn=get_constant_input_fn(
-                        sisu, hps.model.n_steps, task_base.n_validation_trials,
-                    ),
-                ),
-                models_base,  
-                hps | dict(sisu=sisu),
-            )
-            for sisu in hps.sisu
-        })
-    )
-    # Provides any additional data needed for the analysis
-    extras = SimpleNamespace()  
+    """Set up tasks with plant perturbations and varying SISU inputs."""
+    try:
+        disturbance = PLANT_PERT_FUNCS[hps.pert.type]
+    except KeyError:
+        raise ValueError(f"Unknown disturbance type: {hps.pert.type}")
     
-    return all_tasks, all_models, all_hps, extras
+    pert_amps = hps.pert.amp  # Using amp as perturbation amplitude for this analysis
+    
+    # Tasks with varying plant perturbation amplitude 
+    tasks_by_amp, _ = jtree.unzip(jt.map( # over disturbance amplitudes
+        lambda pert_amp: schedule_intervenor(  # (implicitly) over train stds
+            task_base, jt.leaves(models_base, is_leaf=is_module)[0],
+            lambda model: model.step.mechanics,
+            disturbance(pert_amp),
+            label=PLANT_INTERVENOR_LABEL,
+            default_active=False,
+        ),
+        LDict.of("pert__amp")(
+            dict(zip(pert_amps, pert_amps)),
+        )
+    ))
+    
+    # Add plant perturbation module (placeholder with amp 0.0) to all loaded models
+    models_by_std = jt.map(
+        lambda models: add_intervenors(
+            models,
+            lambda model: model.step.mechanics,
+            # The first key is the model stage where to insert the disturbance field;
+            # `None` means prior to the first stage.
+            # The field parameters will come from the task, so use an amplitude 0.0 placeholder.
+            {None: {PLANT_INTERVENOR_LABEL: disturbance(0.0)}},
+        ),
+        models_base,
+        is_leaf=is_module,
+    )
+    
+    # Also vary tasks by SISU
+    tasks = LDict.of('sisu')({
+        sisu: jt.map(
+            lambda task: task.add_input(
+                name="sisu",
+                input_fn=get_constant_input_fn(
+                    sisu, 
+                    hps.model.n_steps, 
+                    task.n_validation_trials,
+                ),
+            ),
+            tasks_by_amp,
+            is_leaf=is_module,
+        )
+        for sisu in hps.sisu
+    })
+    
+    # The outer levels of `models` have to match those of `tasks`
+    models, hps = jtree.unzip(jt.map(
+        lambda _: (models_by_std, hps), tasks, is_leaf=is_module
+    ))
+    
+    return tasks, models, hps, None
 
 
 # Unlike `feedback_perts`, we don't need to vmap over impulse amplitude 
@@ -74,18 +113,31 @@ eval_func: Callable = vmap_eval_ensemble
 # goals_pos = task.validation_trials.targets["mechanics.effector.pos"].value[:, -1]
 
 
-N_PCA = 50
-START_STEP = 0
+N_PCA = 30
+START_STEP = 50  # Start PCA from midway through trial
 END_STEP = 100
+
+
+DEPENDENCIES = {
+    "states_pca": (
+        StatesPCA(n_components=N_PCA, where_states=lambda states: states.net.hidden)
+        .after_transform(get_best_replicate)
+        .after_indexing(-2, np.arange(START_STEP, END_STEP), axis_label="timestep")
+    ),
+}
 
 
 # State PyTree structure: ['sisu', 'train__pert__std']
 # Array batch shape: (evals, replicates, reach conditions)
 ANALYSES = {
-    "states_pca": (
-        StatesPCA(n_components=N_PCA, where_states=lambda states: states.net.hidden)
-        .after_transform(get_best_replicate)
-        .after_indexing(-2, np.arange(START_STEP, END_STEP), axis_label="timestep")
+    "reach_fps_in_pc_space": (
+        ReachFPsInPCSpace(custom_inputs=dict(pca_results="states_pca"))
+    ),
+    "reach_trajectories_in_pc_space": (
+        ReachTrajectoriesInPCSpace(custom_inputs=dict(pca_results="states_pca"))
+    ),
+    "reach_direction_trajectories": (
+        ReachDirectionTrajectories(custom_inputs=dict(pca_results="states_pca"))
     ),
 }
 

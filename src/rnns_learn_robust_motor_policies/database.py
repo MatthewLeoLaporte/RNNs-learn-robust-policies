@@ -26,7 +26,8 @@ import plotly
 import plotly.graph_objects as go
 from sqlalchemy import (
     Boolean,
-    Column, 
+    Column,
+    ColumnElement, 
     DateTime, 
     Integer, 
     Float, 
@@ -325,6 +326,26 @@ class AlwaysEquatesFalse:
         return isinstance(other, AlwaysEquatesFalse)
     
     
+def _make_filter_condition(
+    model_class: type["BaseT"],
+    key: str,
+    value: Any
+) -> ColumnElement | bool:
+    """
+    Return a SQLAlchemy filter expression for `model_class.key == value`,
+    JSON-dumping `value` if needed, or `False` if the column doesn’t exist.
+    """
+    column = getattr(model_class, key, None)
+    if column is None:
+        # no such column → always-false
+        return False
+
+    if isinstance(column.type, JSON):
+        value = json.dumps(value)
+
+    return column == value
+  
+
 def query_records(
     session: Session,
     record_type: str | type[BaseT],
@@ -346,10 +367,11 @@ def query_records(
     if filters:
         conditions = [
             # If the column is not found, that counts as `False`
-            getattr(model_class, key, AlwaysEquatesFalse()) == value 
+            _make_filter_condition(model_class, key, value) 
             for key, value in filters.items()
         ]
         
+        #? Can we skip the query if any of the conditions are already `False`?
         if match_all:
             for condition in conditions:
                 query = query.filter(condition)

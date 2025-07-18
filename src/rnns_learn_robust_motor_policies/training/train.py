@@ -276,7 +276,7 @@ def skip_already_trained(
             **namespace_to_dict(flatten_hps(get_query_hps(hps, postprocessed=True)))
         ),   
         all_hps_train,
-         is_leaf=is_type(TreeNamespace),
+        is_leaf=is_type(TreeNamespace),
     )
     
     record_exists = jt.map(
@@ -286,7 +286,7 @@ def skip_already_trained(
     )
     
     if post_process:  
-        # Get models have not been post-processed
+        # Get models that have not been post-processed
         records_not_pp = jt.map(
             lambda hps: get_record(
                 db_session, 

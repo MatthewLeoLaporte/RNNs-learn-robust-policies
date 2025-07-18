@@ -85,7 +85,10 @@ MEASURE_KEYS = (
     "sum_net_force",
 )
 
-measures_base = Measures(measure_keys=MEASURE_KEYS)
+measures_base = (
+    Measures(measure_keys=MEASURE_KEYS)
+    .after_transform(get_best_replicate)
+)
 
 i_eval = 0  # For single-eval plots   
         
@@ -134,8 +137,16 @@ ANALYSES = {
         )
     ),
 
-    "aligned_trajectories_by_pert_amp": AlignedEffectorTrajectories().after_stacking(level='pert__amp'),
-    "aligned_trajectories_by_train_std": AlignedEffectorTrajectories().after_stacking(level='train__pert__std'),
+    "aligned_trajectories_by_pert_amp": (
+        AlignedEffectorTrajectories()
+        .after_transform(get_best_replicate)
+        .after_stacking(level='pert__amp')
+    ),
+    "aligned_trajectories_by_train_std": (
+        AlignedEffectorTrajectories()
+        .after_transform(get_best_replicate)
+        .after_stacking(level='train__pert__std')
+    ),
     "profiles": (
         Profiles()
         .after_transform(get_best_replicate)

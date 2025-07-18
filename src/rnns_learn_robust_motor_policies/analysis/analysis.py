@@ -380,7 +380,7 @@ class AbstractAnalysis(Module, strict=False):
     version for certain visualizations. Thus `AbstractAnalysis` 
     subclasses expect arguments `models`, `tasks`, `states`, and `hps` all 
     of which are PyTrees. The top-level structure of these PyTrees is always 
-    a 
+    a #TODO
     
     Now, while it may be the case that an analysis would depend on both the 
     larger and smaller variants (in our example), we still must specify only a 
@@ -736,10 +736,11 @@ class AbstractAnalysis(Module, strict=False):
         eval_info: EvaluationRecord, 
         result, 
         figs: PyTree[go.Figure],   
-        hps: dict[str, PyTree[TreeNamespace]],   # dict level: variant
+        hps: PyTree[TreeNamespace],   # dict level: variant
         model_info=None,
         dump_path: Optional[Path] = None,
         dump_formats: Sequence[str] = ("html",),
+        label: Optional[str] = None,
         **dependencies,
     ) -> None:
         """
@@ -792,8 +793,11 @@ class AbstractAnalysis(Module, strict=False):
             
             # Additionally dump to specified path if provided
             if dump_path is not None:                                
-                # Create a unique filename using class name and hash
-                filename = f"{self.name}_{self.md5_str}_{i}"
+                # Create a unique filename using label (if provided), class name and hash
+                if label is not None:
+                    filename = f"{label}_{self.name}_{i}"
+                else:
+                    filename = f"{self.name}_{self.md5_str}_{i}"
 
                 savefig(fig, filename, dump_path, dump_formats, metadata=params)
                 
@@ -1088,10 +1092,10 @@ class AbstractAnalysis(Module, strict=False):
         the outer level of our results PyTree.
         """
         def transpose_dependency(dep_data, **kwargs):
-            return {
+            return LDict.of('task_variant')({
                 variant_label: ldict_level_to_top(label, dep_data[variant_label], is_leaf=is_leaf)
                 for variant_label in dep_data
-            }
+            })
         
         return self._add_prep_op(
             name="after_level_to_top",

@@ -204,6 +204,7 @@ def ldict_level_to_bottom(label: str, tree: PyTree, is_leaf: Optional[Callable[[
     return jt.map(lambda x: x.unwrap() if isinstance(x, _Wrapped) else x, current_tree)
 
 
+#! Make naming consistent with the other two. 
 def move_ldict_level_above(inner_label: str, outer_label: str, tree: PyTree, is_leaf: Optional[Callable[[Any], bool]] = None) -> list[type]:
     """Move an `LDict` level just above another, in a PyTree."""
     level_labels = tree_level_labels(tree, is_leaf=is_leaf)

@@ -36,7 +36,7 @@ from rnns_learn_robust_motor_policies.types import LDict
 from rnns_learn_robust_motor_policies.analysis.fps_tmp import (
     NNSteadyStateFPs,
     SteadyStateJacobians,
-    JacobianEigenspectra,
+    Jacobians,
     FPsInPCSpace,
 )
 
@@ -97,8 +97,17 @@ DEPENDENCIES = {
 # State PyTree structure: ['sisu', 'train__pert__std']
 # Array batch shape: (evals, replicates, reach conditions)
 ANALYSES = {
-    "fps_in_pc_space": FPsInPCSpace(custom_inputs=dict(pca_results="states_pca")),
-    "jacobian_eigenspectra": JacobianEigenspectra().map_figs_at_level("train__pert__std"),
+    "fps_in_pc_space": (
+        FPsInPCSpace(custom_inputs=dict(pca_results="states_pca"))
+    ),
+    "jacobians": (
+        Jacobians(
+            func_where=lambda model: model.step.net.hidden,
+            inputs_where=lambda states: states.net.input,
+            states_where=lambda states: states.net.hidden,
+        )
+        .map_figs_at_level("train__pert__std")
+    ),
 }
 
 
