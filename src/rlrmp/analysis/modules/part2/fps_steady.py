@@ -26,7 +26,7 @@ import jax_cookbook.tree as jtree
 from jaxtyping import Array, Float, PRNGKeyArray
 import numpy as np
 
-from rlrmp.analysis import AbstractAnalysis
+from rlrmp.analysis import AbstractAnalysis, AnalysisInputData
 from rlrmp.analysis.analysis import _DummyAnalysis, AnalysisDefaultInputsType, Data, DefaultFigParamNamespace, FigParamNamespace
 from rlrmp.analysis.pca import StatesPCA
 from rlrmp.misc import get_constant_input_fn
@@ -35,7 +35,7 @@ from rlrmp.tree_utils import take_replicate
 from rlrmp.types import TreeNamespace
 from rlrmp.types import LDict
 from rlrmp.analysis.fps_tmp import (
-    NNSteadyStateFPs,
+    FixedPoints,
     SteadyStateJacobians,
     Jacobians,
     FPsInPCSpace,
@@ -111,7 +111,7 @@ class SteadyStateRNNFuncs(AbstractAnalysis):
     variant: Optional[str] = None
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
     
-    def compute(self, data: TreeNamespace, **common_data) -> TreeNamespace:
+    def compute(self, data: AnalysisInputData, **kwargs) -> TreeNamespace:
         """Compute the steady-state RNN functions."""
         models, states, hps = data.models, data.states, data.hps
         
@@ -131,7 +131,7 @@ DEPENDENCIES = {
         SteadyStateRNNFuncs()
     ),
     "steady_state_fps": (
-        NNSteadyStateFPs(
+        FixedPoints(
             custom_inputs=dict(
                 funcs="steady_state_rnn_funcs",
                 candidates=Data.states(

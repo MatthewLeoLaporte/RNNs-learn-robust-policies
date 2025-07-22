@@ -210,7 +210,7 @@ def exclude_points(
         'unique': duplicates_mask,
     }
 
-    counts = jax.tree_map(jnp.sum, masks)
+    counts = jt.map(jnp.sum, masks)
     
     return masks, counts
 

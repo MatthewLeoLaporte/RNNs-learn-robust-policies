@@ -35,6 +35,8 @@ from rlrmp.constants import (
 from rlrmp.database import (
     get_model_record,
     load_tree_with_hps,
+    load_tree_without_hps,
+    record_to_hps_train,
 )
 from rlrmp.misc import (
     take_model,
@@ -346,6 +348,7 @@ def query_and_load_model(
         model_info: The object mapping to the model's database record
         replicate_info: A dict of information about the model replicates
         n_replicates_included: The number of replicates not excluded (made NaN) from the model arrays
+        hps_train: Training hyperparameters extracted from database record
     """
     exclude_method_ = exclude_method.lower()
     
@@ -362,27 +365,29 @@ def query_and_load_model(
         "Model record's replicate_info_path is None, but has_replicate_info==True"
     )
     
+    # Extract training hyperparameters from database record first
+    hps_train = record_to_hps_train(model_info)
+    
     model: eqx.Module 
-    hps: TreeNamespace
-    model, hps = load_tree_with_hps(
+    model = load_tree_without_hps(
         model_info.path, 
+        hps_train,
         partial(setup_models_only, setup_task_model_pair),
     )
-    
     #! Since `setup_models_only` merely discards the tasks after generation,
     #! we should be able to return `(task, model), hps` from `load_tree_with_hps`.
-    #! However, 
-    # TODO: If not too difficult, store seed/key value in the `model_record` so we 
-    # obtain the identical task, down to the trials. However, unless we mean to analyze
-    # the training or something, I think this isn't very useful 
-    if return_task: 
-        #! task = setup_tasks_only(setup_task_model_pair, hps, key=jr.PRNGKey(0))
-        ...
-
+    #! Why not?
+    
+    #! TODO: If not too difficult, store seed/key value in the `model_record` so we 
+    #! obtain the identical task, down to the trials. 
     replicate_info, _ = load_tree_with_hps(
         model_info.replicate_info_path, 
         partial(setup_replicate_info, model),
     )
+    
+    task = None
+    if return_task: 
+        task = setup_tasks_only(setup_task_model_pair, hps_train, key=jr.PRNGKey(0))
     
     n_replicates_included = model_info.model__n_replicates
     
@@ -465,12 +470,11 @@ def query_and_load_model(
             raise ValueError("No replicates met inclusion criteria for at least one model variant")
     
     if return_task:
-        task = setup_tasks_only(setup_task_model_pair, hps, key=jr.PRNGKey(0))
         tree = (task, model)
     else:
         tree = model
     
-    return tree, model_info, replicate_info, n_replicates_included
+    return tree, model_info, replicate_info, n_replicates_included, hps_train
 
 
 

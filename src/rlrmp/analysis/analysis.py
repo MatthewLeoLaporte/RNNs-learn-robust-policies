@@ -1,6 +1,6 @@
 from collections.abc import Callable, Hashable, Mapping, Sequence
 import dataclasses
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property, partial, wraps
 import inspect
 import logging
@@ -425,7 +425,7 @@ class AbstractAnalysis(Module, strict=False):
     # implement them trivially in subclasses. This violates the abstract-final design
     # pattern. This is intentional. If it leads to problems, I will learn from that.
     #! This means no non-default arguments in subclasses
-    custom_inputs: Mapping[str, "str | AbstractAnalysis"] = eqx.field(default_factory=dict)
+    custom_inputs: Mapping[str, "AbstractAnalysis | _DataField | str"] = eqx.field(default_factory=dict)
     # Opt-in toggle for result caching.  When True, the result of `compute`
     # is saved to / loaded from PATHS.cache / "results" using a hash that
     # captures the analysis parameters plus the *actual* inputs passed to
@@ -1595,10 +1595,10 @@ class AbstractAnalysis(Module, strict=False):
         return prepped_kwargs
 
 
-DefaultInputType: TypeAlias = type[AbstractAnalysis] | _RequiredType
+DefaultInputType: TypeAlias = type[AbstractAnalysis] | _RequiredType | _DataField
 AnalysisDefaultInputsType: TypeAlias = MappingProxyType[str, DefaultInputType]
 
-InputType: TypeAlias = type[AbstractAnalysis] | AbstractAnalysis | str
+InputType: TypeAlias = type[AbstractAnalysis] | AbstractAnalysis | _DataField | str
 AnalysisInputsType: TypeAlias = MappingProxyType[str, InputType]
 
 

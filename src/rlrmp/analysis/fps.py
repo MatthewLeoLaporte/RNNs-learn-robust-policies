@@ -6,6 +6,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
+import jax.tree as jt
 from jaxtyping import Array, PRNGKeyArray, PyTree
 
 from feedbax.bodies import SimpleFeedback
@@ -121,7 +122,7 @@ def get_simple_reach_endpoint_fps(
             key_fps,
         )
         
-    all_fpf_results = jax.tree_map(
+    all_fpf_results = jt.map(
         lambda inputs_star: get_all_conditions_fps(
             inputs_star, 
             model.step.net.hidden,

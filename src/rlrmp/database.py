@@ -642,6 +642,38 @@ def load_tree_with_hps(
     return tree, hps
 
 
+def load_tree_without_hps(
+    path: Path, 
+    hps: TreeNamespace,
+    setup_tree_func: Callable,
+    **kwargs,
+) -> PyTree:
+    """Load tree using provided hyperparameters, skipping file's hyperparameter section.
+    
+    This function is useful when you want to use hyperparameters from the database
+    instead of the serialized hyperparameters in the file, ensuring compatibility
+    when new training hyperparameters are added after model training.
+    
+    Args:
+        path: Path to the serialized model file
+        hps: Hyperparameters to use for tree construction
+        setup_tree_func: Function to create the tree structure
+        **kwargs: Additional arguments for eqx.tree_deserialise_leaves
+        
+    Returns:
+        The deserialized tree using the provided hyperparameters
+    """
+    with open(path, "rb") as f:
+        # Skip the hyperparameter section by reading until separator
+        _read_until_special(f, chr(STRINGS.serialisation.sep_chr))
+        
+        # Setup tree using provided hps 
+        tree = setup_tree_func(hps, key=jr.PRNGKey(0))
+        tree = eqx.tree_deserialise_leaves(f, tree, **kwargs)
+    
+    return tree
+
+
 def save_model_and_add_record(
     session: Session,
     model: Any,
@@ -1130,6 +1162,81 @@ class _Box(eqx.Module):
     
     def unbox(self):
         return self.data
+
+
+def record_to_hps_train(model_info: PyTree[ModelRecord]) -> TreeNamespace:
+    """Convert database model record to training hyperparameters namespace.
+    
+    Extracts all training-related parameters from the database record and
+    converts them back into a structured TreeNamespace suitable for model
+    reconstruction.
+    
+    Args:
+        model_info: PyTree of ModelRecord(s) from the database
+        
+    Returns:
+        TreeNamespace containing training hyperparameters
+    """
+    sample_record: ModelRecord = jt.leaves(model_info, is_leaf=is_type(ModelRecord))[0]
+    
+    IGNORE_COLS = {
+        "id",
+        "hash",
+        "expt_name", 
+        "created_at",
+        "is_path_defunct",
+        "version_info",
+        "postprocessed",
+        "has_replicate_info",
+    }
+    
+    flat_params = {
+        k: v
+        for k, v in record_to_dict(sample_record).items()
+        if k not in IGNORE_COLS
+    }
+    
+    if not flat_params:
+        raise ValueError("No training parameters found in model record")
+    
+    # The DB columns come from flattening the training hps namespace
+    nested_params = unflatten_dict_keys(flat_params, sep=STRINGS.hps_level_label_sep)
+    
+    hps_train = dict_to_namespace(
+        nested_params,
+        to_type=TreeNamespace,
+        exclude=is_dict_with_int_keys,
+    )
+    
+    # Ensure special fields regain their wrapped types (e.g. where -> LDict)
+    hps_train = cast_hps(hps_train, config_type="training")
+    
+    return hps_train
+
+
+def fill_hps_with_train_params(
+    hps: TreeNamespace,
+    hps_train: TreeNamespace,
+) -> TreeNamespace:
+    """Fill analysis hyperparameters with training parameters.
+    
+    Merges training hyperparameters into analysis hyperparameters, replacing
+    any None values in hps.train with values from hps_train. This is the
+    replacement for fill_missing_train_hps_from_record that works with
+    already-extracted training parameters.
+    
+    Args:
+        hps: Analysis hyperparameters (may have None values under train)
+        hps_train: Complete training hyperparameters from database
+        
+    Returns:
+        Enriched analysis hyperparameters with train section filled
+    """
+    # Cast to ensure special fields regain their wrapped types (e.g. train.where -> LDict)
+    return cast_hps(
+        TreeNamespace(train=hps_train) | deepcopy(hps),
+        config_type="analysis",
+    )
 
 
 def fill_missing_train_hps_from_record(

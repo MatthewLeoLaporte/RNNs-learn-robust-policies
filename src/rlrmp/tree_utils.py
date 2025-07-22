@@ -360,7 +360,7 @@ def pp(tree, truncate_leaf=_is_leaf):
 
 def pp2(tree, truncate_leaf=_is_leaf):
     """Substitute for `pp` given that `truncate_leaf` of `eqx.tree_pprint` appears to be broken atm."""
-    tree = jax.tree_map(
+    tree = jt.map(
         lambda x: type(x).__name__ if truncate_leaf(x) else x,
         tree,
         is_leaf=truncate_leaf,
@@ -435,7 +435,7 @@ def first_shape(tree):
 @jtree.filter_wrap(eqx.is_array)
 def shapes(tree):
     """Returns a tree of the shapes of the leaves of `tree`."""
-    return jax.tree_map(lambda x: x.shape, tree)
+    return jt.map(lambda x: x.shape, tree)
 
 
 def _hash_pytree(tree) -> str:

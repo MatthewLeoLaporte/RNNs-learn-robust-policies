@@ -7,7 +7,7 @@ into the declarative analysis framework.
 from collections.abc import Callable, Sequence
 from functools import partial
 from types import MappingProxyType
-from typing import ClassVar, Optional
+from typing import ClassVar, Optional, TypeVar
 
 import equinox as eqx
 from equinox import Module, field
@@ -45,6 +45,9 @@ from rlrmp.misc import create_arr_df, take_non_nan
 from rlrmp.plot import plot_eigvals_df, plot_fp_pcs
 from rlrmp.tree_utils import first, ldict_level_to_bottom
 from rlrmp.types import LDict, TreeNamespace
+
+
+T = TypeVar('T')
 
 
 #! TODO: Either remove SISU-specific logic, or rename
@@ -88,7 +91,7 @@ def process_fps(all_fps: PyTree[FPFilteredResults]):
     )
 
 
-class NNSteadyStateFPs(AbstractAnalysis):
+class FixedPoints(AbstractAnalysis):
     """Find steady-state fixed points of the RNN."""
 
     default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
@@ -126,10 +129,10 @@ class NNSteadyStateFPs(AbstractAnalysis):
     def compute(
         self,
         data: AnalysisInputData,
-        hps_common: TreeNamespace,
         *,
         funcs: PyTree[Callable, 'T'],
         candidates: PyTree[Array, 'T'],
+        hps_common: TreeNamespace,
         **kwargs,
     ):
         #! "This is because the existing code expects the SISU level to be on the inside"
@@ -399,7 +402,7 @@ class SteadyStateJacobians(AbstractAnalysis):
     """Compute Jacobians and their eigendecomposition at steady-state FPs."""
 
     default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
-        fps_results=NNSteadyStateFPs,
+        fps_results=FixedPoints,
     ))
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
@@ -428,7 +431,7 @@ class FPsInPCSpace(AbstractAnalysis):
     """Plot fixed points in PC space."""
 
     default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
-        fps_results=NNSteadyStateFPs,
+        fps_results=FixedPoints,
         pca_results=StatesPCA,
     ))
     conditions: tuple[str, ...] = ()

@@ -33,8 +33,8 @@ from rlrmp.database import (
     check_model_files,
     get_db_session,
 )
-# Added utilities for unflattening record hyperparameters into namespaces
-from rlrmp.database import fill_missing_train_hps_from_record
+# Added utilities for unflattening record hyperparameters into namespaces  
+from rlrmp.database import fill_missing_train_hps_from_record, fill_hps_with_train_params
 from rlrmp.types import (
     LDict,
     TreeNamespace,
@@ -59,7 +59,7 @@ def load_trained_models_and_aux_objects(training_module_name: str, hps: TreeName
     
     training_module = load_module_from_package(training_module_name, training_modules_pkg)
     
-    pairs, model_info, replicate_info, n_replicates_included = jtree.unzip(
+    pairs, model_info, replicate_info, n_replicates_included, hps_train_dict = jtree.unzip(
         #? Should this structure be hardcoded here?
         #? At least for this project, we typically load spreads of trained models, 
         #? and those spreads are always over the training perturbation std.
@@ -88,7 +88,7 @@ def load_trained_models_and_aux_objects(training_module_name: str, hps: TreeName
 
     tasks_train, models = jtree.unzip(pairs)
 
-    return models, model_info, replicate_info, tasks_train, n_replicates_included
+    return models, model_info, replicate_info, tasks_train, n_replicates_included, hps_train_dict
 
 
 def setup_eval_for_module(
@@ -110,12 +110,14 @@ def setup_eval_for_module(
     #! training experiment, in each analysis config file.
     training_module_name = analysis_name.split('.')[0]
     
-    models_base, model_info, replicate_info, tasks_train, n_replicates_included = \
+    models_base, model_info, replicate_info, tasks_train, n_replicates_included, hps_train_dict = \
         load_trained_models_and_aux_objects(training_module_name, hps, db_session)
 
     # Fill-in any missing training hyper-parameters **out-of-place** and switch to
-    # the enriched version from here onward.
-    hps_filled = fill_missing_train_hps_from_record(hps, model_info)
+    # the enriched version from here onward. Use training hps from database records.
+    # Take the first entry from hps_train_dict as representative training hyperparameters
+    hps_train_representative = jt.leaves(hps_train_dict, is_leaf=is_type(TreeNamespace))[0]
+    hps_filled = fill_hps_with_train_params(hps, hps_train_representative)
     hps = hps_filled  #  use the enriched version for everything below
 
     #! For this project, the training task should not vary with the train field std 
