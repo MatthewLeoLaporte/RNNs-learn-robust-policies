@@ -1,6 +1,11 @@
 {
     "github.copilot.editor.enableAutoCompletions": true,
-    "python.analysis.fixAll" : ["source.unusedImports"],
+    "python.analysis.fixAll": [
+        "source.unusedImports"
+    ],
+    "python.analysis.exclude": [
+        "archive/"
+    ],
 }
 
 

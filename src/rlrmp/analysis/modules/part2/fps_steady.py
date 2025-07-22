@@ -23,10 +23,11 @@ import jax.tree as jt
 
 from jax_cookbook import is_module
 import jax_cookbook.tree as jtree
+from jaxtyping import Array, Float, PRNGKeyArray
 import numpy as np
 
 from rlrmp.analysis import AbstractAnalysis
-from rlrmp.analysis.analysis import _DummyAnalysis, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.analysis import _DummyAnalysis, AnalysisDependenciesType, Data, DefaultFigParamNamespace, FigParamNamespace
 from rlrmp.analysis.pca import StatesPCA
 from rlrmp.misc import get_constant_input_fn
 from rlrmp.analysis.state_utils import get_best_replicate, vmap_eval_ensemble
@@ -83,6 +84,41 @@ eval_func: Callable = vmap_eval_ensemble
 N_PCA = 50
 START_STEP = 0
 END_STEP = 100
+STRIDE_FP_CANDIDATES = 16
+
+def get_ss_rnn_input(input_size: int, sisu: float, pos: Float[Array, "2"]):
+    input_star = jnp.zeros((input_size,))
+    # Set target and feedback inputs to the same position
+    input_star = input_star.at[1:3].set(pos)
+    input_star = input_star.at[5:7].set(pos)
+    return input_star.at[0].set(sisu)
+
+
+def get_ss_rnn_func(sisu: float, rnn_cell: Module, pos: Float[Array, "2"], key: PRNGKeyArray):
+    input_star = get_ss_rnn_input(pos, sisu, rnn_cell.input_size)
+    def rnn_func(h):
+        return rnn_cell(input_star, h, key=key)
+    return rnn_func
+
+
+#! After figuring this out, might be possible to reduce to a prep op on 
+#! `funcs=Data.models(where=lambda model: model.step.net.hidden)`
+class SteadyStateRNNFuncs(AbstractAnalysis):
+    """Find steady-state RNN functions for the given RNN cell."""
+    
+    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    conditions: tuple[str, ...] = ()
+    variant: Optional[str] = None
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
+    
+    def compute(self, data: TreeNamespace, **common_data) -> TreeNamespace:
+        """Compute the steady-state RNN functions."""
+        models, states, hps = data.models, data.states, data.hps
+        
+        # 1. RNN cells vary in `models` by `train__pert__std`
+        # 2. RNN funcs will vary with `train__pert__std`, `sisu`, and goal position
+        
+        return jt.map(lambda model: model.step.net.hidden, models, is_leaf=is_module)
 
 
 DEPENDENCIES = {
@@ -91,6 +127,28 @@ DEPENDENCIES = {
         .after_transform(get_best_replicate)
         .after_indexing(-2, np.arange(START_STEP, END_STEP), axis_label="timestep")
     ),
+    "steady_state_rnn_funcs": (
+        SteadyStateRNNFuncs()
+    ),
+    "steady_state_fps": (
+        NNSteadyStateFPs(
+            custom_inputs=dict(
+                funcs="steady_state_rnn_funcs",
+                candidates=Data.states(
+                    # FP initial conditions <- full hidden state trajectories
+                    where=lambda states: states.net.hidden
+                ),
+            )
+        )
+        .after_transform(get_best_replicate)
+        .after_transform(  
+            # Collapse all axes except the state dimension 
+            lambda states, *, hps_common: jnp.reshape(
+                states,
+                (-1, hps_common.train.model.hidden_size),
+            )[::STRIDE_FP_CANDIDATES]
+        )
+    )
 }
 
 

@@ -23,6 +23,12 @@ The drag coefficient has units $[M\cdot T^{-1}]$, or `kg/s` in SI units.
 A typical value is `10 kg/s`; thus the simulation value should be `(10 kg/s) * scale_T / scale_M`, or `10 [sim mass / sim time]`.
 
 
+### First-order filter time constant
+
+Typical value: `50 ms`
+
+Times are 1:1 so this is `0.05` in sim units. 
+
 ### Noise stds.
 
 

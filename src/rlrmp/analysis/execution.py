@@ -278,6 +278,7 @@ def run_analysis_module(
     no_pickle: bool = False,
     retain_past_fig_dumps: bool = False,
     states_pkl_dir: Optional[Path] = PATHS.cache / "states",
+    eval_only: bool = False,  # Skip analyses and just evaluate the states
     *,
     key,
 ):
@@ -411,6 +412,10 @@ def run_analysis_module(
         states=states,
         extras=extras,
     )
+    
+    if eval_only:
+        logger.info("Eval-only requested; skipping analyses and returning.")
+        return data, common_inputs, None, None, None
     
     if not retain_past_fig_dumps:
         try:

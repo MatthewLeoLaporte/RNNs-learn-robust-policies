@@ -1,25 +1,27 @@
-# part1:
-#   product:  # take the cartesian product of the following sets of runs
-#     - name: noise_levels
-#       model:
-#         feedback_noise_std: [0.01, 0.1]
-#         motor_noise_std: [0.01, 0.1]
-#       # labels: ["low_noise", "high_noise"]
-#     - name: feedback_delays
-#       model:
-#         feedback_delay_steps: [0, 5]
-#     - name: disturbance_types
-#       cases:  # run these separately
-#         - name: curl
-#           pert:
-#             type: curl
-#             std: 
-#               value: [0.0, 0.5, 1.0, 1.5]
-#         - name: constant
-#           pert:
-#             type: constant
-#             std: 
-#               value: [0, 0.01, 0.1, 1]
+part1:
+  product:  # take the cartesian product of the following sets of runs
+    - name: noise_levels
+      model:
+        feedback_noise_std: [0.01, 0.1]
+        motor_noise_std: [0.01, 0.1]
+      # labels: ["low_noise", "high_noise"]
+    - name: feedback_delays
+      model:
+        feedback_delay_steps: [0, 5]
+    - name: disturbance_types
+      cases:  # run these separately
+        - name: curl
+          pert:
+            type: curl
+            std: 
+              value: [0.0, 0.5, 1.0, 1.5]
+        - name: constant
+          pert:
+            type: constant
+            std: 
+              value: [0, 0.01, 0.1, 1]
+
+#! TODO: hidden_size, 
 
 part2:
   product:  
@@ -31,6 +33,9 @@ part2:
     - name: feedback_delays
       model:
         feedback_delay_steps: [0, 5]
+    - name: damping 
+      model:
+        damping: [5, 10]
     - name: disturbance_types
       cases: 
         - name: curl

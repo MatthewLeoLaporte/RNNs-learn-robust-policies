@@ -497,7 +497,8 @@ def check_model_files(
             archive_dir = PATHS.models.parent / f"{PATHS.models.name}_archive"
             archive_dir.mkdir(exist_ok=True)
             for file_path in PATHS.models.glob("*.eqx"):
-                file_hash = file_path.stem 
+                # Take hash as the first part of the filename (i.e. ignore "replicate_info" etc.)
+                file_hash = file_path.stem.split("_")[0]  
                 if file_hash not in known_hashes: 
                     if clean_orphaned_files == 'delete':
                         logger.info(f"Deleting orphaned file: {file_path}")

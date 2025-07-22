@@ -149,6 +149,8 @@ def setup_task_model_pair(
         feedback_delay_steps=hps_train.model.feedback_delay_steps,
         feedback_noise_std=hps_train.model.feedback_noise_std,
         motor_noise_std=hps_train.model.motor_noise_std,
+        tau_rise=hps_train.model.tau_rise,
+        tau_decay=hps_train.model.tau_rise,
         key=key,
     )
     
