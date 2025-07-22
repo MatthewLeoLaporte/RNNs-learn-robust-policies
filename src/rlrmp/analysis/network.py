@@ -16,7 +16,7 @@ from feedbax.train import grad_wrap_simple_loss_func
 from feedbax.loss import nan_safe_mse
 from jax_cookbook import is_module
 
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDependenciesType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDefaultInputsType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rlrmp.analysis.measures import output_corr
 from rlrmp.misc import center_and_rescale, ravel_except_last
 from rlrmp.plot import get_violins
@@ -26,7 +26,7 @@ from rlrmp.types import LDict, TreeNamespace
 class OutputWeightCorrelation(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
     
     def compute(
@@ -102,7 +102,7 @@ def fit_linear(X, y, n_iter=50, *, key):
 class UnitPreferences(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
 
     n_iter_fit: int = 50

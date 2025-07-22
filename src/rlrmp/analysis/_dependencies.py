@@ -21,10 +21,11 @@ from typing import Optional, Set, Dict, Any, ClassVar, Callable
 
 import equinox as eqx
 import jax.tree as jt
+from jaxtyping import PyTree
 
 from rlrmp.analysis.analysis import (
     AbstractAnalysis, AnalysisInputData, _format_dict_of_params, Required,
-    _DataField, FigParamNamespace, DefaultFigParamNamespace, AnalysisDependenciesType
+    _DataField, FigParamNamespace, DefaultFigParamNamespace, AnalysisDefaultInputsType
 )
 from types import MappingProxyType
 from rlrmp.misc import get_md5_hexdigest
@@ -51,7 +52,7 @@ class _DataForwarder(AbstractAnalysis):
     is_leaf: Optional[Callable[[Any], bool]] = None
 
     # No dependencies of its own
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType({})  # type: ignore
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType({})  # type: ignore
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = None
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
@@ -256,7 +257,7 @@ def compute_dependency_results(
     data: AnalysisInputData,
     custom_dependencies: Optional[Dict[str, AbstractAnalysis]] = None,
     **kwargs,
-) -> dict:
+) -> list[dict[str, PyTree[Any]]]:
     """Compute all dependencies in correct order.
     
     Args:

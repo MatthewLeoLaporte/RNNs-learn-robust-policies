@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDependenciesType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDefaultInputsType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rlrmp.types import TreeNamespace
 
 import jax.numpy as jnp
@@ -35,7 +35,7 @@ class StatesPCA(AbstractAnalysis):
             `(*batch, n_vars)`, retaining the batch axes in the output. 
     """
 
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = None
     fig_params: FigParamNamespace = DefaultFigParamNamespace()

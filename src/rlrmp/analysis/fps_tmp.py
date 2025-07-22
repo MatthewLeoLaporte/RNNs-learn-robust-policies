@@ -26,7 +26,7 @@ from jax_cookbook import is_module, is_type, vmap_multi
 
 from rlrmp.analysis.analysis import (
     AbstractAnalysis,
-    AnalysisDependenciesType,
+    AnalysisDefaultInputsType,
     AnalysisInputData,
     Data,
     DefaultFigParamNamespace,
@@ -91,7 +91,7 @@ def process_fps(all_fps: PyTree[FPFilteredResults]):
 class NNSteadyStateFPs(AbstractAnalysis):
     """Find steady-state fixed points of the RNN."""
 
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
         funcs=Required,  # Functions to find fixed points for, e.g. RNN cells
         candidates=Required,  # Candidate states to initialize the fixed point search
     ))
@@ -224,7 +224,7 @@ def origin_only(states, axis=-2, *, hps_common):
 
 
 class Eigendecomposition(AbstractAnalysis):
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
         matrices=Required,
     ))
     conditions: tuple[str, ...] = ()
@@ -324,7 +324,7 @@ def get_ss_rnn_func(pos: Float[Array, "2"], sisu: float, rnn_cell: Module, key: 
 
 
 class Jacobians(AbstractAnalysis):
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
@@ -377,7 +377,7 @@ class Jacobians(AbstractAnalysis):
         
 
 class Hessians(AbstractAnalysis):
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
@@ -398,7 +398,7 @@ class Hessians(AbstractAnalysis):
 class SteadyStateJacobians(AbstractAnalysis):
     """Compute Jacobians and their eigendecomposition at steady-state FPs."""
 
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
         fps_results=NNSteadyStateFPs,
     ))
     conditions: tuple[str, ...] = ()
@@ -427,7 +427,7 @@ class SteadyStateJacobians(AbstractAnalysis):
 class FPsInPCSpace(AbstractAnalysis):
     """Plot fixed points in PC space."""
 
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
         fps_results=NNSteadyStateFPs,
         pca_results=StatesPCA,
     ))

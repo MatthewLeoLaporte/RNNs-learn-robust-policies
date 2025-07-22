@@ -27,7 +27,7 @@ from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
 from rlrmp.analysis.aligned import AlignedEffectorTrajectories, AlignedVars
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDependenciesType, AnalysisInputData, CallWithDeps, Data, DefaultFigParamNamespace, FigParamNamespace, Required
+from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDefaultInputsType, AnalysisInputData, CallWithDeps, Data, DefaultFigParamNamespace, FigParamNamespace, Required
 from rlrmp.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS
 from rlrmp.analysis.effector import EffectorTrajectories
 from rlrmp.analysis.measures import ALL_MEASURE_KEYS, MEASURE_LABELS
@@ -143,7 +143,7 @@ def rms(x: Array, axis: int = -1) -> Array:
 
 
 class PCPlot(AbstractAnalysis):
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
     conditions: tuple[str, ...] = ()  
     variant: Optional[str] = "small"
     fig_params: FigParamNamespace = DefaultFigParamNamespace(

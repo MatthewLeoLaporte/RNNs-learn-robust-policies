@@ -10,7 +10,7 @@ from typing import ClassVar, Optional
 from equinox import Module
 
 from rlrmp.analysis import AbstractAnalysis
-from rlrmp.analysis.analysis import AnalysisDependenciesType, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.analysis import AnalysisDefaultInputsType, DefaultFigParamNamespace, FigParamNamespace
 from rlrmp.analysis.state_utils import vmap_eval_ensemble
 from rlrmp.types import TreeNamespace
 from rlrmp.types import LDict
@@ -52,7 +52,7 @@ eval_func: Callable = vmap_eval_ensemble
 class SomeAnalysis(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
     
     ...

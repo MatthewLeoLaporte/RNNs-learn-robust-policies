@@ -12,7 +12,7 @@ from feedbax.task import AbstractTask
 from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDependenciesType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDefaultInputsType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rlrmp.analysis.state_utils import get_pos_endpoints
 from rlrmp.colors import COLORSCALES
 from rlrmp.config import PLOTLY_CONFIG
@@ -28,7 +28,7 @@ MEAN_LIGHTEN_FACTOR = PLOTLY_CONFIG.mean_lighten_factor
 class EffectorTrajectories(AbstractAnalysis):
     conditions: tuple[str, ...] = () # ('any_system_noise',)  # TODO: Skip this analysis, if only one eval
     variant: Optional[str] = "small"
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
         # legend_title="Reach direction",
         mean_exclude_axes=(),

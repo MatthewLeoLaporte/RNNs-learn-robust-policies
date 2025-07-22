@@ -16,7 +16,7 @@ import numpy as np
 from rlrmp.plot_utils import get_label_str
 from rlrmp.types import Responses, TreeNamespace
 from rlrmp.analysis.aligned import AlignedVars
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDependenciesType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDefaultInputsType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rlrmp.constants import EVAL_REACH_LENGTH, REPLICATE_CRITERION
 from rlrmp.misc import lohi
 from rlrmp.plot import get_measure_replicate_comparisons, get_violins
@@ -354,7 +354,7 @@ def output_corr(
 
 
 class Measures(AbstractAnalysis):
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
         aligned_vars=AlignedVars,
     ))
     measure_keys: Sequence[str] = eqx.field(

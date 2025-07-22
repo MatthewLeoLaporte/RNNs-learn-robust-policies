@@ -6,6 +6,7 @@
     "python.analysis.exclude": [
         "archive/"
     ],
+    "python.analysis.autoImportCompletions": true,
 }
 
 

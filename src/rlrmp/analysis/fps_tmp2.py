@@ -27,7 +27,7 @@ from jax_cookbook import is_module, is_type, vmap_multi
 
 from rlrmp.analysis.analysis import (
     AbstractAnalysis,
-    AnalysisDependenciesType,
+    AnalysisDefaultInputsType,
     AnalysisInputData,
     Data,
     DefaultFigParamNamespace,
@@ -164,7 +164,7 @@ def plot_hidden_and_fp_trajectories_3D(
 class ReachFPs(AbstractAnalysis):
     """Find fixed points during simple reaching tasks."""
 
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
         states=Data.states,
         models=Data.models,
     ))
@@ -208,7 +208,7 @@ class ReachFPs(AbstractAnalysis):
 class ReachFPsInPCSpace(AbstractAnalysis):
     """Plot reach fixed points in PC space."""
 
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
         fps_results=ReachFPs,
         pca_results=StatesPCA,
     ))
@@ -332,7 +332,7 @@ class ReachFPsInPCSpace(AbstractAnalysis):
 class ReachTrajectoriesInPCSpace(AbstractAnalysis):
     """Plot reach trajectories and fixed points in PC space."""
 
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
         fps_results=ReachFPs,
         pca_results=StatesPCA,
     ))
@@ -427,7 +427,7 @@ class ReachTrajectoriesInPCSpace(AbstractAnalysis):
 class ReachDirectionTrajectories(AbstractAnalysis):
     """Plot fixed point trajectories for a single reach direction across context inputs."""
 
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
         fps_results=ReachFPs,
         pca_results=StatesPCA,
     ))

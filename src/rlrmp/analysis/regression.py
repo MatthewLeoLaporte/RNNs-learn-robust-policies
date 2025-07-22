@@ -16,7 +16,7 @@ from feedbax.train import SimpleTrainer, grad_wrap_simple_loss_func
 from feedbax.loss import nan_safe_mse
 
 from rlrmp.analysis.aligned import AlignedVars
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDependenciesType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDefaultInputsType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rlrmp.tree_utils import ldict_level_keys, tree_level_labels
 
 
@@ -151,7 +151,7 @@ def fit_regression_from_pytree_vmap(
 class Regression(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
         regressor_tree=AlignedVars,
     ))
     fig_params: FigParamNamespace = DefaultFigParamNamespace(

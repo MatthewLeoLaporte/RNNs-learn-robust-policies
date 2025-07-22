@@ -12,7 +12,7 @@ from feedbax.bodies import SimpleFeedback
 from feedbax.nn import NetworkState
 from feedbax.task import SimpleReaches
 
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDependenciesType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDefaultInputsType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rlrmp.analysis.fp_finder import (
     FixedPointFinder,
     fp_adam_optimizer,
@@ -25,7 +25,7 @@ class SteadyStateFPs(AbstractAnalysis):
     """ 
     """
 
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = None
     fig_params: FigParamNamespace = DefaultFigParamNamespace()

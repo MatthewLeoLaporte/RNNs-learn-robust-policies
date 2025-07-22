@@ -9,7 +9,7 @@ import feedbax.plotly as fbp
 from jax_cookbook import is_module
 import jax_cookbook.tree as jtree
 
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDependenciesType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDefaultInputsType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rlrmp.analysis.state_utils import vmap_eval_ensemble
 from rlrmp.types import LDict
 
@@ -32,7 +32,7 @@ OUTPUT_WHERE = lambda state: state.net.output
 class FrequencyResponse(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType({})
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType({})
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
     
     def compute(self, data: AnalysisInputData, **kwargs):

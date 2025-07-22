@@ -13,7 +13,7 @@ from jax_cookbook import is_type
 import jax_cookbook.tree as jtree
 
 from rlrmp.analysis.aligned import AlignedVars
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDependenciesType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDefaultInputsType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rlrmp.plot_utils import get_label_str
 from rlrmp.tree_utils import move_ldict_level_above, tree_level_labels
 from rlrmp.types import Responses
@@ -31,7 +31,7 @@ class Profiles(AbstractAnalysis):
     """
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
         vars=AlignedVars,
     ))
     fig_params: FigParamNamespace = DefaultFigParamNamespace(

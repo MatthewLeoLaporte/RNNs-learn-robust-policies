@@ -17,7 +17,7 @@ import jax_cookbook.tree as jtree
 
 from rlrmp.analysis.analysis import (
     AbstractAnalysis,
-    AnalysisDependenciesType,
+    AnalysisDefaultInputsType,
     AnalysisInputData,
     DefaultFigParamNamespace,
     FigParamNamespace,
@@ -120,7 +120,7 @@ def get_trivial_reach_origins_directions(task: AbstractTask, models: PyTree[Modu
 
 class AlignedVars(AbstractAnalysis):
     """Align spatial variable (e.g. position and velocity) coordinates with the reach direction."""
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = None
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
@@ -163,7 +163,7 @@ class AlignedVars(AbstractAnalysis):
         
         
 class AlignedEffectorTrajectories(AbstractAnalysis):
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
         aligned_vars=AlignedVars,
     ))
     conditions: tuple[str, ...] = ()

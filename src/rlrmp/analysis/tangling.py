@@ -14,7 +14,7 @@ from jax_cookbook.misc import crop_to_shortest
 
 from rlrmp.analysis.analysis import (
     AbstractAnalysis, 
-    AnalysisDependenciesType, 
+    AnalysisDefaultInputsType, 
     AnalysisInputData, 
     Data, 
     DefaultFigParamNamespace, 
@@ -23,7 +23,7 @@ from rlrmp.analysis.analysis import (
 
 
 class Tangling(AbstractAnalysis):
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
         #! Maybe should not hardcode this here, but make it `Required`
         state=Data.states(where=lambda states: states.net.hidden),
     ))

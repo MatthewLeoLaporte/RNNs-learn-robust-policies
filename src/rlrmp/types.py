@@ -3,7 +3,7 @@ from collections.abc import Callable, Iterable, Mapping
 from copy import deepcopy
 from enum import Enum
 from types import SimpleNamespace
-from typing import Any, Dict, Generic, NamedTuple, Optional, TypeVar, overload
+from typing import Any, Dict, Generic, NamedTuple, Optional, Protocol, TypeVar, overload, runtime_checkable
 import equinox as eqx
 import jax
 import jax.tree as jt
@@ -224,6 +224,11 @@ class _Wrapped():
         return self.value
 
 
+@runtime_checkable
+class _ReprIndentable(Protocol):
+    def _repr_with_indent(self, level: int) -> str: ...
+    
+
 @jax.tree_util.register_pytree_with_keys_class
 class LDict(Mapping[K, V], Generic[K, V]):
     """Immutable dictionary with a distinguishingstring label.
@@ -277,7 +282,7 @@ class LDict(Mapping[K, V], Generic[K, V]):
             key_as_repr = repr(key)
             value_as_repr: str
 
-            if hasattr(value, '_repr_with_indent') and callable(getattr(value, '_repr_with_indent')):
+            if isinstance(value, _ReprIndentable):
                 # Recursive call for nested LDicts (or similar)
                 # Pass level + 1 for the nested structure's own indentation
                 value_as_repr = value._repr_with_indent(level + 1)

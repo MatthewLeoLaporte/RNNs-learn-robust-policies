@@ -20,7 +20,7 @@ from jax_cookbook import is_module, is_type, is_none
 import jax_cookbook.tree as jtree
 
 from rlrmp.analysis.aligned import AlignedEffectorTrajectories, AlignedVars, get_trivial_reach_origins_directions
-from rlrmp.analysis.analysis import _DummyAnalysis, AbstractAnalysis, AnalysisDependenciesType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.analysis import _DummyAnalysis, AbstractAnalysis, AnalysisDefaultInputsType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rlrmp.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS, get_pert_amp_vmap_eval_func
 from rlrmp.analysis.effector import EffectorTrajectories
 from rlrmp.analysis.measures import ALL_MEASURE_KEYS, MEASURE_LABELS
@@ -323,7 +323,7 @@ def max_deviation_after_stim(states_by_var, *, hps_common, **kwargs):
 
 class UnitFbGains(AbstractAnalysis):
     """Compute unit feedback gains."""
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
     conditions: tuple[str, ...] = ()
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
     variant: Optional[str] = "full"
@@ -331,7 +331,7 @@ class UnitFbGains(AbstractAnalysis):
 
 class UnitStimRegressionFigures(AbstractAnalysis):
     """Figures for unit stimulation regression."""
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
         regression_results=None,
         unit_fb_gains=None,
     ))

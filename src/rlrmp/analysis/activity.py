@@ -13,7 +13,7 @@ from feedbax.bodies import SimpleFeedbackState
 from jax_cookbook import is_type
 
 from rlrmp.analysis.pca import PCA
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDependenciesType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDefaultInputsType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
 from rlrmp.constants import REPLICATE_CRITERION
 from rlrmp.plot_utils import get_label_str
 from rlrmp.plot_utils import calculate_array_minmax
@@ -194,7 +194,7 @@ def activity_sample_units(
 class NetworkActivity_SampleUnits(AbstractAnalysis):
     conditions: tuple[str, ...] = ()  
     variant: Optional[str] = "small"
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
         n_units_sample=4,
         key=jr.PRNGKey(0),

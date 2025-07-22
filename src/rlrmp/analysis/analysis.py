@@ -5,7 +5,7 @@ from functools import cached_property, partial, wraps
 import inspect
 import logging
 from types import LambdaType, MappingProxyType
-from typing import TYPE_CHECKING, Any, ClassVar, Iterable, Literal, NamedTuple, Optional, Dict, Self, TypeAlias, Union
+from typing import TYPE_CHECKING, Any, ClassVar, Iterable, Literal, NamedTuple, Optional, Dict, Self, TypeAlias, Union, cast
 from pathlib import Path
 import yaml
 
@@ -142,7 +142,7 @@ class FigParamNamespace(TreeNamespace):
     def __getattr__(self, item: str) -> Any:
         if item.startswith('__'):
             # Avert issues with methods like `copy.deepcopy` which check for presence of dunder methods
-            return super().__getattr__(item)
+            return object.__getattribute__(self, item)
         return None
     
 
@@ -155,7 +155,7 @@ class _PrepOp(NamedTuple):
     label: str
     dep_name: Optional[Union[str, Sequence[str]]]  # Dependencies to transform
     transform_func: Callable[..., Any]
-    params: dict[str, Any] = {}  
+    params: Optional[dict[str, Any]] = {}  
 
 
 class _FigOp(NamedTuple):
@@ -174,8 +174,8 @@ class _FinalOp(NamedTuple):
     name: str
     label: str
     transform_func: Callable[[PyTree[go.Figure]], PyTree[go.Figure]]
-    params: dict[str, Any] = {}
-    is_leaf: Callable[[Any], bool] = None
+    params: Optional[dict[str, Any]] = {}
+    is_leaf: Optional[Callable[[Any], bool]] = None
     
     
 """Sentinel indicating a required dependency."""
@@ -347,7 +347,7 @@ class _AnalysisVmapSpec(Module):
     vmapped_dep_names: tuple[str, ...] = ()
     in_axes_sequence: tuple[int, ...] = ()
     
-    def with_dependencies(self, dep_names: Sequence[str], axes: tuple[int, ...]) -> Self:
+    def with_dependencies(self, dep_names: Sequence[str], axes: tuple[int, ...]) -> "_AnalysisVmapSpec":
         """Return a new VmapSpecs with additional dependencies using the same axes."""
         new_dependency_axes = dict(self.dependency_axes)
         
@@ -416,7 +416,7 @@ class AbstractAnalysis(Module, strict=False):
         '_final_ops_by_type',
     )
 
-    default_inputs: AbstractClassVar[MappingProxyType[str, type[Self]]]
+    default_inputs: AbstractClassVar["AnalysisDefaultInputsType"] 
     conditions: AbstractVar[tuple[str, ...]]
     variant: AbstractVar[Optional[str]]  #! TODO: Rename to `task_variant`
     fig_params: AbstractVar[FigParamNamespace]
@@ -425,7 +425,7 @@ class AbstractAnalysis(Module, strict=False):
     # implement them trivially in subclasses. This violates the abstract-final design
     # pattern. This is intentional. If it leads to problems, I will learn from that.
     #! This means no non-default arguments in subclasses
-    custom_inputs: Mapping[str, str | Self] = eqx.field(default_factory=dict)
+    custom_inputs: Mapping[str, "str | AbstractAnalysis"] = eqx.field(default_factory=dict)
     # Opt-in toggle for result caching.  When True, the result of `compute`
     # is saved to / loaded from PATHS.cache / "results" using a hash that
     # captures the analysis parameters plus the *actual* inputs passed to
@@ -643,12 +643,20 @@ class AbstractAnalysis(Module, strict=False):
         return result, figs
 
     @property
-    def inputs(self) -> Dict[str, type[Self] | Self | str]:
+    def inputs(self) -> "AnalysisInputsType":
         """Get the complete mapping of dependency names to their sources.
         
         Combines default inputs with custom overrides.
         """
-        return dict(self.default_inputs) | self.custom_inputs
+
+        inputs = dict(self.default_inputs) | dict(self.custom_inputs)
+        
+        if any(isinstance(v, _RequiredType) for v in inputs.values()):
+            raise ValueError(
+                f"Some inputs for {self.__class__.__name__} are marked as required, but no custom source is provided."
+            )
+        
+        return cast(AnalysisInputsType, MappingProxyType(inputs))
 
     def _get_target_dependency_names(
         self,
@@ -704,7 +712,7 @@ class AbstractAnalysis(Module, strict=False):
         self, 
         data: AnalysisInputData,
         **kwargs,
-    ) -> dict[str, PyTree[Any]]:
+    ) -> PyTree[Any]:
         """Perform computations for the analysis. 
         
         The return value is passed as `result` to `make_figs`, and is also made available to other
@@ -714,7 +722,9 @@ class AbstractAnalysis(Module, strict=False):
         a subclass that implements `compute` is implicitly available as a dependency for other subclasses
         which may depend on data for any variant.  
         """
-        return 
+        raise NotImplementedError(
+            f"{self.__class__.__name__} has not implemented `compute`"
+        )
     
     def make_figs(
         self, 
@@ -728,7 +738,9 @@ class AbstractAnalysis(Module, strict=False):
         Figures are returned, but are not made available to other subclasses of `AbstractAnalysis`
         which depend on the subclass implementing this method. 
         """
-        return 
+        raise NotImplementedError(
+            f"{self.__class__.__name__} has not implemented `make_figs`"
+        )
     
     def save_figs(
         self, 
@@ -1018,7 +1030,9 @@ class AbstractAnalysis(Module, strict=False):
             
             if above_level is not None:
                 unstacked = jt.map(
-                    lambda subtree: move_ldict_level_above(level_label, above_level, subtree),
+                    lambda subtree, above_level=above_level: move_ldict_level_above(
+                        level_label, above_level, subtree,
+                    ),
                     unstacked,
                     is_leaf=is_type(LDict),
                 )
@@ -1128,10 +1142,12 @@ class AbstractAnalysis(Module, strict=False):
         label = f"subdict-at-{_format_level_str(level)}_"
         if keys is not None:
             select_func = lambda d: subdict(d, keys)
-            label += ','.join(keys)
+            label += ','.join(str(k) for k in keys)
         elif idxs is not None:
             select_func = lambda d: subdict(d, [list(d.keys())[i] for i in idxs])
             label += f"idxs-{','.join(str(i) for i in idxs)}"
+        else:
+            raise ValueError("Either `keys` or `idxs` must be provided.")
 
         return self.after_transform(
             func=select_func, 
@@ -1460,13 +1476,13 @@ class AbstractAnalysis(Module, strict=False):
         updated_ops_for_type = current_ops + (new_op,)
         
         # Create a new dictionary for _final_ops_by_type to ensure immutability if needed by equinox
-        new_final_ops_by_type = self._final_ops_by_type.copy()
+        new_final_ops_by_type = dict(self._final_ops_by_type)
         new_final_ops_by_type[op_type] = updated_ops_for_type
         
         return eqx.tree_at(
             lambda a: a._final_ops_by_type,
             self,
-            new_final_ops_by_type,
+            MappingProxyType(new_final_ops_by_type),
         )
 
     def _change_fig_op(self, **kwargs) -> Self:
@@ -1579,12 +1595,16 @@ class AbstractAnalysis(Module, strict=False):
         return prepped_kwargs
 
 
-AnalysisDependenciesType: TypeAlias = MappingProxyType[str, type[AbstractAnalysis]]
+DefaultInputType: TypeAlias = type[AbstractAnalysis] | _RequiredType
+AnalysisDefaultInputsType: TypeAlias = MappingProxyType[str, DefaultInputType]
+
+InputType: TypeAlias = type[AbstractAnalysis] | AbstractAnalysis | str
+AnalysisInputsType: TypeAlias = MappingProxyType[str, InputType]
 
 
 class _DummyAnalysis(AbstractAnalysis):
     """An empty analysis, for debugging."""
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = None
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
@@ -1627,30 +1647,10 @@ def _call_user_func(func, dep_data, extra_kwargs):
     return func(dep_data, **filtered)
 
 
+import functools
+from typing import Any, Callable
+
 class CallWithDeps:
-    """Wrap *func* so that selected dependency values are routed into its
-    positional and keyword parameters when used inside `after_transform` or
-    similar prep-ops.
-
-    Usage
-    -----
-    ```python
-    .after_transform(
-        CallWithDeps("pca")(lambda pca, x: pca.batch_transform(x)),
-        dependency_name="data.states",
-    )
-    ```
-
-    Positional mapping: each entry in *pos_deps* is either a dependency name
-    (looked up in the `**kwargs` dict passed by the pipeline) or the literal
-    value ``None`` which indicates where the *current* dependency (i.e.
-    `dependency_name` being transformed) should be inserted.  If ``None`` is
-    absent, the current dependency is appended after the mapped ones.
-
-    Keyword mapping: ``CallWithDeps(z="other_dep")`` will forward the value of
-    "other_dep" to the keyword parameter ``z`` of *func*.
-    """
-
     _counter = 0
 
     def __init__(self, *pos_deps: str | None, **kw_deps: str):
@@ -1658,44 +1658,61 @@ class CallWithDeps:
         self.kw_deps = kw_deps
 
     def __call__(self, func: Callable):
-        # Build a stable mapping from global dependency label -> unique internal port name
+        # build your port map as before...
         label_set = [d for d in self.pos_deps if d is not None] + list(self.kw_deps.values())
         label_to_port: dict[str, str] = {}
         for lbl in label_set:
             if lbl not in label_to_port:
                 CallWithDeps._counter += 1
                 label_to_port[lbl] = f"__cwd_{CallWithDeps._counter:x}"
+                
+        pos_deps = self.pos_deps 
+        kw_deps = self.kw_deps
 
-        @wraps(func)
-        def wrapper(dep_data, **all_kwargs):
-            # Build positional arguments
-            pos_args = []
-            for dep in self.pos_deps:
-                if dep is None:
+        # define the wrapper class
+        class _Wrapper:
+            __slots__ = ("_func", "_port_map")
+
+            def __init__(self, func: Callable, port_map: dict[str, str]) -> None:
+                self._func = func
+                self._port_map = port_map
+
+            @property
+            def _cwd_port_map(self) -> dict[str, str]:
+                return self._port_map
+
+            def __call__(self, dep_data: Any, **all_kwargs: Any) -> Any:
+                # replicate your positional‑and‑keyword logic
+                pos_args: list[Any] = []
+                for dep in pos_deps:
+                    if dep is None:
+                        pos_args.append(dep_data)
+                    else:
+                        port = self._port_map[dep]
+                        try:
+                            pos_args.append(all_kwargs[port])
+                        except KeyError:
+                            raise KeyError(f"Dependency '{dep}' not found") from None
+
+                if None not in pos_deps:
                     pos_args.append(dep_data)
-                else:
-                    port = label_to_port[dep]
+
+                mapped_kwargs: dict[str, Any] = {}
+                for param, dep_name in kw_deps.items():
+                    port = self._port_map[dep_name]
                     try:
-                        pos_args.append(all_kwargs[port])
+                        mapped_kwargs[param] = all_kwargs[port]
                     except KeyError:
-                        raise KeyError(f"Dependency '{dep}' not found in kwargs for CallWithDeps wrapper") from None
+                        raise KeyError(f"Dependency '{dep_name}' not found for '{param}'") from None
 
-            if None not in self.pos_deps:
-                pos_args.append(dep_data)
+                return self._func(*pos_args, **mapped_kwargs)
 
-            # Build keyword arguments mapped explicitly
-            mapped_kwargs = {}
-            for param, dep_name in self.kw_deps.items():
-                port = label_to_port[dep_name]
-                try:
-                    mapped_kwargs[param] = all_kwargs[port]
-                except KeyError:
-                    raise KeyError(f"Dependency '{dep_name}' not found for keyword param '{param}'") from None
-
-            # Expose map on wrapper BEFORE returning
-            return func(*pos_args, **mapped_kwargs)
-        wrapper._cwd_port_map = label_to_port
-
+        # instantiate
+        wrapper = _Wrapper(func, label_to_port)
+        # **here**: update the instance with all of func’s metadata
+        functools.update_wrapper(wrapper, func)
+        
         return wrapper
+
 
 

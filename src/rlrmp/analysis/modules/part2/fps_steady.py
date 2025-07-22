@@ -27,7 +27,7 @@ from jaxtyping import Array, Float, PRNGKeyArray
 import numpy as np
 
 from rlrmp.analysis import AbstractAnalysis
-from rlrmp.analysis.analysis import _DummyAnalysis, AnalysisDependenciesType, Data, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.analysis import _DummyAnalysis, AnalysisDefaultInputsType, Data, DefaultFigParamNamespace, FigParamNamespace
 from rlrmp.analysis.pca import StatesPCA
 from rlrmp.misc import get_constant_input_fn
 from rlrmp.analysis.state_utils import get_best_replicate, vmap_eval_ensemble
@@ -106,7 +106,7 @@ def get_ss_rnn_func(sisu: float, rnn_cell: Module, pos: Float[Array, "2"], key: 
 class SteadyStateRNNFuncs(AbstractAnalysis):
     """Find steady-state RNN functions for the given RNN cell."""
     
-    default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict())
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = None
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
