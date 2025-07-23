@@ -39,7 +39,8 @@ from rlrmp.types import (
 WHERE_VARS_TO_ALIGN = lambda states, origins: LDict.of('var')(dict(
     pos=states.mechanics.effector.pos - origins[..., None, :],
     vel=states.mechanics.effector.vel,
-    force=states.efferent.output,
+    command=states.net.output,
+    force=getattr(states.force_filter, 'output', states.efferent.output),
 ))
 
 

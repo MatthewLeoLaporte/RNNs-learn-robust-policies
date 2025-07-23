@@ -13,6 +13,7 @@ COMMIT_MSG_STASH.txt
 .DS_Store
 
 # Misc
+*.db
 kaleido
 
 # Quarto

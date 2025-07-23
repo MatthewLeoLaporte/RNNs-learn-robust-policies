@@ -3,7 +3,7 @@ from copy import deepcopy
 from functools import partial
 import logging
 from types import NoneType
-from typing import Optional
+from typing import Optional, TypeVar
 
 import equinox as eqx
 import jax
@@ -29,7 +29,7 @@ import rlrmp
 import rlrmp.training.modules as training_modules_pkg
 from rlrmp.database import ModelRecord, get_db_session, get_record, save_model_and_add_record
 from rlrmp.hyperparams import flatten_hps, load_hps
-from rlrmp.misc import log_version_info, load_module_from_package
+from rlrmp.misc import GracefulInterruptHandler, GracefulStopRequested, log_version_info, load_module_from_package
 from rlrmp.types import namespace_to_dict
 from rlrmp.tree_utils import pp
 from rlrmp.types import TaskModelPair, TreeNamespace
@@ -45,6 +45,9 @@ LOG_STEP = 500
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
+
+
+T = TypeVar('T')
 
 
 def train_setup(
@@ -162,7 +165,6 @@ def train_and_save_models(
     """
     db_session = get_db_session()
 
-    
     key_init, key_train, key_eval = jr.split(key, 3)
 
     # User specifies which variant to run using the `id` key
@@ -196,47 +198,58 @@ def train_and_save_models(
     # TODO: Is this correct? Or should we pass the task for the respective training method?
     task_baseline: AbstractTask = jt.leaves(task_model_pairs, is_leaf=is_type(TaskModelPair))[0].task
 
-    def train_and_save_pair(pair, hps):
-        trained_model, train_history = train_pair(
-            trainer, 
-            pair,
-            hps.n_batches, 
-            key=key_train,  #! Use the same PRNG key for all training runs
-            ensembled=True,
-            loss_func=loss_func,
-            task_baseline=task_baseline,  
-            where_train=where_strs_to_funcs(dict(hps.where)),
-            batch_size=hps.batch_size, 
-            log_step=LOG_STEP,
-            save_model_parameters=hps.save_model_parameters,
-            state_reset_iterations=hps.state_reset_iterations,
-            # disable_tqdm=True,
-        )
-        model_record = save_model_and_add_record(
-            db_session,
-            trained_model,
-            hps,
-            train_history=train_history,
-            version_info=version_info,
-        )
-        if postprocess:
-            process_model_post_training(
-                db_session,
-                model_record,
-                n_std_exclude,
-                process_all=True,
-                save_figures=save_figures,
+    with GracefulInterruptHandler(
+        sensitive_msg="Keyboard interrupt caught: will exit cleanly after current model is trained...",
+        stop_msg="Finished training and processing model, stopping as requested.",
+        logger=logger,
+    ) as interrupt_handler:
+        
+        @interrupt_handler
+        def train_and_save_pair(pair, hps):
+            trained_model, train_history = train_pair(
+                trainer, 
+                pair,
+                hps.n_batches, 
+                key=key_train,  #! Use the same PRNG key for all training runs
+                ensembled=True,
+                loss_func=loss_func,
+                task_baseline=task_baseline,  
+                where_train=where_strs_to_funcs(dict(hps.where)),
+                batch_size=hps.batch_size, 
+                log_step=LOG_STEP,
+                save_model_parameters=hps.save_model_parameters,
+                state_reset_iterations=hps.state_reset_iterations,
+                # disable_tqdm=True,
             )
-        return trained_model, train_history, model_record
-    
-    trained_models, train_histories, model_records = jtree.unzip(jtree.map_tqdm(
-        # TODO: Could return already-trained models instead of None; would need to return `already_trained` bool from `skip_already_trained`
-        lambda pair, hps: train_and_save_pair(pair, hps) if pair is not None else None,
-        task_model_pairs, 
-        all_hps_train,
-        label="Training all pairs",
-        is_leaf=is_type(TaskModelPair, NoneType),
-    ))
+            model_record = save_model_and_add_record(
+                db_session,
+                trained_model,
+                hps,
+                train_history=train_history,
+                version_info=version_info,
+            )
+            if postprocess:
+                process_model_post_training(
+                    db_session,
+                    model_record,
+                    n_std_exclude,
+                    process_all=True,
+                    save_figures=save_figures,
+                )
+            return trained_model, train_history, model_record
+        
+        try:
+            trained_models, train_histories, model_records = jtree.unzip(jtree.map_tqdm(
+                # TODO: Could return already-trained models instead of None; would need to return
+                # `already_trained` bool from `skip_already_trained`
+                lambda pair, hps: train_and_save_pair(pair, hps) if pair is not None else None,
+                task_model_pairs, 
+                all_hps_train,
+                label="Training all pairs",
+                is_leaf=is_type(TaskModelPair, NoneType),
+            ))
+        except GracefulStopRequested:
+            raise KeyboardInterrupt
     
     return trained_models, train_histories, model_records
     

@@ -2,6 +2,7 @@ from collections import namedtuple
 from collections.abc import Callable, Iterable, Mapping
 from copy import deepcopy
 from enum import Enum
+from token import COMMA
 from types import SimpleNamespace
 from typing import Any, Dict, Generic, NamedTuple, Optional, Protocol, TypeVar, overload, runtime_checkable
 import equinox as eqx
@@ -485,18 +486,21 @@ class ResponseVar(str, Enum):
     """Variables available in response state."""
     POSITION = 'pos'
     VELOCITY = 'vel'
+    COMMAND = 'command'
     FORCE = 'force'
 
 
 class Responses(NamedTuple):
     pos: Any
     vel: Any
+    command: Any
     force: Any
 
 
 RESPONSE_VAR_LABELS = LDict.of('var')(dict(
     pos='Position',
     vel='Velocity',
+    command='Control command',
     force='Control force',
 ))
             
@@ -504,6 +508,7 @@ RESPONSE_VAR_LABELS = LDict.of('var')(dict(
 RESPONSE_VAR_LABELS_SHORT = LDict.of('var')(dict(
     pos='p',
     vel='v',
+    command='u',
     force='F',
 ))
 

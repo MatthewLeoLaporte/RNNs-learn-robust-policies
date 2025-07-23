@@ -12,6 +12,7 @@ from pathlib import Path
 import pkgutil
 import platform
 import re
+import signal
 import subprocess
 from types import ModuleType, GeneratorType
 import types
@@ -546,3 +547,96 @@ def batch_index(arr, idxs):
 def get_md5_hexdigest(content):
     """Returns the MD5 hexdigest of an object."""
     return hashlib.md5(str(content).encode()).hexdigest()
+
+
+class GracefulStopRequested(Exception):
+    """Custom exception for graceful stopping."""
+    pass
+
+
+class GracefulInterruptHandler:
+    """Context manager and decorator for graceful keyboard interrupt handling.
+    
+    Usage as context manager:
+    ```python
+    with GracefulInterruptHandler() as interrupt_handler:
+        @interrupt_handler
+        def sensitive_operation():
+            # ... long running operation
+            pass
+        
+        for item in items:
+            sensitive_operation()
+    ```
+    
+    The handler will:
+    - First Ctrl-C during sensitive operation: Wait for completion, then stop
+    - First Ctrl-C outside sensitive operation: Stop immediately  
+    - Second Ctrl-C anywhere: Abort immediately like normal
+    """
+    
+    def __init__(
+        self,
+        sensitive_msg: Optional[str] = None,
+        stop_msg: Optional[str] = None,
+        logger: Optional[logging.Logger] = None,
+    ):
+        """
+        Args:
+            sensitive_msg: Message shown when interrupt occurs during sensitive operation
+            stop_msg: Message shown when stopping gracefully after operation completes
+            logger: Logger to use for messages (defaults to print if None)
+        """
+        self.stop_requested = False
+        self.in_sensitive_operation = False
+        self.original_handler = None
+        
+        self.sensitive_msg = sensitive_msg or "Ctrl-C caught: will exit after current operation completes..."
+        self.stop_msg = stop_msg or "Operation completed, stopping as requested..."
+        self.logger = logger
+        
+    def _log_message(self, message: str):
+        """Log message using logger or print."""
+        if self.logger:
+            self.logger.info(message)
+        else:
+            print(f"\n{message}")
+    
+    def __enter__(self):
+        self.original_handler = signal.signal(signal.SIGINT, self._signal_handler)
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        signal.signal(signal.SIGINT, self.original_handler)
+    
+    def _signal_handler(self, signum, frame):
+        if self.stop_requested:
+            # Second Ctrl-C: restore default and abort immediately
+            signal.signal(signal.SIGINT, signal.SIG_DFL)
+            raise KeyboardInterrupt
+        else:
+            self.stop_requested = True
+            if self.in_sensitive_operation:
+                self._log_message(self.sensitive_msg)
+            else:
+                self._log_message("Ctrl-C caught: stopping...")
+                raise KeyboardInterrupt
+    
+    def __call__(self, func):
+        """Use as decorator."""
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            if self.stop_requested:
+                raise GracefulStopRequested()
+            
+            self.in_sensitive_operation = True
+            try:
+                result = func(*args, **kwargs)
+                # Check again after completion
+                if self.stop_requested:
+                    self._log_message(self.stop_msg)
+                    raise GracefulStopRequested()
+                return result
+            finally:
+                self.in_sensitive_operation = False
+        return wrapper

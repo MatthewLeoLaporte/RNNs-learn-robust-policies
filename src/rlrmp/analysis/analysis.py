@@ -722,9 +722,7 @@ class AbstractAnalysis(Module, strict=False):
         a subclass that implements `compute` is implicitly available as a dependency for other subclasses
         which may depend on data for any variant.  
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} has not implemented `compute`"
-        )
+        return
     
     def make_figs(
         self, 
@@ -738,9 +736,7 @@ class AbstractAnalysis(Module, strict=False):
         Figures are returned, but are not made available to other subclasses of `AbstractAnalysis`
         which depend on the subclass implementing this method. 
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} has not implemented `make_figs`"
-        )
+        return
     
     def save_figs(
         self, 

@@ -175,8 +175,7 @@ if __name__ == '__main__':
         # Train each set of models with its respective config
         for i, config in enumerate(expt_configs):
             
-            logger.info(f"Training models for experiment {expt_id}, config {i} of {len(expt_configs)}")
-            
+            logger.info(f"Training models for experiment {expt_id}, config {i+1} of {len(expt_configs)}")
             
             trained_models, train_histories, model_records = train_and_save_models(
                 hps=expt_hps | config,

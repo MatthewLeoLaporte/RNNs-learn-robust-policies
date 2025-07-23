@@ -8,6 +8,7 @@ train:
     feedback_delay_steps: 0
     dt: 0.01
     damping: 10
+    tau_rise: 0.05
   # method: 'pai-asf'
   # where: 
   #   0: ['step.net.hidden', 'step.net.readout']
@@ -37,7 +38,7 @@ pert:
   # constant -> [0.0, 0.4],
 
 model:
-  n_steps: null
+  n_steps: 150
   feedback_noise_std: null
   motor_noise_std: null
 

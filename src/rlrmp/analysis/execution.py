@@ -298,6 +298,7 @@ def run_analysis_module(
     # Ensure the directory for state pickles exists
     if states_pkl_dir is None:
         states_pkl_dir = PATHS.cache / STATES_CACHE_SUBDIR
+    assert states_pkl_dir is not None
     states_pkl_dir.mkdir(parents=True, exist_ok=True)
 
     # Start a database session for loading trained models, and saving evaluation/figure records

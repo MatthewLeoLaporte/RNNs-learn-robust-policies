@@ -22,23 +22,6 @@ from rlrmp.analysis.fp_finder import (
 from rlrmp.types import LDict, TreeNamespace
 
 
-class SteadyStateFPs(AbstractAnalysis):
-    """ 
-    """
-
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
-    conditions: tuple[str, ...] = ()
-    variant: Optional[str] = None
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
-
-    def compute(
-        self,
-        data: AnalysisInputData,
-        **kwargs,
-    ):
-        pass
-
-
 def get_endpoint_positions(task):
     trials = task.validation_trials
     return (

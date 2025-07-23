@@ -381,7 +381,7 @@ class Measures(AbstractAnalysis):
 
         #! Necessary because I have not yet changed `Measure` to use `LDict.of('var')`.
         aligned_data = jt.map(
-            lambda x: Responses(x['pos'], x['vel'], x['force']),
+            lambda x: Responses(x['pos'], x['vel'], x['command'], x['force']),
             aligned_data,
             is_leaf=LDict.is_of('var'),
         )

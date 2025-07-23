@@ -607,11 +607,12 @@ def plot_traj_and_fp_pcs_3D(
 
 #! TODO: Not sure this should be here. It also redundant with 
 #! `analysis.aligned.GET_VARS_TO_ALIGN` except for the origin subtraction
-PLANT_VAR_LABELS = Responses('Pos.', 'Vel.', 'Force')
+PLANT_VAR_LABELS = Responses('Pos.', 'Vel.', 'Command', 'Force')
 WHERE_PLOT_PLANT_VARS = lambda states: Responses(
     states.mechanics.effector.pos,
     states.mechanics.effector.vel,
-    states.efferent.output,
+    states.net.output,
+    getattr(states.force_filter, 'output', states.efferent.output),
 )
 
 
