@@ -124,7 +124,7 @@ class FixedPointFinder(Module):
         self, 
         func: Callable[[Float[Array, "state"]], Float[Array, "state"]], 
         candidates: Float[Array, "n_candidates state"], 
-        loss_tol: Float[Array, "1"],   
+        loss_tol: Float[Array, "1"] = 1e-6,   
         n_batches: int = 10_000, 
         n_batches_per_iter: int = 200,
         outlier_tol: Optional[float] = None, 

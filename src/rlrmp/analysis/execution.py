@@ -11,6 +11,7 @@ from jaxtyping import PyTree
 import optax
 import plotly
 import plotly.graph_objects as go
+from sklearn import tree
 from sqlalchemy.orm import Session
 
 import feedbax
@@ -35,6 +36,7 @@ from rlrmp.database import (
 )
 # Added utilities for unflattening record hyperparameters into namespaces  
 from rlrmp.database import fill_missing_train_hps_from_record, fill_hps_with_train_params
+from rlrmp.tree_utils import tree_level_labels
 from rlrmp.types import (
     LDict,
     TreeNamespace,
@@ -241,8 +243,8 @@ def perform_all_analyses(
     if not any(analyses):
         raise ValueError("No analyses given to perform")
 
-    # Phase 2: Generate figures for leaf analyses only
-    def make_figs_and_save(analysis_key: str, analysis: AbstractAnalysis, inputs: dict):
+    # Phase 2: Keep results & generate figures for leaf analyses only
+    def finish_analysis(analysis_key: str, analysis: AbstractAnalysis, inputs: dict):
         logger.info(f"Making figures: {analysis_key}")
         # Get the computed result for this analysis (computed in phase 1)
         result = inputs.pop('result')
@@ -262,11 +264,12 @@ def perform_all_analyses(
                 label=analysis_key,
                 **inputs,
             )
-        logger.info(f"Figures saved: {analysis_key}")
+            logger.info(f"Figures saved: {analysis_key}")
+            
         return analysis, result, figs
 
     all_analyses, all_results, all_figs = jtree.unzip({
-        analysis_key: make_figs_and_save(analysis_key, analysis, dependencies)
+        analysis_key: finish_analysis(analysis_key, analysis, dependencies)
         for (analysis_key, analysis), dependencies in zip(analyses.items(), all_dependency_results)
     })
 
@@ -376,7 +379,7 @@ def run_analysis_module(
         try:
             with open(states_pickle_path, 'rb') as f:
                 states = pickle.load(f)
-            logger.info("States loaded from pickle.")
+            logger.info(f"Loaded pickled states with PyTree structure: {tree_level_labels(states, is_leaf=is_module)}")
             loaded_from_pickle = True
         except Exception as e:
             logger.error(f"Failed to load pickled states: {e}")
@@ -388,6 +391,7 @@ def run_analysis_module(
 
         # Compute from scratch
         states = _compute_states_and_log_memory_estimate()
+        logger.info(f"Computed states with PyTree structure: {tree_level_labels(states, is_leaf=is_module)}")
 
     # Save states if we didn't use --no-pickle and we didn't successfully load from pickle
     if not no_pickle and not loaded_from_pickle:

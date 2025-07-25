@@ -436,11 +436,11 @@ ANALYSES = {
         )
         .after_transform(partial(get_best_replicate, axis=3))
         .after_indexing(1, unit_idxs_profiles_plot, axis_label="unit_stim_idx")  #! Only make figures for a few stim units
-        .after_transform(transform_profile_vars, level='var', dependency_name="vars")  # e.g. positions to deviations
+        .after_transform(transform_profile_vars, level='var', dependency_names="vars")  # e.g. positions to deviations
         .after_unstacking(1, 'unit_stim_idx', above_level='pert__amp')
         # .after_indexing(0, 1, axis_label="stim_amp")  #! Only make figures for unit stim condition
         .after_unstacking(0, 'stim_amp', above_level='pert__amp')
-        .after_transform(rearrange_profile_vars, dependency_name="vars")  # Plot pert amp. on same figure
+        .after_transform(rearrange_profile_vars, dependency_names="vars")  # Plot pert amp. on same figure
         .combine_figs_by_level(  # Also plot SISU on same figure, with different line styles
             level='sisu',
             fig_params_fn=lambda fig_params, i, item: dict(
@@ -470,8 +470,8 @@ ANALYSES = {
         .after_transform(lambda subtree, **kwargs: subtree[1.5], level="train__pert__std")  #! Only for trained on perturbations
         # .after_transform(transform_profile_vars, level='var', dependency_name="regressor_tree")  #
         # e.g. positions to deviations
-        .after_transform(max_deviation_after_stim, level="var", dependency_name="regressor_tree")
-        .vmap(axes=0, dependency_names="regressor_tree")
+        .after_transform(max_deviation_after_stim, level="var", dependency_names="regressor_tree")
+        .vmap(in_axes={"regressor_tree": 0})
     ),
     "unit_stim_regression_figures": UnitStimRegressionFigures(
         custom_inputs=dict(
@@ -499,7 +499,7 @@ ANALYSES = {
     #     .after_transform(
     #         # get_segment_trials_func(get_symmetric_accel_decel_epochs),
     #         segment_stim_epochs,
-    #         dependency_name="states",
+    #         dependency_names="states",
     #     )
     #     .vmap_over_states(axes=[0, 1])  # Compute preferences separately for stim vs. nostim, and for each stim unit
     # ),

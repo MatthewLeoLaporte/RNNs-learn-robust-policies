@@ -8,9 +8,9 @@ part1:
     - name: feedback_delays
       model:
         feedback_delay_steps: [0, 5]
-    # - name: damping 
-    #   model:
-    #     damping: [0, 10]
+    - name: damping 
+      model:
+        damping: [0, 10]
     - name: disturbance_types
       cases:  # run these separately
         - name: curl
@@ -36,9 +36,9 @@ part2:
     - name: feedback_delays
       model:
         feedback_delay_steps: [0, 5]
-    # - name: damping 
-    #   model:
-    #     damping: [0, 10]
+    - name: damping 
+      model:
+        damping: [0, 10]
     - name: disturbance_types
       cases: 
         - name: curl

@@ -152,7 +152,7 @@ ANALYSES = {
         .after_transform(get_best_replicate)
         .after_transform(
             lambda tree, **kws: move_ldict_level_above("var", "train__pert__std", tree),
-            dependency_name="vars",
+            dependency_names="vars",
         )
     ),
     "measures": measures_base,

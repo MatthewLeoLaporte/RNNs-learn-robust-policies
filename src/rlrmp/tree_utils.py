@@ -108,8 +108,8 @@ def tree_level_labels(
     # Collect the labels from all LDict nodes in the path
     labels = []
     for node_type, _ in first_path:
-        if isinstance(node_type, LDictConstructor):
-            labels.append(node_type.label)   
+        if isinstance(node_type, (LDict, LDictConstructor)):
+            labels.append(f"LDict.of({node_type.label})")   
         else:
             labels.append(node_type.__name__)
         

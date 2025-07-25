@@ -138,7 +138,7 @@ ANALYSES = {
         .after_transform(get_best_replicate)
         .after_transform(
             lambda tree, **kws: ldict_level_to_bottom("train__pert__std", tree),
-            dependency_name="vars",
+            dependency_names="vars",
         )
     ),
     "profiles_by_sisu": (
@@ -146,7 +146,7 @@ ANALYSES = {
         .after_transform(get_best_replicate)
         .after_transform(
             lambda tree, **kws: ldict_level_to_bottom("sisu", tree),
-            dependency_name="vars",
+            dependency_names="vars",
         )
     ),
     "measures_by_pert_amp": Measures(measure_keys=MEASURE_KEYS).map_figs_at_level("pert__amp"),

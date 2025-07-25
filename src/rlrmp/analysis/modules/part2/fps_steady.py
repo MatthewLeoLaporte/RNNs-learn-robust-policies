@@ -13,21 +13,25 @@ change.
 """
 
 from collections.abc import Callable, Sequence
+from functools import partial, wraps
 from types import MappingProxyType, SimpleNamespace
 from typing import ClassVar, Optional
 
+from arrow import get
 import equinox as eqx
 from equinox import Module
 import jax.numpy as jnp
+import jax.random as jr
 import jax.tree as jt
 
-from jax_cookbook import is_module
+from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
-from jaxtyping import Array, Float, PRNGKeyArray
+from jaxtyping import Array, Float, PRNGKeyArray, PyTree
 import numpy as np
 
 from rlrmp.analysis import AbstractAnalysis, AnalysisInputData
 from rlrmp.analysis.analysis import _DummyAnalysis, AnalysisDefaultInputsType, Data, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.fp_finder import FPFilteredResults, take_top_fps
 from rlrmp.analysis.pca import StatesPCA
 from rlrmp.misc import get_constant_input_fn
 from rlrmp.analysis.state_utils import get_best_replicate, vmap_eval_ensemble
@@ -77,14 +81,55 @@ def setup_eval_tasks_and_models(task_base: Module, models_base: LDict[float, Mod
 
 # Unlike `feedback_perts`, we don't need to vmap over impulse amplitude 
 eval_func: Callable = vmap_eval_ensemble
- 
-# goals_pos = task.validation_trials.targets["mechanics.effector.pos"].value[:, -1]
+
 
 
 N_PCA = 50
 START_STEP = 0
 END_STEP = 100
 STRIDE_FP_CANDIDATES = 16
+
+
+#! TODO: Refactor out the common parts, e.g. meets criteria, top fps, etc.
+def process_fps(all_fps: PyTree[FPFilteredResults]):
+    """Only keep FPs/replicates that meet criteria."""
+    
+    n_fps_meeting_criteria = jt.map(
+        lambda fps: fps.counts['meets_all_criteria'],
+        all_fps,
+        is_leaf=is_type(FPFilteredResults),
+    )
+
+    # satisfactory_replicates = jt.map(
+    #     lambda n_matching_fps_by_sisu: jnp.all(
+    #         jnp.stack(jt.leaves(n_matching_fps_by_sisu), axis=0),
+    #         axis=0,
+    #     ),
+    #     n_fps_meeting_criteria,
+    #     is_leaf=LDict.is_of('sisu'),
+    # )
+
+    all_top_fps = take_top_fps(all_fps, n_keep=6)
+
+    # Average over the top fixed points, to get a single one for each included replicate and
+    # control input.
+    fps_final = jt.map(
+        lambda top_fps_by_sisu: jt.map(
+            lambda fps: jnp.nanmean(fps, axis=-2),
+            top_fps_by_sisu,
+            is_leaf=is_type(FPFilteredResults),
+        ),
+        all_top_fps,
+        is_leaf=LDict.is_of('sisu'),
+    )
+
+    return TreeNamespace(
+        fps=fps_final,
+        all_top_fps=all_top_fps,
+        n_fps_meeting_criteria=n_fps_meeting_criteria,
+        # satisfactory_replicates=satisfactory_replicates,
+    )
+
 
 def get_ss_rnn_input(input_size: int, sisu: float, pos: Float[Array, "2"]):
     input_star = jnp.zeros((input_size,))
@@ -94,10 +139,11 @@ def get_ss_rnn_input(input_size: int, sisu: float, pos: Float[Array, "2"]):
     return input_star.at[0].set(sisu)
 
 
-def get_ss_rnn_func(sisu: float, rnn_cell: Module, pos: Float[Array, "2"], key: PRNGKeyArray):
-    input_star = get_ss_rnn_input(pos, sisu, rnn_cell.input_size)
-    def rnn_func(h):
+def get_ss_rnn_func(sisu: float, rnn_cell: Module, key: PRNGKeyArray):
+    def rnn_func(pos, h):
+        input_star = get_ss_rnn_input(rnn_cell.input_size, sisu, pos)
         return rnn_cell(input_star, h, key=key)
+
     return rnn_func
 
 
@@ -110,6 +156,7 @@ class SteadyStateRNNFuncs(AbstractAnalysis):
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = None
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
+    key: PRNGKeyArray = eqx.field(default_factory=lambda: jr.PRNGKey(0))
     
     def compute(self, data: AnalysisInputData, **kwargs) -> TreeNamespace:
         """Compute the steady-state RNN functions."""
@@ -118,9 +165,49 @@ class SteadyStateRNNFuncs(AbstractAnalysis):
         # 1. RNN cells vary in `models` by `train__pert__std`
         # 2. RNN funcs will vary with `train__pert__std`, `sisu`, and goal position
         
-        return jt.map(lambda model: model.step.net.hidden, models, is_leaf=is_module)
+        rnn_cells = jt.map(lambda model: model.step.net.hidden, models, is_leaf=is_module)
+
+        # lambda rnn_cell: VmapSpec(
+        #     func=get_ss_rnn_func(sisu, rnn_cell, self.key),
+        #     extra_data={'pos': _get_goal_states(tasks_by_sisu[sisu])},
+        #     in_axes={'pos': 0}  # Vmap over first axis of positions
+        # ),
+        # NOTE: For this analysis module, the goal states supplied by the task do not vary with
+        # SISU; however, we still allow them to vary in what follows, for generality.
+        rnn_funcs = jt.map(
+            lambda tasks_by_sisu, rnn_cells_by_sisu: LDict.of('sisu')({
+                sisu: jt.map(
+                    lambda rnn_cells_by_std: jt.map(
+                        lambda rnn_cell: get_ss_rnn_func(sisu, rnn_cell, self.key),
+                        rnn_cells_by_std,
+                        is_leaf=is_module,
+                    ),
+                    rnn_cells_by_sisu[sisu],
+                    is_leaf=LDict.is_of('train__pert__std'),
+                )
+                for sisu in tasks_by_sisu
+            }),
+            data.tasks, rnn_cells,
+            is_leaf=LDict.is_of('sisu'),
+        )
+        
+        return rnn_funcs
+    
+    
+def reshape_candidates(states: Array) -> Array:
+    """Reshape the candidates to have shape (n_candidates, n_hidden)."""
+    # Reshape the states to have shape (n_steady_states, n_candidates, n_hidden)
+    #! It might instead make sense to reshape to (n_candidates, n_steady_states, n_hidden)?
+    #! Though I doubt it, as the vmap on `n_steady_states` probably is a prep op
+    gridpoints_first = jnp.moveaxis(states, 1, 0)
+    return jnp.reshape(
+        gridpoints_first, 
+        (gridpoints_first.shape[0], -1, gridpoints_first.shape[-1]),
+    )
 
 
+# Model PyTree structure: ['sisu', 'train__pert__std']
+# State batch shape: (eval, replicate, condition)
 DEPENDENCIES = {
     "states_pca": (
         StatesPCA(n_components=N_PCA, where_states=lambda states: states.net.hidden)
@@ -129,25 +216,32 @@ DEPENDENCIES = {
     ),
     "steady_state_rnn_funcs": (
         SteadyStateRNNFuncs()
+        .after_transform(get_best_replicate)
     ),
     "steady_state_fps": (
         FixedPoints(
             custom_inputs=dict(
                 funcs="steady_state_rnn_funcs",
+                #! TODO: After making `get_best_replicate` a global transform, put `reshape_candidates` here.
                 candidates=Data.states(
                     # FP initial conditions <- full hidden state trajectories
-                    where=lambda states: states.net.hidden
+                    where=lambda states: states.net.hidden,
                 ),
+                func_args=Data.tasks(
+                    where=lambda task: (
+                        task.validation_trials.targets["mechanics.effector.pos"].value[:, -1]
+                    ),
+                )
             )
         )
-        .after_transform(get_best_replicate)
+        .after_transform(get_best_replicate, dependency_names=("candidates",))
         .after_transform(  
             # Collapse all axes except the state dimension 
-            lambda states, *, hps_common: jnp.reshape(
-                states,
-                (-1, hps_common.train.model.hidden_size),
-            )[::STRIDE_FP_CANDIDATES]
+            lambda states: jt.map(reshape_candidates, states),
+            dependency_names=("candidates",),   
         )
+        # vmap over the steady state grid positions
+        .vmap(in_axes={'func_args': 0, 'candidates': 0})
     )
 }
 
@@ -156,16 +250,22 @@ DEPENDENCIES = {
 # Array batch shape: (evals, replicates, reach conditions)
 ANALYSES = {
     "fps_in_pc_space": (
-        FPsInPCSpace(custom_inputs=dict(pca_results="states_pca"))
-    ),
-    "jacobians": (
-        Jacobians(
-            func_where=lambda model: model.step.net.hidden,
-            inputs_where=lambda states: states.net.input,
-            states_where=lambda states: states.net.hidden,
+        FPsInPCSpace(
+            custom_inputs=dict(
+                fps_results="steady_state_fps",
+                pca_results="states_pca",
+                
+            )
         )
-        .map_figs_at_level("train__pert__std")
     ),
+    # "jacobians": (
+    #     Jacobians(
+    #         func_where=lambda model: model.step.net.hidden,
+    #         inputs_where=lambda states: states.net.input,
+    #         states_where=lambda states: states.net.hidden,
+    #     )
+    #     .map_figs_at_level("train__pert__std")
+    # ),
 }
 
 

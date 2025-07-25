@@ -84,7 +84,7 @@ ANALYSES = {
     #     .after_transform(get_best_replicate)
     #     .after_transform(
     #         get_segment_trials_func(get_symmetric_accel_decel_epochs),
-    #         dependency_name="states",
+    #         dependency_names="states",
     #     )
     #     # .after_indexing(-2, ts, axis_label="timestep")
     #     # .and_transform_results(map_fn_over_tree(vectors_to_2d_angles))
@@ -96,7 +96,7 @@ ANALYSES = {
         .after_transform(get_best_replicate)
         .after_transform(
             get_segment_trials_func(get_symmetric_accel_decel_epochs),
-            dependency_name="states",
+            dependency_names="states",
         )
         # .after_indexing(-2, ts, axis_label="timestep")
         # .and_transform_results(map_fn_over_tree(vectors_to_2d_angles))
@@ -108,7 +108,7 @@ ANALYSES = {
         .after_transform(get_best_replicate)
         .after_transform(
             get_segment_trials_func(get_symmetric_accel_decel_epochs),
-            dependency_name="states",
+            dependency_names="states",
         )
         # .after_indexing(-2, ts, axis_label="timestep")
         # .and_transform_results(map_fn_over_tree(vectors_to_2d_angles))

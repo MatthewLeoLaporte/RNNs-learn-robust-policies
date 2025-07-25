@@ -7,7 +7,7 @@ into the declarative analysis framework.
 from collections.abc import Callable, Sequence
 from functools import partial
 from types import MappingProxyType
-from typing import ClassVar, Optional, TypeVar
+from typing import Any, ClassVar, Optional, TypeVar
 
 import equinox as eqx
 from equinox import Module, field
@@ -19,7 +19,7 @@ import jax_cookbook.tree as jtree
 import numpy as np
 from optax import GradientTransformation
 import plotly.graph_objects as go
-from jaxtyping import Array, Float, PRNGKeyArray, PyTree
+from jaxtyping import Array, Float, PRNGKeyArray, PyTree, Scalar
 
 from feedbax.bodies import SimpleFeedbackState
 from jax_cookbook import is_module, is_type, vmap_multi
@@ -31,7 +31,8 @@ from rlrmp.analysis.analysis import (
     Data,
     DefaultFigParamNamespace,
     FigParamNamespace,
-    Required,
+    OptionalInput,
+    RequiredInput,
 )
 from rlrmp.analysis.fp_finder import (
     FPFilteredResults,
@@ -48,55 +49,15 @@ from rlrmp.types import LDict, TreeNamespace
 
 
 T = TypeVar('T')
-
-
-#! TODO: Either remove SISU-specific logic, or rename
-def process_fps(all_fps: PyTree[FPFilteredResults]):
-    """Only keep FPs/replicates that meet criteria."""
     
-    n_fps_meeting_criteria = jt.map(
-        lambda fps: fps.counts['meets_all_criteria'],
-        all_fps,
-        is_leaf=is_type(FPFilteredResults),
-    )
-
-    satisfactory_replicates = jt.map(
-        lambda n_matching_fps_by_sisu: jnp.all(
-            jnp.stack(jt.leaves(n_matching_fps_by_sisu), axis=0),
-            axis=0,
-        ),
-        n_fps_meeting_criteria,
-        is_leaf=LDict.is_of('sisu'),
-    )
-
-    all_top_fps = take_top_fps(all_fps, n_keep=6)
-
-    # Average over the top fixed points, to get a single one for each included replicate and
-    # control input.
-    fps_final = jt.map(
-        lambda top_fps_by_sisu: jt.map(
-            lambda fps: jnp.nanmean(fps, axis=-2),
-            top_fps_by_sisu,
-            is_leaf=is_type(FPFilteredResults),
-        ),
-        all_top_fps,
-        is_leaf=LDict.is_of('sisu'),
-    )
-
-    return TreeNamespace(
-        fps=fps_final,
-        all_top_fps=all_top_fps,
-        n_fps_meeting_criteria=n_fps_meeting_criteria,
-        satisfactory_replicates=satisfactory_replicates,
-    )
-
 
 class FixedPoints(AbstractAnalysis):
     """Find steady-state fixed points of the RNN."""
 
     default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
-        funcs=Required,  # Functions to find fixed points for, e.g. RNN cells
-        candidates=Required,  # Candidate states to initialize the fixed point search
+        funcs=RequiredInput,  # Functions to find fixed points for, e.g. RNN cells
+        candidates=RequiredInput,  # Candidate states to initialize the fixed point search
+        func_args=OptionalInput,
     ))
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
@@ -104,7 +65,7 @@ class FixedPoints(AbstractAnalysis):
     cache_result: bool = True
     
     # ss_func: Callable = get_ss_rnn_func
-    fp_tol: float = 1e-5
+    fp_tol: Scalar = eqx.field(default=1e-5, converter=jnp.array)
     unique_tol: float = 0.025
     outlier_tol: float = 1.0
     stride_candidates: int = 16
@@ -121,6 +82,7 @@ class FixedPoints(AbstractAnalysis):
         """Partial function for finding and filtering fixed points."""
         return partial(
             self.fpfinder.find_and_filter,
+            loss_tol=jnp.array(self.fp_tol),
             outlier_tol=self.outlier_tol,
             unique_tol=self.unique_tol,
             key=self.key,
@@ -132,91 +94,23 @@ class FixedPoints(AbstractAnalysis):
         *,
         funcs: PyTree[Callable, 'T'],
         candidates: PyTree[Array, 'T'],
-        hps_common: TreeNamespace,
+        func_args: Optional[tuple[PyTree[Any, 'T'], ...]] = None,
         **kwargs,
-    ):
-        #! "This is because the existing code expects the SISU level to be on the inside"
-        models, states = [
-            ldict_level_to_bottom('sisu', tree, is_leaf=is_module)
-            for tree in (data.models, data.states)
-        ]
-
-        # rnn_funcs = jt.map(
-        #     lambda model: model.step.net.hidden,
-        #     models,
-        #     is_leaf=is_module,
-        # )
-
-        task_leaf = jt.leaves(data.tasks, is_leaf=is_module)[0]
-        positions = task_leaf.validation_trials.targets["mechanics.effector.pos"].value[:, -1]
-
-        def get_ss_rnn_fps(
-            pos: Float[Array, "2"], 
-            rnn_cell: Module, 
-            candidate_states: Float[Array, "n_candidates n_replicates hidden_size"], 
-            sisu: float, 
-            fpf_func, 
-            fp_tol, 
-            key: PRNGKeyArray,
-        ):
-            fps = fpf_func(
-                get_ss_rnn_func(pos, sisu, rnn_cell, key),
-                candidate_states,
-                fp_tol,
-            )
-            return fps
-
-        get_fps_partial = partial(
-            get_ss_rnn_fps,
-            fpf_func=self.fpf_func,
-            fp_tol=self.fp_tol,
-            key=self.key,
-        )
-
-        # #! Does the replicate logic hold when only the best replicate is passed to this analysis?
-        # if isinstance(positions, Array) and len(positions.shape) == 2:
-        #     get_fps_func = vmap_multi(
-        #         get_fps_partial,
-        #         in_axes_sequence=(
-        #             (None, 0, 0, None),  # Over replicates
-        #             (0, None, None, None),  # Over grid positions
-        #         ),
-        #     )
-        # else:
-        #     get_fps_func = eqx.filter_vmap(
-        #         get_fps_partial,
-        #         in_axes=(None, 0, 0, None),  # Over replicates
-        #     )
-
-        candidates = jt.map(
-            lambda s: jnp.reshape(
-                s.net.hidden,
-                (hps_common.train.model.n_replicates, -1, hps_common.train.model.hidden_size),
-            )[:, ::self.stride_candidates],
-            states,
-            is_leaf=is_module,
-        )
+    ):  
+        if func_args is None:
+            func_args = tuple()
         
-        all_fps = jt.map(
-            funcs, candidates,
+        def get_fps(func, cands, *args):
+            return self.fpf_func(
+                lambda h: func(*args, h),
+                cands
+            )
+
+        return jt.map(
+            get_fps,
+            funcs, candidates, *func_args,
             is_leaf=callable,
         )
-
-        # all_fps = jt.map(
-        #     lambda func, candidates_by_sisu: LDict.of('sisu')({
-        #         sisu: get_fps_func(
-        #             positions,
-        #             first(func, is_leaf=is_module),
-        #             candidates_by_sisu[sisu],
-        #             sisu,
-        #         )
-        #         for sisu in hps_common.sisu
-        #     }),
-        #     rnn_funcs, candidates,
-        #     is_leaf=LDict.is_of('sisu'),
-        # )
-
-        return process_fps(all_fps)
 
 
 def origin_only(states, axis=-2, *, hps_common):
@@ -228,7 +122,7 @@ def origin_only(states, axis=-2, *, hps_common):
 
 class Eigendecomposition(AbstractAnalysis):
     default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
-        matrices=Required,
+        matrices=RequiredInput,
     ))
     conditions: tuple[str, ...] = ()
     variant: Optional[str] = "full"
@@ -441,10 +335,9 @@ class FPsInPCSpace(AbstractAnalysis):
     def make_figs(
         self,
         data: AnalysisInputData,
-        result: PyTree,
+        *,
         fps_results: TreeNamespace,
         pca_results: TreeNamespace,
-        # models: PyTree,
         colors: PyTree,
         replicate_info: PyTree,
         hps_common: TreeNamespace,

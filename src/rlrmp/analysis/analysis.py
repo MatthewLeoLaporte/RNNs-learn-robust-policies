@@ -22,7 +22,8 @@ import plotly.graph_objects as go
 from sqlalchemy.orm import Session
 
 from feedbax.task import AbstractTask
-from jax_cookbook import is_type, is_none, is_module, vmap_multi, natural_to_sequential_axes
+from jax_cookbook import is_type, is_none, is_module, vmap_multi
+from jax_cookbook._vmap import expand_axes_spec, _AxisSpec
 import jax_cookbook.tree as jtree
 
 from rlrmp.config.config import STRINGS, PATHS
@@ -122,7 +123,7 @@ class _DataProxy:
 
 
 """Sentinel for forwarding attributes from `AnalysisInputData` to analysis input ports."""
-#! TODO: Rename to something more explicit, e.g. `EvalDataIn`
+#! TODO: Rename to something more explicit, e.g. `DataInput`
 Data = _DataProxy()
 
 
@@ -181,7 +182,14 @@ class _FinalOp(NamedTuple):
 """Sentinel indicating a required dependency."""
 #! TODO: Make Generic, if that makes sense -- so we can indicate the type to the user 
 class _RequiredType: ...
-Required = _RequiredType()
+RequiredInput = _RequiredType()
+
+"""Sentinel indicating an optional dependency that is not wired by default."""
+class _OptionalType: ...
+OptionalInput = _OptionalType()
+
+# Maintain backward compatibility
+Required = RequiredInput
     
 
 PARAM_SEQ_LEN_TRUNCATE = 9
@@ -302,9 +310,9 @@ def _extract_vmapped_kwargs_to_args(func, vmapped_dep_names: Sequence[str]):
 
 
 def _build_in_axes_sequence(
-    dependency_axes: Mapping[str, tuple[int, ...]],
+    dependency_axes: Mapping[str, tuple[int | None, ...]],
     vmapped_dep_names: tuple[str, ...],
-) -> tuple[int, ...]:
+) -> tuple[tuple[int | None, ...], ...]:
     """Build the in_axes_sequence for vmapping over inputs to `AbstractAnalysis.compute`."""
     if not dependency_axes:
         return ()
@@ -341,31 +349,15 @@ def _build_in_axes_sequence(
     return tuple(in_axes_sequence)
 
 
-class _AnalysisVmapSpec(Module):
-    """Handles specifications for vmapping over inputs to `AbstractAnalysis.compute`."""
-    dependency_axes: Mapping[str, tuple[int, ...]] = eqx.field(default_factory=dict)
+class _AnalysisVmapSpec(eqx.Module):
+    """Immutable container holding all accumulated vmap information
+    for an AbstractAnalysis instance."""
+    # Logical → per-level axis schedule (one tuple entry per vmap level)
+    in_axes_spec: Mapping[str, tuple[int | None, ...]] = eqx.field(default_factory=dict)
+    # Names of dependencies (kwargs) that must be popped before vmapping
     vmapped_dep_names: tuple[str, ...] = ()
-    in_axes_sequence: tuple[int, ...] = ()
-    
-    def with_dependencies(self, dep_names: Sequence[str], axes: tuple[int, ...]) -> "_AnalysisVmapSpec":
-        """Return a new VmapSpecs with additional dependencies using the same axes."""
-        new_dependency_axes = dict(self.dependency_axes)
-        
-        # Add all dependencies with the same axes
-        for dep_name in dep_names:
-            new_dependency_axes[dep_name] = axes
-        
-        new_vmapped_dep_names = tuple(
-            name for name in new_dependency_axes.keys() if name != "data.states"
-        )
-        
-        new_in_axes_sequence = _build_in_axes_sequence(new_dependency_axes, new_vmapped_dep_names)
-        
-        return _AnalysisVmapSpec(
-            dependency_axes=new_dependency_axes,
-            vmapped_dep_names=new_vmapped_dep_names,
-            in_axes_sequence=new_in_axes_sequence,
-        )
+    # Fully-resolved positional in_axes_sequence for vmap_multi
+    in_axes_sequence: tuple[tuple[int | None, ...], ...] = ()
         
 
 _FinalOpKeyType = Literal['results', 'figs']
@@ -448,6 +440,11 @@ class AbstractAnalysis(Module, strict=False):
                     f"Invalid port(s) in custom_inputs: {invalid_ports}. "
                     f"Valid ports for {self.__class__.__name__} are: {valid_ports}"
                 )
+        
+        if any(isinstance(v, _RequiredType) for v in self.inputs.values()):
+            raise ValueError(
+                f"Some inputs for {self.__class__.__name__} are marked as required, but no custom source is provided."
+            )
 
     def _compute_with_ops(
         self, 
@@ -646,15 +643,19 @@ class AbstractAnalysis(Module, strict=False):
     def inputs(self) -> "AnalysisInputsType":
         """Get the complete mapping of dependency names to their sources.
         
-        Combines default inputs with custom overrides.
+        Combines default inputs with custom overrides. OptionalInput sentinels
+        are only included if there's a custom override for them.
         """
-
-        inputs = dict(self.default_inputs) | dict(self.custom_inputs)
+        inputs = {}
         
-        if any(isinstance(v, _RequiredType) for v in inputs.values()):
-            raise ValueError(
-                f"Some inputs for {self.__class__.__name__} are marked as required, but no custom source is provided."
-            )
+        # Add all default inputs except OptionalInput sentinels
+        for name, source in self.default_inputs.items():
+            if not isinstance(source, _OptionalType):
+                inputs[name] = source
+        
+        # Add custom inputs, including OptionalInput overrides
+        for name, source in self.custom_inputs.items():
+            inputs[name] = source
         
         return cast(AnalysisInputsType, MappingProxyType(inputs))
 
@@ -919,14 +920,14 @@ class AbstractAnalysis(Module, strict=False):
             func=func,
             level=level,
             label=label,
-            dependency_name="data.states",
+            dependency_names="data.states",
         )
     
     def after_transform(
         self, 
         func: Callable[..., Any],  # Must take two arguments: a PyTree, and **kwargs
         level: Optional[str | Sequence[str]] = None,
-        dependency_name: Optional[str] = None,
+        dependency_names: Optional[str | Sequence[str]] = None,
         label: Optional[str] = None,
     ) -> Self:
         """
@@ -947,7 +948,7 @@ class AbstractAnalysis(Module, strict=False):
             obj = obj._add_prep_op(
                 name="after_transform",
                 label=f"pre-transform_{get_name_of_callable(func)}",
-                dep_name=dependency_name,
+                dep_name=dependency_names,
                 transform_func=func,
                 params=dict(func=func),
             )
@@ -974,7 +975,7 @@ class AbstractAnalysis(Module, strict=False):
                 obj = obj._add_prep_op(
                     name="after_transform",
                     label=label,
-                    dep_name=dependency_name,
+                    dep_name=dependency_names,
                     transform_func=_transform_level,
                     params=dict(level=level, transform_func=func),
                 )
@@ -1148,44 +1149,74 @@ class AbstractAnalysis(Module, strict=False):
         return self.after_transform(
             func=select_func, 
             level=level, 
-            dependency_name=dependency_name,
+            dependency_names=dependency_name,
             label=label,
         )
         
-    def vmap(self, axes: int | Sequence[int], dependency_names: str | Sequence[str]) -> Self:
+    def vmap(self, in_axes: Mapping[str, _AxisSpec]) -> Self:
         """
-        Returns a copy of this analysis that vectorizes its `compute` method over one or more axes
-        of one of its inputs.
-        
-        Arguments:
-            axes: The axes of `data.states` to vectorize over, expressed in natural form (e.g. 
-                to map over the first three batch axes, pass `axes=(0, 1, 2)`).
-        """
-        if isinstance(dependency_names, str):
-            dependency_names = (dependency_names,)
-        
-        if isinstance(axes, int):
-            axes = (axes,)
-        else:
-            axes = tuple(axes)
-        
-        # normalized_dep_names = [_normalize_name(name) for name in dependency_names]
-        normalized_dep_names = dependency_names
-        
-        sequential_axes = natural_to_sequential_axes(axes)
+        Return a new instance whose `compute` is wrapped in one or more
+        nested jax.vmap layers (via vmap_multi).
 
-        if not all(isinstance(axis, int) for axis in sequential_axes):
-            raise ValueError("`axes` must be an integer or a sequence of integers.")
-        
+        `in_axes` maps dependency names (keys in default_inputs or
+        "data.states") to *singular* axis specs: int/None, PyTrees thereof,
+        or MultiVmapAxes for nested vmaps.  These are expanded by
+        expand_axes_spec into per-level dicts.
+        """
+        # 1) normalize names (aliases → canonical)
+        norm: dict[str, _AxisSpec] = {
+            _normalize_name(k): v for k, v in in_axes.items()
+        }
+
+        # 2) expand nested specs → list of dicts, one per new vmap level
+        per_level = expand_axes_spec(norm)
+        n_new = len(per_level)
+
+        # 3) build name → tuple of axes across these new levels
+        in_axes_spec: dict[str, tuple[int | None, ...]] = {
+            name: tuple(level.get(name, None) for level in per_level)
+            for name in norm
+        }
+
+        # 4) kwargs to pop (everything except "data.states")
+        new_dep_names = tuple(n for n in in_axes_spec if n != "data.states")
+
+        # 5) build positional in_axes_sequence for these levels
+        new_sequence = _build_in_axes_sequence(in_axes_spec, new_dep_names)
+
+        # 6) compose with any prior `.vmap` calls on this instance
         if self._vmap_spec is None:
-            vmap_spec = _AnalysisVmapSpec()
+            combined_spec       = in_axes_spec
+            combined_sequence   = new_sequence
+            combined_dep_names  = new_dep_names
         else:
-            vmap_spec = self._vmap_spec
-        
+            prev   = self._vmap_spec
+            n_prev = len(prev.in_axes_sequence)
+
+            # a) append positional specs
+            combined_sequence = prev.in_axes_sequence + new_sequence
+
+            # b) merge dict specs, padding with None
+            combined_spec: dict[str, tuple[int | None, ...]] = {}
+            for nm in set(prev.in_axes_spec) | set(in_axes_spec):
+                left  = prev.in_axes_spec.get(nm, (None,) * n_prev)
+                right = in_axes_spec.get(nm, (None,) * n_new)
+                combined_spec[nm] = left + right
+
+            combined_dep_names = tuple(nm for nm in combined_spec if nm != "data.states")
+
+        # 7) build the new frozen spec
+        new_spec = _AnalysisVmapSpec(
+            in_axes_spec=combined_spec,
+            vmapped_dep_names=combined_dep_names,
+            in_axes_sequence=combined_sequence,
+        )
+
+        # 8) return an eqx-tree-updated copy of self
         return eqx.tree_at(
-            lambda obj: obj._vmap_spec,
+            lambda a: a._vmap_spec,
             self,
-            vmap_spec.with_dependencies(normalized_dep_names, sequential_axes),
+            new_spec,
             is_leaf=is_none,
         )
         
@@ -1415,12 +1446,12 @@ class AbstractAnalysis(Module, strict=False):
             )
 
     def _add_prep_op(
-            self, 
-            name: str,
-            label: str,
-            dep_name: Optional[str], 
-            transform_func: Callable,
-            params: Optional[Dict[str, Any]] = None,
+        self, 
+        name: str,
+        label: str,
+        dep_name: Optional[str | Sequence[str]], 
+        transform_func: Callable,
+        params: Optional[Dict[str, Any]] = None,
     ) -> Self:
         # If the transform consumes extra dependencies, ensure the analysis
         # instance knows about them so the graph builder evaluates them.
@@ -1591,7 +1622,7 @@ class AbstractAnalysis(Module, strict=False):
         return prepped_kwargs
 
 
-DefaultInputType: TypeAlias = type[AbstractAnalysis] | _RequiredType | _DataField
+DefaultInputType: TypeAlias = type[AbstractAnalysis] | _RequiredType | _OptionalType | _DataField
 AnalysisDefaultInputsType: TypeAlias = MappingProxyType[str, DefaultInputType]
 
 InputType: TypeAlias = type[AbstractAnalysis] | AbstractAnalysis | _DataField | str

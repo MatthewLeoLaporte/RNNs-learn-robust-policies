@@ -357,14 +357,15 @@ class Measures(AbstractAnalysis):
     default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
         aligned_vars=AlignedVars,
     ))
-    measure_keys: Sequence[str] = eqx.field(
-        default=ALL_MEASURE_KEYS,
-        metadata=dict(internal=True),  # Exclude this field from database columns / dump filenames
-    )
     variant: Optional[str] = "full"
     conditions: tuple[str, ...] = ()
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
         # arr_axis_labels=["Evaluation", "Replicate", "Condition"],  #!
+    )
+    
+    measure_keys: Sequence[str] = eqx.field(
+        default=ALL_MEASURE_KEYS,
+        metadata=dict(internal=True),  # Exclude this field from database columns / dump filenames
     )
 
     def compute(

@@ -27,7 +27,7 @@ from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
 from rlrmp.analysis.aligned import AlignedEffectorTrajectories, AlignedVars
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDefaultInputsType, AnalysisInputData, CallWithDeps, Data, DefaultFigParamNamespace, FigParamNamespace, Required
+from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDefaultInputsType, AnalysisInputData, CallWithDeps, Data, DefaultFigParamNamespace, FigParamNamespace, RequiredInput
 from rlrmp.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS
 from rlrmp.analysis.effector import EffectorTrajectories
 from rlrmp.analysis.measures import ALL_MEASURE_KEYS, MEASURE_LABELS
@@ -169,7 +169,7 @@ ANALYSES = {
             CallWithDeps("hidden_states_pca")(
                 lambda pca_results, states: pca_results.batch_transform(states),
             ),
-            dependency_name="state",
+            dependency_names="state",
         ) 
         #! TODO: Do the RMS in a separate analysis -> violin plots
         # .then_transform_result(

@@ -24,7 +24,7 @@ import jax.tree as jt
 from jaxtyping import PyTree
 
 from rlrmp.analysis.analysis import (
-    AbstractAnalysis, AnalysisInputData, _format_dict_of_params, Required,
+    AbstractAnalysis, AnalysisInputData, _format_dict_of_params, RequiredInput, OptionalInput,
     _DataField, FigParamNamespace, DefaultFigParamNamespace, AnalysisDefaultInputsType
 )
 from types import MappingProxyType
@@ -100,11 +100,18 @@ def resolve_dependency_node(analysis, dep_name, dep_source, dependency_lookup=No
         tuple: (node_id, params, analysis_instance)
     """
     # Handle required-but-missing dependencies early
-    if dep_source is Required:
+    if dep_source is RequiredInput:
         raise ValueError(
-            f"Dependency '{dep_name}' for analysis '{analysis.name}' is marked as Required but was not provided. "
+            f"Dependency '{dep_name}' for analysis '{analysis.name}' is marked as RequiredInput but was not provided. "
             "Pass it via `custom_inputs` on that analysis instance, or reference an entry in the module-level "
             "`DEPENDENCIES` dict and point to it by name from `custom_inputs`."
+        )
+    
+    # Handle optional inputs that weren't provided
+    if dep_source is OptionalInput:
+        raise ValueError(
+            f"Dependency '{dep_name}' for analysis '{analysis.name}' is marked as OptionalInput and should not "
+            "appear in the computation graph unless explicitly overridden in `custom_inputs`."
         )
     # Handle forwarding of attributes from AnalysisInputData via the `Data` sentinel
     if isinstance(dep_source, _DataField):
@@ -319,7 +326,9 @@ def compute_dependency_results(
             dependency_results['result'] = computed_results[analysis_hash]
         # Add dependencies
         for dep_name, dep_source in analysis.inputs.items():
-            _, _, dep_instance = resolve_dependency_node(analysis, dep_name, dep_source, dependency_lookup=dependency_lookup)
+            _, _, dep_instance = resolve_dependency_node(
+                analysis, dep_name, dep_source, dependency_lookup=dependency_lookup
+            )
             dep_hash = dep_instance.md5_str
             if dep_hash in computed_results:
                 dependency_results[dep_name] = computed_results[dep_hash]
