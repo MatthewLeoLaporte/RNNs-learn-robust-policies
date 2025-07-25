@@ -24,7 +24,7 @@ from rlrmp.analysis.analysis import (
 
 class Tangling(AbstractAnalysis):
     default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
-        #! Maybe should not hardcode this here, but make it `Required`
+        #! Maybe should not hardcode this here, but make it `RequiredInput`
         state=Data.states(where=lambda states: states.net.hidden),
     ))
     conditions: tuple[str, ...] = ()

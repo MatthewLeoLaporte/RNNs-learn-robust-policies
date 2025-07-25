@@ -1,6 +1,8 @@
 from collections.abc import Callable
+from functools import partial
 from types import MappingProxyType
 from typing import ClassVar, Optional
+
 import equinox as eqx
 import jax.numpy as jnp 
 import jax.random as jr
@@ -145,6 +147,19 @@ def get_best_replicate(tree, *, replicate_info, axis: int = 1, keep_axis: bool =
         tree,
         is_leaf=LDict.is_of("train__pert__std"),
     )
+
+
+get_best_model_replicate = jtree.filter_wrap(
+    lambda x: not is_type(AbstractIntervenor)(x), 
+    is_leaf=is_type(AbstractIntervenor),
+)(partial(get_best_replicate, axis=0, keep_axis=True))
+get_best_model_replicate.__doc__ = (
+    """Variant of `get_best_replicate` that filters out intervenors from the tree.
+    
+    This is necessary when getting the best replicate from a tree of models, rather than states,
+    since intervention parameters generally do not have a replicate batch axis. 
+    """
+)
 
 
 def exclude_bad_replicates(tree, *, replicate_info, axis=0):

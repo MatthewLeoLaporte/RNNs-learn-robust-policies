@@ -32,14 +32,15 @@ import numpy as np
 from rlrmp.analysis import AbstractAnalysis, AnalysisInputData
 from rlrmp.analysis.analysis import _DummyAnalysis, AnalysisDefaultInputsType, Data, DefaultFigParamNamespace, FigParamNamespace
 from rlrmp.analysis.fp_finder import FPFilteredResults, take_top_fps
+from rlrmp.analysis.fps import FixedPoints
 from rlrmp.analysis.pca import StatesPCA
 from rlrmp.misc import get_constant_input_fn
-from rlrmp.analysis.state_utils import get_best_replicate, vmap_eval_ensemble
+from rlrmp.analysis.state_utils import get_best_model_replicate, vmap_eval_ensemble
 from rlrmp.tree_utils import take_replicate
 from rlrmp.types import TreeNamespace
 from rlrmp.types import LDict
+from rlrmp.analysis.execution import AnalysisModuleTransformSpec
 from rlrmp.analysis.fps_tmp import (
-    FixedPoints,
     SteadyStateJacobians,
     Jacobians,
     FPsInPCSpace,
@@ -211,34 +212,28 @@ def reshape_candidates(states: Array) -> Array:
 DEPENDENCIES = {
     "states_pca": (
         StatesPCA(n_components=N_PCA, where_states=lambda states: states.net.hidden)
-        .after_transform(get_best_replicate)
         .after_indexing(-2, np.arange(START_STEP, END_STEP), axis_label="timestep")
     ),
     "steady_state_rnn_funcs": (
         SteadyStateRNNFuncs()
-        .after_transform(get_best_replicate)
     ),
     "steady_state_fps": (
         FixedPoints(
             custom_inputs=dict(
                 funcs="steady_state_rnn_funcs",
-                #! TODO: After making `get_best_replicate` a global transform, put `reshape_candidates` here.
+                func_args=tuple((
+                    Data.tasks(
+                        where=lambda task: (
+                            task.validation_trials.targets["mechanics.effector.pos"].value[:, -1]
+                        ),
+                    ),
+                )),
+                # We can reshape_candidates here since get_best_replicate is applied globally
                 candidates=Data.states(
                     # FP initial conditions <- full hidden state trajectories
-                    where=lambda states: states.net.hidden,
+                    where=lambda states: reshape_candidates(states.net.hidden),
                 ),
-                func_args=Data.tasks(
-                    where=lambda task: (
-                        task.validation_trials.targets["mechanics.effector.pos"].value[:, -1]
-                    ),
-                )
-            )
-        )
-        .after_transform(get_best_replicate, dependency_names=("candidates",))
-        .after_transform(  
-            # Collapse all axes except the state dimension 
-            lambda states: jt.map(reshape_candidates, states),
-            dependency_names=("candidates",),   
+            ),
         )
         # vmap over the steady state grid positions
         .vmap(in_axes={'func_args': 0, 'candidates': 0})
@@ -248,6 +243,16 @@ DEPENDENCIES = {
 
 # State PyTree structure: ['sisu', 'train__pert__std']
 # Array batch shape: (evals, replicates, reach conditions)
+"""Apply global transformations to reduce computation.
+Since this module frequently uses get_best_replicate, we apply it globally
+before evaluation to save computational resources."""
+TRANSFORMS = AnalysisModuleTransformSpec(
+    pre_setup=dict(models=get_best_model_replicate),
+    # `get_best_model_replicate` leaves the singleton replicate axis in -- so, remove it 
+    post_eval=lambda states: jt.map(lambda x: x[0], states),
+)
+
+
 ANALYSES = {
     "fps_in_pc_space": (
         FPsInPCSpace(

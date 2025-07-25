@@ -33,10 +33,6 @@ from rlrmp.misc import get_md5_hexdigest
 
 logger = logging.getLogger(__name__)
 
-# --------------------------------------------------------------------------- #
-# Helper analysis to forward attributes from AnalysisInputData                #
-# --------------------------------------------------------------------------- #
-
 
 class _DataForwarder(AbstractAnalysis):
     """Forwards a single attribute of `AnalysisInputData`.
@@ -44,6 +40,8 @@ class _DataForwarder(AbstractAnalysis):
     This node exists only to integrate `Data.<attr>` references into the
     dependency graph.  It performs no computation other than returning the
     chosen attribute and produces no figures.
+    
+    NOTE: See also `_DataField` which is used to specify the attribute to forward.
     """
 
     # Name of the attribute (e.g. "states", "models", …) to be forwarded
@@ -154,7 +152,8 @@ def resolve_dependency_node(analysis, dep_name, dep_source, dependency_lookup=No
 
 
 def build_dependency_graph(analyses: Sequence[AbstractAnalysis], dependency_lookup=None) -> tuple[dict[str, set], dict]:
-    graph = defaultdict(set)
+    """Build a directed acyclic graph of analysis dependencies."""
+    graph = defaultdict(set)  # Maps node_id -> set of dependency node_ids
     nodes = {}  # Maps md5 hash (str) -> (analysis_instance, params)
 
     def _validate_signature(func, required_names: list[str], func_label: str, analysis_name: str):
@@ -169,60 +168,58 @@ def build_dependency_graph(analyses: Sequence[AbstractAnalysis], dependency_look
                 "Add them to the signature or accept **kwargs."
             )
 
-    # Only store each analysis instance by its md5 hash. All lookups and graph edges use md5 hashes only.
     def _add_deps(analysis: AbstractAnalysis):
+        """Recursively add analysis and its dependencies to the graph."""
         md5_id = analysis.md5_str
         if md5_id not in nodes:
             nodes[md5_id] = (analysis, {})
 
+            # Validate that compute/make_figs accept required parameters
             deps_list = list(analysis.inputs.keys())
-            _validate_signature(
-                analysis.compute,
-                deps_list,
-                "compute",
-                analysis.name,
-            )
-            _validate_signature(
-                analysis.make_figs,
-                deps_list + ["result"],
-                "make_figs",
-                analysis.name,
-            )
-            for dep_name, dep_source in analysis.inputs.items():
-                dep_node_id, params, dep_instance = resolve_dependency_node(
-                    analysis, dep_name, dep_source, dependency_lookup=dependency_lookup
-                )
-                if dep_instance.md5_str not in nodes:
-                    nodes[dep_instance.md5_str] = (dep_instance, params)
-                    _add_deps(dep_instance)
+            _validate_signature(analysis.compute, deps_list, "compute", analysis.name)
+            _validate_signature(analysis.make_figs, deps_list + ["result"], "make_figs", analysis.name)
+            
+            # Recursively process all flattened dependencies
+            for dep_name, dep_sources in analysis.flattened_inputs.items():
+                for dep_source in dep_sources:
+                    dep_node_id, params, dep_instance = resolve_dependency_node(
+                        analysis, dep_name, dep_source, dependency_lookup=dependency_lookup
+                    )
+                    if dep_instance.md5_str not in nodes:
+                        nodes[dep_instance.md5_str] = (dep_instance, params)
+                        _add_deps(dep_instance)
 
+    # Add all analyses from dependency lookup and main analysis list
     for analysis in (dependency_lookup or {}).values():
         _add_deps(analysis)
     for analysis in analyses:
         _add_deps(analysis)
+    
+    # Build graph edges from analyses to their direct dependencies
     for analysis in analyses:
-        for dep_name, dep_source in analysis.inputs.items():
-            _, _, dep_instance = resolve_dependency_node(analysis, dep_name, dep_source, dependency_lookup=dependency_lookup)
-            analysis_node_id = analysis.md5_str
-            dep_node_id = dep_instance.md5_str
-            graph[analysis_node_id].add(dep_node_id)
-            # Ensure every edge target is also present in `nodes`
-            if dep_node_id not in nodes:
-                nodes[dep_node_id] = (dep_instance, {})
+        for dep_name, dep_sources in analysis.flattened_inputs.items():
+            for dep_source in dep_sources:
+                _, _, dep_instance = resolve_dependency_node(analysis, dep_name, dep_source, dependency_lookup=dependency_lookup)
+                analysis_node_id = analysis.md5_str
+                dep_node_id = dep_instance.md5_str
+                graph[analysis_node_id].add(dep_node_id)
+                # Ensure every edge target is also present in `nodes`
+                if dep_node_id not in nodes:
+                    nodes[dep_node_id] = (dep_instance, {})
 
+    # Build graph edges for transitive dependencies (dependencies of dependencies)
     for node_id, (dep_instance, _) in list(nodes.items()):
-        for subdep_name, subdep_source in dep_instance.inputs.items():
-            _, _, sub_dep_instance = resolve_dependency_node(
-                dep_instance,
-                subdep_name,
-                subdep_source,
-                dependency_lookup=dependency_lookup,
-            )
-            sub_dep_id = sub_dep_instance.md5_str
-            graph[node_id].add(sub_dep_id)
-            if sub_dep_id not in nodes:
-                nodes[sub_dep_id] = (sub_dep_instance, {})
+        for subdep_name, subdep_sources in dep_instance.flattened_inputs.items():
+            for subdep_source in subdep_sources:
+                _, _, sub_dep_instance = resolve_dependency_node(
+                    dep_instance, subdep_name, subdep_source, dependency_lookup=dependency_lookup,
+                )
+                sub_dep_id = sub_dep_instance.md5_str
+                graph[node_id].add(sub_dep_id)
+                if sub_dep_id not in nodes:
+                    nodes[sub_dep_id] = (sub_dep_instance, {})
 
+    # Ensure all nodes have graph entries (even if no dependencies)
     for node_id in nodes:
         if node_id not in graph:
             graph[node_id] = set()
@@ -259,6 +256,43 @@ def topological_sort(graph: dict[str, Set[str]]) -> list[str]:
     return order
 
 
+def _reconstruct_dependencies(
+    analysis: AbstractAnalysis, 
+    computed_results: dict[str, Any], 
+    dependency_lookup: dict[str, AbstractAnalysis]
+) -> dict[str, Any]:
+    """Reconstruct PyTree dependencies for an analysis from computed leaf results."""
+    dep_kwargs = {}
+    
+    # Collect and reconstruct each dependency PyTree
+    for dep_name, dep_sources in analysis.flattened_inputs.items():
+        leaf_results = []
+        
+        # Gather results for all leaves in this dependency
+        for dep_source in dep_sources:
+            _, _, dep_instance = resolve_dependency_node(
+                analysis, dep_name, dep_source, dependency_lookup=dependency_lookup
+            )
+            dep_hash = dep_instance.md5_str
+            if dep_hash in computed_results:
+                leaf_results.append(computed_results[dep_hash])
+        
+        # Ensure all dependencies were computed before reconstruction
+        if len(leaf_results) != len(dep_sources):
+            missing = len(dep_sources) - len(leaf_results)
+            raise RuntimeError(
+                f"Failed to resolve {missing}/{len(dep_sources)} dependencies for "
+                f"'{dep_name}' in analysis '{analysis.__class__.__name__}'. "
+                f"This indicates a bug in dependency resolution or circular dependencies."
+            )
+        
+        # Reconstruct PyTree from leaf results
+        tree_def = analysis.input_treedefs[dep_name]
+        dep_kwargs[dep_name] = jt.unflatten(tree_def, leaf_results)
+    
+    return dep_kwargs
+
+
 def compute_dependency_results(
     analyses: dict[str, AbstractAnalysis],
     data: AnalysisInputData,
@@ -278,10 +312,11 @@ def compute_dependency_results(
     analyses_list = list(analyses.values())
     dependency_lookup = custom_dependencies | analyses
     
+    # Build computation graph and determine execution order
     graph, dep_instances = build_dependency_graph(analyses_list, dependency_lookup=dependency_lookup)
     comp_order = topological_sort(graph)
     
-    # Create a reverse lookup from md5 hash to key for better logging
+    # Create reverse lookup for better logging
     hash_to_key = {}
     for key, instance in dependency_lookup.items():
         hash_to_key[instance.md5_str] = key
@@ -289,23 +324,16 @@ def compute_dependency_results(
     baseline_kwargs = kwargs.copy()
     computed_results = {}
     
+    # Execute all dependencies in topological order
     for node_id in comp_order:
         dep_instance, params = dep_instances[node_id]
-        # Only pass baseline kwargs and the relevant dependencies under their local names
+        
+        # Reconstruct dependencies and add instance parameters
         dep_kwargs = baseline_kwargs.copy()
-        for dep_name, dep_source in dep_instance.inputs.items():
-            _, _, sub_dep_instance = resolve_dependency_node(
-                dep_instance, 
-                dep_name, 
-                dep_source, 
-                dependency_lookup=dependency_lookup,
-            )
-            sub_dep_hash = sub_dep_instance.md5_str
-            if sub_dep_hash in computed_results:
-                dep_kwargs[dep_name] = computed_results[sub_dep_hash]
+        dep_kwargs.update(_reconstruct_dependencies(dep_instance, computed_results, dependency_lookup))
         dep_kwargs.update(params)
         
-        # Use key if available, otherwise use class name and hash
+        # Log computation for non-trivial analyses
         if node_id in hash_to_key:
             log_name = hash_to_key[node_id]
         else:
@@ -314,24 +342,22 @@ def compute_dependency_results(
         if not log_name.startswith("_DataForwarder"):
             logger.info(f"Computing analysis node: {log_name}")
         
+        # Execute analysis and store result
         result = dep_instance._compute_with_ops(data, **dep_kwargs)
         computed_results[node_id] = result
     
+    # Assemble final results for each requested analysis
     all_dependency_results = []
     for analysis in analyses_list:
         dependency_results = baseline_kwargs.copy()
-        # Add the result of this analysis itself
+        
+        # Add the analysis result itself
         analysis_hash = analysis.md5_str
         if analysis_hash in computed_results:
             dependency_results['result'] = computed_results[analysis_hash]
-        # Add dependencies
-        for dep_name, dep_source in analysis.inputs.items():
-            _, _, dep_instance = resolve_dependency_node(
-                analysis, dep_name, dep_source, dependency_lookup=dependency_lookup
-            )
-            dep_hash = dep_instance.md5_str
-            if dep_hash in computed_results:
-                dependency_results[dep_name] = computed_results[dep_hash]
+        
+        # Add reconstructed dependencies
+        dependency_results.update(_reconstruct_dependencies(analysis, computed_results, dependency_lookup))
         all_dependency_results.append(dependency_results)
     
     return all_dependency_results

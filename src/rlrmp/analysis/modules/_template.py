@@ -16,6 +16,10 @@ from rlrmp.types import TreeNamespace
 from rlrmp.types import LDict
 
 
+# Import transform machinery from execution module
+from rlrmp.analysis.execution import AnalysisModuleTransformSpec
+
+
 """Specify any additional colorscales needed for this analysis. 
 These will be included in the `colors` kwarg passed to `AbstractAnalysis` methods
 """
@@ -58,6 +62,17 @@ class SomeAnalysis(AbstractAnalysis):
     ...
  
    
+"""Specify transformations to apply at different stages of analysis execution.
+If not present, no transformations are applied."""
+TRANSFORMS = AnalysisModuleTransformSpec(
+    # Examples:
+    # pre_setup=dict(models=get_best_replicate),  # Granular - apply only to models
+    # pre_setup=dict(task=some_task_transform, models=get_best_replicate),  # Both
+    # pre_setup=lambda task, models: (task, tree_map(get_best_replicate, models)),  # Combined function
+    # post_eval=some_post_transform,  # Transform evaluation results
+)
+
+
 """Determines which analyses are performed by `run_analysis.py`, for this module."""
 ANALYSES = {
     "analysis_label": SomeAnalysis(),

@@ -1,25 +1,114 @@
+
 from collections.abc import Callable
 from functools import partial
+from multiprocessing import Value
 from types import MappingProxyType
-from typing import ClassVar, Optional
+from typing import Any, ClassVar, Optional, TypeVar
 import equinox as eqx
+from equinox import field
 import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
-from jaxtyping import Array, PRNGKeyArray, PyTree
+from jaxtyping import Array, PRNGKeyArray, PyTree, Scalar
 
 from feedbax.bodies import SimpleFeedback
 from feedbax.nn import NetworkState
 from feedbax.task import SimpleReaches
+from optax import GradientTransformation
 
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDefaultInputsType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.analysis import (
+    AbstractAnalysis, 
+    AnalysisDefaultInputsType, 
+    AnalysisInputData, 
+    DefaultFigParamNamespace, 
+    FigParamNamespace, 
+    OptionalInput, 
+    RequiredInput,
+)
 from rlrmp.analysis.fp_finder import (
     FixedPointFinder,
     fp_adam_optimizer,
     take_top_fps,
 )
 from rlrmp.types import LDict, TreeNamespace
+
+
+T = TypeVar('T')
+
+
+class FixedPoints(AbstractAnalysis):
+    """Find steady-state fixed points of a function.
+    
+    Inputs:
+        funcs: Functions to find fixed points for, e.g. RNN cells.
+            The functions should have signature (`func(*args, state)`) where `state` is the
+            optimized tensor that is initialized with `candidates`.  
+        candidates: Candidate states to initialize the fixed point search.
+        func_args: Optional positional arguments to pass to the functions as `*args`.
+    """
+
+    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
+        funcs=RequiredInput,  # Functions to find fixed points for, e.g. RNN cells
+        candidates=RequiredInput,  # Candidate states to initialize the fixed point search
+        func_args=OptionalInput,
+    ))
+    conditions: tuple[str, ...] = ()
+    variant: Optional[str] = "full"
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
+    cache_result: bool = True
+
+    # ss_func: Callable = get_ss_rnn_func
+    fp_tol: Scalar = eqx.field(default=1e-5, converter=jnp.array)
+    unique_tol: float = 0.025
+    outlier_tol: float = 1.0
+    stride_candidates: int = 16
+    fp_optimizer: GradientTransformation = fp_adam_optimizer()
+    key: PRNGKeyArray = field(default_factory=lambda: jr.PRNGKey(0))
+
+    @property
+    def fpfinder(self):
+        """FixedPointFinder instance for this analysis."""
+        return FixedPointFinder(self.fp_optimizer)
+
+    @property
+    def fpf_func(self):
+        """Partial function for finding and filtering fixed points."""
+        return partial(
+            self.fpfinder.find_and_filter,
+            loss_tol=jnp.array(self.fp_tol),
+            outlier_tol=self.outlier_tol,
+            unique_tol=self.unique_tol,
+            key=self.key,
+        )
+
+    def compute(
+        self,
+        data: AnalysisInputData,
+        *,
+        funcs: PyTree[Callable, 'T'],
+        candidates: PyTree[Array, 'T'],
+        func_args: Optional[tuple[PyTree[Any, 'T'], ...]] = None,
+        **kwargs,
+    ):
+        #! TEMPORARY
+        if not isinstance(func_args, tuple) or (isinstance(func_args, tuple) and len(func_args) != 1):
+            raise ValueError("YO.")
+        
+        if func_args is None:
+            func_args = tuple()
+
+        def get_fps(func, cands, *args):
+            return self.fpf_func(
+                lambda h: func(*args, h),
+                cands
+            )
+
+        return jt.map(
+            get_fps,
+            funcs, candidates, *func_args,
+            is_leaf=callable,
+        )
 
 
 def get_endpoint_positions(task):
@@ -218,3 +307,5 @@ def get_simple_reach_first_fps(model, task, loss_tol, stride_trials=1, *, key):
         model, task, loss_tol, stride_trials=stride_trials, key=key
     )
     return states, take_top_fps(all_fpf_results, warn=False)
+
+

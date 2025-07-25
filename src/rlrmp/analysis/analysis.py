@@ -1,18 +1,16 @@
 from collections.abc import Callable, Hashable, Mapping, Sequence
 import dataclasses
 from dataclasses import dataclass, field
+import functools
 from functools import cached_property, partial, wraps
 import inspect
 import logging
 from types import LambdaType, MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar, Iterable, Literal, NamedTuple, Optional, Dict, Self, TypeAlias, Union, cast
 from pathlib import Path
-import yaml
+from typing import Any, Callable
 
 import dill as pickle  # for result caching
-from pathlib import Path
-import hashlib
-
 import equinox as eqx
 from equinox import AbstractVar, AbstractClassVar, Module
 import jax.numpy as jnp
@@ -20,6 +18,7 @@ import jax.tree as jt
 from jaxtyping import ArrayLike, PyTree, Array
 import plotly.graph_objects as go
 from sqlalchemy.orm import Session
+import yaml
 
 from feedbax.task import AbstractTask
 from jax_cookbook import is_type, is_none, is_module, vmap_multi
@@ -187,9 +186,6 @@ RequiredInput = _RequiredType()
 """Sentinel indicating an optional dependency that is not wired by default."""
 class _OptionalType: ...
 OptionalInput = _OptionalType()
-
-# Maintain backward compatibility
-Required = RequiredInput
     
 
 PARAM_SEQ_LEN_TRUNCATE = 9
@@ -417,7 +413,7 @@ class AbstractAnalysis(Module, strict=False):
     # implement them trivially in subclasses. This violates the abstract-final design
     # pattern. This is intentional. If it leads to problems, I will learn from that.
     #! This means no non-default arguments in subclasses
-    custom_inputs: Mapping[str, "AbstractAnalysis | _DataField | str"] = eqx.field(default_factory=dict)
+    custom_inputs: Mapping[str, "InputType"] = eqx.field(default_factory=dict)
     # Opt-in toggle for result caching.  When True, the result of `compute`
     # is saved to / loaded from PATHS.cache / "results" using a hash that
     # captures the analysis parameters plus the *actual* inputs passed to
@@ -658,6 +654,40 @@ class AbstractAnalysis(Module, strict=False):
             inputs[name] = source
         
         return cast(AnalysisInputsType, MappingProxyType(inputs))
+
+    @property
+    def flattened_inputs(self) -> dict[str, list]:
+        """Get flattened dependency sources for each input name.
+        
+        Each PyTree input is flattened to a list of leaves. Single dependencies
+        become single-element lists for consistency.
+        """
+        flattened = {}
+        for name, source in self.inputs.items():
+            leaves, _ = jt.flatten(source)
+            # Validate all leaves are valid dependency types
+            for leaf in leaves:
+                if not isinstance(leaf, (type, str)) and not isinstance(leaf, (_DataField, AbstractAnalysis)):
+                    valid_types = "type[AbstractAnalysis], AbstractAnalysis, _DataField, or str"
+                    raise ValueError(
+                        f"Invalid dependency leaf in '{name}': {type(leaf)}. "
+                        f"All leaves must be {valid_types}"
+                    )
+            flattened[name] = leaves
+        return flattened
+
+    @property 
+    def input_treedefs(self) -> dict[str, Any]:
+        """Get tree definitions for reconstructing PyTree inputs.
+        
+        Returns TreeDef for all PyTree structures, including single-leaf trees.
+        """
+        treedefs = {}
+        for name, source in self.inputs.items():
+            _, tree_def = jt.flatten(source)
+            # Always store tree definition - JAX handles single-leaf PyTrees fine
+            treedefs[name] = tree_def
+        return treedefs
 
     def _get_target_dependency_names(
         self,
@@ -1625,7 +1655,7 @@ class AbstractAnalysis(Module, strict=False):
 DefaultInputType: TypeAlias = type[AbstractAnalysis] | _RequiredType | _OptionalType | _DataField
 AnalysisDefaultInputsType: TypeAlias = MappingProxyType[str, DefaultInputType]
 
-InputType: TypeAlias = type[AbstractAnalysis] | AbstractAnalysis | _DataField | str
+InputType: TypeAlias = PyTree[type[AbstractAnalysis] | AbstractAnalysis | _DataField | str]
 AnalysisInputsType: TypeAlias = MappingProxyType[str, InputType]
 
 
@@ -1643,10 +1673,6 @@ class _DummyAnalysis(AbstractAnalysis):
     def make_figs(self, data: AnalysisInputData, **kwargs) -> PyTree[go.Figure]:
         return None
 
-
-# --------------------------------------------------------------------------- #
-# Helper: safely forward kwargs to user-supplied callbacks                   #
-# --------------------------------------------------------------------------- #
 
 def _call_user_func(func, dep_data, extra_kwargs):
     """Invoke *func* with *dep_data* and the subset of *extra_kwargs* it accepts.
@@ -1673,9 +1699,6 @@ def _call_user_func(func, dep_data, extra_kwargs):
     }
     return func(dep_data, **filtered)
 
-
-import functools
-from typing import Any, Callable
 
 class CallWithDeps:
     _counter = 0

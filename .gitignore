@@ -5,6 +5,7 @@ COMMIT_MSG_STASH.txt
 # LLM stuff
 .serena
 .specstory
+.cursor
 *claude.md
 *o3.md 
 *gem25p.md

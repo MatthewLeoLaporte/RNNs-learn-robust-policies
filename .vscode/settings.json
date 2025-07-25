@@ -1,0 +1,8 @@
+{
+    "python.analysis.include": [
+        "src",
+        "scripts",
+        "notebooks",
+        "tests"
+    ]
+}

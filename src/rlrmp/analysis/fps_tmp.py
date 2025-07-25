@@ -7,7 +7,7 @@ into the declarative analysis framework.
 from collections.abc import Callable, Sequence
 from functools import partial
 from types import MappingProxyType
-from typing import Any, ClassVar, Optional, TypeVar
+from typing import ClassVar, Optional, TypeVar
 
 import equinox as eqx
 from equinox import Module, field
@@ -17,9 +17,8 @@ import jax.random as jr
 import jax.tree as jt
 import jax_cookbook.tree as jtree
 import numpy as np
-from optax import GradientTransformation
 import plotly.graph_objects as go
-from jaxtyping import Array, Float, PRNGKeyArray, PyTree, Scalar
+from jaxtyping import Array, Float, PRNGKeyArray, PyTree
 
 from feedbax.bodies import SimpleFeedbackState
 from jax_cookbook import is_module, is_type, vmap_multi
@@ -28,18 +27,14 @@ from rlrmp.analysis.analysis import (
     AbstractAnalysis,
     AnalysisDefaultInputsType,
     AnalysisInputData,
-    Data,
     DefaultFigParamNamespace,
     FigParamNamespace,
-    OptionalInput,
     RequiredInput,
 )
 from rlrmp.analysis.fp_finder import (
     FPFilteredResults,
-    FixedPointFinder,
-    fp_adam_optimizer,
-    take_top_fps,
 )
+from rlrmp.analysis.fps import FixedPoints
 from rlrmp.analysis.pca import StatesPCA
 from rlrmp.analysis.state_utils import exclude_bad_replicates
 from rlrmp.misc import create_arr_df, take_non_nan
@@ -50,68 +45,6 @@ from rlrmp.types import LDict, TreeNamespace
 
 T = TypeVar('T')
     
-
-class FixedPoints(AbstractAnalysis):
-    """Find steady-state fixed points of the RNN."""
-
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
-        funcs=RequiredInput,  # Functions to find fixed points for, e.g. RNN cells
-        candidates=RequiredInput,  # Candidate states to initialize the fixed point search
-        func_args=OptionalInput,
-    ))
-    conditions: tuple[str, ...] = ()
-    variant: Optional[str] = "full"
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
-    cache_result: bool = True
-    
-    # ss_func: Callable = get_ss_rnn_func
-    fp_tol: Scalar = eqx.field(default=1e-5, converter=jnp.array)
-    unique_tol: float = 0.025
-    outlier_tol: float = 1.0
-    stride_candidates: int = 16
-    fp_optimizer: GradientTransformation = fp_adam_optimizer()
-    key: PRNGKeyArray = field(default_factory=lambda: jr.PRNGKey(0))
-
-    @property
-    def fpfinder(self):
-        """FixedPointFinder instance for this analysis."""
-        return FixedPointFinder(self.fp_optimizer)
-    
-    @property
-    def fpf_func(self):
-        """Partial function for finding and filtering fixed points."""
-        return partial(
-            self.fpfinder.find_and_filter,
-            loss_tol=jnp.array(self.fp_tol),
-            outlier_tol=self.outlier_tol,
-            unique_tol=self.unique_tol,
-            key=self.key,
-        )
-        
-    def compute(
-        self,
-        data: AnalysisInputData,
-        *,
-        funcs: PyTree[Callable, 'T'],
-        candidates: PyTree[Array, 'T'],
-        func_args: Optional[tuple[PyTree[Any, 'T'], ...]] = None,
-        **kwargs,
-    ):  
-        if func_args is None:
-            func_args = tuple()
-        
-        def get_fps(func, cands, *args):
-            return self.fpf_func(
-                lambda h: func(*args, h),
-                cands
-            )
-
-        return jt.map(
-            get_fps,
-            funcs, candidates, *func_args,
-            is_leaf=callable,
-        )
-
 
 def origin_only(states, axis=-2, *, hps_common):
     #! TODO: Do not assume "full" variant
