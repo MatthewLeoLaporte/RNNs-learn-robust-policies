@@ -16,7 +16,7 @@ from jaxtyping import Array, ArrayLike, PyTree
 import plotly.graph_objects as go
 
 from feedbax.intervene import AbstractIntervenor
-from jax_cookbook import anyf, is_module, is_type
+from jax_cookbook import anyf, is_module, is_type, is_none
 import jax_cookbook.tree as jtree
 
 from rlrmp.config import STRINGS
@@ -491,3 +491,48 @@ def _hash_pytree(tree) -> str:
         md5.update(_bytes_from_leaf(leaf))
 
     return md5.hexdigest()
+
+
+def _prefix_expand_inner(
+    tree1: PyTree, 
+    tree2: PyTree, 
+    is_leaf: Optional[Callable] = None, 
+    is_leaf_prefix: Optional[Callable] = None,
+) -> PyTree:
+    """Expands a prefix of a PyTree to have the same structure as the PyTree."""
+    def expand_leaf(leaf, subtree):
+        return jt.map(lambda _: leaf, subtree, is_leaf=is_leaf)
+    return jt.map(expand_leaf, tree1, tree2, is_leaf=is_leaf_prefix)
+
+
+def prefix_expand(
+    tree1: PyTree, 
+    tree2: PyTree, 
+    is_leaf: Optional[Callable] = None, 
+    is_leaf_prefix: Optional[PyTree[Callable]] = None,
+) -> PyTree:
+    """Expands a prefix of a PyTree to have the same structure as the PyTree.
+    
+    Handles cases where the outer structure of tree1 doesn't match tree2 by
+    automatically descending through tree1 until finding nodes of the same type
+    as tree2, then applying prefix expansion.
+    
+    Args:
+        tree1: PyTree to expand (source)
+        tree2: PyTree to match structure of (target)  
+        is_leaf: Leaf predicate for the expansion operation
+        is_leaf_prefix: Leaf predicate for the prefix descent operation
+        
+    Returns:
+        tree1 expanded to match the structure of tree2
+    """
+    ilp_tree = _prefix_expand_inner(
+        is_leaf_prefix, tree1, is_leaf=is_type(type(tree2)), is_leaf_prefix=is_none,
+    )
+    return jt.map(
+        lambda prefix, ilp: _prefix_expand_inner(
+            prefix, tree2, is_leaf=is_leaf, is_leaf_prefix=ilp,
+        ),
+        tree1, ilp_tree,
+        is_leaf=is_type(type(tree2)),
+    )

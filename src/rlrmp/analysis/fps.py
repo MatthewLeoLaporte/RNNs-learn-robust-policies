@@ -91,9 +91,6 @@ class FixedPoints(AbstractAnalysis):
         func_args: Optional[tuple[PyTree[Any, 'T'], ...]] = None,
         **kwargs,
     ):
-        #! TEMPORARY
-        if not isinstance(func_args, tuple) or (isinstance(func_args, tuple) and len(func_args) != 1):
-            raise ValueError("YO.")
         
         if func_args is None:
             func_args = tuple()

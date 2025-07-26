@@ -4,14 +4,12 @@ This is a refactoring of the logic in `notebooks/markdown/part2__fps_steady.md`
 into the declarative analysis framework.
 """
 
-from collections.abc import Callable, Sequence
-from functools import partial
+from collections.abc import Callable
 from types import MappingProxyType
 from typing import ClassVar, Optional, TypeVar
 
 import equinox as eqx
 from equinox import Module, field
-import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
@@ -21,7 +19,8 @@ import plotly.graph_objects as go
 from jaxtyping import Array, Float, PRNGKeyArray, PyTree
 
 from feedbax.bodies import SimpleFeedbackState
-from jax_cookbook import is_module, is_type, vmap_multi
+from jax_cookbook import is_module, vmap_multi, is_type, is_none
+from sqlalchemy import func
 
 from rlrmp.analysis.analysis import (
     AbstractAnalysis,
@@ -29,7 +28,6 @@ from rlrmp.analysis.analysis import (
     AnalysisInputData,
     DefaultFigParamNamespace,
     FigParamNamespace,
-    RequiredInput,
 )
 from rlrmp.analysis.fp_finder import (
     FPFilteredResults,
@@ -37,191 +35,20 @@ from rlrmp.analysis.fp_finder import (
 from rlrmp.analysis.fps import FixedPoints
 from rlrmp.analysis.pca import StatesPCA
 from rlrmp.analysis.state_utils import exclude_bad_replicates
-from rlrmp.misc import create_arr_df, take_non_nan
-from rlrmp.plot import plot_eigvals_df, plot_fp_pcs
+from rlrmp.misc import take_non_nan
+from rlrmp.plot import plot_fp_pcs
 from rlrmp.tree_utils import first, ldict_level_to_bottom
 from rlrmp.types import LDict, TreeNamespace
 
 
 T = TypeVar('T')
-    
+
 
 def origin_only(states, axis=-2, *, hps_common):
     #! TODO: Do not assume "full" variant
     origin_idx = hps_common.task.full.eval_grid_n ** 2 // 2
     idx = jnp.array([origin_idx])
     return jt.map(lambda x: jnp.take_along_axis(x, idx, axis=axis), states)
-
-
-class Eigendecomposition(AbstractAnalysis):
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
-        matrices=RequiredInput,
-    ))
-    conditions: tuple[str, ...] = ()
-    variant: Optional[str] = "full"
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
-    
-    @partial(jax.jit, device=jax.devices('cpu')[0])
-    def _eig_cpu(self, *a, **kw):
-        return tuple(jax.lax.linalg.eig(*a, **kw))
-    
-    def compute(
-        self,
-        data: AnalysisInputData,
-        matrices,
-        **kwargs,
-    ):
-        eigvals, eigvecs_l, eigvecs_r = jtree.unzip(jt.map(self._eig_cpu, matrices))
-        return TreeNamespace(
-            eigvals=eigvals,
-            eigvecs_l=eigvecs_l,
-            eigvecs_r=eigvecs_r,
-        )
-    
-    def make_figs(
-        self, 
-        data: AnalysisInputData, 
-        result: PyTree, 
-        hps_common: TreeNamespace,
-        colors: PyTree,
-        **kwargs
-    ) -> PyTree[go.Figure]:
-        
-        eigvals = result.eigvals
-        
-        #! TODO: Do not hardcode column names here... 
-        #! If too difficult, just separate this method off into a different, ad hoc analysis
-        col_names = ['sisu', 'pos', 'replicate', 'eigenvalue']
-        eigval_dfs = jt.map(
-            lambda arr: create_arr_df(arr, col_names=col_names).astype({'sisu': 'str', 'replicate': 'str'}),
-            eigvals
-        )
-        
-        plot_func_partial = partial(
-            plot_eigvals_df,
-            marginals='box',
-            color='sisu',
-            trace_kws=dict(marker_size=2.5),
-            scatter_kws=dict(opacity=1),
-            layout_kws=dict(
-                legend_title='SISU',
-                legend_itemsizing='constant',
-                xaxis_title='Re',
-                yaxis_title='Im',
-            ),
-        )
-
-        figs = jt.map(
-            lambda df: plot_func_partial(df, color_discrete_sequence=list(colors['sisu'].dark.values())),
-            eigval_dfs
-        )
-
-        #! TODO: Remove SISU logic 
-        if self.sisu_values_to_plot is not None:
-             sisu_values_to_plot = self.sisu_values_to_plot
-        else:
-             sisu_values_to_plot = hps_common.sisu
-
-        def _update_trace_name(trace):
-            non_data_trace_names = ['zerolines', 'boundary_circle', 'boundary_line']
-            if trace.name is not None and trace.name not in non_data_trace_names:
-                return trace.update(name=sisu_values_to_plot[int(trace.name)])
-            else:
-                return trace
-
-        jt.map(
-            lambda fig: fig.for_each_trace(_update_trace_name),
-            figs,
-            is_leaf=is_type(go.Figure),
-        )
-
-        return figs
-
-
-def get_ss_rnn_input(pos: Float[Array, "2"], sisu: float, input_size: int):
-    input_star = jnp.zeros((input_size,))
-    # Set target and feedback inputs to the same position
-    input_star = input_star.at[1:3].set(pos)
-    input_star = input_star.at[5:7].set(pos)
-    return input_star.at[0].set(sisu)
-
-
-def get_ss_rnn_func(pos: Float[Array, "2"], sisu: float, rnn_cell: Module, key: PRNGKeyArray):
-    input_star = get_ss_rnn_input(pos, sisu, rnn_cell.input_size)
-    def rnn_func(h):
-        return rnn_cell(input_star, h, key=key)
-    return rnn_func
-
-
-class Jacobians(AbstractAnalysis):
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
-    conditions: tuple[str, ...] = ()
-    variant: Optional[str] = "full"
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
-    
-    #! TODO: Generalize to accept inputs/states as `default_inputs`,
-    #! since maybe the user wants to construct them differently
-    func_where: Callable[[PyTree[Module]], Callable[[Array, Array], Array]] = None  # In `data.models`
-    inputs_where: Callable[[PyTree[Array]], Array] = None  # In `data.states`
-    states_where: Callable[[PyTree[Array]], Array] = None  # In `data.states`
-    
-    def compute(
-        self,
-        data: AnalysisInputData,
-        **kwargs,
-    ):
-        def get_jac_func(position, sisu, func):
-            return jax.jacobian(get_ss_rnn_func(position, sisu, func, self.key))
-
-        def get_jacobian(position, sisu, fp, func):
-            return get_jac_func(position, sisu, func)(fp)
-        
-        if None in (self.func_where, self.inputs_where, self.states_where):
-            raise ValueError("Must specify `func_where`, `inputs_where`, and `states_where`")
-
-        get_jac = eqx.filter_vmap(get_jacobian, in_axes=(None, None, 0, 0)) # Over replicates
-
-        if isinstance(goals_pos_for_jac, Array) and len(goals_pos_for_jac.shape) == 2:
-            get_jac = eqx.filter_vmap(get_jac, in_axes=(0, None, 1, None)) # Over positions
-
-        def _get_jac_by_sisu(func, fps_by_sisu):
-            return LDict.of('sisu')({
-                sisu: get_jac(
-                    goals_pos_for_jac, sisu, fps, first(func, is_leaf=is_module)
-                )
-                for sisu, fps in fps_by_sisu.items()
-            })
-
-        jacobians = jt.map(
-            _get_jac_by_sisu,
-            rnn_funcs, fps_grid,
-            is_leaf=LDict.is_of('sisu')
-        )
-
-        #! This probably should not be here, but handled by prep/post ops
-        jacobians_stacked = jt.map(
-            lambda d: jtree.stack(list(d.values())),
-            jacobians,
-            is_leaf=LDict.is_of('sisu'),
-        )
-        
-
-class Hessians(AbstractAnalysis):
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
-    conditions: tuple[str, ...] = ()
-    variant: Optional[str] = "full"
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
-    
-    func_where: Callable[[PyTree[Module]], Callable[[Array, Array], Array]] = None  # In `data.models`
-    inputs_where: Callable[[PyTree[Array]], Array] = None  # In `data.states`
-    states_where: Callable[[PyTree[Array]], Array] = None  # In `data.states`
-    
-    def compute(
-        self,
-        data: AnalysisInputData,
-        **kwargs,
-    ):
-        ...
 
 
 #! TODO: Finish gutting this
@@ -240,6 +67,7 @@ class SteadyStateJacobians(AbstractAnalysis):
     def compute(
         self,
         data: AnalysisInputData,
+        *,
         fps_results: TreeNamespace,
         hps_common: TreeNamespace,
         **kwargs,
@@ -253,7 +81,7 @@ class SteadyStateJacobians(AbstractAnalysis):
         rnn_funcs = jt.map(lambda m: m.step.net.hidden, data.models, is_leaf=is_module)
 
 
-
+#! Should be totally scrappable
 class FPsInPCSpace(AbstractAnalysis):
     """Plot fixed points in PC space."""
 

@@ -25,10 +25,11 @@ from jaxtyping import PyTree
 
 from rlrmp.analysis.analysis import (
     AbstractAnalysis, AnalysisInputData, _format_dict_of_params, RequiredInput, OptionalInput,
-    _DataField, FigParamNamespace, DefaultFigParamNamespace, AnalysisDefaultInputsType
+    _DataField, ConstantInput, FigParamNamespace, DefaultFigParamNamespace, AnalysisDefaultInputsType
 )
 from types import MappingProxyType
 from rlrmp.misc import get_md5_hexdigest
+from rlrmp.tree_utils import prefix_expand
 
 
 logger = logging.getLogger(__name__)
@@ -92,11 +93,15 @@ def resolve_dependency_node(analysis, dep_name, dep_source, dependency_lookup=No
     Args:
         analysis: The analysis instance requesting the dependency
         dep_name: The name of the dependency port  
-        dep_source: Either a class type, string reference, or analysis instance
+        dep_source: Either a class type, string reference, analysis instance, or ConstantInput
         dependency_lookup: Optional dict for resolving string references
     Returns:
-        tuple: (node_id, params, analysis_instance)
+        tuple: (node_id, params, analysis_instance) or None for ConstantInput
     """
+    # Handle ConstantInput - skip dependency resolution
+    if isinstance(dep_source, ConstantInput):
+        return None
+        
     # Handle required-but-missing dependencies early
     if dep_source is RequiredInput:
         raise ValueError(
@@ -111,6 +116,7 @@ def resolve_dependency_node(analysis, dep_name, dep_source, dependency_lookup=No
             f"Dependency '{dep_name}' for analysis '{analysis.name}' is marked as OptionalInput and should not "
             "appear in the computation graph unless explicitly overridden in `custom_inputs`."
         )
+    
     # Handle forwarding of attributes from AnalysisInputData via the `Data` sentinel
     if isinstance(dep_source, _DataField):
         # Treat each attribute as a unique forwarding analysis node, including any transform
@@ -151,6 +157,14 @@ def resolve_dependency_node(analysis, dep_name, dep_source, dependency_lookup=No
         return node_id, class_params, dep_source
 
 
+def _process_dependency_sources(analysis, dep_name, dep_sources, dependency_lookup, callback):
+    """Helper to iterate over dependency sources and apply callback to non-ConstantInput deps."""
+    for dep_source in dep_sources:
+        dep_result = resolve_dependency_node(analysis, dep_name, dep_source, dependency_lookup)
+        if dep_result is not None:  # Skip ConstantInput
+            callback(dep_result)
+
+
 def build_dependency_graph(analyses: Sequence[AbstractAnalysis], dependency_lookup=None) -> tuple[dict[str, set], dict]:
     """Build a directed acyclic graph of analysis dependencies."""
     graph = defaultdict(set)  # Maps node_id -> set of dependency node_ids
@@ -180,14 +194,16 @@ def build_dependency_graph(analyses: Sequence[AbstractAnalysis], dependency_look
             _validate_signature(analysis.make_figs, deps_list + ["result"], "make_figs", analysis.name)
             
             # Recursively process all flattened dependencies
-            for dep_name, dep_sources in analysis.flattened_inputs.items():
-                for dep_source in dep_sources:
-                    dep_node_id, params, dep_instance = resolve_dependency_node(
-                        analysis, dep_name, dep_source, dependency_lookup=dependency_lookup
-                    )
+            for dep_name, dep_sources in analysis._flattened_inputs.items():
+                def add_dependency(dep_result):
+                    dep_node_id, params, dep_instance = dep_result
                     if dep_instance.md5_str not in nodes:
                         nodes[dep_instance.md5_str] = (dep_instance, params)
                         _add_deps(dep_instance)
+                
+                _process_dependency_sources(
+                    analysis, dep_name, dep_sources, dependency_lookup, add_dependency
+                )
 
     # Add all analyses from dependency lookup and main analysis list
     for analysis in (dependency_lookup or {}).values():
@@ -197,27 +213,33 @@ def build_dependency_graph(analyses: Sequence[AbstractAnalysis], dependency_look
     
     # Build graph edges from analyses to their direct dependencies
     for analysis in analyses:
-        for dep_name, dep_sources in analysis.flattened_inputs.items():
-            for dep_source in dep_sources:
-                _, _, dep_instance = resolve_dependency_node(analysis, dep_name, dep_source, dependency_lookup=dependency_lookup)
+        for dep_name, dep_sources in analysis._flattened_inputs.items():
+            def add_edge(dep_result):
+                _, _, dep_instance = dep_result
                 analysis_node_id = analysis.md5_str
                 dep_node_id = dep_instance.md5_str
                 graph[analysis_node_id].add(dep_node_id)
                 # Ensure every edge target is also present in `nodes`
                 if dep_node_id not in nodes:
                     nodes[dep_node_id] = (dep_instance, {})
+            
+            _process_dependency_sources(
+                analysis, dep_name, dep_sources, dependency_lookup, add_edge
+            )
 
     # Build graph edges for transitive dependencies (dependencies of dependencies)
     for node_id, (dep_instance, _) in list(nodes.items()):
-        for subdep_name, subdep_sources in dep_instance.flattened_inputs.items():
-            for subdep_source in subdep_sources:
-                _, _, sub_dep_instance = resolve_dependency_node(
-                    dep_instance, subdep_name, subdep_source, dependency_lookup=dependency_lookup,
-                )
+        for subdep_name, subdep_sources in dep_instance._flattened_inputs.items():
+            def add_transitive_edge(dep_result):
+                _, _, sub_dep_instance = dep_result
                 sub_dep_id = sub_dep_instance.md5_str
                 graph[node_id].add(sub_dep_id)
                 if sub_dep_id not in nodes:
                     nodes[sub_dep_id] = (sub_dep_instance, {})
+
+            _process_dependency_sources(
+                dep_instance, subdep_name, subdep_sources, dependency_lookup, add_transitive_edge
+            )
 
     # Ensure all nodes have graph entries (even if no dependencies)
     for node_id in nodes:
@@ -256,6 +278,43 @@ def topological_sort(graph: dict[str, Set[str]]) -> list[str]:
     return order
 
 
+def _resolve_expand_to_dependencies(
+    analysis: AbstractAnalysis, 
+    dep_kwargs: dict[str, Any], 
+    dependency_lookup: dict[str, AbstractAnalysis]
+) -> dict[str, Any]:
+    """Apply prefix expansion to inputs that were wrapped in ExpandTo.
+    
+    All dependencies (including ExpandTo sources and targets) are already resolved.
+    This just applies the prefix_expand transformation.
+    """
+    expand_specs = analysis._expand_to_specs
+    if not expand_specs:
+        return dep_kwargs
+    
+    for input_name, expand_objects in expand_specs.items():
+        expand_to = expand_objects[0]  # Assume one ExpandTo per input for now
+        
+        # Get target structure (already resolved as dependency)
+        if isinstance(expand_to.target, str):
+            target_structure = dep_kwargs[expand_to.target]
+        elif isinstance(expand_to.target, _DataField):
+            target_key = f"_{input_name}_expand_target"
+            target_structure = dep_kwargs[target_key]
+        else:
+            raise TypeError(f"Invalid ExpandTo target type: {type(expand_to.target)}")
+        
+        # Apply prefix expansion to already-resolved source dependencies
+        dep_kwargs[input_name] = prefix_expand(
+            dep_kwargs[input_name],  # Already resolved ExpandTo.source dependencies
+            target_structure,
+            is_leaf=expand_to.is_leaf,
+            is_leaf_prefix=expand_to.is_leaf_prefix
+        )
+    
+    return dep_kwargs
+
+
 def _reconstruct_dependencies(
     analysis: AbstractAnalysis, 
     computed_results: dict[str, Any], 
@@ -265,19 +324,30 @@ def _reconstruct_dependencies(
     dep_kwargs = {}
     
     # Collect and reconstruct each dependency PyTree
-    for dep_name, dep_sources in analysis.flattened_inputs.items():
+    for dep_name, dep_sources in analysis._flattened_inputs.items():
         leaf_results = []
         
         # Gather results for all leaves in this dependency
         for dep_source in dep_sources:
-            _, _, dep_instance = resolve_dependency_node(
-                analysis, dep_name, dep_source, dependency_lookup=dependency_lookup
-            )
-            dep_hash = dep_instance.md5_str
-            if dep_hash in computed_results:
-                leaf_results.append(computed_results[dep_hash])
+            if isinstance(dep_source, ConstantInput):
+                # Add ConstantInput values directly to leaf_results
+                leaf_results.append(dep_source.value)
+            else:
+                dep_result = resolve_dependency_node(
+                    analysis, dep_name, dep_source, dependency_lookup=dependency_lookup
+                )
+                if dep_result is not None:
+                    _, _, dep_instance = dep_result
+                    dep_hash = dep_instance.md5_str
+                    if dep_hash in computed_results:
+                        leaf_results.append(computed_results[dep_hash])
+                    else:
+                        raise RuntimeError(
+                            f"Missing dependency result for '{dep_name}' in analysis '{analysis.__class__.__name__}'. "
+                            f"Dependency hash '{dep_hash}' not found in computed results."
+                        )
         
-        # Ensure all dependencies were computed before reconstruction
+        # Ensure all dependencies were resolved before reconstruction
         if len(leaf_results) != len(dep_sources):
             missing = len(dep_sources) - len(leaf_results)
             raise RuntimeError(
@@ -289,6 +359,9 @@ def _reconstruct_dependencies(
         # Reconstruct PyTree from leaf results
         tree_def = analysis.input_treedefs[dep_name]
         dep_kwargs[dep_name] = jt.unflatten(tree_def, leaf_results)
+    
+    # Resolve ExpandTo dependencies after regular dependencies are reconstructed
+    dep_kwargs = _resolve_expand_to_dependencies(analysis, dep_kwargs, dependency_lookup)
     
     return dep_kwargs
 
@@ -321,6 +394,10 @@ def compute_dependency_results(
     for key, instance in dependency_lookup.items():
         hash_to_key[instance.md5_str] = key
         
+    # Track which nodes are leaf analyses to avoid redundant dependency reconstruction
+    leaf_node_ids = {analysis.md5_str for analysis in analyses_list}
+    leaf_dependencies = {}  # Cache reconstructed dependencies for leaf analyses
+        
     baseline_kwargs = kwargs.copy()
     computed_results = {}
     
@@ -330,8 +407,14 @@ def compute_dependency_results(
         
         # Reconstruct dependencies and add instance parameters
         dep_kwargs = baseline_kwargs.copy()
-        dep_kwargs.update(_reconstruct_dependencies(dep_instance, computed_results, dependency_lookup))
         dep_kwargs.update(params)
+        
+        reconstructed_deps = _reconstruct_dependencies(dep_instance, computed_results, dependency_lookup)
+        dep_kwargs.update(reconstructed_deps)
+        
+        if node_id in leaf_node_ids:
+            # Cache dependency reconstruction for leaf analyses to avoid redundant work
+            leaf_dependencies[node_id] = reconstructed_deps
         
         # Log computation for non-trivial analyses
         if node_id in hash_to_key:
@@ -356,8 +439,8 @@ def compute_dependency_results(
         if analysis_hash in computed_results:
             dependency_results['result'] = computed_results[analysis_hash]
         
-        # Add reconstructed dependencies
-        dependency_results.update(_reconstruct_dependencies(analysis, computed_results, dependency_lookup))
+        # Reuse cached dependency reconstruction for leaf analyses
+        dependency_results.update(leaf_dependencies[analysis_hash])
         all_dependency_results.append(dependency_results)
     
     return all_dependency_results
